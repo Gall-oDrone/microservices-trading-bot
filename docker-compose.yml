@@ -1,0 +1,82 @@
+version: '1'
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8080:8080"
+    restart: unless-stopped
+    depends_on:
+      - kafka
+      - cassandra
+    networks:
+      - backend
+    environment:
+      - HOSTS=cassandra
+  zookeeper:
+    hostname: zookeeper
+    image: wurstmeister/zookeeper:3.4.6
+    expose:
+    - "2181"
+    ports:
+    - "2181:2181"
+  
+  kafka:
+    image: wurstmeister/kafka
+    env_file:
+    - kafka/kafka-variables.env
+    depends_on:
+    - zookeeper
+    ports:
+    - '9092:9092'
+    - '8082:8082'
+    - '8083:8083'
+
+  cassandra:
+    image: cassandra:4.1
+    container_name: cassandra
+    ports:
+      - 9042:9042
+    volumes:
+      - ~/apps/cassandra:/var/lib/cassandra
+    networks:
+      - backend
+    environment:
+      - CASSANDRA_CLUSTER_NAME=mycluster
+      
+  consumer-logger:
+    build:
+      context: consumer-logger
+    environment:
+      kafkaURL: kafka:9092
+      topic: topic1
+      GroupID: logger-group
+    depends_on: 
+    - kafka
+
+  producer-random:
+    build:
+      context: producer-random
+    environment:
+      kafkaURL: kafka:9092
+      topic: topic1
+    depends_on: 
+    - kafka
+
+  producer-api:
+    build:
+      context: producer-api
+    environment:
+      kafkaURL: kafka:9092
+      topic: topic1
+    expose:
+    - "8080"
+    ports:
+    - "8080:8080"
+    depends_on: 
+    - kafka
+networks:
+  backend: 
+    driver: bridge
