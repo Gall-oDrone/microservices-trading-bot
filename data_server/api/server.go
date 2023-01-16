@@ -9,6 +9,7 @@ import (
 	"github.com/xiam/bitso-go/config"
 	"github.com/xiam/bitso-go/database"
 	"github.com/xiam/bitso-go/router"
+	"github.com/xiam/bitso-go/kafka"
 )
 
 // Run message
@@ -17,6 +18,7 @@ func Run() {
 	fmt.Printf("\n\tListening [::]:%d\n", config.PORT)
 	// controllers.SocketHandler(nil, nil)
 	database.CassandraInitConnection()
+	kafka.initProducer()
 	listen(config.PORT)
 }
 

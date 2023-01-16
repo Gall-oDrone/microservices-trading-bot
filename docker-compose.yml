@@ -64,19 +64,27 @@ services:
       topic: topic1
     depends_on: 
     - kafka
-
-  producer-api:
-    build:
-      context: producer-api
-    environment:
-      kafkaURL: kafka:9092
-      topic: topic1
-    expose:
-    - "8080"
+  flask_server:
+    build: ./services/web
+    command: python manage.py run -h 0.0.0.0
+    volumes:
+      - ./services/web/:/usr/src/app/
     ports:
-    - "8080:8080"
-    depends_on: 
-    - kafka
+      - 5000:5000
+    env_file:
+      - ./flask_server/.env.dev  
+    depends_on:
+      - db
+  db:
+    image: postgres:13-alpine
+    volumes:
+      - postgres_data:/var/lib/postgresql/data/
+    environment:
+      - POSTGRES_USER=admin
+      - POSTGRES_PASSWORD=admin
+      - POSTGRES_DB=news
+volumes:
+  postgres_data:
 networks:
   backend: 
     driver: bridge

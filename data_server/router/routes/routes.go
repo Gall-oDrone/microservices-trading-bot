@@ -19,7 +19,7 @@ type Route struct {
 // Load the routes
 func Load() []Route {
 	routes := registerRoutes
-	routes = append(routes, socketRoutes...)
+	routes = append(routes, kafkaRoutes, socketRoutes...)
 	return routes
 }
 
