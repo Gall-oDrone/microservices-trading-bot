@@ -1,0 +1,70 @@
+/**
+ * Created by GoLand.
+ * User: link1st
+ * Date: 2019-07-25
+ * Time: 16:02
+ */
+
+package routers
+
+// // Websocket 路由
+// func WebsocketInit() {
+// 	// websocket.Register("login", websocket.LoginController)
+// 	// websocket.Register("heartbeat", websocket.HeartbeatController)
+// 	websocket.Register("ping", websocket.PingController)
+// 	websocket.Register("auth", websocket.AuthController)
+// 	websocket.Register("edit_profile", websocket.EditProfileController)
+// 	websocket.Register("room:get_scheduled", websocket.RoomController)
+// 	websocket.Register("search", websocket.SearchController)
+// 	websocket.Register("get_my_scheduled_rooms_about_to_start", websocket.GetMyScheduledRoomsAboutToStartController)
+// 	websocket.Register("join_room_and_get_info", websocket.JoinRoomAndGetInfoController)
+// 	websocket.Register("room", websocket.JoinRoomAndGetInfoController)
+// 	websocket.Register("get_invite_list", websocket.GetInviteListController)
+// 	websocket.Register("get_follow_list", websocket.GetFollowListController)
+// 	websocket.Register("get_blocked_from_room_users", websocket.GetBlockedFromRoomUsersController)
+// 	websocket.Register("get_my_following", websocket.GetMyFollowingsController)
+// 	websocket.Register("get_top_public_rooms", websocket.GetTopPublicRoomsController)
+// 	websocket.Register("get_user_profile", websocket.GetUserProfileController)
+// 	websocket.Register("get_scheduled_rooms", websocket.GetScheduledRoomsController)
+// 	websocket.Register("get_room_users", websocket.GetRoomUsersController)
+// 	websocket.Register("send_room_chat_msg", websocket.SendRoomChatMsgController)
+// 	websocket.Register("@connect-transport", websocket.WTFController)
+// 	websocket.Register("@send-track", websocket.WTFController)
+// 	websocket.Register("@get-recv-tracks", websocket.WTFController)
+// 	websocket.Register("you_joined_as_peer", websocket.WTFController)
+// 	websocket.Register("you_joined_as_speaker", websocket.WTFController)
+// 	websocket.Register("you_are_now_a_speaker", websocket.WTFController)
+// 	websocket.Register("close_consumer", websocket.WTFController)
+// 	websocket.Register("new_peer_speaker", websocket.WTFController)
+// 	websocket.Register("get_marketplace_publications", websocket.GetMkListPublicationController)
+// 	websocket.Register("get_marketplace_publication", websocket.GetMkPublicationController)
+// 	// ---------------------- Routes controllers that mutate the ws state ----------------------
+// 	websocket.Register("follow", websocket.FollowController)
+// 	websocket.Register("user:update", websocket.UserUpdate2Controller)
+// 	websocket.Register("user:block", websocket.UserUpdateBlockController)
+// 	websocket.Register("user:unblock", websocket.UserUpdateUnblockController)
+// 	websocket.Register("room:update", websocket.RoomUpdate2Controller)
+// 	websocket.Register("room:ban", websocket.RoomUpdateBanController)
+// 	websocket.Register("room:deafen", websocket.RoomUpdateDeafenController)
+// 	websocket.Register("delete_scheduled_room", websocket.DeleteScheduledRoomController)
+// 	websocket.Register("create_room_from_scheduled_room", websocket.CreateRoomFromScheduledRoomController)
+// 	websocket.Register("schedule_room", websocket.ScheduleRoomController)
+// 	websocket.Register("edit_scheduled_room", websocket.EditScheduledRoomController)
+// 	websocket.Register("ask_to_speak", websocket.AskToSpeakController)
+// 	websocket.Register("invite_to_room", websocket.InviteToRoomController)
+// 	websocket.Register("speaking_change", websocket.SpeakingChangeController)
+// 	websocket.Register("unban_from_room", websocket.BanFromRoomController)
+// 	websocket.Register("change_mod_status", websocket.ChangeModStatusController)
+// 	websocket.Register("change_room_creator", websocket.ChangeRoomCreatorController)
+// 	websocket.Register("add_speaker", websocket.AddSpeakerController)
+// 	websocket.Register("delete_room_chat_message", websocket.DeleteRoomChatMessageController)
+// 	websocket.Register("unban_from_room_chat", websocket.UnbanFromRoomChatController)
+// 	websocket.Register("ban_from_room_chat", websocket.BanFromRoomChatController)
+// 	websocket.Register("set_listener", websocket.SetListenerController)
+// 	websocket.Register("mute", websocket.MuteController)
+// 	websocket.Register("leave_room", websocket.LeaveRoomController)
+// 	websocket.Register("create_room", websocket.CreateRoomController)
+// 	websocket.Register("edit_room", websocket.EditeRoomController)
+// 	websocket.Register("create_marketplace_publication", websocket.CreateMarketplacePublicationController)
+// 	websocket.Register("edit_marketplace_publication", websocket.EditeMarketplacePublicationController)
+// }

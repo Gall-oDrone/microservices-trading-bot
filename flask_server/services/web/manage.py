@@ -12,4 +12,5 @@ def create_db():
     db.session.commit()
 
 if __name__ == "__main__":
-    cli()
+    app.run(debug=True)
+    # cli()

@@ -1,9 +1,9 @@
-version: '1'
+version: '3'
 
 services:
-  app:
+  golang-server:
     build:
-      context: .
+      context: ./golang_server/data_server
       dockerfile: Dockerfile
     ports:
       - "8080:8080"
@@ -13,26 +13,32 @@ services:
       - cassandra
     networks:
       - backend
+    env_file:
+      - golang_server/data_server/.env
     environment:
+      - topic=topic1
       - HOSTS=cassandra
+      - CASSANDRA_USERNAME=cassandra
+      - CASSANDRA_PASSWORD=cassandra
+      - API_PORT=8080
   zookeeper:
     hostname: zookeeper
     image: wurstmeister/zookeeper:3.4.6
     expose:
-    - "2181"
+      - "2181"
     ports:
-    - "2181:2181"
-  
+      - "2181:2181"
+
   kafka:
     image: wurstmeister/kafka
     env_file:
-    - kafka/kafka-variables.env
+      - kafka/kafka-variables.env
     depends_on:
-    - zookeeper
+      - zookeeper
     ports:
-    - '9092:9092'
-    - '8082:8082'
-    - '8083:8083'
+      - '9092:9092'
+      - '8082:8082'
+      - '8083:8083'
 
   cassandra:
     image: cassandra:4.1
@@ -45,46 +51,68 @@ services:
       - backend
     environment:
       - CASSANDRA_CLUSTER_NAME=mycluster
-      
+      - CASSANDRA_SEEDS=cassandra
+      - CASSANDRA_PASSWORD_SEEDER=yes
+      - CASSANDRA_PASSWORD=cassandra
+
   consumer-logger:
     build:
-      context: consumer-logger
+      context: ./golang_server/consumer-logger
     environment:
       kafkaURL: kafka:9092
       topic: topic1
-      GroupID: logger-group
-    depends_on: 
-    - kafka
+      KAFKA_USER_ID: 1000
+      KAFKA_GROUP_ID: 1000
+    user: "1000:1000"
+    depends_on:
+      - kafka
 
   producer-random:
     build:
-      context: producer-random
+      context: ./golang_server/producer-random
     environment:
       kafkaURL: kafka:9092
       topic: topic1
-    depends_on: 
-    - kafka
+      KAFKA_USER_ID: 1000
+      KAFKA_GROUP_ID: 1000
+    user: "1000:1000"
+    depends_on:
+      - kafka
+
   flask_server:
-    build: ./services/web
+    build: ./flask_server/services/web
     command: python manage.py run -h 0.0.0.0
+    restart: always
     volumes:
-      - ./services/web/:/usr/src/app/
+      - ./flask_server/services/web/:/usr/src/app/
     ports:
       - 5000:5000
     env_file:
-      - ./flask_server/.env.dev  
+      - ./flask_server/.env.dev
     depends_on:
       - db
+      - selenium
+    stdin_open: true
+    tty: true
   db:
     image: postgres:13-alpine
+    restart: always
     volumes:
       - postgres_data:/var/lib/postgresql/data/
     environment:
       - POSTGRES_USER=admin
       - POSTGRES_PASSWORD=admin
       - POSTGRES_DB=news
+    ports:
+      - 5432:5432
+    stdin_open: true
+    tty: true
+  selenium:
+    image: selenium/standalone-chrome
+    ports:
+      - "4444:4444"
 volumes:
   postgres_data:
 networks:
-  backend: 
+  backend:
     driver: bridge
