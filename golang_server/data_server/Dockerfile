@@ -6,8 +6,13 @@ ENV GO111MODULE=on
 
 # Install git.
 # Git is required for fetching the dependencies.
-RUN apk update && apk add --no-cache git && apk add --no-cache bash
-
+RUN apk update && apk add --no-cache git bash openssl ca-certificates
+ARG cert_location=/usr/local/share/ca-certificates
+RUN openssl s_client -showcerts -connect github.com:443 </dev/null 2>/dev/null|openssl x509 -outform PEM > ${cert_location}/github.crt
+# Get certificate from "proxy.golang.org"
+RUN openssl s_client -showcerts -connect proxy.golang.org:443 </dev/null 2>/dev/null|openssl x509 -outform PEM >  ${cert_location}/proxy.golang.crt
+# Update certificates
+RUN update-ca-certificates
 #RUN go get github.com/golang/snappy
 WORKDIR /app
 
@@ -30,6 +35,7 @@ EXPOSE 8080
 #####################################
 FROM scratch
 
+COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
 # Copy our static executable.
 COPY --from=builder /app/main /app/main
 

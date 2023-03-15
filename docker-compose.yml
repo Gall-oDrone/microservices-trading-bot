@@ -13,14 +13,18 @@ services:
       - cassandra
     networks:
       - backend
-    env_file:
-      - golang_server/data_server/.env
     environment:
       - topic=topic1
+      - kafkaURL=kafka:9092
       - HOSTS=cassandra
       - CASSANDRA_USERNAME=cassandra
       - CASSANDRA_PASSWORD=cassandra
       - API_PORT=8080
+      - BITSO_API_KEY_NAME=testApi2
+      - BITSO_API_KEY=QAWuLRxryj
+      - BITSO_API_SECRET=fb245393b6c1170681919247ccdcf410
+    command: ["curl", "http://localhost:8080/kafka-producer"]
+    
   zookeeper:
     hostname: zookeeper
     image: wurstmeister/zookeeper:3.4.6
@@ -59,7 +63,7 @@ services:
     build:
       context: ./golang_server/consumer-logger
     environment:
-      kafkaURL: kafka:9092
+      kafkaURL: localhost:9092
       topic: topic1
       KAFKA_USER_ID: 1000
       KAFKA_GROUP_ID: 1000
