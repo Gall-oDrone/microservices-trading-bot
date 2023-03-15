@@ -1,7 +1,6 @@
 package controllers
 
 import (
-	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
@@ -24,8 +23,6 @@ func ProducerHandler(w http.ResponseWriter, r *http.Request) {
 	topic := os.Getenv("topic")
 	kafkaWriter := getKafkaWriter(kafkaURL, topic)
 	fmt.Println("start producer-api...!!")
-	fmt.Println("kafkaURL", kafkaURL)
-	fmt.Println("topic", topic)
 	defer kafkaWriter.Close()
 
 	ws, err := bitso.NewWebsocket()
@@ -40,10 +37,10 @@ func ProducerHandler(w http.ResponseWriter, r *http.Request) {
 	ws.Subscribe(book, "orders")
 	for {
 		m := <-ws.Receive()
-		mbyte, _ := json.Marshal(m)
+		// mbyte, _ := json.Marshal(m)
 		msg := kafka.Message{
 			Key:   []byte(fmt.Sprintf("address-%s", r.RemoteAddr)),
-			Value: []byte(fmt.Sprint(mbyte)),
+			Value: []byte(fmt.Sprint(m)),
 		}
 		err = kafkaWriter.WriteMessages(r.Context(), msg)
 

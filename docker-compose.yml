@@ -11,8 +11,10 @@ services:
     depends_on:
       - kafka
       - cassandra
-    networks:
-      - backend
+    # networks:
+    #   - backend
+    env_file:
+      - bitso/bitso-variables.env
     environment:
       - topic=topic1
       - kafkaURL=kafka:9092
@@ -20,9 +22,6 @@ services:
       - CASSANDRA_USERNAME=cassandra
       - CASSANDRA_PASSWORD=cassandra
       - API_PORT=8080
-      - BITSO_API_KEY_NAME=testApi2
-      - BITSO_API_KEY=QAWuLRxryj
-      - BITSO_API_SECRET=fb245393b6c1170681919247ccdcf410
     command: ["curl", "http://localhost:8080/kafka-producer"]
     
   zookeeper:
@@ -51,8 +50,8 @@ services:
       - 9042:9042
     volumes:
       - ~/apps/cassandra:/var/lib/cassandra
-    networks:
-      - backend
+    # networks:
+    #   - backend
     environment:
       - CASSANDRA_CLUSTER_NAME=mycluster
       - CASSANDRA_SEEDS=cassandra
@@ -63,8 +62,9 @@ services:
     build:
       context: ./golang_server/consumer-logger
     environment:
-      kafkaURL: localhost:9092
+      kafkaURL: kafka:9092
       topic: topic1
+      GroupID: logger-group
       KAFKA_USER_ID: 1000
       KAFKA_GROUP_ID: 1000
     user: "1000:1000"
@@ -117,6 +117,6 @@ services:
       - "4444:4444"
 volumes:
   postgres_data:
-networks:
-  backend:
-    driver: bridge
+# networks:
+#   backend:
+#     driver: bridge
