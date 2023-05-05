@@ -54,8 +54,6 @@ type WebsocketOrder struct {
 			Amount    float64 `json:"a"`
 			Position  int     `json:"t"`
 			Value     float64 `json:"v"`
-			Status    string  `json:"s"`
-			OrderId   string  `json:"o"`
 			Timestamp uint64  `json:"d"`
 		} `json:"bids"`
 		Asks []struct {
@@ -63,8 +61,6 @@ type WebsocketOrder struct {
 			Amount    float64 `json:"a"`
 			Position  int     `json:"t"`
 			Value     float64 `json:"v"`
-			Status    string  `json:"s"`
-			OrderId   string  `json:"o"`
 			Timestamp uint64  `json:"d"`
 		} `json:"asks"`
 	} `json:"payload"`

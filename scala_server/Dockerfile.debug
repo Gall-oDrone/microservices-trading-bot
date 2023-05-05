@@ -1,0 +1,21 @@
+FROM adoptopenjdk/openjdk11:latest AS builder
+
+RUN apt-get update && \
+    apt-get install -y apt-transport-https curl && \
+    curl -L -o sbt.deb http://deb.debian.org/debian/pool/main/s/sbt/sbt_0.13.13-2.debian.tar.xz && \
+    dpkg -i sbt.deb && \
+    rm sbt.deb
+
+WORKDIR /app
+
+COPY . .
+
+RUN sbt assembly
+
+FROM adoptopenjdk/openjdk11:latest
+
+WORKDIR /app
+
+COPY --from=builder /app/target/scala-2.13/scala_server-assembly-0.1.jar /app/scala_server.jar
+
+CMD ["java", "-jar", "scala_server.jar"]

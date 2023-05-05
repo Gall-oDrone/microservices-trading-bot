@@ -1,18 +1,7 @@
-#####################################
-#   STEP 1 build executable binary  #
-#####################################
-FROM golang:alpine AS builder
+FROM golang:1.18-alpine AS builder
 
 ENV GO111MODULE=on
-# ENV CGO_ENABLED=0
-# ENV GOOS=linux
-# ENV GOARCH=amd64
-# ENV GOFLAGS=-mod=vendor
-# ENV APP_USER app
-# ENV APP_HOME /go/src/producer-random-home
 
-# Install git.
-# Git is required for fetching the dependencies.
 RUN apk update && apk add --no-cache git bash openssl ca-certificates
 ARG cert_location=/usr/local/share/ca-certificates
 RUN openssl s_client -showcerts -connect github.com:443 </dev/null 2>/dev/null|openssl x509 -outform PEM > ${cert_location}/github.crt
@@ -34,19 +23,24 @@ RUN go get github.com/gorilla/websocket
 RUN go mod download
 RUN go mod tidy
 
+RUN go install github.com/go-delve/delve/cmd/dlv@latest
+
+# Add Delve executable directory to $PATH
+ENV PATH="$PATH:/go/bin"
+
 # Build the binary.
-RUN CGO_ENABLED=0 GOOS=linux go build -o main
-EXPOSE 4000
+RUN CGO_ENABLED=0 GOOS=linux go build -gcflags="all=-N -l" -o main
+
 #####################################
 #   STEP 2 build a small image      #
 #####################################
-FROM scratch
+FROM golang:1.18-alpine
 
 # Copy certificates
 COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
 
 # Copy our static executable.
 COPY --from=builder /app/main /app/main
+COPY --from=builder /go/bin/dlv /usr/local/bin/dlv
 
-# Run the hello binary.
-ENTRYPOINT ["/app/main"]
+ENTRYPOINT ["dlv", "debug", "--listen=:4000", "--headless=true", "--log=true", "--accept-multiclient", "--api-version=2", "exec", "/app/main" ]

@@ -64,20 +64,22 @@ func SocketHandler(w http.ResponseWriter, r *http.Request) {
 
 	mayor_currency := bitso.ToCurrency("btc")
 	minor_currency := bitso.ToCurrency("mxn")
-	// target_currency := bitso.ToCurrency("mxn")
 	book := bitso.NewBook(mayor_currency, minor_currency)
 	ws.Subscribe(book, "orders")
+	defer cws.Close()
 	for {
-		defer cws.Close()
-		t, _ := client.Ticker(book)
+		t, err := client.Ticker(book)
+		if err != nil {
+			log.Println("client Ticker error: ", err)
+		}
 		m := <-ws.Receive()
-		//log.Printf("message: %#v\n\n", m)
-		err := cws.Sent(m)
+		log.Printf("message: %#v\n\n", t)
+		err = cws.Sent(m)
 		if err != nil {
 			log.Println(err)
 		}
 		// fmt.Println("m", m)
-		SaveTiker(t)
+		//SaveTiker(t)
 
 		// log.Printf("error: %#v\n\n", err)
 		// operations.Ratio(m, client, target_currency)

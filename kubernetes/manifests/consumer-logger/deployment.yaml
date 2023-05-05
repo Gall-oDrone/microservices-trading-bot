@@ -1,0 +1,82 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: consumer-logger
+  labels:
+    app.kubernetes.io/created-by: tester
+    app.kubernetes.io/type: app
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: consumer-logger
+      app.kubernetes.io/instance: consumer-logger
+      app.kubernetes.io/component: service
+  template:
+    metadata:
+      annotations:
+        prometheus.io/path: /metrics
+        prometheus.io/port: "8080"
+        prometheus.io/scrape: "true"
+      labels:
+        app.kubernetes.io/name: consumer-logger
+        app.kubernetes.io/instance: consumer-logger
+        app.kubernetes.io/component: service
+        app.kubernetes.io/created-by: tester
+    spec:
+      serviceAccountName: consumer-logger
+      securityContext:
+        fsGroup: 1000
+      containers:
+        - name: consumer-logger
+          env:
+          - name: CASSANDRA_USER
+            valueFrom:
+              secretKeyRef:
+                name: cassandra
+                key: username
+          - name: CASSANDRA_PASSWORD
+            valueFrom:
+              name: cassandra
+              key: password
+      envFrom:
+        - configMapRef:
+          name: consumer-logger
+      securityContext:
+        capabilities:
+          drop:
+          - ALL
+        readOnlyRootFilesystem: true
+        runAsNonRoot: true
+        runAsUser: 1000
+      image: golang:alpine
+      imagePullPolicy: IfNotPresent
+      ports:
+        - name: http
+          containerPort: 9000
+          protocol: TCP
+      livenessProbe:
+        httpGet:
+          path: /health
+          port: 9000
+        initialDelaySeconds: 30
+        periodSeconds: 3
+      readinessProbe:
+        httpGet:
+          path: /health
+          port: 8080
+        successThreshold: 3
+        periodSeconds: 5
+      resources:
+        limits:
+          memory: 512Mi
+        requests:
+          cpu: 250m
+          memory: 512Mi
+      volumeMounts:
+            - mountPath: /tmp
+              name: tmp-volume
+  volumess:
+    - name: tmp-volume
+      emptyDir:
+        medium: Memory        

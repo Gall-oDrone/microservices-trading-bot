@@ -1,0 +1,63 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+      {
+        "label": "order-consumer-docker-compose-up",
+        "type": "shell",
+        "command": "docker-compose",
+        "args": [
+                "-f",
+                "docker-compose.debug.yml",
+                "up",
+                "--build",
+                "--no-deps",
+                "--remove-orphans",
+                "golang-order-consumer"
+        ],
+        "problemMatcher": [],
+        "group": {
+          "kind": "build",
+          "isDefault": true
+        }
+      },
+      {
+        "label": "order-consumer-docker-compose-down",
+        "type": "shell",
+        "command": "docker compose down consumer-logger",
+        "problemMatcher": [],
+        "group": {
+          "kind": "build",
+          "isDefault": true
+        }
+      },
+      {
+        "label": "order-producer-docker-compose-up",
+        "type": "shell",
+        "command": "docker-compose",
+        "args": [
+          "-f",
+          "docker-compose.debug.yml",
+          "up",
+          "--build",
+          "--remove-orphans",
+          "golang-order-producer"
+        ],
+        "problemMatcher": [],
+        "group": {
+          "kind": "build",
+          "isDefault": true
+        }
+      },
+      {
+        "label": "order-producer-docker-compose-down",
+        "type": "shell",
+        "command": "docker compose down golang-order-producer",
+        "problemMatcher": [],
+        "group": {
+          "kind": "build",
+          "isDefault": true
+        }
+      }
+    ]
+  }
+  

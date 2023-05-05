@@ -13,7 +13,7 @@ options.add_argument("--no-sandbox")
 options.add_argument('--start-maximized')
 options.add_argument('--disable-extensions')
 service = Service(ChromeDriverManager().install())
-driver =  webdriver.Chrome(service= Service(ChromeDriverManager().install() ), options = options)
+driver =  webdriver.Chrome(service=service, options = options)
    
 #COMPANY={ticker:['JPM'], name=["J.P. Morgan"]}
 
