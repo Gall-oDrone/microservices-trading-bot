@@ -7,7 +7,6 @@ import (
 
 	"github.com/rs/cors"
 	"github.com/xiam/bitso-go/config"
-	"github.com/xiam/bitso-go/database"
 	"github.com/xiam/bitso-go/router"
 )
 
@@ -16,7 +15,7 @@ func Run() {
 	config.Load() // Loads server port do not delete
 	fmt.Printf("\n\tListening [::]:%d\n", config.PORT)
 	// controllers.SocketHandler(nil, nil)
-	database.CassandraInitConnection()
+	// database.CassandraInitConnection()
 	//kafka.initProducer()
 	listen(config.PORT)
 }

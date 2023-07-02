@@ -9,8 +9,10 @@ import (
 	"os"
 	"strings"
 
+	"github.com/joho/godotenv"
 	kafka "github.com/segmentio/kafka-go"
 	"github.com/segmentio/kafka-go/example/consumer-logger/controllers"
+	"github.com/segmentio/kafka-go/example/consumer-logger/simulation"
 	"github.com/segmentio/kafka-go/example/consumer-logger/utils"
 	"github.com/xiam/bitso-go/bitso"
 )
@@ -36,6 +38,14 @@ func getKafkaReader(kafkaURL, topic, groupID string) *kafka.Reader {
 }
 
 func main() {
+	err := godotenv.Load()
+	if err != nil {
+		fmt.Println("Error loading .env file:", err)
+		return
+	}
+	simulation.RunSimulation()
+}
+func main2() {
 	// get kafka reader using environment variables.
 	kafkaURL := os.Getenv("kafkaURL")
 	topic := os.Getenv("topic")
@@ -83,7 +93,7 @@ func hello(w http.ResponseWriter, req *http.Request) {
 	fmt.Fprintf(w, "hello\n")
 }
 
-func main2() {
+func main3() {
 	fmt.Print("hello\n")
 	http.HandleFunc("/hello", hello)
 	fmt.Println("Server up and listening...")

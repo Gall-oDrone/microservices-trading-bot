@@ -30,6 +30,7 @@ COPY . .
 
 RUN go get github.com/xiam/bitso-go
 RUN go get github.com/gorilla/websocket
+RUN go get github.com/redis/go-redis/v9
 
 RUN go mod download
 RUN go mod tidy

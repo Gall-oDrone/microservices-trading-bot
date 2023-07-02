@@ -82,6 +82,12 @@ services:
     user: "1000:1000"
     depends_on:
       - kafka
+  
+  redis:
+    image: redis:latest
+    ports:
+      - "6379:6379"
+    command: redis-server --appendonly yes
 
   flask-news-collector:
     build: ./flask_server/services/web

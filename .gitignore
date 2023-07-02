@@ -1,2 +1,3 @@
 data_server/.env
+consumer-logger/.env
 bitso/bitso-variables.env
