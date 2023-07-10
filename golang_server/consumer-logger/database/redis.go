@@ -183,6 +183,27 @@ func (rc *RedisClient) SaveFees(fees []bitso.Fee) error {
 	return nil
 }
 
+func (rc *RedisClient) SaveExchangeOrderBooks(exchange_order_books []bitso.ExchangeOrderBook) error {
+
+	for _, exchange_order_book := range exchange_order_books {
+
+		book := fmt.Sprintf("exchange_order_book_%s", exchange_order_book.Book)
+		// Convert the Ticker struct to JSON
+		bookJSON, err := json.Marshal(exchange_order_book)
+		if err != nil {
+			return err
+		}
+
+		// Use SET command to store the JSON data in Redis
+		err = rc.client.Set(rc.ctxbg, book, bookJSON, 0).Err()
+		if err != nil {
+			return err
+		}
+
+	}
+	return nil
+}
+
 func (rc *RedisClient) GetFee(book bitso.Book) (bitso.Fee, error) {
 	var fee bitso.Fee
 	// Retrieve the JSON data from Redis
@@ -204,6 +225,29 @@ func (rc *RedisClient) GetFee(book bitso.Book) (bitso.Fee, error) {
 	}
 
 	return fee, nil
+}
+
+func (rc *RedisClient) GetExchangeOrderBook(book bitso.Book) (bitso.ExchangeOrderBook, error) {
+	var exchange_order_book bitso.ExchangeOrderBook
+	// Retrieve the JSON data from Redis
+	eo_book := fmt.Sprintf("exchange_order_book_%s", book.String())
+	eo_bookJSON, err := rc.client.Get(rc.ctxbg, eo_book).Result()
+	if err != nil {
+		if errors.Is(err, redis.Nil) {
+			// Key does not exist in Redis
+			return exchange_order_book, errors.New("fee data not found in Redis")
+		}
+		// Other error occurred
+		return exchange_order_book, err
+	}
+
+	// Unmarshal the JSON data into a Fee struct
+	err = json.Unmarshal([]byte(eo_bookJSON), &exchange_order_book)
+	if err != nil {
+		return exchange_order_book, err
+	}
+
+	return exchange_order_book, nil
 }
 
 func (rc *RedisClient) SaveTrade(userTrade *bitso.UserTrade) error {
