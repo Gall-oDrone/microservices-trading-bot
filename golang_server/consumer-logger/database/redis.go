@@ -7,8 +7,10 @@ import (
 	"fmt"
 	"log"
 
+	// "command-line-arguments/Users/diegogallovalenzuela/microservices-trading-bot/golang_server/consumer-logger/simulation/simulation.go"
 	"github.com/redis/go-redis/v9"
-	"github.com/xiam/bitso-go/bitso"
+	"github.com/segmentio/kafka-go/example/consumer-logger/bitso"
+	// "github.com/xiam/bitso-go/bitso"
 )
 
 type RedisClient struct {
@@ -183,27 +185,6 @@ func (rc *RedisClient) SaveFees(fees []bitso.Fee) error {
 	return nil
 }
 
-func (rc *RedisClient) SaveExchangeOrderBooks(exchange_order_books []bitso.ExchangeOrderBook) error {
-
-	for _, exchange_order_book := range exchange_order_books {
-
-		book := fmt.Sprintf("exchange_order_book_%s", exchange_order_book.Book)
-		// Convert the Ticker struct to JSON
-		bookJSON, err := json.Marshal(exchange_order_book)
-		if err != nil {
-			return err
-		}
-
-		// Use SET command to store the JSON data in Redis
-		err = rc.client.Set(rc.ctxbg, book, bookJSON, 0).Err()
-		if err != nil {
-			return err
-		}
-
-	}
-	return nil
-}
-
 func (rc *RedisClient) GetFee(book bitso.Book) (bitso.Fee, error) {
 	var fee bitso.Fee
 	// Retrieve the JSON data from Redis
@@ -227,6 +208,27 @@ func (rc *RedisClient) GetFee(book bitso.Book) (bitso.Fee, error) {
 	return fee, nil
 }
 
+func (rc *RedisClient) SaveExchangeOrderBooks(exchange_order_books []bitso.ExchangeOrderBook) error {
+
+	for _, exchange_order_book := range exchange_order_books {
+
+		book := fmt.Sprintf("exchange_order_book_%s", exchange_order_book.Book)
+		// Convert the Ticker struct to JSON
+		bookJSON, err := json.Marshal(exchange_order_book)
+		if err != nil {
+			return err
+		}
+
+		// Use SET command to store the JSON data in Redis
+		err = rc.client.Set(rc.ctxbg, book, bookJSON, 0).Err()
+		if err != nil {
+			return err
+		}
+
+	}
+	return nil
+}
+
 func (rc *RedisClient) GetExchangeOrderBook(book bitso.Book) (bitso.ExchangeOrderBook, error) {
 	var exchange_order_book bitso.ExchangeOrderBook
 	// Retrieve the JSON data from Redis
@@ -248,6 +250,136 @@ func (rc *RedisClient) GetExchangeOrderBook(book bitso.Book) (bitso.ExchangeOrde
 	}
 
 	return exchange_order_book, nil
+}
+
+func (rc *RedisClient) SaveUserOrders(user_orders []bitso.UserOrder) error {
+
+	for _, user_order := range user_orders {
+
+		book := fmt.Sprintf("user_order_book_%s", user_order.Book)
+		// Convert the Ticker struct to JSON
+		userorderJSON, err := json.Marshal(user_order)
+		if err != nil {
+			return err
+		}
+
+		// Use SET command to store the JSON data in Redis
+		err = rc.client.Set(rc.ctxbg, book, userorderJSON, 0).Err()
+		if err != nil {
+			return err
+		}
+
+	}
+	return nil
+}
+
+func (rc *RedisClient) GetUserOrder(book bitso.Book) ([]bitso.UserOrder, error) {
+	var user_order_book []bitso.UserOrder
+	// Retrieve the JSON data from Redis
+	uo_book := fmt.Sprintf("user_order_book_%s", book.String())
+	uo_bookJSON, err := rc.client.Get(rc.ctxbg, uo_book).Result()
+	if err != nil {
+		if errors.Is(err, redis.Nil) {
+			// Key does not exist in Redis
+			return user_order_book, errors.New("fee data not found in Redis")
+		}
+		// Other error occurred
+		return user_order_book, err
+	}
+
+	// Unmarshal the JSON data into a Fee struct
+	err = json.Unmarshal([]byte(uo_bookJSON), &user_order_book)
+	if err != nil {
+		return user_order_book, err
+	}
+
+	return user_order_book, nil
+}
+
+func (rc *RedisClient) GetUserOrdersByType(book bitso.Book, userType string) ([]bitso.UserOrder, error) {
+	// Retrieve all user orders from Redis for the specified type
+	orders, err := rc.GetUserOrder(book)
+	if err != nil {
+		return nil, err
+	}
+
+	// Filter the user orders by type
+	filteredOrders := make([]bitso.UserOrder, 0)
+	for _, order := range orders {
+		if order.Type == userType {
+			filteredOrders = append(filteredOrders, order)
+		}
+	}
+
+	return filteredOrders, nil
+}
+
+func (rc *RedisClient) GetUserOrdersBySide(book bitso.Book, side string) ([]bitso.UserOrder, error) {
+	// Retrieve all user orders from Redis for the specified side
+	orders, err := rc.GetUserOrder(book)
+	if err != nil {
+		return nil, err
+	}
+
+	// Filter the user orders by side
+	filteredOrders := make([]bitso.UserOrder, 0)
+	for _, order := range orders {
+		if order.Side.String() == side {
+			filteredOrders = append(filteredOrders, order)
+		}
+	}
+
+	return filteredOrders, nil
+}
+
+func (rc *RedisClient) GetUserOrdersByStatus(book bitso.Book, status string) ([]bitso.UserOrder, error) {
+	// Retrieve all user orders from Redis for the specified side
+	orders, err := rc.GetUserOrder(book)
+	if err != nil {
+		return nil, err
+	}
+
+	// Filter the user orders by side
+	filteredOrders := make([]bitso.UserOrder, 0)
+	for _, order := range orders {
+		if order.Status.String() == status {
+			filteredOrders = append(filteredOrders, order)
+		}
+	}
+
+	return filteredOrders, nil
+}
+
+// Helper function to retrieve all user orders from Redis
+func (rc *RedisClient) GetAllUserOrders() ([]bitso.UserOrder, error) {
+	// Query all keys matching the user order pattern
+	keys, err := rc.client.Keys(rc.ctxbg, "user_order_book_*").Result()
+	if err != nil {
+		return nil, err
+	}
+
+	// Retrieve JSON data for each key
+	jsonDataList := make([]string, len(keys))
+	for i, key := range keys {
+		jsonData, err := rc.client.Get(rc.ctxbg, key).Result()
+		if err != nil {
+			return nil, err
+		}
+		jsonDataList[i] = jsonData
+	}
+
+	// Unmarshal the JSON data into UserOrder slice
+	var userOrders []bitso.UserOrder
+	for _, jsonData := range jsonDataList {
+		var orders []bitso.UserOrder
+		err := json.Unmarshal([]byte(jsonData), &orders)
+		if err != nil {
+			return nil, err
+		}
+		userOrders = append(userOrders, orders...)
+	}
+
+	return userOrders, nil
 }
 
 func (rc *RedisClient) SaveTrade(userTrade *bitso.UserTrade) error {
@@ -309,6 +441,38 @@ func (rc *RedisClient) GetUserTrade(trade_id string) (bitso.UserTrade, error) {
 
 	return trade, nil
 }
+
+// func (rc *RedisClient) SaveProfit(profit *simulation.TradingProfit) error {
+// 	profitJSON, err := json.Marshal(profit)
+// 	if err != nil {
+// 		return err
+// 	}
+// 	profit_currency := fmt.Sprintf("profit_%s", profit.Currency.String())
+// 	// Use SET command to store the JSON data in Redis
+// 	err = rc.client.Set(rc.ctxbg, profit_currency, profitJSON, 0).Err()
+// 	if err != nil {
+// 		return err
+// 	}
+// 	return nil
+// }
+
+// func (rc *RedisClient) GetProfit(currency string) (bitso.UserTrade, error) {
+// 	var profit simulation.TradingProfit
+// 	profit_currency := fmt.Sprintf("profit_%s", currency)
+// 	// Retrieve the JSON data from Redis
+// 	profitJSON, err := rc.client.Get(rc.ctxbg, profit_currency).Result()
+// 	if err != nil {
+// 		return profit, err
+// 	}
+
+// 	// Unmarshal the JSON data into a Trade struct
+// 	err = json.Unmarshal([]byte(profitJSON), &profit)
+// 	if err != nil {
+// 		return profit, err
+// 	}
+
+// 	return profit, nil
+// }
 
 func (rc *RedisClient) GetTrade(trade_id string) (bitso.Trade, error) {
 	var trade bitso.Trade

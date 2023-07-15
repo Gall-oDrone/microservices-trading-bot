@@ -17,7 +17,7 @@ type ExchangeOrderBook struct {
 	MaximumPrice Monetary `json:"maximum_price"`
 
 	// Minimum value amount (amount*price) when placing orders
-	MinimumValue Monetary `json:"minimun_value"`
+	MinimumValue Monetary `json:"minimum_value"`
 
 	// Maximum value amount (amount*price) when placing orders
 	MaximumValue Monetary `json:"maximum_value"`

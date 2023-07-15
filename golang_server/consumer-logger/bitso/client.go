@@ -148,7 +148,6 @@ func (c *Client) newRequest(method string, uri string, body io.Reader) (*http.Re
 	signature := fmt.Sprintf("%x", mac.Sum(nil))
 
 	authHeader := fmt.Sprintf("Bitso %s:%d:%s", c.key, nonce, signature)
-	log.Println("authHeader: ", authHeader)
 	req.Header.Set("Authorization", authHeader)
 
 	return req, err
@@ -258,7 +257,6 @@ func (c *Client) Ticker(book *Book) (*Ticker, error) {
 	if err := c.getResponse("/ticker", params, &res); err != nil {
 		return nil, err
 	}
-	fmt.Println("Response: ", res.Payload)
 	return &res.Payload, nil
 }
 

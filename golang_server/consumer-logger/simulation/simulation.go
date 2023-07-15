@@ -4,15 +4,18 @@ import (
 	"fmt"
 	"log"
 	"math/rand"
-	"net/url"
 	"os"
+	"sync"
 	"text/tabwriter"
 	"time"
 
+	"github.com/segmentio/kafka-go/example/consumer-logger/bitso"
 	"github.com/segmentio/kafka-go/example/consumer-logger/database"
 	"github.com/segmentio/kafka-go/example/consumer-logger/utils"
-	"github.com/xiam/bitso-go/bitso"
 )
+
+var wg sync.WaitGroup
+var mutex sync.Mutex
 
 type TradingBot struct {
 	BitsoClient                *bitso.Client
@@ -20,11 +23,15 @@ type TradingBot struct {
 	BitsoBook                  bitso.Book
 	BitsoExchangeBook          bitso.ExchangeOrderBook
 	BitsoOId                   string
+	BitsoActiveOIds            []string
 	MajorBalance               bitso.Balance
 	MinorBalance               bitso.Balance
+	MajorActiveOrders          []string
+	MinorActiveOrders          []string
 	Side                       bitso.OrderSide
 	Threshold                  float64
-	Profit                     TradingProfit
+	MajorProfit                TradingProfit
+	MinorProfit                TradingProfit
 	MaxPublicRequestPerMinute  int8
 	MaxPrivateRequestPerMinute int8
 	Debug                      bool
@@ -53,7 +60,7 @@ func NewTradingBot(b_client *bitso.Client, db_client interface{}, book *bitso.Bo
 		MaxPrivateRequestPerMinute: 100,
 		Side:                       bitso.OrderSide(1),
 		Threshold:                  0.1,
-		Debug:                      true,
+		Debug:                      false,
 	}
 }
 
@@ -201,14 +208,21 @@ func (bot *TradingBot) setInitTrade(redis_client *database.RedisClient) {
 	if !bot.Debug {
 		if bot.Side.String() == "sell" {
 			log.Fatalln("Test 1")
+			// bot.MinorActiveOrders = append(bot.MinorActiveOrders, bot.BitsoOId)
 		} else {
-			log.Fatalln("Test 2")
+			amount := bot.getMinMinorValue()
+			order_type := bitso.OrderType(2)
+			market_trade := "maker"
+			rate := bot.getOptimalPrice(ticker, market_trade, bot.Side.String())
+			currency_amount := amount / rate
+			stopSimulation()
+			bot.setOrder(ticker, currency_amount, rate, order_type, redis_client)
+			bot.MajorActiveOrders = append(bot.MajorActiveOrders, bot.BitsoOId)
 		}
 	} else {
 		if bot.Side.String() == "sell" {
-			amount := bot.getMinMajorAmount() / bid_rate
+			amount := bot.getMinMinorValue() / bid_rate
 			bot.setUserTrade(bid_rate, amount, bitso_fee, bot.BitsoBook, oid, redis_client)
-			bot.setInitProfit(amount, redis_client)
 		} else {
 			amount := bot.getMinMinorValue()
 			bot.setUserTrade(ask_rate, amount, bitso_fee, bot.BitsoBook, oid, redis_client)
@@ -227,7 +241,6 @@ func (bot *TradingBot) generateAskTrade() {
 		log.Fatalln("Failed to connect to Redis:", err)
 	}
 	defer redis_client.CloseDB()
-
 	book := bot.BitsoBook
 	market_trade := "taker"
 	if bot.Side.String() == "sell" && bot.MajorBalance.Available.Float64() <= 0.0 || bot.Side.String() == "buy" && bot.MinorBalance.Available.Float64() <= 0.0 {
@@ -244,77 +257,82 @@ func (bot *TradingBot) generateAskTrade() {
 	rate = bot.getOptimalPrice(ticker, market_trade, bot.Side.String())
 	ask_rate := ticker.Ask.Float64()
 	bid_rate := ticker.Bid.Float64()
-	major_amount = bot.getMinMajorAmount() / bid_rate
+	major_amount = bot.getMinMinorValue() / bid_rate
 	minor_amount = bot.getMinMinorValue()
 	done := make(chan bool)
-	ask_trade := make(chan bool)
-	bid_trade := make(chan bool)
-	sleep := (10 * time.Second)
+	// ask_trade := make(chan bool)
+	// bid_trade := make(chan bool)
+	order_set := make(chan bool)
+	// sleep := (10 * time.Second)
+	// sleep2 := (2 * time.Minute)
+	wg.Add(1)
 	log.Println("Start")
 	for {
-		go func() {
-			if bot.Side.String() == "sell" {
-				bot.checkFunds()
-				params := url.Values{}
-				params.Set("book", book.String())
-				orders, err := bot.BitsoClient.OrderBook(params)
-				if err != nil {
-					log.Fatalln("Error during open order request: ", err)
-				}
-				for _, order := range orders.Bids {
-					if order.OID != bot.BitsoOId && order.Amount.Float64() == major_amount && order.Price.Float64() >= rate {
-						order_rate := order.Price
-						// value = major_amount * order_rate.Float64()
-						// fee = value * book_fee.FeeDecimal.Float64()
-						// total = value - fee
-						oid := order.OID
-						order_type := bitso.OrderType(2)
-						if !bot.Debug {
-							bot.setOrder(ticker, major_amount, order_rate.Float64(), order_type, redis_client)
-						} else {
-							bot.setUserTrade(rate, major_amount, book_fee.FeeDecimal, book, oid, redis_client)
-						}
-						log.Panicln("Ask trade successfully fulfill")
-						ask_trade <- true
-					}
-				}
-				log.Println("Now sleeping")
-				time.Sleep(sleep)
-				log.Println("Now waking")
-				done <- true
-			}
-		}()
-		go func() {
-			if bot.Side.String() == "buy" {
-				bot.checkFunds()
-				params := url.Values{}
-				params.Set("book", book.String())
-				orders, err := bot.BitsoClient.OrderBook(params)
-				if err != nil {
-					log.Fatalln("Error during open order request: ", err)
-				}
-				for _, order := range orders.Asks {
-					if order.OID != bot.BitsoOId && order.Amount.Float64() == minor_amount && order.Price.Float64() >= rate {
-						order_rate := order.Price
-						// value = minor_amount * order_rate.Float64()
-						// fee = value * book_fee.FeeDecimal.Float64()
-						// total = value - fee
-						oid := order.OID
-						if !bot.Debug {
-							bot.setUserTrade(order_rate.Float64(), minor_amount, book_fee.FeeDecimal, book, oid, redis_client)
-						} else {
-							bot.setUserTrade(rate, minor_amount, book_fee.FeeDecimal, book, oid, redis_client)
-						}
-						log.Panicln("Buy trade successfully fulfill")
-						bid_trade <- true
-					}
-				}
-				log.Println("Now sleeping")
-				time.Sleep(sleep)
-				log.Println("Now waking")
-				done <- true
-			}
-		}()
+		// go func() {
+		// 	log.Println("Starting bid offers gorutine")
+		// 	if bot.Side.String() == "sell" {
+		// 		bot.checkFunds()
+		// 		params := url.Values{}
+		// 		params.Set("book", book.String())
+		// 		orders, err := bot.BitsoClient.OrderBook(params)
+		// 		if err != nil {
+		// 			log.Fatalln("Error during open order request: ", err)
+		// 		}
+		// 		for _, order := range orders.Bids {
+		// 			if order.OID != bot.BitsoOId && order.Amount.Float64() == major_amount && order.Price.Float64() >= rate {
+		// 				order_rate := order.Price
+		// 				// value = major_amount * order_rate.Float64()
+		// 				// fee = value * book_fee.FeeDecimal.Float64()
+		// 				// total = value - fee
+		// 				oid := order.OID
+		// 				order_type := bitso.OrderType(2)
+		// 				if !bot.Debug {
+		// 					bot.setOrder(ticker, major_amount, order_rate.Float64(), order_type, redis_client)
+		// 				} else {
+		// 					bot.setUserTrade(rate, major_amount, book_fee.FeeDecimal, book, oid, redis_client)
+		// 				}
+		// 				log.Panicln("Ask trade successfully fulfill")
+		// 				ask_trade <- true
+		// 			}
+		// 		}
+		// 		log.Println("Gorutine bid offers, now sleeping")
+		// 		time.Sleep(sleep)
+		// 		log.Println("Gorutine bid offers, now waking")
+		// 		done <- true
+		// 	}
+		// }()
+		// go func() {
+		// 	log.Println("Starting ask offers gorutine")
+		// 	if bot.Side.String() == "buy" {
+		// 		bot.checkFunds()
+		// 		params := url.Values{}
+		// 		params.Set("book", book.String())
+		// 		orders, err := bot.BitsoClient.OrderBook(params)
+		// 		if err != nil {
+		// 			log.Fatalln("Error during open order request: ", err)
+		// 		}
+		// 		for _, order := range orders.Asks {
+		// 			if order.OID != bot.BitsoOId && order.Amount.Float64() == minor_amount && order.Price.Float64() >= rate {
+		// 				order_rate := order.Price
+		// 				// value = minor_amount * order_rate.Float64()
+		// 				// fee = value * book_fee.FeeDecimal.Float64()
+		// 				// total = value - fee
+		// 				oid := order.OID
+		// 				if !bot.Debug {
+		// 					bot.setUserTrade(order_rate.Float64(), minor_amount, book_fee.FeeDecimal, book, oid, redis_client)
+		// 				} else {
+		// 					bot.setUserTrade(rate, minor_amount, book_fee.FeeDecimal, book, oid, redis_client)
+		// 				}
+		// 				log.Panicln("Buy trade successfully fulfill")
+		// 				bid_trade <- true
+		// 			}
+		// 		}
+		// 		log.Println("Gorutine ask offers, now sleeping")
+		// 		time.Sleep(sleep)
+		// 		log.Println("Gorutine ask offers, now waking")
+		// 		done <- true
+		// 	}
+		// }()
 		go func() {
 			time_ticker := time.NewTicker(30 * time.Second)
 			defer time_ticker.Stop()
@@ -329,20 +347,27 @@ func (bot *TradingBot) generateAskTrade() {
 				bid_rate = ticker.Bid.Float64()
 				market_trade = "maker"
 				rate = bot.getOptimalPrice(ticker, market_trade, bot.Side.String())
+				major_amount = bot.getMinMinorValue() / bid_rate
 				minor_amount = bot.getMinMinorValue()
-				major_amount = minor_amount / bid_rate //bot.getMinMajorAmount()
 				order_type := bitso.OrderType(2)
 				x := 0.5
 				rand.Seed(time.Now().UnixNano())
 				randomNumber := rand.Float64()
 				oid := utils.GenRandomOId(7)
 				if !bot.Debug {
+					mutex.Lock()
 					if bot.Side.String() == "buy" {
 						bot.setOrder(ticker, minor_amount, rate, order_type, redis_client)
+						order_set <- true
 					} else {
 						bot.setOrder(ticker, major_amount, rate, order_type, redis_client)
+						order_set <- true
 					}
+					mutex.Unlock()
+					wg.Done()
+					done <- true
 				} else {
+					mutex.Lock()
 					if bot.Side.String() == "buy" {
 						if randomNumber < x {
 							rate = ask_rate //((ask_rate * amount) - lower_limit)
@@ -368,33 +393,48 @@ func (bot *TradingBot) generateAskTrade() {
 							bot.setUserTrade(rate, major_amount, book_fee.FeeDecimal, book, oid, redis_client)
 						}
 					}
+					mutex.Unlock()
+					wg.Done()
+					done <- true
 				}
 			}
 		}()
-		go func() {
-			time_ticker := time.NewTicker(1 * time.Minute)
-			defer time_ticker.Stop()
+		// go func() {
+		// 	time_ticker := time.NewTicker(1 * time.Minute)
+		// 	defer time_ticker.Stop()
 
-			for range time_ticker.C {
-				// Call your function here
-				log.Println("1 minute has passed")
-				bot.checkFunds()
-				// if !bot.Debug {
-				// 	bot.BitsoClient.CancelOrder(bot.BitsoOId)
-				// } else {
-				// 	bot.cancelOrder(bot.BitsoOId)
-				// }
-			}
-		}()
+		// 	for range time_ticker.C {
+		// 		// Call your function here
+		// 		log.Println("1 minute has passed")
+		// 		bot.checkFunds()
+		// 		// if !bot.Debug {
+		// 		// 	bot.BitsoClient.CancelOrder(bot.BitsoOId)
+		// 		// } else {
+		// 		// 	bot.cancelOrder(bot.BitsoOId)
+		// 		// }
+		// 		order_set <- true
+		// 	}
+		// }()
 
 		select {
 		case <-done:
 			// Method completed successfully, resume loop
 			fmt.Println("Method completed successfully, resume loop")
+		case <-order_set:
+			fmt.Println("Order set, wait 2 mins and cancel it!")
 		case <-time.After(300 * time.Second):
 			fmt.Println("Timed out")
 			return
 		}
+
+		// log.Println("Sleeping for 2 minutes...")
+		// time.Sleep(sleep2)
+
+		// Wait for all goroutines to complete
+		wg.Wait()
+
+		// Resume execution after all goroutines have completed
+		log.Println("Waking up")
 	}
 }
 
@@ -429,8 +469,8 @@ func (bot *TradingBot) getOptimalPrice(ticker *bitso.Ticker, market_trade, marke
 		last_trade bitso.UserTrade
 	)
 	book := bot.BitsoBook
-	lower_limit := 2.0 // MXN
-	upper_limit := 3.0 // MXN
+	lower_limit := 0.2 // MXN
+	upper_limit := 0.1 // MXN
 	redis_client, err := database.SetupRedis()
 	if err != nil {
 		log.Fatalln("error while setting up redis db: ", err)
@@ -444,20 +484,20 @@ func (bot *TradingBot) getOptimalPrice(ticker *bitso.Ticker, market_trade, marke
 	bid_rate := ticker.Bid.Float64()
 	if len(bot.BitsoOId) == 0 {
 		log.Println("Condition met")
+		major_amount := bot.getMinMinorValue() / bid_rate
 		minor_amount := bot.getMinMinorValue()
-		major_amount := minor_amount / bid_rate //bot.getMinMajorAmount()
 		if market_side == "sell" {
 			amount = major_amount
 			value = amount * bid_rate
 			if market_trade == "taker" {
-				taker_fee = value * fee.FeeDecimal.Float64()
+				taker_fee = value * fee.TakerFeeDecimal.Float64()
 				total = (value + taker_fee + upper_limit) / amount // MXN
 				// stop loss
 				if bid_rate < (value - taker_fee - lower_limit) {
 					total = value - lower_limit
 				}
 			} else {
-				maker_fee = value * fee.FeeDecimal.Float64()
+				maker_fee = value * fee.MakerFeeDecimal.Float64()
 				total = (value + maker_fee + upper_limit) / amount // MXN
 				// stop loss
 				if bid_rate < (value - maker_fee - lower_limit) {
@@ -486,13 +526,13 @@ func (bot *TradingBot) getOptimalPrice(ticker *bitso.Ticker, market_trade, marke
 		} else {
 			amount = minor_amount // MXN
 			value = amount / ask_rate
-			upper_limit = upper_limit / ask_rate
+			// upper_limit = upper_limit / ask_rate
 			if market_trade == "taker" {
 				taker_fee = value * fee.FeeDecimal.Float64()
-				total = amount / (value + taker_fee + upper_limit) // BTC
+				total = amount / (value + taker_fee) // BTC
 			} else {
 				maker_fee = value * fee.FeeDecimal.Float64()
-				total = amount / (value + maker_fee + upper_limit) // BTC
+				total = amount / (value + maker_fee) // BTC
 			}
 			bid_value := amount / total
 			w := newTabWriter()
@@ -562,13 +602,13 @@ func (bot *TradingBot) getOptimalPrice(ticker *bitso.Ticker, market_trade, marke
 			amount = last_trade.Minor.Float64() - last_trade.FeesAmount.Float64() // MXN
 			value = amount / ask_rate
 			change := -last_trade.Major.Float64() - value
-			upper_limit = upper_limit / ask_rate
+			// upper_limit = upper_limit / ask_rate
 			if market_trade == "taker" {
 				taker_fee = value * fee.FeeDecimal.Float64()
-				total = amount / (value + change + taker_fee + upper_limit) // BTC
+				total = amount / (value + change + taker_fee) // BTC
 			} else {
 				maker_fee = value * fee.FeeDecimal.Float64()
-				total = amount / (value + change + maker_fee + upper_limit) // BTC
+				total = amount / (value + change + maker_fee) // BTC
 			}
 			bid_value := amount / total
 			w := newTabWriter()
@@ -653,13 +693,9 @@ func (bot *TradingBot) setUserTrade(rate, amount float64, bitso_fee bitso.Moneta
 		bot.MinorBalance = setBalance(minor_total_balance, minor_locked, book.Minor().String())
 		bot.Side = bitso.OrderSide(1)
 		log.Println("Ask trade succesfully fulfilled!")
-		if bot.Profit.Initial == 0.0 {
-			bot.setInitProfit(total, redis_client)
-		} else {
-			err = bot.updateProfit(total, redis_client)
-			if err != nil {
-				log.Fatalln("error during updating profit: ", err)
-			}
+		err = bot.updateProfit(total, bot.BitsoBook.Minor(), redis_client)
+		if err != nil {
+			log.Fatalln("error during updating profit: ", err)
 		}
 	} else {
 		value = amount / rate
@@ -695,6 +731,10 @@ func (bot *TradingBot) setUserTrade(rate, amount float64, bitso_fee bitso.Moneta
 		bot.MinorBalance = setBalance(minor_total_balance, minor_locked, book.Minor().String())
 		bot.Side = bitso.OrderSide(2)
 		log.Println("Bid trade succesfully fulfilled!")
+		err = bot.updateProfit(total, bot.BitsoBook.Major(), redis_client)
+		if err != nil {
+			log.Fatalln("error during updating profit: ", err)
+		}
 	}
 	err := redis_client.SaveTrade(user_trade)
 	if err != nil {
@@ -705,12 +745,13 @@ func (bot *TradingBot) setUserTrade(rate, amount float64, bitso_fee bitso.Moneta
 
 func (bot *TradingBot) setOrder(ticker *bitso.Ticker, amount, rate float64, order_type bitso.OrderType, redis_client *database.RedisClient) {
 	var order *bitso.OrderPlacement
+	// amount_converted := bitso.Monetary(fmt.Sprintf("%.16f", amount))
 	if bot.Side.String() == "sell" {
 		order = &bitso.OrderPlacement{
 			Book:  bot.BitsoBook,
 			Side:  bot.Side,
 			Type:  order_type,
-			Major: bitso.Monetary("0.0"),
+			Major: "",
 			Minor: bitso.ToMonetary(amount),
 			Price: bitso.ToMonetary(rate),
 		}
@@ -726,12 +767,13 @@ func (bot *TradingBot) setOrder(ticker *bitso.Ticker, amount, rate float64, orde
 			Side:  bot.Side,
 			Type:  order_type,
 			Major: bitso.ToMonetary(amount),
-			Minor: bitso.Monetary("0.0"),
+			Minor: "",
 			Price: bitso.ToMonetary(rate),
 		}
+		log.Println("final order details: ", order)
 		oid, err := bot.BitsoClient.PlaceOrder(order)
 		if err != nil {
-			log.Fatalln("Error placing order: ", err)
+			log.Fatalln("error placing order: ", err)
 		}
 		bot.BitsoOId = oid
 		bot.Side = bitso.OrderSide(2)
@@ -747,7 +789,7 @@ func (bot *TradingBot) setOrder(ticker *bitso.Ticker, amount, rate float64, orde
 			bot.MinorBalance = balance
 		}
 	}
-	log.Panicln("Place Order request successfully fulfill")
+	log.Println("Place Order request successfully fulfill")
 }
 
 func (bot *TradingBot) updatePublicRequestPerMinute() {
@@ -774,63 +816,100 @@ func (bot *TradingBot) checkFunds() {
 	}
 }
 
-func (bot *TradingBot) setInitProfit(amount float64, redis_client *database.RedisClient) error {
-	bot.Profit.Initial = amount
-	bot.Profit.Last = 0.0
-	bot.Profit.Cumulative = 0.0
-	bot.Profit.Change = 0.0
-	bot.Profit.CumulativeChange = 0.0
-	bot.Profit.UpdatedAt = time.Now()
-	// err := redis_client.SaveUserProfit(bot.Profit)
-	// if err != nil {
-	// 	log.Fatalln("error updating user profit: ", err)
-	// }
-	w := newTabWriter()
-	fmt.Fprintf(w, "INITIAL\tLAST\tCUM\tCHANGE\tCUM_CHANGE\tUPDATE\n")
-	fmt.Fprintf(w, "%f\t%f\t%f\t%f\t%f\t%v\n",
-		bot.Profit.Initial,
-		bot.Profit.Last,
-		bot.Profit.Cumulative,
-		bot.Profit.Change,
-		bot.Profit.CumulativeChange,
-		bot.Profit.UpdatedAt,
-	)
-	w.Flush()
-	return nil
-}
+func (bot *TradingBot) updateProfit(total float64, currency bitso.Currency, redis_client *database.RedisClient) error {
+	if currency == bot.BitsoBook.Major() {
+		if bot.MajorProfit.Initial == 0 {
+			bot.MajorProfit.Initial = total
+			bot.MajorProfit.Currency = currency
+			bot.MajorProfit.Last = 0.0
+			bot.MajorProfit.Cumulative = 0.0
+			bot.MajorProfit.Change = 0.0
+			bot.MajorProfit.CumulativeChange = 0.0
+			bot.MajorProfit.UpdatedAt = time.Now()
+		} else {
+			initial := bot.MajorProfit.Initial
+			last := total
+			cum := total - initial // 10 -100 = - 90
+			change := ((total - bot.MajorProfit.Last) / bot.MajorProfit.Last) * 100
+			cumchange := (cum / initial) * 100
+			update := time.Now()
+			bot.MajorProfit.Last = last
+			bot.MajorProfit.Cumulative = cum
+			bot.MajorProfit.Change = change
+			bot.MajorProfit.CumulativeChange = cumchange
+			bot.MajorProfit.UpdatedAt = update
+		}
+		w := newTabWriter()
+		fmt.Fprintf(w, "CURRENCY\tINITIAL\tLAST\tCUM\tCHANGE(%%)\tCUM_CHANGE(%%)\tUPDATE\n")
+		fmt.Fprintf(w, "%v\t%f\t%f\t%f\t%f\t%f\t%v\n",
+			bot.MajorProfit.Currency,
+			bot.MajorProfit.Initial,
+			bot.MajorProfit.Last,
+			bot.MajorProfit.Cumulative,
+			bot.MajorProfit.Change,
+			bot.MajorProfit.CumulativeChange,
+			bot.MajorProfit.UpdatedAt,
+		)
+		w.Flush()
+	} else {
+		if bot.MinorProfit.Initial == 0 {
+			bot.MinorProfit.Initial = total
+			bot.MinorProfit.Currency = currency
+			bot.MinorProfit.Last = 0.0
+			bot.MinorProfit.Cumulative = 0.0
+			bot.MinorProfit.Change = 0.0
+			bot.MinorProfit.CumulativeChange = 0.0
+			bot.MinorProfit.UpdatedAt = time.Now()
+		} else {
+			initial := bot.MinorProfit.Initial
+			last := total
+			cum := total - initial // 10 -100 = - 90
+			change := ((total - bot.MinorProfit.Last) / bot.MinorProfit.Last) * 100
+			cumchange := (cum / initial) * 100
+			update := time.Now()
+			bot.MinorProfit.Last = last
+			bot.MinorProfit.Cumulative = cum
+			bot.MinorProfit.Change = change
+			bot.MinorProfit.CumulativeChange = cumchange
+			bot.MinorProfit.UpdatedAt = update
 
-func (bot *TradingBot) updateProfit(total float64, redis_client *database.RedisClient) error {
-	initial := bot.Profit.Initial
-	last := total
-	cum := total - initial // 10 -100 = - 90
-	change := ((total - bot.Profit.Last) / bot.Profit.Last) * 100
-	cumchange := (cum / initial) * 100
-	update := time.Now()
-	bot.Profit.Last = last
-	bot.Profit.Cumulative = cum
-	bot.Profit.Change = change
-	bot.Profit.CumulativeChange = cumchange
-	bot.Profit.UpdatedAt = update
+		}
+		w := newTabWriter()
+		fmt.Fprintf(w, "CURRENCY\tINITIAL\tLAST\tCUM\tCHANGE(%%)\tCUM_CHANGE(%%)\tUPDATE\n")
+		fmt.Fprintf(w, "%v\t%f\t%f\t%f\t%f\t%f\t%v\n",
+			bot.MinorProfit.Currency,
+			bot.MinorProfit.Initial,
+			bot.MinorProfit.Last,
+			bot.MinorProfit.Cumulative,
+			bot.MinorProfit.Change,
+			bot.MinorProfit.CumulativeChange,
+			bot.MinorProfit.UpdatedAt,
+		)
+		w.Flush()
+	}
 	// err := redis_client.SaveUserProfit(bot.Profit)
 	// if err != nil {
 	// 	log.Fatalln("error updating user profit: ", err)
 	// }
-	w := newTabWriter()
-	fmt.Fprintf(w, "INITIAL\tLAST\tCUM\tCHANGE(%%)\tCUM_CHANGE(%%)\tUPDATE\n")
-	fmt.Fprintf(w, "%f\t%f\t%f\t%f\t%f\t%v\n",
-		initial,
-		last,
-		cum,
-		change,
-		cumchange,
-		update,
-	)
-	w.Flush()
 	return nil
 }
 
 func (bot *TradingBot) cancelOrder(oid string) {
-	bot.BitsoClient.CancelOrder(oid)
+	open_orders, err := bot.BitsoClient.MyOpenOrders(nil)
+	if err != nil {
+		log.Fatalln("error during open orders request: ", err)
+	}
+	for _, open_order := range open_orders {
+		if open_order.OID == bot.BitsoOId {
+			if open_order.Status == bitso.OrderStatus(1) {
+				res, err := bot.BitsoClient.CancelOrder(oid)
+				if err != nil {
+					log.Fatalln("error during cancel order request: ", err)
+				}
+				log.Println("cancel order request successfully fulfill: ", res)
+			}
+		}
+	}
 }
 
 func (bot *TradingBot) cancelOrders(oids []string) {
@@ -850,12 +929,12 @@ func (bot *TradingBot) getRate(redis_client *database.RedisClient) bitso.Monetar
 }
 
 func (bot *TradingBot) getMinMinorValue() float64 {
-	// eo_book := bot.BitsoExchangeBook
-	minor_amount := 10.0
-	// minor_amount := bot.MinorBalance.Available.Float64()
-	// if minor_amount > eo_book.MinimumValue.Float64() {
-	// 	return eo_book.MinimumValue.Float64()
-	// }
+	eo_book := bot.BitsoExchangeBook
+	minor_amount := 12.0
+	minor_amount = bot.MinorBalance.Available.Float64()
+	if minor_amount > eo_book.MinimumValue.Float64() {
+		return eo_book.MinimumValue.Float64()
+	}
 	return minor_amount
 }
 
@@ -868,6 +947,11 @@ func (bot *TradingBot) getMinMajorAmount() float64 {
 	}
 	return major_amount
 }
+
+/*
+	minimum_price	The minimum price when placing an order.	String	Minor
+	maximum_price	The maximum price when placing an order.	String	Minor
+*/
 func (bot *TradingBot) checkPrice(rate float64, redis_client *database.RedisClient) bool {
 	exchange_order_book, err := redis_client.GetExchangeOrderBook(bot.BitsoBook)
 	if err != nil {
@@ -880,29 +964,54 @@ func (bot *TradingBot) checkPrice(rate float64, redis_client *database.RedisClie
 	}
 	return true
 }
+
+/*
+	minimum_amount	The minimum amount of major when placing an order.	String	Major
+	maximum_amount	The maximum amount of major when placing an order.	String	Major
+*/
 func (bot *TradingBot) checkAmount(amount float64, redis_client *database.RedisClient) bool {
 	exchange_order_book, err := redis_client.GetExchangeOrderBook(bot.BitsoBook)
 	if err != nil {
 		log.Fatalln("Error getting exchange order book: ", err)
 	}
-	if amount < exchange_order_book.MinimumPrice.Float64() {
-		log.Fatalln("Error price below minimum: ", err)
-	} else if amount > exchange_order_book.MaximumPrice.Float64() {
-		log.Fatalln("Error price above maximum: ", err)
+	if amount < exchange_order_book.MinimumAmount.Float64() {
+		log.Fatalln("Error amount below minimum: ", err)
+	} else if amount > exchange_order_book.MaximumAmount.Float64() {
+		log.Fatalln("Error amount above maximum: ", err)
 	}
 	return true
 }
+
+/*
+	minimum_value	The minimum value amount (amount*price) when placing an order.	String	Minor
+	maximum_value	The maximum value amount (amount*price) when placing an order.	String	Minor
+*/
 func (bot *TradingBot) checkValue(value float64, redis_client *database.RedisClient) bool {
 	exchange_order_book, err := redis_client.GetExchangeOrderBook(bot.BitsoBook)
 	if err != nil {
-		log.Fatalln("Error getting exchange order book: ", err)
+		log.Fatalln("error getting exchange order book: ", err)
 	}
-	if value < exchange_order_book.MinimumPrice.Float64() {
-		log.Fatalln("Error price below minimum: ", err)
-	} else if value > exchange_order_book.MaximumPrice.Float64() {
-		log.Fatalln("Error price above maximum: ", err)
+	if value < exchange_order_book.MinimumValue.Float64() {
+		log.Println("value below minimum: ", err)
+		return false
+	} else if value > exchange_order_book.MaximumValue.Float64() {
+		log.Println("value above maximum: ", err)
+		return false
 	}
 	return true
+}
+func (bot *TradingBot) getOptimalProfitFactor(amount float64) float64 {
+	var condition bool
+	var factor float64
+	switch condition {
+	case (amount > 1 && amount <= 50):
+		factor = 1
+	case (amount > 50 && amount <= 100):
+		factor = 1.5
+	default:
+		factor = 3
+	}
+	return factor
 }
 
 func stopSimulation() {
