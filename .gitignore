@@ -1,3 +1,5 @@
 data_server/.env
 consumer-logger/.env
 bitso/bitso-variables.env
+golang_server/data_server/.env
+golang_server/consumer-logger/.env
