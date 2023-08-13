@@ -252,11 +252,28 @@ func (rc *RedisClient) GetExchangeOrderBook(book bitso.Book) (bitso.ExchangeOrde
 	return exchange_order_book, nil
 }
 
+func (rc *RedisClient) SaveUserOrder(user_order bitso.UserOrder) error {
+
+	order_id := fmt.Sprintf("user_order_%s", user_order.OID)
+	// Convert the Ticker struct to JSON
+	userorderJSON, err := json.Marshal(user_order)
+	if err != nil {
+		return err
+	}
+
+	// Use SET command to store the JSON data in Redis
+	err = rc.client.Set(rc.ctxbg, order_id, userorderJSON, 0).Err()
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
 func (rc *RedisClient) SaveUserOrders(user_orders []bitso.UserOrder) error {
 
 	for _, user_order := range user_orders {
 
-		book := fmt.Sprintf("user_order_book_%s", user_order.Book)
+		order_id := fmt.Sprintf("user_order_%s", user_order.OID)
 		// Convert the Ticker struct to JSON
 		userorderJSON, err := json.Marshal(user_order)
 		if err != nil {
@@ -264,7 +281,7 @@ func (rc *RedisClient) SaveUserOrders(user_orders []bitso.UserOrder) error {
 		}
 
 		// Use SET command to store the JSON data in Redis
-		err = rc.client.Set(rc.ctxbg, book, userorderJSON, 0).Err()
+		err = rc.client.Set(rc.ctxbg, order_id, userorderJSON, 0).Err()
 		if err != nil {
 			return err
 		}
@@ -273,32 +290,64 @@ func (rc *RedisClient) SaveUserOrders(user_orders []bitso.UserOrder) error {
 	return nil
 }
 
-func (rc *RedisClient) GetUserOrder(book bitso.Book) ([]bitso.UserOrder, error) {
-	var user_order_book []bitso.UserOrder
-	// Retrieve the JSON data from Redis
-	uo_book := fmt.Sprintf("user_order_book_%s", book.String())
-	uo_bookJSON, err := rc.client.Get(rc.ctxbg, uo_book).Result()
+func (rc *RedisClient) GetUserOrderById(oid string) (bitso.UserOrder, error) {
+	var user_order bitso.UserOrder
+	// Retrieve all user orders from Redis for the specified type
+	orders, err := rc.GetAllUserOrders()
 	if err != nil {
-		if errors.Is(err, redis.Nil) {
-			// Key does not exist in Redis
-			return user_order_book, errors.New("fee data not found in Redis")
+		return user_order, err
+	}
+
+	for _, order := range orders {
+		if order.OID == oid {
+			user_order = order
 		}
-		// Other error occurred
-		return user_order_book, err
 	}
 
-	// Unmarshal the JSON data into a Fee struct
-	err = json.Unmarshal([]byte(uo_bookJSON), &user_order_book)
+	return user_order, nil
+}
+
+func (rc *RedisClient) GetUserOrdersById(oids []string) ([]bitso.UserOrder, error) {
+	// Retrieve all user orders from Redis for the specified type
+	orders, err := rc.GetAllUserOrders()
 	if err != nil {
-		return user_order_book, err
+		return nil, err
 	}
 
-	return user_order_book, nil
+	// Filter the user orders by type
+	filteredOrders := make([]bitso.UserOrder, 0)
+	for _, oid := range oids {
+		for _, order := range orders {
+			if order.OID == oid {
+				filteredOrders = append(filteredOrders, order)
+			}
+		}
+	}
+
+	return filteredOrders, nil
+}
+
+func (rc *RedisClient) GetUserOrdersByBook(book bitso.Book) ([]bitso.UserOrder, error) {
+	// Retrieve all user orders from Redis for the specified type
+	orders, err := rc.GetAllUserOrders()
+	if err != nil {
+		return nil, err
+	}
+
+	// Filter the user orders by type
+	filteredOrders := make([]bitso.UserOrder, 0)
+	for _, order := range orders {
+		if order.Book == book {
+			filteredOrders = append(filteredOrders, order)
+		}
+	}
+
+	return filteredOrders, nil
 }
 
 func (rc *RedisClient) GetUserOrdersByType(book bitso.Book, userType string) ([]bitso.UserOrder, error) {
 	// Retrieve all user orders from Redis for the specified type
-	orders, err := rc.GetUserOrder(book)
+	orders, err := rc.GetUserOrdersByBook(book)
 	if err != nil {
 		return nil, err
 	}
@@ -316,7 +365,7 @@ func (rc *RedisClient) GetUserOrdersByType(book bitso.Book, userType string) ([]
 
 func (rc *RedisClient) GetUserOrdersBySide(book bitso.Book, side string) ([]bitso.UserOrder, error) {
 	// Retrieve all user orders from Redis for the specified side
-	orders, err := rc.GetUserOrder(book)
+	orders, err := rc.GetUserOrdersByBook(book)
 	if err != nil {
 		return nil, err
 	}
@@ -334,7 +383,7 @@ func (rc *RedisClient) GetUserOrdersBySide(book bitso.Book, side string) ([]bits
 
 func (rc *RedisClient) GetUserOrdersByStatus(book bitso.Book, status string) ([]bitso.UserOrder, error) {
 	// Retrieve all user orders from Redis for the specified side
-	orders, err := rc.GetUserOrder(book)
+	orders, err := rc.GetUserOrdersByBook(book)
 	if err != nil {
 		return nil, err
 	}
@@ -353,7 +402,7 @@ func (rc *RedisClient) GetUserOrdersByStatus(book bitso.Book, status string) ([]
 // Helper function to retrieve all user orders from Redis
 func (rc *RedisClient) GetAllUserOrders() ([]bitso.UserOrder, error) {
 	// Query all keys matching the user order pattern
-	keys, err := rc.client.Keys(rc.ctxbg, "user_order_book_*").Result()
+	keys, err := rc.client.Keys(rc.ctxbg, "user_order_*").Result()
 	if err != nil {
 		return nil, err
 	}

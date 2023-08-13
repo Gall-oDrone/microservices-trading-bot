@@ -22,7 +22,7 @@ func getKafkaWriter(kafkaURL, topic string) *kafka.Writer {
 	}
 }
 
-func ProducerHandler(w http.ResponseWriter, r *http.Request) {
+func WsOrdersProducerHandler(w http.ResponseWriter, r *http.Request) {
 	kafkaURL := os.Getenv("kafkaURL")
 	topic := os.Getenv("topic")
 	kafkaWriter := getKafkaWriter(kafkaURL, topic)
@@ -60,6 +60,53 @@ func ProducerHandler(w http.ResponseWriter, r *http.Request) {
 		} else {
 			// m is not of type WebsocketOrder
 			log.Println("m is not of type WebsocketOrder")
+			log.Printf("message: %#v\n\n", m)
+		}
+	}
+}
+
+func WsTradesProducerHandler(w http.ResponseWriter, r *http.Request) {
+	kafkaURL := os.Getenv("kafkaURL")
+	topic := os.Getenv("topic")
+	kafkaWriter := getKafkaWriter(kafkaURL, topic)
+	fmt.Println("start producer-api...!!")
+	defer kafkaWriter.Close()
+
+	mayor_currency := bitso.ToCurrency("btc")
+	minor_currency := bitso.ToCurrency("mxn")
+	book := bitso.NewBook(mayor_currency, minor_currency)
+
+	ws, err := bitso.NewWebsocket()
+	if err != nil {
+		log.Fatal("ws conn error: ", err)
+	}
+	ws.Subscribe(book, "trades")
+	for {
+		m := <-ws.Receive()
+		if trade, ok := m.(bitso.WebsocketTrade); ok {
+			if trade.Payload != nil {
+				mbyte, err := json.Marshal(m)
+				if err != nil {
+					fmt.Println("Error while json marshaling: ", err)
+					return
+				}
+				msg := kafka.Message{
+					Key:   []byte(fmt.Sprintf("address-%s", r.RemoteAddr)),
+					Value: mbyte,
+				}
+				log.Printf("message: %#v\n\n", m)
+				err = kafkaWriter.WriteMessages(r.Context(), msg)
+
+				if err != nil {
+					w.Write([]byte(err.Error()))
+					log.Fatalln("error during kafka writting msg: ", err)
+				}
+				// Payload is nil
+				sleep.Rest(0, 0)
+			}
+		} else {
+			// m is not of type WebsocketTrade
+			log.Println("m is not of type WebsocketTrade")
 			log.Printf("message: %#v\n\n", m)
 		}
 	}

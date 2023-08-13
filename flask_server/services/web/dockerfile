@@ -17,13 +17,17 @@ RUN pip install -r requirements.txt
 COPY . /usr/src/app/
 
 # install chromedriver
-RUN apt-get update && \
-    apt-get install -y gnupg wget curl unzip --no-install-recommends && \
-    wget -q -O - https://dl-ssl.google.com/linux/linux_signing_key.pub | apt-key add - && \
-    echo "deb http://dl.google.com/linux/chrome/deb/ stable main" >> /etc/apt/sources.list.d/google.list && \
-    apt-get update -y && \
-    apt-get install -y google-chrome-stable && \
-    CHROMEVER=$(google-chrome --product-version | grep -o "[^\.]*\.[^\.]*\.[^\.]*") && \
-    DRIVERVER=$(curl -s "https://chromedriver.storage.googleapis.com/LATEST_RELEASE_$CHROMEVER") && \
-    wget -q --continue -P /chromedriver "http://chromedriver.storage.googleapis.com/$DRIVERVER/chromedriver_linux64.zip" && \
-    unzip /chromedriver/chromedriver* -d /chromedriver
+RUN apt-get update
+RUN     apt-get install -y gnupg wget jq curl unzip --no-install-recommends
+RUN     wget -q -O - https://dl-ssl.google.com/linux/linux_signing_key.pub | apt-key add -
+RUN     echo "deb http://dl.google.com/linux/chrome/deb/ stable main" >> /etc/apt/sources.list.d/google.list
+RUN     apt-get update -y
+RUN     apt-get install -y google-chrome-stable
+RUN     CHROMEVER=$(google-chrome --product-version | grep -o "[^\.]*\.[^\.]*\.[^\.]*")
+# RUN     DRIVERVER=$(curl -s "https://chromedriver.storage.googleapis.com/LATEST_RELEASE_$CHROMEVER")
+RUN     curl --silent "https://googlechromelabs.github.io/chrome-for-testing/last-known-good-versions-with-downloads.json" \
+    | jq --arg majorVersion "$CHROMEVER" -r '.channels.Stable | select(.version | startswith($majorVersion | tostring)).downloads.chromedriver[] | select(.platform == "linux64") | .url' \
+    | xargs curl -L --show-error --silent --output chromedriver-linux64.zip
+# RUN     wget -q --continue -P /chromedriver "http://chromedriver.storage.googleapis.com/$DRIVERVER/chromedriver_linux64.zip"
+# RUN     unzip /chromedriver/chromedriver* -d /chromedriver
+RUN unzip chromedriver-linux64.zip -d /chromedriver

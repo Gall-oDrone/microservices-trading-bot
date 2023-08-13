@@ -29,6 +29,8 @@ type WebsocketTrade struct {
 		Value        Monetary `json:"v"`
 		MakerOrderID string   `json:"mo"`
 		TakerOrderID string   `json:"to"`
+		Side         uint32   `json:"t"`
+		CreationTime uint64   `json:"x"`
 	}
 }
 

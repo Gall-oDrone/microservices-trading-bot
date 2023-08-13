@@ -8,13 +8,19 @@ import (
 
 var kafkaRoutes = []Route{
 	Route{
-		URI:          "/kafka-producer",
+		URI:          "/bitso/ws/orders",
 		Method:       http.MethodGet,
-		Handler:      controllers.ProducerHandler,
+		Handler:      controllers.WsOrdersProducerHandler,
 		AuthRequired: false,
 	},
 	Route{
-		URI:          "/kafka-producer2",
+		URI:          "/bitso/ws/trades",
+		Method:       http.MethodGet,
+		Handler:      controllers.WsTradesProducerHandler,
+		AuthRequired: false,
+	},
+	Route{
+		URI:          "/bitso/tickers",
 		Method:       http.MethodGet,
 		Handler:      controllers.ProducerHandler2,
 		AuthRequired: false,
