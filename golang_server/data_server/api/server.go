@@ -15,7 +15,6 @@ func Run() {
 	config.Load() // Loads server port do not delete
 	fmt.Printf("\n\tListening [::]:%d\n", config.PORT)
 	// controllers.SocketHandler(nil, nil)
-	// database.CassandraInitConnection()
 	//kafka.initProducer()
 	listen(config.PORT)
 }

@@ -3,6 +3,8 @@ package utils
 import (
 	"fmt"
 	"log"
+	"math"
+	"math/big"
 	"math/rand"
 	"time"
 )
@@ -39,4 +41,57 @@ func GenRandomOId(length int) string {
 	}
 
 	return string(id)
+}
+
+func IsTimeInWindow(windowStart, windowEnd time.Time) bool {
+	currentTime := time.Now()
+
+	if currentTime.Year() == windowStart.Year() &&
+		currentTime.Month() == windowStart.Month() &&
+		currentTime.Day() == windowStart.Day() &&
+		currentTime.Hour() == windowStart.Hour() &&
+		currentTime.Hour() == windowEnd.Hour() {
+
+		return true
+	}
+
+	return false
+
+}
+
+func ContainsInt(slice []int, value int) bool {
+	for _, item := range slice {
+		if item == value {
+			return true
+		}
+	}
+	return false
+}
+
+func ToBigFloat(value string) {
+	// Create a new big.Float with the desired precision (e.g., 64 bits)
+	precision := 64
+	f := new(big.Float).SetPrec(uint(precision))
+
+	f, _, err := f.Parse(value, 10)
+	if err != nil {
+		fmt.Println("Error:", err)
+		return
+	}
+
+	// Print the value with the desired precision
+	fmt.Printf("Value: %s\n", f.Text('f', -1))
+}
+
+func RoundToNearestTen(input float64) float64 {
+	// Round to the nearest unit
+	rounded := int(math.Round(input))
+
+	// Round up to the nearest multiple of ten
+	remainder := rounded % 10
+	if remainder != 0 {
+		rounded += 10 - remainder
+	}
+
+	return float64(rounded)
 }

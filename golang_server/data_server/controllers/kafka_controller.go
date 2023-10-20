@@ -11,6 +11,8 @@ import (
 
 	kafka "github.com/segmentio/kafka-go"
 	"github.com/xiam/bitso-go/bitso"
+
+	"github.com/xiam/bitso-go/database"
 	"github.com/xiam/bitso-go/utils/sleep"
 )
 
@@ -24,7 +26,7 @@ func getKafkaWriter(kafkaURL, topic string) *kafka.Writer {
 
 func WsOrdersProducerHandler(w http.ResponseWriter, r *http.Request) {
 	kafkaURL := os.Getenv("kafkaURL")
-	topic := os.Getenv("topic")
+	topic := os.Getenv("orders_topic")
 	kafkaWriter := getKafkaWriter(kafkaURL, topic)
 	fmt.Println("start producer-api...!!")
 	defer kafkaWriter.Close()
@@ -67,7 +69,7 @@ func WsOrdersProducerHandler(w http.ResponseWriter, r *http.Request) {
 
 func WsTradesProducerHandler(w http.ResponseWriter, r *http.Request) {
 	kafkaURL := os.Getenv("kafkaURL")
-	topic := os.Getenv("topic")
+	topic := os.Getenv("trades_topic")
 	kafkaWriter := getKafkaWriter(kafkaURL, topic)
 	fmt.Println("start producer-api...!!")
 	defer kafkaWriter.Close()
@@ -81,6 +83,7 @@ func WsTradesProducerHandler(w http.ResponseWriter, r *http.Request) {
 		log.Fatal("ws conn error: ", err)
 	}
 	ws.Subscribe(book, "trades")
+
 	for {
 		m := <-ws.Receive()
 		if trade, ok := m.(bitso.WebsocketTrade); ok {
@@ -94,6 +97,7 @@ func WsTradesProducerHandler(w http.ResponseWriter, r *http.Request) {
 					Key:   []byte(fmt.Sprintf("address-%s", r.RemoteAddr)),
 					Value: mbyte,
 				}
+				fmt.Printf("fetched trades length: %d\n", len(trade.Payload))
 				log.Printf("message: %#v\n\n", m)
 				err = kafkaWriter.WriteMessages(r.Context(), msg)
 
@@ -104,6 +108,41 @@ func WsTradesProducerHandler(w http.ResponseWriter, r *http.Request) {
 				// Payload is nil
 				sleep.Rest(0, 0)
 			}
+
+		} else {
+			// m is not of type WebsocketTrade
+			log.Println("m is not of type WebsocketTrade")
+			log.Printf("message: %#v\n\n", m)
+		}
+	}
+}
+
+func WsTradesToDBHandler(w http.ResponseWriter, r *http.Request) {
+	mayor_currency := bitso.ToCurrency("btc")
+	minor_currency := bitso.ToCurrency("mxn")
+	book := bitso.NewBook(mayor_currency, minor_currency)
+
+	ws, err := bitso.NewWebsocket()
+	if err != nil {
+		log.Fatal("ws conn error: ", err)
+	}
+	ws.Subscribe(book, "trades")
+	cassandra_client, err := database.CassandraInitConnection(false)
+	if err != nil {
+		log.Fatalln("error during cassandra setup: ", err)
+	}
+	defer cassandra_client.CloseDB()
+	for {
+		m := <-ws.Receive()
+		if trade, ok := m.(bitso.WebsocketTrade); ok {
+			if trade.Payload != nil {
+				err = cassandra_client.InsertTradeRecord(&trade)
+				if err != nil {
+					log.Fatalln("error while inserting trade record: ", err)
+				}
+				sleep.Rest(0, 0)
+			}
+
 		} else {
 			// m is not of type WebsocketTrade
 			log.Println("m is not of type WebsocketTrade")

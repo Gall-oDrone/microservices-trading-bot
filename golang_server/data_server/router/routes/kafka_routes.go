@@ -20,6 +20,12 @@ var kafkaRoutes = []Route{
 		AuthRequired: false,
 	},
 	Route{
+		URI:          "/bitso/ws/trades_to_db",
+		Method:       http.MethodGet,
+		Handler:      controllers.WsTradesToDBHandler,
+		AuthRequired: false,
+	},
+	Route{
 		URI:          "/bitso/tickers",
 		Method:       http.MethodGet,
 		Handler:      controllers.ProducerHandler2,

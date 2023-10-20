@@ -7,10 +7,7 @@ import (
 
 	"github.com/gorilla/websocket"
 	"github.com/xiam/bitso-go/bitso"
-	"github.com/xiam/bitso-go/database"
 	"github.com/xiam/bitso-go/feclient"
-	"github.com/xiam/bitso-go/repository"
-	"github.com/xiam/bitso-go/repository/crud"
 )
 
 // "github.com/joho/godotenv"
@@ -88,17 +85,17 @@ func SocketHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func SaveTiker(ticker *bitso.Ticker) (err error) {
-	cluster := database.GetCluster()
-	session, err := cluster.CreateSession()
-	repo := crud.NewCassandraRepositoryCRUD(session)
+// func SaveTiker(ticker *bitso.Ticker) (err error) {
+// 	cluster := database.GetCluster()
+// 	session, err := cluster.CreateSession()
+// 	repo := crud.NewCassandraRepositoryCRUD(session)
 
-	func(cassRepository repository.CassandraRepository) {
-		err := cassRepository.SaveTicker(*ticker)
-		if err != nil {
-			log.Println(err)
-			return
-		}
-	}(repo)
-	return err
-}
+// 	func(cassRepository repository.CassandraRepository) {
+// 		err := cassRepository.SaveTicker(*ticker)
+// 		if err != nil {
+// 			log.Println(err)
+// 			return
+// 		}
+// 	}(repo)
+// 	return err
+// }
