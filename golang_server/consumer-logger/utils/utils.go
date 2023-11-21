@@ -6,6 +6,8 @@ import (
 	"math"
 	"math/big"
 	"math/rand"
+	"regexp"
+	"strconv"
 	"time"
 )
 
@@ -94,4 +96,24 @@ func RoundToNearestTen(input float64) float64 {
 	}
 
 	return float64(rounded)
+}
+
+func ParseErrorMessage(err error) (errorCode int, amount float64) {
+	// Extract the error message from the error
+	logMessage := err.Error()
+
+	// Define a regular expression to match the error message pattern
+	re := regexp.MustCompile(`Error (\d+): Incorrect amount (\d+\.\d+) BTC is below the minimum of (\d+\.\d+) BTC`)
+
+	// Find submatches in the log message
+	matches := re.FindStringSubmatch(logMessage)
+	if matches == nil {
+		return 0, 0.0
+	}
+
+	// Extract the matched values and convert to the appropriate types
+	errorCode, _ = strconv.Atoi(matches[1])
+	amount, _ = strconv.ParseFloat(matches[3], 64)
+
+	return errorCode, amount
 }
