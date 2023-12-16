@@ -8,6 +8,7 @@ import (
 	"math/rand"
 	"regexp"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -98,22 +99,62 @@ func RoundToNearestTen(input float64) float64 {
 	return float64(rounded)
 }
 
-func ParseErrorMessage(err error) (errorCode int, amount float64) {
+func ParseErrorMessage(err error) (errorCode int, amount float64, currency string) {
 	// Extract the error message from the error
 	logMessage := err.Error()
 
-	// Define a regular expression to match the error message pattern
-	re := regexp.MustCompile(`Error (\d+): Incorrect amount (\d+\.\d+) BTC is below the minimum of (\d+\.\d+) BTC`)
-
-	// Find submatches in the log message
-	matches := re.FindStringSubmatch(logMessage)
-	if matches == nil {
-		return 0, 0.0
+	// Define a regular expression to match the error code
+	errorCodeRegex := regexp.MustCompile(`Error (\d+):`)
+	errorCodeMatches := errorCodeRegex.FindStringSubmatch(logMessage)
+	if errorCodeMatches == nil {
+		return 0, 0.0, ""
 	}
 
-	// Extract the matched values and convert to the appropriate types
-	errorCode, _ = strconv.Atoi(matches[1])
-	amount, _ = strconv.ParseFloat(matches[3], 64)
+	// Extract the error code and convert to the appropriate type
+	errorCode, _ = strconv.Atoi(errorCodeMatches[1])
 
-	return errorCode, amount
+	// Depending on the error code, parse the rest of the string
+	switch errorCode {
+	case 404:
+		// Example error: Error 404: Incorrect amount 0.00006 BTC is below the minimum of 0.00075 BTC
+		re := regexp.MustCompile(`Error (\d+): Incorrect (\w+) (\d+\.\d+) (\w+) is below the minimum of (\d+\.\d+) (\w+)`)
+		matches := re.FindStringSubmatch(logMessage)
+		if matches == nil {
+			return errorCode, 0.0, ""
+		}
+
+		// Extract the matched values and convert to the appropriate types
+		amount, _ = strconv.ParseFloat(matches[5], 64)
+		currency = matches[2]
+		return errorCode, amount, currency
+
+	case 405:
+		// Example error: Error 405: Incorrect value $9.70 MXN is below the minimum of $10.00 MXN
+		re := regexp.MustCompile(`Incorrect value (\$\d+\.\d+) (\w+) is below the minimum of (\$\d+\.\d+) (\w+)`)
+		matches := re.FindStringSubmatch(logMessage)
+		if matches == nil {
+			return errorCode, 0.0, ""
+		}
+
+		// Extract the matched values and convert to the appropriate types
+		amount, _ = strconv.ParseFloat(strings.TrimLeft(matches[3], "$"), 64)
+		currency = matches[2]
+		return errorCode, amount, currency
+
+	case 312:
+		// Example error: Error 312: Incorrect OID (non-existent or does not belong to user)  -> bot.BitsoOId:  qmVRxyw0T5qBoDNU
+		re := regexp.MustCompile("Incorrect OID  (non-existent or does not belong to user)")
+		matches := re.FindStringSubmatch(logMessage)
+		if matches == nil {
+			return errorCode, 0.0, ""
+		}
+
+		// Extract the matched values and convert to the appropriate types
+		amount, _ = strconv.ParseFloat(strings.TrimLeft(matches[3], "$"), 64)
+		currency = matches[2]
+		return errorCode, amount, currency
+	default:
+		// Handle other error codes as needed
+		return errorCode, 0.0, ""
+	}
 }

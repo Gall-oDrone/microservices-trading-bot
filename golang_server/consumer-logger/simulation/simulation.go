@@ -33,13 +33,14 @@ type TradingBot struct {
 	BitsoBook                           bitso.Book
 	BitsoExchangeBook                   bitso.ExchangeOrderBook
 	BitsoOId                            string
-	BitsoTId                            string
+	BitsoLastCompleteOId                string
 	BitsoActiveOIds                     []string
 	MajorBalance                        bitso.Balance
 	MinorBalance                        bitso.Balance
 	MajorActiveOrders                   []string
 	MinorActiveOrders                   []string
 	Side                                bitso.OrderSide
+	BidFirst                            bool
 	Threshold                           float64
 	OrderSet                            chan bool
 	MajorProfit                         TradingProfit
@@ -81,6 +82,7 @@ func NewTradingBot(b_client *bitso.Client, db_client interface{}, debug, stage b
 		MaxPublicRequestPerMinute:  60,
 		MaxPrivateRequestPerMinute: 100,
 		Side:                       bitso.OrderSide(1),
+		BidFirst:                   true,
 		Threshold:                  0.1,
 		Debug:                      debug,
 		Stage:                      stage,
@@ -532,6 +534,9 @@ func (bot *TradingBot) RenewOrCancelOrder(book bitso.Book, book_fee bitso.Fee, d
 				log.Fatalln("error getting ticket request")
 			}
 			num_of_current_active_orders := len(bot.BitsoActiveOIds)
+			if bot.CountCancelationOrders > 10 {
+				bot.CountCancelationOrders = 0
+			}
 			if !bot.checkActiveOrders() {
 				current_oid := bot.BitsoOId
 				bot.limitActiveOrders(num_of_current_active_orders, redis_client)
@@ -546,11 +551,22 @@ func (bot *TradingBot) RenewOrCancelOrder(book bitso.Book, book_fee bitso.Fee, d
 					if bot.Side.String() == "sell" {
 						log.Println("bot side change to buy")
 						bot.Side = bitso.OrderSide(1)
+						if !bot.BidFirst {
+							bot.BitsoLastCompleteOId = bot.BitsoOId
+						} else {
+							bot.BitsoLastCompleteOId = ""
+						}
 					} else {
 						log.Println("bot side change to sell")
 						bot.Side = bitso.OrderSide(2)
+						if !bot.BidFirst {
+							bot.BitsoLastCompleteOId = ""
+						} else {
+							bot.BitsoLastCompleteOId = bot.BitsoOId
+						}
 					}
 					bot.CountCancelationOrders = 0
+
 				} else {
 					bot.renewOrder(ticker, redis_client)
 					if current_oid == bot.BitsoOId {
@@ -618,7 +634,7 @@ func (bot *TradingBot) getOptimalPrice(ticker *bitso.Ticker, market_trade, marke
 	)
 	book := bot.BitsoBook
 	lower_limit := 0.02 // MXN
-	upper_limit := 0.01 // MXN
+	upper_limit := 1.01 // MXN
 	redis_client, err := database.SetupRedis()
 	if err != nil {
 		log.Fatalln("error while setting up redis db: ", err)
@@ -630,6 +646,9 @@ func (bot *TradingBot) getOptimalPrice(ticker *bitso.Ticker, market_trade, marke
 
 	ask_rate := ticker.Ask.Float64()
 	bid_rate := ticker.Bid.Float64()
+	if len(bot.BitsoLastCompleteOId) > 0 {
+		bot.BitsoOId = bot.BitsoLastCompleteOId
+	}
 	if len(bot.BitsoOId) == 0 {
 		log.Println("Condition met: 'len(bot.BitsoOId) == 0' ")
 		if bot.Stage {
@@ -712,7 +731,7 @@ func (bot *TradingBot) getOptimalPrice(ticker *bitso.Ticker, market_trade, marke
 	} else if (len(bot.BitsoOId)) > 0 && (len(bot.BitsoActiveOIds)) == 0 && !bot.checkOrderStatus("open", redis_client) {
 		log.Println("len(bot.BitsoOId) > 0 and order is completed")
 		if !bot.Debug {
-			last_user_order_trade, err := bot.getLastUserTradeByOId(bot.BitsoOId)
+			last_user_order_trade, err := bot.getLastUserTradeByOId(bot.BitsoLastCompleteOId)
 			if err != nil || last_user_order_trade.Major.Float64() == 0 {
 				log.Fatalln("error while getting user last trade: ", err)
 			}
@@ -753,7 +772,9 @@ func (bot *TradingBot) getOptimalPrice(ticker *bitso.Ticker, market_trade, marke
 					log.Printf("Price change is: %f%%", price_percentage_change)
 					return bid_rate
 				}
-				total -= bot.getWeightedBidAskSpread() // MXN
+				if !bot.BidFirst {
+					total -= bot.getWeightedBidAskSpread() // MXN
+				}
 				return utils.RoundToNearestTen(total)
 			} else {
 				amount = last_trade.Minor.Float64() - last_trade.FeesAmount.Float64() // MXN
@@ -785,7 +806,9 @@ func (bot *TradingBot) getOptimalPrice(ticker *bitso.Ticker, market_trade, marke
 					log.Printf("Price change is %f%%", price_percentage_change)
 					return ask_rate
 				}
-				total += (bot.getWeightedBidAskSpread() / ask_rate) // BTC
+				if bot.BidFirst {
+					total += (bot.getWeightedBidAskSpread() / ask_rate) // BTC
+				}
 				return utils.RoundToNearestTen(total)
 			}
 		} else {
@@ -994,7 +1017,7 @@ func (bot *TradingBot) setOrder(ticker *bitso.Ticker, amount, rate float64, oid 
 			log.Println("amount as minor (value): ", amount*rate)
 			oid, err := bot.BitsoClient.PlaceOrder(order)
 			if err != nil {
-				errorCode, amount := utils.ParseErrorMessage(err)
+				errorCode, amount, _ := utils.ParseErrorMessage(err)
 				if errorCode == 405 {
 					log.Println(err)
 					bot.setOrder(ticker, amount, rate, oid, order_status, order_type, redis_client)
@@ -1018,10 +1041,19 @@ func (bot *TradingBot) setOrder(ticker *bitso.Ticker, amount, rate float64, oid 
 			log.Println("amount as major (value): ", amount*rate)
 			oid, err := bot.BitsoClient.PlaceOrder(order)
 			if err != nil {
-				errorCode, amount := utils.ParseErrorMessage(err)
+				errorCode, minAmount, _ := utils.ParseErrorMessage(err)
 				if errorCode == 403 {
 					log.Println(err)
-					bot.setOrder(ticker, amount, rate, oid, order_status, order_type, redis_client)
+					bot.setOrder(ticker, minAmount, rate, oid, order_status, order_type, redis_client)
+					return
+				} else if errorCode == 405 {
+					log.Println(err)
+					ticker, err := bot.BitsoClient.Ticker(&bot.BitsoBook) // btc_mxn
+					if err != nil {
+						log.Fatalln("error getting ticket request")
+					}
+					bid_rate := ticker.Bid.Float64()
+					bot.setOrder(ticker, amount, bid_rate, oid, order_status, order_type, redis_client)
 					return
 				}
 				log.Fatalln("error placing bid order: ", err)
@@ -1440,7 +1472,7 @@ func (bot *TradingBot) checkOrderPrice(oid string, ticker *bitso.Ticker, redis_c
 		if !bot.Debug {
 			user_order, err := bot.BitsoClient.LookupOrder(bot.BitsoOId)
 			if err != nil {
-				log.Fatalln("checkOrderPrice => error lookin up user order: ", err)
+				log.Fatalln("checkOrderPrice => error lookin up user order: ", err, " -> bot.BitsoOId: ", bot.BitsoOId)
 			}
 			if user_order.Side.String() == "sell" {
 				rate := bid_rate
@@ -2011,15 +2043,14 @@ func (bot *TradingBot) getLastUserTradeByOId(oid string) (bitso.UserOrderTrade, 
 
 func (bot *TradingBot) getWeightedBidAskSpread() (weighted_spread float64) {
 	switch {
-	case bot.CountCancelationOrders > 3 && bot.CountCancelationOrders < 6:
-		return 0.1 * bot.getBidAskSpread()
+	case bot.CountCancelationOrders >= 3 && bot.CountCancelationOrders < 6:
+		return 0.01 * bot.getBidAskSpread()
 	case bot.CountCancelationOrders >= 6 && bot.CountCancelationOrders < 8:
-		return 0.15 * bot.getBidAskSpread()
+		return 0.015 * bot.getBidAskSpread()
 	case bot.CountCancelationOrders >= 8 && bot.CountCancelationOrders < 10:
-		return 0.25 * bot.getBidAskSpread()
+		return 0.025 * bot.getBidAskSpread()
 	case bot.CountCancelationOrders >= 10:
-		bot.CountCancelationOrders = 0
-		return 0.5 * bot.getBidAskSpread()
+		return 0.05 * bot.getBidAskSpread()
 	default:
 		return 0.0
 	}
