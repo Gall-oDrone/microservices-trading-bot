@@ -66,6 +66,30 @@ services:
       - CASSANDRA_PASSWORD=cassandra
       - API_PORT=8081
 
+  golang-order-producer-4:
+    build:
+      context: ./golang_server/producer-logger-4
+      dockerfile: Dockerfile
+    env_file:
+      - bitso/bitso-variables.env
+    environment:
+      kafkaURL: kafka:9092
+      orders_topic: topic1
+      trades_topic: topic1
+      GroupID: logger-group
+      KAFKA_USER_ID: 1000
+      KAFKA_GROUP_ID: 1000
+    ports:
+      - 4001:4001
+    user: "1000:1000"
+    depends_on:
+      - kafka
+  redis:
+    image: redis:latest
+    ports:
+      - "6379:6379"
+    command: redis-server --appendonly yes
+  
   zookeeper:
     # hostname: zookeeper
     image: wurstmeister/zookeeper:3.4.6
@@ -90,6 +114,35 @@ services:
       KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: INSIDE:PLAINTEXT,OUTSIDE:PLAINTEXT
       KAFKA_LISTENERS: INSIDE://0.0.0.0:9092,OUTSIDE://0.0.0.0:9093
       KAFKA_INTER_BROKER_LISTENER_NAME: INSIDE
+
+  kafka-connect:
+    image: debezium/connect:latest
+    hostname: connect
+    container_name: connect
+    ports:
+      - "8086:8086"
+    links:
+      - kafka
+    environment:
+      - BOOTSTRAP_SERVERS=kafka:9093
+      - GROUP_ID=1
+      - CONFIG_STORAGE_TOPIC=my_connect_configs
+      - OFFSET_STORAGE_TOPIC=my_connect_offsets
+      - STATUS_STORAGE_TOPIC=my_connect_statuses
+      - DEBEZIUM_CONFIG_CONNECTOR_CLASS=io.debezium.connector.postgresql.PostgresConnector
+      - DEBEZIUM_CONFIG_DATABASE_HOSTNAME=database
+      - DEBEZIUM_CONFIG_DATABASE_PORT=5433
+      - DEBEZIUM_CONFIG_DATABASE_PASSWORD=postgres
+      - DEBEZIUM_CONFIG_DATABASE_USER=postgres
+      - DEBEZIUM_CONFIG_DATABASE_SERVER_NAME=postgres
+      - DEBEZIUM_CONFIG_DATABASE_DBNAME=postgres
+      - KEY_CONVERTER=org.apache.kafka.connect.json.JsonConverter
+      - VALUE_CONVERTER=org.apache.kafka.connect.json.JsonConverter
+      - INTERNAL_KEY_CONVERTER=org.apache.kafka.connect.json.JsonConverter
+      - INTERNAL_VALUE_CONVERTER=org.apache.kafka.connect.json.JsonConverter
+    depends_on:
+      - kafka
+      - db-postgres-trades
 
   cassandra:
     image: cassandra:4.1
@@ -181,6 +234,18 @@ services:
     stdin_open: true
     tty: true
 
+  db-postgres-trades:
+    image: postgres:16.1-alpine
+    restart: "no"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data/
+    env_file:
+      - ./postgres/trades.env
+    ports:
+      - "5434:5434"
+
+    stdin_open: true
+    tty: true
   scala_order_analyzer_1:
     build:
       context: ./scala_server
@@ -246,6 +311,7 @@ services:
       - "4444:4444"
 volumes:
   postgres_data:
+  db-postgres-trades:
 # networks:
 #   backend:
 #     driver: bridge

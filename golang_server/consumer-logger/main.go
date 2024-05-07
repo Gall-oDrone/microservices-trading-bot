@@ -13,6 +13,7 @@ import (
 	kafka "github.com/segmentio/kafka-go"
 	"github.com/segmentio/kafka-go/example/consumer-logger/controllers"
 	"github.com/segmentio/kafka-go/example/consumer-logger/simulation"
+	"github.com/segmentio/kafka-go/example/consumer-logger/streaming"
 	"github.com/segmentio/kafka-go/example/consumer-logger/utils"
 	"github.com/xiam/bitso-go/bitso"
 )
@@ -38,12 +39,17 @@ func getKafkaReader(kafkaURL, topic, groupID string) *kafka.Reader {
 }
 
 func main() {
+	runTradingSimulation := false
 	err := godotenv.Load()
 	if err != nil {
 		fmt.Println("Error loading .env file:", err)
 		return
 	}
-	simulation.RunSimulation()
+	if runTradingSimulation {
+		simulation.RunSimulation()
+	} else {
+		streaming.StartStreaming()
+	}
 }
 func main2() {
 	// get kafka reader using environment variables.
@@ -86,11 +92,6 @@ func main2() {
 			utils.Rest(5)
 		}
 	}
-}
-
-func hello(w http.ResponseWriter, req *http.Request) {
-	fmt.Println("/hello endpoint called")
-	fmt.Fprintf(w, "hello\n")
 }
 
 func main3() {

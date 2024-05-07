@@ -21,7 +21,6 @@ type WebsocketReply struct {
 
 // WebsocketTrade represents a message from the "trades" channel.
 type WebsocketTrade struct {
-	Type    string `json:"type"`
 	Book    Book
 	Payload []struct {
 		TID          uint64   `json:"i"`
@@ -30,18 +29,15 @@ type WebsocketTrade struct {
 		Value        Monetary `json:"v"`
 		MakerOrderID string   `json:"mo"`
 		TakerOrderID string   `json:"to"`
-		MakerSide    uint8    `json:"t"`
-		Timestamp    uint64   `json:"x"`
+		Side         uint32   `json:"t"`
+		CreationTime uint64   `json:"x"`
 	}
-	Sent uint64 `json:"sent"`
 }
 
 // WebsocketDiffOrder represents a message from the "diff-orders" channel.
 type WebsocketDiffOrder struct {
-	Type     string `json:"type"`
-	Book     Book
-	Sequence uint8 `json:"sequence"`
-	Payload  []struct {
+	Book    Book
+	Payload []struct {
 		Timestamp uint64   `json:"d"`
 		Price     Monetary `json:"r"`
 		Position  int      `json:"t"`
@@ -49,12 +45,10 @@ type WebsocketDiffOrder struct {
 		Value     Monetary `json:"v"`
 		OrderID   string   `json:"o"`
 	}
-	Sent uint64 `json:"sent"`
 }
 
 // WebsocketOrder represents a message from the "diff-orders" channel.
 type WebsocketOrder struct {
-	Type    string `json:"type"`
 	Book    Book
 	Payload struct {
 		Bids []struct {
@@ -72,7 +66,6 @@ type WebsocketOrder struct {
 			Timestamp uint64  `json:"d"`
 		} `json:"asks"`
 	} `json:"payload"`
-	Sent uint64 `json:"sent"`
 }
 
 // WebsocketMessage represents a message that can be sent to channel.

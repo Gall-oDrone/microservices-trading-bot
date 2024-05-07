@@ -41,7 +41,7 @@ func main() {
 	if err != nil {
 		log.Fatal("ws conn error: ", err)
 	}
-	ws.Subscribe(book, "trades")
+	ws.Subscribe(book, "diff-orders")
 	cassandra_client, err := database.CassandraInitConnection(false)
 	if err != nil {
 		log.Fatalln("error during cassandra setup: ", err)
@@ -49,17 +49,16 @@ func main() {
 	defer cassandra_client.CloseDB()
 	for {
 		m := <-ws.Receive()
-		if trade, ok := m.(bitso.WebsocketTrade); ok {
-			if trade.Payload != nil {
-				err = cassandra_client.InsertTradeRecord(&trade)
+		if order, ok := m.(bitso.WebsocketDiffOrder); ok {
+			if order.Payload != nil {
+				err = cassandra_client.InsertDiffOrderRecord(&order)
 				if err != nil {
 					log.Fatalln("error while inserting trade record: ", err)
 				}
 			}
-
 		} else {
-			// m is not of type WebsocketTrade
-			log.Println("m is not of type WebsocketTrade")
+			// m is not of type WebsocketOrder
+			log.Println("m is not of type WebsocketOrder")
 			log.Printf("message: %#v\n\n", m)
 		}
 	}
