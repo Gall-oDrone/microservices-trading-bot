@@ -3,11 +3,13 @@ package operations
 import (
 	"errors"
 	"fmt"
+	"log"
 
-	"github.com/xiam/bitso-go/bitso"
+	"github.com/segmentio/kafka-go/example/consumer-logger/bitso"
 )
 
-func CalculateMovingAverage(trades []bitso.bitso.WebsocketTrade, property string) (float64, error) {
+func CalculateMovingAverage(trades []bitso.WebsocketTrade, property string) (float64, error) {
+	log.Println("Calculating Moving Average...")
 	if len(trades) == 0 {
 		return 0, errors.New("empty trade records")
 	}
@@ -16,12 +18,12 @@ func CalculateMovingAverage(trades []bitso.bitso.WebsocketTrade, property string
 	for _, trade := range trades {
 		for _, payload := range trade.Payload {
 			switch property {
-			case "Amount":
-				sum += payload.Amount
-			case "Price":
-				sum += payload.Price
-			case "Value":
-				sum += payload.Value
+			case "a":
+				sum += payload.Amount.Float64()
+			case "r":
+				sum += payload.Price.Float64()
+			case "v":
+				sum += payload.Value.Float64()
 			default:
 				return 0, fmt.Errorf("invalid property: %s", property)
 			}
@@ -42,11 +44,11 @@ func CalculateWeightedMovingAverage(trades []bitso.WebsocketTrade, property stri
 		for _, payload := range trade.Payload {
 			switch property {
 			case "Amount":
-				weightedSum += payload.Amount * float64(payload.Timestamp)
+				weightedSum += payload.Amount.Float64() * float64(payload.Timestamp)
 			case "Price":
-				weightedSum += payload.Price * float64(payload.Timestamp)
+				weightedSum += payload.Price.Float64() * float64(payload.Timestamp)
 			case "Value":
-				weightedSum += payload.Value * float64(payload.Timestamp)
+				weightedSum += payload.Value.Float64() * float64(payload.Timestamp)
 			default:
 				return 0, fmt.Errorf("invalid property: %s", property)
 			}
@@ -57,7 +59,7 @@ func CalculateWeightedMovingAverage(trades []bitso.WebsocketTrade, property stri
 	return weightedSum / totalWeight, nil
 }
 
-func (rc *RedisClient) CalculateExponentialMovingAverage(trades []bitso.WebsocketTrade, property string, alpha float64) (float64, error) {
+func CalculateExponentialMovingAverage(trades []bitso.WebsocketTrade, property string, alpha float64) (float64, error) {
 	if len(trades) == 0 {
 		return 0, errors.New("empty trade records")
 	}
@@ -70,24 +72,24 @@ func (rc *RedisClient) CalculateExponentialMovingAverage(trades []bitso.Websocke
 			switch property {
 			case "Amount":
 				if !emaInitialized {
-					ema = payload.Amount
+					ema = payload.Amount.Float64()
 					emaInitialized = true
 				} else {
-					ema = alpha*payload.Amount + (1-alpha)*ema
+					ema = alpha*payload.Amount.Float64() + (1-alpha)*ema
 				}
 			case "Price":
 				if !emaInitialized {
-					ema = payload.Price
+					ema = payload.Price.Float64()
 					emaInitialized = true
 				} else {
-					ema = alpha*payload.Price + (1-alpha)*ema
+					ema = alpha*payload.Price.Float64() + (1-alpha)*ema
 				}
 			case "Value":
 				if !emaInitialized {
-					ema = payload.Value
+					ema = payload.Value.Float64()
 					emaInitialized = true
 				} else {
-					ema = alpha*payload.Value + (1-alpha)*ema
+					ema = alpha*payload.Value.Float64() + (1-alpha)*ema
 				}
 			default:
 				return 0, fmt.Errorf("invalid property: %s", property)

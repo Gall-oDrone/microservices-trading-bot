@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
-	"net/http"
 	"os"
 	"strings"
 
@@ -92,11 +91,4 @@ func main2() {
 			utils.Rest(5)
 		}
 	}
-}
-
-func main3() {
-	fmt.Print("hello\n")
-	http.HandleFunc("/hello", hello)
-	fmt.Println("Server up and listening...")
-	http.ListenAndServe(":80", nil)
 }

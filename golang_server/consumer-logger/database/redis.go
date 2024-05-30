@@ -927,18 +927,36 @@ func (rc *RedisClient) InsertTradeRecord(trades *bitso.WebsocketTrade) error {
 	tradesStr := string(tradesJSON)
 
 	// Store trades payload as a list in Redis using Sent attribute as the key
-	if err := rc.client.RPush(fmt.Sprintf("trades:%d", trades.Sent), tradesStr).Err(); err != nil {
+	if err := rc.client.RPush(context.Background(), fmt.Sprintf("trades:%s", trades.Sent), tradesStr).Err(); err != nil {
 		log.Printf("Error storing trades payload in Redis: %v", err)
 		return err
 	}
 
-	fmt.Println("Trade data inserted successfully!")
+	fmt.Println("Trade data inserted successfully!\n", tradesStr)
+	return nil
+}
+
+func (rc *RedisClient) DeleteAllWSTradeRecords() error {
+	// Retrieve all keys
+	keys, err := rc.client.Keys(rc.ctxbg, "trades:*").Result()
+	if err != nil {
+		return err
+	}
+
+	// Delete each key
+	for _, key := range keys {
+		err := rc.client.Del(rc.ctxbg, key).Err()
+		if err != nil {
+			return err
+		}
+	}
+	fmt.Println("All ws trade data were deleted successfully!")
 	return nil
 }
 
 // GetKeysMatchingPattern retrieves all keys matching the specified pattern
 func (rc *RedisClient) GetKeysMatchingPattern(pattern string) ([]string, error) {
-	keys, err := rc.client.Keys(pattern).Result()
+	keys, err := rc.client.Keys(context.Background(), pattern).Result()
 	if err != nil {
 		return nil, err
 	}
@@ -964,7 +982,7 @@ func (rc *RedisClient) GetTradeRecords(start, end uint64) ([]bitso.WebsocketTrad
 		// Check if the timestamp is within the specified range
 		if sent >= start && sent <= end {
 			// Get all items from the list
-			tradesStr, err := rc.client.LRange(key, 0, -1).Result()
+			tradesStr, err := rc.client.LRange(context.Background(), key, 0, -1).Result()
 			if err != nil {
 				return nil, err
 			}
