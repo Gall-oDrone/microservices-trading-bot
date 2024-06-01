@@ -963,39 +963,8 @@ func (rc *RedisClient) GetKeysMatchingPattern(pattern string) ([]string, error) 
 	return keys, nil
 }
 
-// GetAllTradeRecords retrieves all trade records from Redis
-func (rc *RedisClient) GetAllTradeRecords() ([]bitso.WebsocketTrade, error) {
-	var trades []bitso.WebsocketTrade
-
-	// Get all lists without any timestamp range
-	keys, err := rc.GetKeysMatchingPattern("trades:*")
-	if err != nil {
-		return nil, err
-	}
-
-	// Iterate over each key to retrieve data
-	for _, key := range keys {
-		// Get all items from the list
-		tradesStr, err := rc.client.LRange(context.Background(), key, 0, -1).Result()
-		if err != nil {
-			return nil, err
-		}
-
-		// Unmarshal each trade record
-		for _, tradeStr := range tradesStr {
-			var trade bitso.WebsocketTrade
-			if err := json.Unmarshal([]byte(tradeStr), &trade); err != nil {
-				return nil, err
-			}
-			trades = append(trades, trade)
-		}
-	}
-
-	return trades, nil
-}
-
 // GetTradeRecords retrieves trade records from Redis within a specific timestamp range
-func (rc *RedisClient) GetTradeRecordsByTimestampRange(start, end uint64) ([]bitso.WebsocketTrade, error) {
+func (rc *RedisClient) GetTradeRecords(start, end uint64) ([]bitso.WebsocketTrade, error) {
 	var trades []bitso.WebsocketTrade
 
 	// Get all lists within the specified timestamp range
@@ -1017,6 +986,7 @@ func (rc *RedisClient) GetTradeRecordsByTimestampRange(start, end uint64) ([]bit
 			if err != nil {
 				return nil, err
 			}
+
 			// Unmarshal each trade record
 			for _, tradeStr := range tradesStr {
 				var trade bitso.WebsocketTrade

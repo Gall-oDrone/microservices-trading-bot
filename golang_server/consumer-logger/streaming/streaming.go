@@ -14,8 +14,10 @@ type StreamingStorage interface {
 }
 
 type StreamingFlow struct {
+	bitso_ws      *bitso.Websocket
 	ws_trades     bitso.WebsocketTrade
 	ws_difforders bitso.WebsocketDiffOrder
+	redis_client  database.RedisClient
 }
 
 var (
@@ -23,9 +25,14 @@ var (
 )
 
 func StartStreaming() {
-	err := InitWs()
-	if err != nil {
-		log.Fatalln("error during InitWs: ", err)
+	test_querying_trades := true
+	if test_querying_trades {
+		TestQueries()
+	} else {
+		err := InitWs()
+		if err != nil {
+			log.Fatalln("error during InitWs: ", err)
+		}
 	}
 }
 func InitVariables() {
@@ -53,23 +60,7 @@ func InitWs() error {
 			return err
 		}
 	}
-	start_operations := make(chan bool, 1)
-	co_done := make(chan bool, 1)
 	defer redis_client.CloseDB()
-	go PostTrades(ws, start_operations, redis_client)
-	go CalcTimeSeriesOperations(start_operations, co_done, redis_client)
-	for {
-		select {
-		case <-co_done:
-			fmt.Println("goroutine CalcTimeSeriesOperations done")
-			sleepDuration := 1 * time.Minute
-			time.Sleep(sleepDuration)
-		}
-	}
-	return nil
-}
-
-func PostTrades(ws *bitso.Websocket, startOperations chan<- bool, redis_client *database.RedisClient) {
 	for {
 		m := <-ws.Receive()
 		if trades, ok := m.(bitso.WebsocketTrade); ok {
@@ -78,8 +69,6 @@ func PostTrades(ws *bitso.Websocket, startOperations chan<- bool, redis_client *
 				if err != nil {
 					log.Fatalln("error while inserting trades record: ", err)
 				}
-				// Signal the start of operations
-				startOperations <- true
 			}
 		} else {
 			// m is not of type WebsocketOrder
@@ -89,6 +78,18 @@ func PostTrades(ws *bitso.Websocket, startOperations chan<- bool, redis_client *
 	}
 }
 
+func InitSOps() {
+	redis_client, err := database.SetupRedis()
+	if err != nil {
+		log.Fatalln(err)
+	}
+	defer redis_client.CloseDB()
+	startOperations := make(chan bool, 1)
+	co_done := make(chan bool, 1)
+	for {
+		CalcTimeSeriesOperations(startOperations, co_done, redis_client)
+	}
+}
 func CalcTimeSeriesOperations(startOperations <-chan bool, co_done chan<- bool, redis_client *database.RedisClient) {
 	time_ticker := time.NewTicker(5 * time.Minute)
 	defer time_ticker.Stop()
@@ -100,7 +101,7 @@ func CalcTimeSeriesOperations(startOperations <-chan bool, co_done chan<- bool, 
 			log.Println("starting ops")
 			end_time := start_time + uint64(5*time.Minute/time.Millisecond)
 			// Retrieve trade records from Redis within the specified time range
-			trades, err := redis_client.GetTradeRecords(start_time, end_time)
+			trades, err := redis_client.GetTradeRecordsByTimestampRange(start_time, end_time)
 			if err != nil {
 				log.Fatalf("error getting trade records: %v", err)
 			}

@@ -84,12 +84,17 @@ services:
     user: "1000:1000"
     depends_on:
       - kafka
-  redis:
-    image: redis:latest
+  golang-order-producer-5:
+    build:
+      context: ./golang_server/producer-logger-5
+      dockerfile: Dockerfile
+    env_file:
+      - bitso/bitso-variables.env
     ports:
-      - "6379:6379"
-    command: redis-server --appendonly yes
-  
+      - 4002:4002
+    user: "1000:1000"
+    depends_on:
+      - redis
   zookeeper:
     # hostname: zookeeper
     image: wurstmeister/zookeeper:3.4.6
