@@ -25,6 +25,7 @@ func main() {
 }
 
 func InitWs() error {
+	deleteAllWSTrades := true
 	mayor_currency := bitso.ToCurrency("btc")
 	minor_currency := bitso.ToCurrency("mxn")
 	book := bitso.NewBook(mayor_currency, minor_currency)
@@ -37,6 +38,12 @@ func InitWs() error {
 	redis_client, err := database.SetupRedis()
 	if err != nil {
 		return err
+	}
+	if deleteAllWSTrades {
+		err = redis_client.DeleteAllWSTradeRecords()
+		if err != nil {
+			log.Fatalln(err)
+		}
 	}
 	defer redis_client.CloseDB()
 	for {

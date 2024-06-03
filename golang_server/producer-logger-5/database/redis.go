@@ -925,9 +925,10 @@ func (rc *RedisClient) InsertTradeRecord(trades *bitso.WebsocketTrade) error {
 
 	// Convert JSON bytes to string
 	tradesStr := string(tradesJSON)
-
+	// Correctly convert uint64 to string
+	key := fmt.Sprintf("trades:%d", trades.Sent)
 	// Store trades payload as a list in Redis using Sent attribute as the key
-	if err := rc.client.RPush(context.Background(), fmt.Sprintf("trades:%s", trades.Sent), tradesStr).Err(); err != nil {
+	if err := rc.client.RPush(context.Background(), key, tradesStr).Err(); err != nil {
 		log.Printf("Error storing trades payload in Redis: %v", err)
 		return err
 	}

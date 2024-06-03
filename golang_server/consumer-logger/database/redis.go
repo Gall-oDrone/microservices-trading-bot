@@ -1029,3 +1029,68 @@ func (rc *RedisClient) GetTradeRecordsByTimestampRange(start, end uint64) ([]bit
 	}
 	return trades, nil
 }
+
+// GetLatestTradeRecord retrieves the latest trade record from Redis
+func (rc *RedisClient) GetLatestTradeRecord() (*bitso.WebsocketTrade, error) {
+	// Get all keys matching the pattern "trades:*"
+	keys, err := rc.GetKeysMatchingPattern("trades:*")
+	if err != nil {
+		return nil, err
+	}
+
+	if len(keys) == 0 {
+		return nil, fmt.Errorf("no trade records found")
+	}
+
+	// Debug: Print all keys
+	// fmt.Println("Retrieved keys:", keys)
+
+	// Find the key with the latest timestamp
+	var latestKey string
+	var latestTimestamp uint64
+	for _, key := range keys {
+		var sent uint64
+		// Debug: Print the key being processed
+		fmt.Println("Processing key:", key)
+
+		// Attempt to parse the key
+		n, err := fmt.Sscanf(key, "trades:%d", &sent)
+		if err != nil || n != 1 {
+			// Debug: Print error if parsing fails
+			fmt.Printf("Error parsing key %s: %v\n", key, err)
+			continue
+		}
+
+		// Debug: Print the parsed sent value
+		// fmt.Println("Parsed sent:", sent)
+
+		// Compare and assign the latest timestamp and key
+		if sent > latestTimestamp {
+			latestTimestamp = sent
+			latestKey = key
+		}
+
+		// Debug: Print current latest timestamp and key
+		// fmt.Println("Latest timestamp:", latestTimestamp, "Latest key:", latestKey)
+
+	}
+
+	if latestKey == "" {
+		return nil, fmt.Errorf("no valid trade records found")
+	}
+
+	// Get the latest record from the list associated with the latest key
+	tradeStr, err := rc.client.LIndex(context.Background(), latestKey, -1).Result()
+	if err == redis.Nil {
+		return nil, fmt.Errorf("no elements in the list for key %s", latestKey)
+	} else if err != nil {
+		return nil, err
+	}
+
+	var trade bitso.WebsocketTrade
+	if err := json.Unmarshal([]byte(tradeStr), &trade); err != nil {
+		return nil, err
+	}
+
+	return &trade, nil
+}

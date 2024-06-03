@@ -18,11 +18,11 @@ func CalculateMovingAverage(trades []bitso.WebsocketTrade, property string) (flo
 	for _, trade := range trades {
 		for _, payload := range trade.Payload {
 			switch property {
-			case "a":
+			case "a": // amount
 				sum += payload.Amount.Float64()
-			case "r":
+			case "r": // rate/price
 				sum += payload.Price.Float64()
-			case "v":
+			case "v": // value
 				sum += payload.Value.Float64()
 			default:
 				return 0, fmt.Errorf("invalid property: %s", property)
@@ -43,11 +43,11 @@ func CalculateWeightedMovingAverage(trades []bitso.WebsocketTrade, property stri
 	for _, trade := range trades {
 		for _, payload := range trade.Payload {
 			switch property {
-			case "Amount":
+			case "a":
 				weightedSum += payload.Amount.Float64() * float64(payload.Timestamp)
-			case "Price":
+			case "r":
 				weightedSum += payload.Price.Float64() * float64(payload.Timestamp)
-			case "Value":
+			case "v":
 				weightedSum += payload.Value.Float64() * float64(payload.Timestamp)
 			default:
 				return 0, fmt.Errorf("invalid property: %s", property)

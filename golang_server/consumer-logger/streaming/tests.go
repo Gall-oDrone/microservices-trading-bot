@@ -5,20 +5,26 @@ import (
 	"log"
 	"time"
 
+	"github.com/segmentio/kafka-go/example/consumer-logger/bitso"
 	"github.com/segmentio/kafka-go/example/consumer-logger/database"
+	"github.com/segmentio/kafka-go/example/consumer-logger/operations"
+	"github.com/segmentio/kafka-go/example/consumer-logger/utils"
 )
 
 type TestQuery struct {
 	rc *database.RedisClient
 }
 
+const (
+	to_test = "tsops"
+)
+
 func TestQueries() {
-	deleteAllWSTrades := false
 	redis_client, err := InitRedisClient()
 	if err != nil {
 		log.Fatalln(err)
 	}
-
+	deleteAllWSTrades := false
 	if deleteAllWSTrades {
 		err = redis_client.DeleteAllWSTradeRecords()
 		if err != nil {
@@ -26,7 +32,6 @@ func TestQueries() {
 		}
 	}
 	tq := TestQuery{rc: redis_client}
-	to_test := "all_trades"
 	switch to_test {
 	case "all_trades":
 		err := tq.GetAllTrades()
@@ -34,7 +39,22 @@ func TestQueries() {
 			log.Fatalln(err)
 		}
 	case "trades_by_timestamp_range":
-		err := tq.GetTradesByTimestampRange()
+		_, err := tq.GetTradesByTimestampRange()
+		if err != nil {
+			log.Fatalln(err)
+		}
+	case "latest_trade":
+		err := tq.GetLatestTradeRecord()
+		if err != nil {
+			log.Fatalln(err)
+		}
+	case "tsops":
+		err := tq.TestCalculateTimeSeriesOps()
+		if err != nil {
+			log.Fatalln(err)
+		}
+	case "ma":
+		err := tq.TestCalculateMovingAverage()
 		if err != nil {
 			log.Fatalln(err)
 		}
@@ -44,6 +64,7 @@ func TestQueries() {
 func InitRedisClient() (*database.RedisClient, error) {
 	redis_client, err := database.SetupRedis()
 	if err != nil {
+		log.Println("error while setting up redis")
 		return &database.RedisClient{}, err
 	}
 	return redis_client, nil // Dereference the pointer to return a value
@@ -59,16 +80,70 @@ func (tq *TestQuery) GetAllTrades() error {
 	return nil
 }
 
-func (tq *TestQuery) GetTradesByTimestampRange() error {
+func (tq *TestQuery) GetTradesByTimestampRange() ([]bitso.WebsocketTrade, error) {
 	duration := 5 * time.Minute
 	end_time := uint64(time.Now().UnixNano() / int64(time.Millisecond))
 	start_time := end_time - uint64(duration/time.Millisecond)
 	fmt.Printf("st: %v, et: %v \n", start_time, end_time)
+	utils.PrintReadableTime(start_time, end_time)
+
 	trades, err := tq.rc.GetTradeRecordsByTimestampRange(start_time, end_time)
 	if err != nil {
 		log.Println("error getting trade records: %v", err)
+		return nil, err
+	}
+	// Debug
+	// fmt.Println("Printing trades", trades)
+	return trades, nil
+}
+
+func (tq *TestQuery) TestCalculateTimeSeriesOps() error {
+	err := tq.TestCalculateMovingAverage()
+	if err != nil {
 		return err
 	}
-	fmt.Println("Printing trades", trades)
+	err = tq.TestCalculateWeightedMovingAverage()
+	if err != nil {
+		return err
+	}
+	return nil
+}
+func (tq *TestQuery) TestCalculateMovingAverage() error {
+	trades, err := tq.GetTradesByTimestampRange()
+	if err != nil {
+		return err
+	}
+	if len(trades) > 0 {
+		ma, err := operations.CalculateMovingAverage(trades, "r")
+		if err != nil {
+			return err
+		}
+		fmt.Printf("MA: %v\n", ma)
+	}
+	return nil
+}
+
+func (tq *TestQuery) TestCalculateWeightedMovingAverage() error {
+	trades, err := tq.GetTradesByTimestampRange()
+	if err != nil {
+		return err
+	}
+	if len(trades) > 0 {
+		wma, err := operations.CalculateWeightedMovingAverage(trades, "r")
+		if err != nil {
+			return err
+		}
+		fmt.Printf("WMA: %v\n", wma)
+	}
+	return nil
+}
+
+func (tq *TestQuery) GetLatestTradeRecord() error {
+	trade, err := tq.rc.GetLatestTradeRecord()
+	if err != nil {
+		log.Println("error on GetLatestTradeRecord()")
+		return err
+	}
+	println("Latest trade: ", trade)
 	return nil
 }

@@ -158,3 +158,18 @@ func ParseErrorMessage(err error) (errorCode int, amount float64, currency strin
 		return errorCode, 0.0, ""
 	}
 }
+
+func MillisToLocal(timestamp uint64) time.Time {
+	// Convert milliseconds to time.Time
+	return time.Unix(0, int64(timestamp)*int64(time.Millisecond))
+
+}
+
+func PrintReadableTime(startTimeMillis, endTimeMillis uint64) {
+	// Convert milliseconds to time.Time
+	startTime := MillisToLocal(startTimeMillis)
+	endTime := MillisToLocal(endTimeMillis)
+
+	// Print in human-readable format
+	fmt.Printf("Start Time: %s, End Time: %s\n", startTime.Format(time.RFC3339), endTime.Format(time.RFC3339))
+}
