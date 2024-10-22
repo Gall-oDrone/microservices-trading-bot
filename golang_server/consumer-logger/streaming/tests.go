@@ -106,6 +106,14 @@ func (tq *TestQuery) TestCalculateTimeSeriesOps() error {
 	if err != nil {
 		return err
 	}
+	err = tq.TestCalculateSimpleExponentialWeightedMovingAverage()
+	if err != nil {
+		return err
+	}
+	err = tq.TestCalculateVariableExponentialWeightedMovingAverage()
+	if err != nil {
+		return err
+	}
 	return nil
 }
 func (tq *TestQuery) TestCalculateMovingAverage() error {
@@ -114,6 +122,7 @@ func (tq *TestQuery) TestCalculateMovingAverage() error {
 		return err
 	}
 	if len(trades) > 0 {
+		fmt.Println("No. of trades queried: ", len(trades))
 		ma, err := operations.CalculateMovingAverage(trades, "r")
 		if err != nil {
 			return err
@@ -134,6 +143,41 @@ func (tq *TestQuery) TestCalculateWeightedMovingAverage() error {
 			return err
 		}
 		fmt.Printf("WMA: %v\n", wma)
+	}
+	return nil
+}
+
+func (tq *TestQuery) TestCalculateSimpleExponentialWeightedMovingAverage() error {
+	trades, err := tq.GetTradesByTimestampRange()
+	if err != nil {
+		return err
+	}
+	if len(trades) > 0 {
+		wma, err := operations.CalculateSimpleExponentialWeightedMovingAverage(trades, "r")
+		if err != nil {
+			return err
+		}
+		fmt.Printf("SEWMA: %v\n", wma)
+	}
+	return nil
+}
+
+func (tq *TestQuery) TestCalculateVariableExponentialWeightedMovingAverage() error {
+	trades, err := tq.GetTradesByTimestampRange()
+	if err != nil {
+		return err
+	}
+	if len(trades) > 0 {
+		vwma, err := operations.CalculateVariableExponentialWeightedMovingAverage(trades, "r")
+		if err != nil {
+			return err
+		}
+		fmt.Printf("VEWMA: %v\n", vwma)
+		vwma2, err := operations.CalculateVariableExponentialWeightedMovingAverage2(trades, "r")
+		if err != nil {
+			return err
+		}
+		fmt.Printf("VEWMA2: %v\n", vwma2)
 	}
 	return nil
 }
