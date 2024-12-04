@@ -57,44 +57,6 @@ func (rc *RedisClient) Close() error {
 	return nil
 }
 
-func (rc *RedisClient) PostTicker(ticker bitso.Ticker) error {
-	// Convert the Ticker struct to JSON
-	tickerJSON, err := json.Marshal(ticker)
-	if err != nil {
-		return err
-	}
-
-	// Use SET command to store the JSON data in Redis
-	err = rc.client.Set(rc.ctxbg, "ticker", tickerJSON, 0).Err()
-	if err != nil {
-		return err
-	}
-
-	return nil
-}
-
-func (rc *RedisClient) GetTicker() (bitso.Ticker, error) {
-	var ticker bitso.Ticker
-	// Retrieve the JSON data from Redis
-	tickerJSON, err := rc.client.Get(rc.ctxbg, "ticker_data").Result()
-	if err != nil {
-		if errors.Is(err, redis.Nil) {
-			// Key does not exist in Redis
-			return ticker, errors.New("ticker data not found in Redis")
-		}
-		// Other error occurred
-		return ticker, err
-	}
-
-	// Unmarshal the JSON data into a Ticker struct
-	err = json.Unmarshal([]byte(tickerJSON), &ticker)
-	if err != nil {
-		return ticker, err
-	}
-
-	return ticker, nil
-}
-
 func (rc *RedisClient) SaveUserOrderTrade(order *bitso.UserTrade) error {
 	// Convert the Ticker struct to JSON
 	userOrderTradedJSON, err := json.Marshal(order)
@@ -498,42 +460,37 @@ func (rc *RedisClient) GetAllUserOrders() ([]bitso.UserOrder, error) {
 func (rc *RedisClient) SaveTrade(userTrade *bitso.UserTrade) error {
 	// Convert the Ticker struct to JSON
 	type temp struct {
-		Book         bitso.Book      `json:"book"`
-		Major        bitso.Monetary  `json:"major"`
-		CreatedAt    string          `json:"created_at"`
-		Minor        bitso.Monetary  `json:"minor"`
-		FeesAmount   bitso.Monetary  `json:"fees_amount"`
-		FeesCurrency bitso.Currency  `json:"currency"`
-		Price        bitso.Monetary  `json:"price"`
-		TID          bitso.TID       `json:"tid"`
-		OID          string          `json:"oid"`
-		Side         bitso.OrderSide `json:"side"`
+		Book          bitso.Book      `json:"book"`
+		Major         bitso.Monetary  `json:"major"`
+		MajorCurrency bitso.Currency  `json:"major_currency"`
+		CreatedAt     string          `json:"created_at"`
+		Minor         bitso.Monetary  `json:"minor"`
+		MinorCurrency bitso.Currency  `json:"minor_currency"`
+		FeesAmount    bitso.Monetary  `json:"fees_amount"`
+		FeesCurrency  bitso.Currency  `json:"currency"`
+		Price         bitso.Monetary  `json:"price"`
+		TID           bitso.TID       `json:"tid"`
+		OID           string          `json:"oid"`
+		OriginOID     string          `json:"origin_id"`
+		Side          bitso.OrderSide `json:"side"`
+		MakerSide     bitso.OrderSide `json:"maker_side"`
 	}
 	parsed_usertrade := &temp{
-		Book:         userTrade.Book,
-		Major:        userTrade.Major,
-		CreatedAt:    userTrade.CreatedAt.String(),
-		Minor:        userTrade.Minor,
-		FeesAmount:   userTrade.FeesAmount,
-		FeesCurrency: userTrade.FeesCurrency,
-		Price:        userTrade.Price,
-		TID:          userTrade.TID,
-		OID:          userTrade.OID,
-		Side:         userTrade.Side,
+		Book:          userTrade.Book,
+		Major:         userTrade.Major,
+		MajorCurrency: userTrade.MajorCurrency,
+		CreatedAt:     userTrade.CreatedAt.String(),
+		Minor:         userTrade.Minor,
+		MinorCurrency: userTrade.MinorCurrency,
+		FeesAmount:    userTrade.FeesAmount,
+		FeesCurrency:  userTrade.FeesCurrency,
+		Price:         userTrade.Price,
+		TID:           userTrade.TID,
+		OID:           userTrade.OID,
+		OriginOID:     userTrade.OriginOID,
+		Side:          userTrade.Side,
+		MakerSide:     userTrade.OrderSide,
 	}
-
-	// parsed_usertrade := map[string]interface{}{
-	// 	"book":          userTrade.Book,
-	// 	"major":         userTrade.Major,
-	// 	"created_at":    userTrade.CreatedAt.String(),
-	// 	"minor":         userTrade.Minor,
-	// 	"fees_amount":   userTrade.FeesAmount,
-	// 	"fees_currency": userTrade.FeesCurrency,
-	// 	"price":         userTrade.Price,
-	// 	"tid":           userTrade.TID,
-	// 	"oid":           userTrade.OID,
-	// 	"side":          userTrade.Side,
-	// }
 	userTradeJSON, err := json.Marshal(parsed_usertrade)
 	if err != nil {
 		return err
@@ -579,6 +536,95 @@ func (rc *RedisClient) GetUserTrade(trade_id string) (bitso.UserTrade, error) {
 
 	return trade, nil
 }
+
+"""
+This method retrieves all trades by calling the base method with a wildcard pattern.
+"""
+func (rc *RedisClient) GetAllTrades() ([]*bitso.UserTrade, error) {
+    return rc.getTradesByPattern("trade_*")
+}
+
+"""
+This method retrieves trades based on the OID.
+"""
+func (rc *RedisClient) GetTradesByOID(oid string) ([]*bitso.UserTrade, error) {
+    pattern := fmt.Sprintf("trade_%s", oid)
+    return rc.getTradesByPattern(pattern)
+}
+
+"""
+This method retrieves trades based on the OriginOID. Since OriginOID is stored as part of the value (not the key), we’ll filter trades after retrieving all of them.
+"""
+func (rc *RedisClient) GetTradesByOriginOID(originOID string) ([]*bitso.UserTrade, error) {
+    trades, err := rc.GetAllTrades()
+    if err != nil {
+        return nil, err
+    }
+
+    var filteredTrades []*bitso.UserTrade
+    for _, trade := range trades {
+        if trade.OriginOID == originOID {
+            filteredTrades = append(filteredTrades, trade)
+        }
+    }
+
+    return filteredTrades, nil
+}
+"""
+This method retrieves trades based on the Book.
+"""
+func (rc *RedisClient) GetTradesByBook(book string) ([]*bitso.UserTrade, error) {
+    trades, err := rc.GetAllTrades()
+    if err != nil {
+        return nil, err
+    }
+
+    var filteredTrades []*bitso.UserTrade
+    for _, trade := range trades {
+        if string(trade.Book) == book {
+            filteredTrades = append(filteredTrades, trade)
+        }
+    }
+
+    return filteredTrades, nil
+}
+"""
+This method retrieves trades based on the Side.
+"""
+func (rc *RedisClient) GetTradesBySide(side bitso.OrderSide) ([]*bitso.UserTrade, error) {
+    trades, err := rc.GetAllTrades()
+    if err != nil {
+        return nil, err
+    }
+
+    var filteredTrades []*bitso.UserTrade
+    for _, trade := range trades {
+        if trade.Side == side {
+            filteredTrades = append(filteredTrades, trade)
+        }
+    }
+
+    return filteredTrades, nil
+}
+"""
+This method retrieves trades based on the MakerSide.
+"""
+func (rc *RedisClient) GetTradesByMakerSide(makerSide bitso.OrderSide) ([]*bitso.UserTrade, error) {
+    trades, err := rc.GetAllTrades()
+    if err != nil {
+        return nil, err
+    }
+
+    var filteredTrades []*bitso.UserTrade
+    for _, trade := range trades {
+        if trade.MakerSide == makerSide {
+            filteredTrades = append(filteredTrades, trade)
+        }
+    }
+
+    return filteredTrades, nil
+}
+
 
 func (rc *RedisClient) PostOrder(book, orderId, side, orderStatus string) error {
 	// Create a key with the format "order:<book>:<side>:<orderId>"
@@ -698,7 +744,113 @@ func (rc *RedisClient) GetOrdersByOrderID(orderID string) (map[string]string, er
 	return filteredOrders, nil
 }
 
-// func (rc *RedisClient) SaveProfit(profit *simulation.TradingProfit) error {
+func (rc *RedisClient) deleteOrdersByPattern(pattern string) error {
+	// Get all keys matching the pattern
+	keys, err := rc.client.Keys(context.Background(), pattern).Result()
+	if err != nil {
+		return fmt.Errorf("error fetching keys for deletion: %v", err)
+	}
+
+	// If there are no keys, return immediately
+	if len(keys) == 0 {
+		log.Println("No matching orders found for deletion.")
+		return nil
+	}
+
+	// Delete all matching keys
+	if err := rc.client.Del(context.Background(), keys...).Err(); err != nil {
+		return fmt.Errorf("error deleting keys: %v", err)
+	}
+
+	log.Printf("Successfully deleted %d orders matching pattern: %s", len(keys), pattern)
+	return nil
+}
+
+func (rc *RedisClient) DeleteAllOrders() error {
+	return rc.deleteOrdersByPattern("order:*")
+}
+
+func (rc *RedisClient) DeleteOrdersByBook(book string) error {
+	pattern := fmt.Sprintf("order:%s:*", book)
+	return rc.deleteOrdersByPattern(pattern)
+}
+
+func (rc *RedisClient) DeleteOrdersBySide(side string) error {
+	// First, retrieve all keys
+	keys, err := rc.client.Keys(context.Background(), "order:*").Result()
+	if err != nil {
+		return fmt.Errorf("error fetching keys: %v", err)
+	}
+
+	var keysToDelete []string
+	for _, key := range keys {
+		if strings.Contains(key, fmt.Sprintf(":%s:", side)) {
+			keysToDelete = append(keysToDelete, key)
+		}
+	}
+
+	if len(keysToDelete) == 0 {
+		log.Println("No matching orders found for deletion by side.")
+		return nil
+	}
+
+	// Delete the filtered keys
+	if err := rc.client.Del(context.Background(), keysToDelete...).Err(); err != nil {
+		return fmt.Errorf("error deleting keys: %v", err)
+	}
+
+	log.Printf("Successfully deleted %d orders with side: %s", len(keysToDelete), side)
+	return nil
+}
+
+func (rc *RedisClient) DeleteOrdersByStatus(status string) error {
+	// First, retrieve all keys
+	keys, err := rc.client.Keys(context.Background(), "order:*").Result()
+	if err != nil {
+		return fmt.Errorf("error fetching keys: %v", err)
+	}
+
+	var keysToDelete []string
+	for _, key := range keys {
+		value, err := rc.client.Get(context.Background(), key).Result()
+		if err == redis.Nil {
+			continue // Skip if the key does not exist
+		} else if err != nil {
+			return fmt.Errorf("error fetching value for key %s: %v", key, err)
+		}
+
+		// Check if the value contains the desired status
+		if strings.Contains(value, fmt.Sprintf("status:%s", status)) {
+			keysToDelete = append(keysToDelete, key)
+		}
+	}
+
+	if len(keysToDelete) == 0 {
+		log.Println("No matching orders found for deletion by status.")
+		return nil
+	}
+
+	// Delete the filtered keys
+	if err := rc.client.Del(context.Background(), keysToDelete...).Err(); err != nil {
+		return fmt.Errorf("error deleting keys: %v", err)
+	}
+
+	log.Printf("Successfully deleted %d orders with status: %s", len(keysToDelete), status)
+	return nil
+}
+
+func (rc *RedisClient) DeleteOrderByOrderID(book, orderId, side string) error {
+	key := fmt.Sprintf("order:%s:%s:%s", book, side, orderId)
+
+	if err := rc.client.Del(context.Background(), key).Err(); err != nil {
+		return fmt.Errorf("error deleting order with ID %s: %v", orderId, err)
+	}
+
+	log.Printf("Order with ID %s deleted successfully for book %s on side %s!", orderId, book, side)
+	return nil
+}
+
+// func (rc *Redisc) SaveProfit(profit *simulation.TradingProfit) error {
 // 	profitJSON, err := json.Marshal(profit)
 // 	if err != nil {
 // 		return err

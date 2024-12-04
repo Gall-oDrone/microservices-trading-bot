@@ -2,6 +2,7 @@ package bot
 
 import (
 	"log"
+	"net/url"
 	"time"
 
 	"github.com/segmentio/kafka-go/example/consumer-logger/bitso"
@@ -24,6 +25,8 @@ type TradingBot struct {
 	BidFirst                            bool
 	Threshold                           float64
 	OrderSet                            chan bool
+	SellCh                              chan bool
+	BuyCh                               chan bool
 	MajorProfit                         TradingProfit
 	MinorProfit                         TradingProfit
 	MaxPublicAPIRequestsPerMinute       int
@@ -128,6 +131,11 @@ func (bot *TradingBot) setTableObject() {
 	bot.TableData = table.NewTableData()
 }
 
+func (bot *TradingBot) setTradingChannels() {
+	bot.SellCh = make(chan bool)
+	bot.BuyCh = make(chan bool)
+}
+
 func (bot *TradingBot) clearRedisWsBatchTradeIdsList(redis_client *database.RedisClient) {
 	listName := "batchIdsUsed"
 	keyPattern := "batchid_*"
@@ -185,6 +193,35 @@ func (bot *TradingBot) getOrderIdsByKey(key, value string) (oids map[string]stri
 		}
 	}
 	return oids, err
+}
+
+func (bot *TradingBot) getBitsoOpenOrders() ([]bitso.UserOrder, error) {
+	params := url.Values{}
+	params.Add("book", bot.BitsoBook.String())
+	user_orders, err := bot.BitsoClient.MyOpenOrders(params)
+	if err != nil {
+		return nil, err
+	}
+	bot.updatePrivateAPIRequestPerMinute()
+	return user_orders, nil
+}
+
+func (bot *TradingBot) getBitsoOrderTrades(oid string) ([]bitso.UserTrade, error) {
+	user_trades, err := bot.BitsoClient.OrderTrades(oid, nil)
+	if err != nil {
+		return nil, err
+	}
+	bot.updatePrivateAPIRequestPerMinute()
+	return user_trades, err
+}
+
+func (bot *TradingBot) getBitsoUserTrades(oid string) ([]bitso.UserTrade, error) {
+	user_trades, err := bot.BitsoClient.OrderTrades(oid, nil)
+	if err != nil {
+		return nil, err
+	}
+	bot.updatePrivateAPIRequestPerMinute()
+	return user_trades, err
 }
 
 func (bot *TradingBot) updatePublicAPIRequestPerMinute() {

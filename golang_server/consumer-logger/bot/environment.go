@@ -1,6 +1,7 @@
 package bot
 
 import (
+	"fmt"
 	"log"
 	"math/rand"
 	"time"
@@ -157,6 +158,7 @@ func (pb *ProductionBehavior) setInitBotConfig() {
 	pb.bot.setTradingFrequency()
 	pb.bot.setMinMinorAllowToTrade()
 	pb.bot.setMaxMinorAllowToTrade()
+	pb.bot.setTradingChannels()
 	pb.bot.setTableObject()
 }
 
@@ -171,6 +173,39 @@ func (pb *ProductionBehavior) setInitActions() {
 	}
 	sell := InitSellBehavior(major_balance)
 	buy := InitBuyBehavior(minor_balance)
+}
+
+func (pb *ProductionBehavior) trade() {
+	tradingSessionLimitTime := time.Now().Add(12 * time.Hour) // Simulation for 12 hours
+	tradingTimeoutTime := 300 * time.Minute
+	log.Println("Bot started trading at:", time.Now())
+	log.Println("Bot will end trading at:", tradingLimitTime)
+
+	for {
+		go sell.HandleOrderMaker(pb.bot)
+		go buy.HandleOrderMaker(pb.bot)
+
+		select {
+		case <-pb.bot.SellCh:
+			fmt.Println("gorutine sell channel done")
+		case <-pb.bot.BuyCh:
+			fmt.Println("gorutine buy channel done")
+		case <-time.After(tradingSessionLimitTime):
+			fmt.Println("bot reached trading limit session time")
+			return
+		case <-time.After(tradingTimeoutTime):
+			fmt.Println("bot reached timed out")
+			return
+		case <-done2:
+			fmt.Println("gorutine RenewOrCancelOrder done")
+			sleepDuration := 1 * time.Minute
+			time.Sleep(sleepDuration)
+		case <-kafka_avg_price_task_done:
+			log.Println("Kafka avg prices done! Now check current prices with kafka data ")
+		case <-kafka_ws_trade_trends_task_done:
+			log.Println("Kafka price trends done! Now check current prices with kafka data ")
+		}
+	}
 }
 
 func (pb *ProductionBehavior) OrderMakerHandler(sell *SellBehavior) error {
