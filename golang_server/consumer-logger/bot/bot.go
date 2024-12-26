@@ -3,6 +3,7 @@ package bot
 import (
 	"log"
 	"net/url"
+	"sync"
 	"time"
 
 	"github.com/segmentio/kafka-go/example/consumer-logger/bitso"
@@ -13,6 +14,8 @@ import (
 type TradingBot struct {
 	BitsoClient                         *bitso.Client
 	DBClient                            *database.DatabaseClient
+	SellBehavior                        *SellBehavior
+	BuyBehavior                         *BuyBehavior
 	KafkaClient                         *queue.KafkaClient
 	BitsoBook                           bitso.Book
 	BitsoExchangeBook                   bitso.ExchangeOrderBook
@@ -24,6 +27,7 @@ type TradingBot struct {
 	Side                                bitso.OrderSide
 	BidFirst                            bool
 	Threshold                           float64
+	Mutex                               sync.Mutex
 	OrderSet                            chan bool
 	SellCh                              chan bool
 	BuyCh                               chan bool
@@ -206,6 +210,14 @@ func (bot *TradingBot) getBitsoOpenOrders() ([]bitso.UserOrder, error) {
 	return user_orders, nil
 }
 
+func (bot *TradingBot) postBitsoOrderTrade(userTrade *bitso.UserTrade) error {
+	err := bot.DBClient.SaveTrade(userTrade)
+	if err != nil {
+		return nil, err
+	}
+	return nil
+}
+
 func (bot *TradingBot) getBitsoOrderTrades(oid string) ([]bitso.UserTrade, error) {
 	user_trades, err := bot.BitsoClient.OrderTrades(oid, nil)
 	if err != nil {
@@ -222,6 +234,24 @@ func (bot *TradingBot) getBitsoUserTrades(oid string) ([]bitso.UserTrade, error)
 	}
 	bot.updatePrivateAPIRequestPerMinute()
 	return user_trades, err
+}
+
+func (bot *TradingBot) getBitsoLookUpOrders(oid string) ([]bitso.UserOrder, error) {
+	user_orders, err := bot.BitsoClient.LookupOrder(oid)
+	if err != nil {
+		return nil, err
+	}
+	bot.updatePrivateAPIRequestPerMinute()
+	return user_orders, err
+}
+
+func (bot *TradingBot) BitsoCancelOrder(oid string) (string, error) {
+	payload, err := bot.BitsoClient.CancelOrder(oid)
+	if err != nil {
+		return payload, err
+	}
+	bot.updatePrivateAPIRequestPerMinute()
+	return payload, err
 }
 
 func (bot *TradingBot) updatePublicAPIRequestPerMinute() {

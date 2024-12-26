@@ -23,6 +23,7 @@ type SideBehavior interface {
 
 type SellBehavior struct {
 	MajorBalance        bitso.Balance
+	OrderBehavior 		*BaseOrderBehavior
 	CurrencyAmount      float64
 	BitsoOrderPlacement *bitso.OrderPlacement
 	Side                bitso.OrderSide
@@ -34,6 +35,7 @@ type SellBehavior struct {
 func InitSellBehavior(balance bitso.Balance) *SellBehavior {
 	return &SellBehavior{
 		MajorBalance: balance,
+		OrderBehavior &BaseOrderBehavior{},
 		Side:         bitso.OrderSide(1),
 		FirstOrder:   true,
 		FirstTrade:   true,
@@ -131,69 +133,21 @@ func (s *SellBehavior) RemoveOrderFromQueue(oid string) error {
 	return nil
 }
 
-func (s *SellBehavior) HandleOrderCancelation(bot *TradingBot, oid string) error {
-	if len(oid) == 0 {
-		return errors.New("Order ID is an empty string!")
-	}
-	mutex.Lock()
-	open_orders, err := bot.getBitsoUserOpenOrders()
-	if err != nil {
-		return errors.New("error while querying bitso open orders request: ", err)
-	}
-	for _, open_order := range open_orders {
-			if open_order.OID == oid {
-				if open_order.Status == bitso.OrderStatus(1) {
-					res, err := bot.BitsoClient.CancelOrder(oid)
-					if err != nil {
-						return errors.New("error while canceling order request: ", err)
-					}
-					s.RemoveOrderFromQueue(oid)
-					log.Println("order cancelation request successfully fulfill: ", res)
-				}
-			}
-		}
-	return nil
-}
-
-func (s *SellBehavior) HandleBitsoUserTrades(bot *TradingBot,oid string) (bool,err) {
+func (s *SellBehavior) HandleBitsoUserTrades(bot *TradingBot,oid string) error {
 	if len(oid) == 0 {
 		return errors.New("Order ID is an empty string!")
 	}
 	user_trades, err := bot.getBitsoUserTradesByOID(oid)
 	if err != nil {
-		return false, err
+		return err
 	}
 	for _, user_trade := range user_trades {
-		if user_trade.Side.String() == s.Side.String() {
-			return true, nil
+		err = bot.postBitsoOrderTrades(user_trade)
+		if err != nil {
+			return err
 		}
 	}
-	return false, nil
-}
-
-func (s *SellBehavior) HandleCompleteOrder(bot *TradingBot, os, oid string) error {
-}
-
-func (s *SellBehavior) HandleCompleteOrder(bot *TradingBot, os, oid string) error {
-}
-
-func (s *SellBehavior) HandleOrderStatus(bot *TradingBot, os, oid string) error {
-	if len(oid) == 0 {
-		return errors.New("Order ID is an empty string!")
-	}
-	if bot.checkOrderStatus("completed", redis_client) {
-		log.Println("user order was completed!")
-		user_trade, err := bot.getUserTradeByOId(bot.BitsoOId)
-		if err != nil || user_trade.Major.Float64() == 0 {
-			log.Fatalln("error while getting user trade: ", err)
-		}
-		arr := make([]string, 0)
-		bot.updateCompleteOrders(bot.BitsoOId, user_trade.Side.String(), arr)
-		if !bot.BidFirst {
-			bot.BitsoLastCompleteOId = bot.BitsoOId
-		} else {
-			bot.BitsoLastCompleteOId = ""
-		}
+	return nil
 }
 
 func (s *SellBehavior) HandleOrderMaker(bot *TradingBot) error {
@@ -224,11 +178,13 @@ func (s *SellBehavior) HandleOrderMaker(bot *TradingBot) error {
 type BuyBehavior struct {
 	MinorBalance   bitso.Balance
 	CurrencyAmount float64
+	OrderBehavior 		*BaseOrderBehavior
 }
 
 func InitBuyBehavior(balance bitso.Balance) *SellBehavior {
-	return &SellBehavior{
+	return &BuyBehavior{
 		MinorBalance: balance,
+		OrderBehavior &BaseOrderBehavior{},
 		Side:         bitso.OrderSide(2),
 		FirstOrder:   true,
 		FirstTrade:   true,

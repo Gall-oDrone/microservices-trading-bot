@@ -171,8 +171,8 @@ func (pb *ProductionBehavior) setInitActions() {
 	if err != nil {
 		log.Fatalln("error while getting major balance. ", err)
 	}
-	sell := InitSellBehavior(major_balance)
-	buy := InitBuyBehavior(minor_balance)
+	pb.bot.SellBehavior = InitSellBehavior(major_balance)
+	pb.bot.BuyBehavior = InitBuyBehavior(minor_balance)
 }
 
 func (pb *ProductionBehavior) trade() {
@@ -182,8 +182,10 @@ func (pb *ProductionBehavior) trade() {
 	log.Println("Bot will end trading at:", tradingLimitTime)
 
 	for {
-		go sell.HandleOrderMaker(pb.bot)
-		go buy.HandleOrderMaker(pb.bot)
+		go pb.bot.SellBehavior.HandleOrderMaker(pb.bot)
+		go pb.bot.BuyBehavior.HandleOrderMaker(pb.bot)
+		go pb.bot.SellBehavior.HandleOrderStatus(pb.bot, os, oid) // Check status in parallel
+		go pb.bot.BuyBehavior.HandleOrderStatus(pb.bot, os, oid)
 
 		select {
 		case <-pb.bot.SellCh:
