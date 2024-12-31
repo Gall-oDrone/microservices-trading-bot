@@ -850,6 +850,31 @@ func (rc *RedisClient) DeleteOrderByOrderID(book, orderId, side string) error {
 	return nil
 }
 
+// SetOrderWithTTL stores an order ID in Redis with a TTL
+func (rc *RedisClient) SetOrderWithTTL(orderID string, ttl time.Duration) error {
+	err := rc.Client.Set(rc.ctxbg, orderID, "pending", ttl).Err()
+	if err != nil {
+		return fmt.Errorf("error setting order with TTL in Redis: %v", err)
+	}
+	return nil
+}
+
+// GetExpiredOrders retrieves expired orders
+// In practice, you would use Redis keyspace notifications to listen for expired keys
+func (rc *RedisClient) ListenForExpiredOrders(onExpire func(orderID string)) error {
+	pubsub := rc.Client.PSubscribe(rc.ctxbg, "__keyevent@0__:expired") // Listen for expired keys in DB 0
+	defer pubsub.Close()
+
+	for {
+		msg, err := pubsub.ReceiveMessage(rc.ctxbg)
+		if err != nil {
+			return fmt.Errorf("error receiving expired order event: %v", err)
+		}
+
+		orderID := msg.Payload
+		onExpire(orderID) // Call the callback function when an order expires
+	}
+}
 // func (rc *Redisc) SaveProfit(profit *simulation.TradingProfit) error {
 // 	profitJSON, err := json.Marshal(profit)
 // 	if err != nil {

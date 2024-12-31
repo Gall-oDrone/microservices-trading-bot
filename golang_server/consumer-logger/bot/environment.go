@@ -175,6 +175,26 @@ func (pb *ProductionBehavior) setInitActions() {
 	pb.bot.BuyBehavior = InitBuyBehavior(minor_balance)
 }
 
+func (pb *ProductionBehavior) ListenForOrderExpirations() {
+	// TOFIX add orderID argument
+	go func() {
+		err := pb.bot.DBClient.ListenForExpiredOrders(func(orderID string) {
+			log.Printf("Order %s expired. Attempting to cancel...", orderID)
+
+			// Cancel the order using SellBehavior
+			err := pb.bot.SellBehavior.OrderBehavior.HandleCanceledOrder(pb.bot, orderID)
+			if err != nil {
+				log.Printf("Failed to cancel expired order %s: %v", orderID, err)
+			} else {
+				log.Printf("Successfully canceled expired order %s", orderID)
+			}
+		})
+		if err != nil {
+			log.Fatalf("Error listening for expired orders: %v", err)
+		}
+	}()
+}
+
 func (pb *ProductionBehavior) trade() {
 	tradingSessionLimitTime := time.Now().Add(12 * time.Hour) // Simulation for 12 hours
 	tradingTimeoutTime := 300 * time.Minute
@@ -184,8 +204,8 @@ func (pb *ProductionBehavior) trade() {
 	for {
 		go pb.bot.SellBehavior.HandleOrderMaker(pb.bot)
 		go pb.bot.BuyBehavior.HandleOrderMaker(pb.bot)
-		go pb.bot.SellBehavior.HandleOrderStatus(pb.bot, os, oid) // Check status in parallel
-		go pb.bot.BuyBehavior.HandleOrderStatus(pb.bot, os, oid)
+		go pb.bot.SellBehavior.HandleOrderStatus(pb.bot) // Check status in parallel
+		go pb.bot.BuyBehavior.HandleOrderStatus(pb.bot)
 
 		select {
 		case <-pb.bot.SellCh:

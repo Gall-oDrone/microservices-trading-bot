@@ -1,6 +1,7 @@
 package bot
 
 import (
+	"fmt"
 	"log"
 	"net/url"
 	"sync"
@@ -252,6 +253,16 @@ func (bot *TradingBot) BitsoCancelOrder(oid string) (string, error) {
 	}
 	bot.updatePrivateAPIRequestPerMinute()
 	return payload, err
+}
+
+func (bot *TradingBot) SetOrderWithTTL(oid string) error {
+	// Store order in Redis with a TTL (e.g., 5 minutes)
+	orderTimeout := 5 * time.Minute
+	err := bot.DBClient.SetOrderWithTTL(oid, orderTimeout)
+	if err != nil {
+		return fmt.Errorf("failed to set order TTL in Redis: %v", err)
+	}
+	return nil
 }
 
 func (bot *TradingBot) updatePublicAPIRequestPerMinute() {

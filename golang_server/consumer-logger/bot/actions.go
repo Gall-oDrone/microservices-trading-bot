@@ -168,6 +168,10 @@ func (s *SellBehavior) HandleOrderMaker(bot *TradingBot) error {
 	if err != nil {
 		return err
 	}
+	err = bot.SetOrderWithTTL(oid, orderTimeout)
+	if err != nil {
+		return err
+	}
 }
 
 /*

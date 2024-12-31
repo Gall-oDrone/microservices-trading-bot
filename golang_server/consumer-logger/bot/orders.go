@@ -82,18 +82,3 @@ func (b *BaseOrderBehavior) HandleCanceledOrder(bot *TradingBot, oid string) err
 	_, err := bot.BitsoCancelOrder(oid)
 	return err
 }
-func (b *BaseOrderBehavior) HandleOrderStatus(bot *TradingBot, os, oid string) error {
-	if len(oid) == 0 {
-		return errors.New("Order ID is an empty string!")
-	}
-	switch os {
-	case "completed":
-		return b.HandleCompletedOrder(bot, os, oid)
-	case "canceled":
-		return b.HandleCanceledOrder(bot, oid)
-	case "partially_filled":
-		return b.HandlePartiallyFilledOrder(bot, os, oid)
-	default:
-		return b.HandleOpenOrder(bot, os, oid)
-	}
-}
