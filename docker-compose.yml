@@ -1,5 +1,3 @@
-version: "3"
-
 services:
   golang-order-producer:
     build:
@@ -317,6 +315,6 @@ services:
 volumes:
   postgres_data:
   db-postgres-trades:
-# networks:
-#   backend:
-#     driver: bridge
+    # networks:
+    #   backend:
+    #     driver: bridge
