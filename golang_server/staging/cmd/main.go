@@ -12,8 +12,8 @@ import (
 
 	"bitso_trading_bot/internal/config"
 	"bitso_trading_bot/internal/database"
-	"bitso_trading_bot/internal/services/trading_bot"
-	"bitso_trading_bot/internal/services/trading_bot/models"
+	"bitso_trading_bot/internal/models"
+	"bitso_trading_bot/internal/trading_bot"
 	"bitso_trading_bot/pkg/bitso"
 )
 
@@ -21,7 +21,7 @@ import (
 type Application struct {
 	config      *config.Config
 	bitsoClient *bitso.Client
-	redisClient database.Client
+	redisClient *database.RedisClient
 	ctx         context.Context
 	cancel      context.CancelFunc
 	logger      *log.Logger
@@ -97,7 +97,7 @@ func (app *Application) Start() error {
 	}
 
 	// Create and initialize trading bot
-	bot := trading_bot.NewTradingBot(tradingConfig)
+	bot := trading_bot.NewTradingBot(tradingConfig, app.bitsoClient, app.redisClient)
 	if err := bot.Initialize(); err != nil {
 		return fmt.Errorf("failed to initialize trading bot: %v", err)
 	}

@@ -1,10 +1,10 @@
-package pnl_test
+package tests
 
 import (
 	"strings"
 	"testing"
 
-	"bitso_trading_bot/internal/services/trading_bot/pnl"
+	"bitso_trading_bot/internal/pnl"
 	"bitso_trading_bot/internal/utils"
 	"bitso_trading_bot/pkg/bitso"
 )

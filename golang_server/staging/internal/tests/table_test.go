@@ -1,9 +1,10 @@
-package table
+package tests
 
 import (
 	"bytes"
 	"testing"
-	"text/tabwriter"
+
+	"bitso_trading_bot/table"
 )
 
 func TestGetTableOptimalAskPriceSummary(t *testing.T) {
@@ -11,11 +12,10 @@ func TestGetTableOptimalAskPriceSummary(t *testing.T) {
 	var buf bytes.Buffer
 
 	// Initialize the TableData with the buffer
-	td := &TableData{
-		tw: tabwriter.NewWriter(&buf, 4, 4, 3, ' ', 0),
-	}
+	td := table.NewTableDataWithWriter(&buf)
 
 	// Test data
+	book := "btc_mxn"
 	amount := 1.000000
 	bid_rate := 1.000000
 	ask_value := 1.000000
@@ -25,10 +25,10 @@ func TestGetTableOptimalAskPriceSummary(t *testing.T) {
 	price_percentage_change := 1.000000
 
 	// Call the method
-	td.GetTableOptimalPriceSummary("sell", amount, bid_rate, ask_value, taker_fee, maker_fee, total, price_percentage_change)
+	td.GetTableOptimalPriceSummary("sell", book, amount, bid_rate, ask_value, taker_fee, maker_fee, total, price_percentage_change)
 
 	// Flush the writer to ensure all data is written to the buffer
-	td.tw.Flush()
+	td.Flush()
 
 	// Define the expected output
 	expectedOutput := "AMOUNT(BTC)\tBID_RATE\tASK_VALUE\tTAKER_FEE\tMAKER_FEE\tTOTAL\tBID_RATE_CHANGE(%)\n1.000000\t1.000000\t1.000000\t1.000000\t1.000000\t1.000000\t1.000000\n"
@@ -43,11 +43,10 @@ func TestGetTableOptimalBidPriceSummary(t *testing.T) {
 	var buf bytes.Buffer
 
 	// Initialize the TableData with the buffer
-	td := &TableData{
-		tw: tabwriter.NewWriter(&buf, 4, 4, 3, ' ', 0),
-	}
+	td := table.NewTableDataWithWriter(&buf)
 
 	// Test data
+	book := "btc_mxn"
 	amount := 1.000000
 	bid_rate := 1.000000
 	ask_value := 1.000000
@@ -57,10 +56,10 @@ func TestGetTableOptimalBidPriceSummary(t *testing.T) {
 	price_percentage_change := 1.000000
 
 	// Call the method
-	td.GetTableOptimalPriceSummary("buy", amount, bid_rate, ask_value, taker_fee, maker_fee, total, price_percentage_change)
+	td.GetTableOptimalPriceSummary("buy", book, amount, bid_rate, ask_value, taker_fee, maker_fee, total, price_percentage_change)
 
 	// Flush the writer to ensure all data is written to the buffer
-	td.tw.Flush()
+	td.Flush()
 
 	// Define the expected output
 	expectedOutput := "AMOUNT(MXN)\tASK_RATE\tBID_VALUE\tTAKER_FEE\tMAKER_FEE\tTOTAL\tASK_RATE_CHANGE(%)\n1.000000\t1.000000\t1.000000\t1.000000\t1.000000\t1.000000\t1.000000\n"

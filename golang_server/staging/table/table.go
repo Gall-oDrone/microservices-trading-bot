@@ -2,6 +2,7 @@ package table
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"text/tabwriter"
 )
@@ -13,6 +14,12 @@ type TableData struct {
 func NewTableData() *TableData {
 	return &TableData{
 		tw: tabwriter.NewWriter(os.Stdout, 4, 4, 3, ' ', 0),
+	}
+}
+
+func NewTableDataWithWriter(w io.Writer) *TableData {
+	return &TableData{
+		tw: tabwriter.NewWriter(w, 4, 4, 3, ' ', 0),
 	}
 }
 
@@ -45,5 +52,9 @@ func (td *TableData) GetTableOrderPlacement(book, side, order_type, major, minor
 		minor,
 		price,
 	)
+	td.tw.Flush()
+}
+
+func (td *TableData) Flush() {
 	td.tw.Flush()
 }

@@ -489,7 +489,7 @@ func (rc *RedisClient) SaveTrade(userTrade *bitso.UserTrade) error {
 		OID:           userTrade.OID,
 		OriginOID:     userTrade.OriginOID,
 		Side:          userTrade.Side,
-		MakerSide:     userTrade.OrderSide,
+		MakerSide:     userTrade.MakerSide,
 	}
 	userTradeJSON, err := json.Marshal(parsed_usertrade)
 	if err != nil {
@@ -537,94 +537,110 @@ func (rc *RedisClient) GetUserTrade(trade_id string) (bitso.UserTrade, error) {
 	return trade, nil
 }
 
-"""
-This method retrieves all trades by calling the base method with a wildcard pattern.
-"""
+// getTradesByPattern retrieves trades based on a pattern
+func (rc *RedisClient) getTradesByPattern(pattern string) ([]*bitso.UserTrade, error) {
+	keys, err := rc.client.Keys(rc.ctxbg, pattern).Result()
+	if err != nil {
+		return nil, fmt.Errorf("error fetching keys: %v", err)
+	}
+
+	trades := make([]*bitso.UserTrade, 0, len(keys))
+	for _, key := range keys {
+		value, err := rc.client.Get(rc.ctxbg, key).Result()
+		if err == redis.Nil {
+			continue // Skip if the key does not exist
+		} else if err != nil {
+			return nil, fmt.Errorf("error fetching value for key %s: %v", key, err)
+		}
+
+		var trade bitso.UserTrade
+		if err := json.Unmarshal([]byte(value), &trade); err != nil {
+			return nil, fmt.Errorf("error unmarshaling trade: %v", err)
+		}
+		trades = append(trades, &trade)
+	}
+
+	return trades, nil
+}
+
+// GetAllTrades retrieves all trades by calling the base method with a wildcard pattern.
 func (rc *RedisClient) GetAllTrades() ([]*bitso.UserTrade, error) {
-    return rc.getTradesByPattern("trade_*")
+	return rc.getTradesByPattern("trade_*")
 }
 
-"""
-This method retrieves trades based on the OID.
-"""
+// GetTradesByOID retrieves trades based on the OID.
 func (rc *RedisClient) GetTradesByOID(oid string) ([]*bitso.UserTrade, error) {
-    pattern := fmt.Sprintf("trade_%s", oid)
-    return rc.getTradesByPattern(pattern)
+	pattern := fmt.Sprintf("trade_%s", oid)
+	return rc.getTradesByPattern(pattern)
 }
 
-"""
-This method retrieves trades based on the OriginOID. Since OriginOID is stored as part of the value (not the key), we’ll filter trades after retrieving all of them.
-"""
+// GetTradesByOriginOID retrieves trades based on the OriginOID. Since OriginOID is stored as part of the value (not the key), we'll filter trades after retrieving all of them.
 func (rc *RedisClient) GetTradesByOriginOID(originOID string) ([]*bitso.UserTrade, error) {
-    trades, err := rc.GetAllTrades()
-    if err != nil {
-        return nil, err
-    }
+	trades, err := rc.GetAllTrades()
+	if err != nil {
+		return nil, err
+	}
 
-    var filteredTrades []*bitso.UserTrade
-    for _, trade := range trades {
-        if trade.OriginOID == originOID {
-            filteredTrades = append(filteredTrades, trade)
-        }
-    }
+	var filteredTrades []*bitso.UserTrade
+	for _, trade := range trades {
+		if trade.OriginOID == originOID {
+			filteredTrades = append(filteredTrades, trade)
+		}
+	}
 
-    return filteredTrades, nil
+	return filteredTrades, nil
 }
-"""
-This method retrieves trades based on the Book.
-"""
+
+// GetTradesByBook retrieves trades based on the Book.
 func (rc *RedisClient) GetTradesByBook(book string) ([]*bitso.UserTrade, error) {
-    trades, err := rc.GetAllTrades()
-    if err != nil {
-        return nil, err
-    }
+	trades, err := rc.GetAllTrades()
+	if err != nil {
+		return nil, err
+	}
 
-    var filteredTrades []*bitso.UserTrade
-    for _, trade := range trades {
-        if string(trade.Book) == book {
-            filteredTrades = append(filteredTrades, trade)
-        }
-    }
+	var filteredTrades []*bitso.UserTrade
+	for _, trade := range trades {
+		if trade.Book.String() == book {
+			filteredTrades = append(filteredTrades, trade)
+		}
+	}
 
-    return filteredTrades, nil
+	return filteredTrades, nil
 }
-"""
-This method retrieves trades based on the Side.
-"""
+
+// GetTradesBySide retrieves trades based on the Side.
 func (rc *RedisClient) GetTradesBySide(side bitso.OrderSide) ([]*bitso.UserTrade, error) {
-    trades, err := rc.GetAllTrades()
-    if err != nil {
-        return nil, err
-    }
+	trades, err := rc.GetAllTrades()
+	if err != nil {
+		return nil, err
+	}
 
-    var filteredTrades []*bitso.UserTrade
-    for _, trade := range trades {
-        if trade.Side == side {
-            filteredTrades = append(filteredTrades, trade)
-        }
-    }
+	var filteredTrades []*bitso.UserTrade
+	for _, trade := range trades {
+		if trade.Side == side {
+			filteredTrades = append(filteredTrades, trade)
+		}
+	}
 
-    return filteredTrades, nil
+	return filteredTrades, nil
 }
-"""
-This method retrieves trades based on the MakerSide.
-"""
+
+// GetTradesByMakerSide retrieves trades based on the MakerSide.
 func (rc *RedisClient) GetTradesByMakerSide(makerSide bitso.OrderSide) ([]*bitso.UserTrade, error) {
-    trades, err := rc.GetAllTrades()
-    if err != nil {
-        return nil, err
-    }
+	trades, err := rc.GetAllTrades()
+	if err != nil {
+		return nil, err
+	}
 
-    var filteredTrades []*bitso.UserTrade
-    for _, trade := range trades {
-        if trade.MakerSide == makerSide {
-            filteredTrades = append(filteredTrades, trade)
-        }
-    }
+	var filteredTrades []*bitso.UserTrade
+	for _, trade := range trades {
+		if trade.MakerSide == makerSide {
+			filteredTrades = append(filteredTrades, trade)
+		}
+	}
 
-    return filteredTrades, nil
+	return filteredTrades, nil
 }
-
 
 func (rc *RedisClient) PostOrder(book, orderId, side, orderStatus string) error {
 	// Create a key with the format "order:<book>:<side>:<orderId>"
@@ -852,7 +868,7 @@ func (rc *RedisClient) DeleteOrderByOrderID(book, orderId, side string) error {
 
 // SetOrderWithTTL stores an order ID in Redis with a TTL
 func (rc *RedisClient) SetOrderWithTTL(orderID string, ttl time.Duration) error {
-	err := rc.Client.Set(rc.ctxbg, orderID, "pending", ttl).Err()
+	err := rc.client.Set(rc.ctxbg, orderID, "pending", ttl).Err()
 	if err != nil {
 		return fmt.Errorf("error setting order with TTL in Redis: %v", err)
 	}
@@ -862,7 +878,7 @@ func (rc *RedisClient) SetOrderWithTTL(orderID string, ttl time.Duration) error 
 // GetExpiredOrders retrieves expired orders
 // In practice, you would use Redis keyspace notifications to listen for expired keys
 func (rc *RedisClient) ListenForExpiredOrders(onExpire func(orderID string)) error {
-	pubsub := rc.Client.PSubscribe(rc.ctxbg, "__keyevent@0__:expired") // Listen for expired keys in DB 0
+	pubsub := rc.client.PSubscribe(rc.ctxbg, "__keyevent@0__:expired") // Listen for expired keys in DB 0
 	defer pubsub.Close()
 
 	for {
@@ -875,6 +891,7 @@ func (rc *RedisClient) ListenForExpiredOrders(onExpire func(orderID string)) err
 		onExpire(orderID) // Call the callback function when an order expires
 	}
 }
+
 // func (rc *Redisc) SaveProfit(profit *simulation.TradingProfit) error {
 // 	profitJSON, err := json.Marshal(profit)
 // 	if err != nil {

@@ -10,6 +10,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"bitso_trading_bot/pkg/bitso"
 )
 
 func Rest(max_min int) {
@@ -172,4 +174,14 @@ func PrintReadableTime(startTimeMillis, endTimeMillis uint64) {
 
 	// Print in human-readable format
 	fmt.Printf("Start Time: %s, End Time: %s\n", startTime.Format(time.RFC3339), endTime.Format(time.RFC3339))
+}
+
+// GetBalance searches through a list of balances to find a specific currency
+func GetBalance(currency bitso.Currency, balances []bitso.Balance) (*bitso.Balance, error) {
+	for _, balance := range balances {
+		if balance.Currency == currency {
+			return &balance, nil
+		}
+	}
+	return &bitso.Balance{}, fmt.Errorf("balance not found for currency: %s", currency.String())
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"bitso_trading_bot/internal/queue"
@@ -290,39 +291,39 @@ func (c *RedisClient) InsertTradeRecord(trade *bitso.WebSocketTrade) error {
 }
 
 // GetLatestTradeRecord retrieves the latest websocket trade record
-func (c *RedisClient) GetLatestTradeRecord() (bitso.WebSocketTrade, error) {
+func (c *RedisClient) GetLatestTradeRecord() (*bitso.WebSocketTrade, error) {
 	var trade bitso.WebSocketTrade
 	keys, err := c.client.Keys(c.ctx, "ws_trade:*").Result()
 	if err != nil {
-		return trade, fmt.Errorf("failed to get trade record keys: %w", err)
+		return nil, fmt.Errorf("failed to get trade record keys: %w", err)
 	}
 
 	if len(keys) == 0 {
-		return trade, nil
+		return nil, nil
 	}
 
 	// Get the latest key
 	latestKey := keys[len(keys)-1]
 	data, err := c.client.Get(c.ctx, latestKey).Bytes()
 	if err != nil {
-		return trade, fmt.Errorf("failed to get trade record data: %w", err)
+		return nil, fmt.Errorf("failed to get trade record data: %w", err)
 	}
 
 	if err := json.Unmarshal(data, &trade); err != nil {
-		return trade, fmt.Errorf("failed to unmarshal trade record: %w", err)
+		return nil, fmt.Errorf("failed to unmarshal trade record: %w", err)
 	}
 
-	return trade, nil
+	return &trade, nil
 }
 
 // GetTradeRecordsByTimestampRange retrieves trade records within a timestamp range
-func (c *RedisClient) GetTradeRecordsByTimestampRange(start, end uint64) ([]bitso.WebSocketTrade, error) {
+func (c *RedisClient) GetTradeRecordsByTimestampRange(start, end uint64) ([]*bitso.WebSocketTrade, error) {
 	keys, err := c.client.Keys(c.ctx, "ws_trade:*").Result()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get trade record keys: %w", err)
 	}
 
-	trades := make([]bitso.WebSocketTrade, 0)
+	trades := make([]*bitso.WebSocketTrade, 0)
 	for _, key := range keys {
 		data, err := c.client.Get(c.ctx, key).Bytes()
 		if err != nil {
@@ -335,7 +336,7 @@ func (c *RedisClient) GetTradeRecordsByTimestampRange(start, end uint64) ([]bits
 		}
 
 		if trade.Sent >= start && trade.Sent <= end {
-			trades = append(trades, trade)
+			trades = append(trades, &trade)
 		}
 	}
 
@@ -382,4 +383,85 @@ func (c *RedisClient) DeleteKafkaBatchKeysByPattern(pattern string) error {
 	}
 
 	return nil
+}
+
+// SaveUserBalance saves a user's balance for a specific currency to Redis
+func (c *RedisClient) SaveUserBalance(balance *bitso.Balance) error {
+	data, err := json.Marshal(balance)
+	if err != nil {
+		return fmt.Errorf("failed to marshal balance: %w", err)
+	}
+
+	key := fmt.Sprintf("balance:%s", balance.Currency.String())
+	if err := c.client.Set(c.ctx, key, data, 0).Err(); err != nil {
+		return fmt.Errorf("failed to save balance: %w", err)
+	}
+
+	return nil
+}
+
+// GetUserBalance retrieves a user's balance for a specific currency from Redis
+func (c *RedisClient) GetUserBalance(currency string) (bitso.Balance, error) {
+	var balance bitso.Balance
+	key := fmt.Sprintf("balance:%s", currency)
+
+	data, err := c.client.Get(c.ctx, key).Bytes()
+	if err != nil {
+		if err == redis.Nil {
+			return balance, fmt.Errorf("balance not found for currency: %s", currency)
+		}
+		return balance, fmt.Errorf("failed to get balance: %w", err)
+	}
+
+	if err := json.Unmarshal(data, &balance); err != nil {
+		return balance, fmt.Errorf("failed to unmarshal balance: %w", err)
+	}
+
+	return balance, nil
+}
+
+// GetOrdersBySide returns a map of order IDs by their side
+func (c *RedisClient) GetOrdersBySide(side string) (map[string]string, error) {
+	pattern := fmt.Sprintf("order:*:%s", side)
+	keys, err := c.GetKeysMatchingPattern(pattern)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get orders by side: %w", err)
+	}
+
+	orders := make(map[string]string)
+	for _, key := range keys {
+		// Extract order ID from key
+		parts := strings.Split(key, ":")
+		if len(parts) >= 2 {
+			orderID := parts[1]
+			orders[orderID] = side
+		}
+	}
+
+	return orders, nil
+}
+
+// GetOrdersByStatus returns a map of order IDs by their status
+func (c *RedisClient) GetOrdersByStatus(status string) (map[string]string, error) {
+	// Get all orders first
+	orders, err := c.GetAllUserOrders()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get orders: %w", err)
+	}
+
+	// Filter orders by status
+	ordersByStatus := make(map[string]string)
+	for _, order := range orders {
+		if order.Status.String() == status {
+			ordersByStatus[order.OID] = status
+		}
+	}
+
+	return ordersByStatus, nil
+}
+
+// SetOrderWithTTL sets an order with a time-to-live
+func (c *RedisClient) SetOrderWithTTL(oid string, timeout time.Duration) error {
+	key := fmt.Sprintf("order_ttl:%s", oid)
+	return c.client.Set(c.ctx, key, "active", timeout).Err()
 }

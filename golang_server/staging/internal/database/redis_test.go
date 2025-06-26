@@ -117,6 +117,16 @@ func createDummyWebsocketTrade() *bitso.WebSocketTrade {
 	}
 }
 
+// createDummyBalance creates a dummy balance for testing
+func createDummyBalance() *bitso.Balance {
+	return &bitso.Balance{
+		Currency:  bitso.BTC,
+		Total:     bitso.ToMonetary(1.5),
+		Locked:    bitso.ToMonetary(0.5),
+		Available: bitso.ToMonetary(1.0),
+	}
+}
+
 func TestRedisClient_TickerOperations(t *testing.T) {
 	client := setupTestRedis(t)
 	defer client.Close()
@@ -150,6 +160,10 @@ func TestRedisClient_UserOrderOperations(t *testing.T) {
 	err := client.SaveUserOrder(order)
 	assert.NoError(t, err)
 
+	// Test SetOrderWithTTL
+	err = client.SetOrderWithTTL(order.OID, 5*time.Minute)
+	assert.NoError(t, err)
+
 	// Test GetUserOrderById
 	retrieved, err := client.GetUserOrderById(order.OID)
 	assert.NoError(t, err)
@@ -167,6 +181,28 @@ func TestRedisClient_UserOrderOperations(t *testing.T) {
 	assert.Len(t, orders, 1)
 	assert.Equal(t, order.OID, orders[0].OID)
 
+	// Test GetOrdersBySide
+	ordersBySide, err := client.GetOrdersBySide(order.Side.String())
+	assert.NoError(t, err)
+	assert.Len(t, ordersBySide, 1)
+	assert.Equal(t, order.Side.String(), ordersBySide[order.OID])
+
+	// Test GetOrdersByStatus
+	ordersByStatus, err := client.GetOrdersByStatus(order.Status.String())
+	assert.NoError(t, err)
+	assert.Len(t, ordersByStatus, 1)
+	assert.Equal(t, order.Status.String(), ordersByStatus[order.OID])
+
+	// Test GetOrdersByStatus with non-existent status
+	ordersByStatus, err = client.GetOrdersByStatus("nonexistent")
+	assert.NoError(t, err)
+	assert.Empty(t, ordersByStatus)
+
+	// Test GetOrdersBySide with non-existent side
+	ordersBySide, err = client.GetOrdersBySide("nonexistent")
+	assert.NoError(t, err)
+	assert.Empty(t, ordersBySide)
+
 	// Test DeleteAllUserOrders
 	err = client.DeleteAllUserOrders()
 	assert.NoError(t, err)
@@ -174,6 +210,16 @@ func TestRedisClient_UserOrderOperations(t *testing.T) {
 	orders, err = client.GetAllUserOrders()
 	assert.NoError(t, err)
 	assert.Empty(t, orders)
+
+	// Verify GetOrdersBySide returns empty after deletion
+	ordersBySide, err = client.GetOrdersBySide(order.Side.String())
+	assert.NoError(t, err)
+	assert.Empty(t, ordersBySide)
+
+	// Verify GetOrdersByStatus returns empty after deletion
+	ordersByStatus, err = client.GetOrdersByStatus(order.Status.String())
+	assert.NoError(t, err)
+	assert.Empty(t, ordersByStatus)
 }
 
 func TestRedisClient_TradeOperations(t *testing.T) {
@@ -282,4 +328,28 @@ func TestRedisClient_KeyManagementOperations(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Len(t, keys, 1)
 	assert.Contains(t, keys[0], "batch:")
+}
+
+func TestRedisClient_BalanceOperations(t *testing.T) {
+	client := setupTestRedis(t)
+	defer client.Close()
+
+	balance := createDummyBalance()
+
+	// Test SaveUserBalance
+	err := client.SaveUserBalance(balance)
+	assert.NoError(t, err)
+
+	// Test GetUserBalance
+	retrieved, err := client.GetUserBalance(balance.Currency.String())
+	assert.NoError(t, err)
+	assert.Equal(t, balance.Currency, retrieved.Currency)
+	assert.Equal(t, string(balance.Total), string(retrieved.Total))
+	assert.Equal(t, string(balance.Locked), string(retrieved.Locked))
+	assert.Equal(t, string(balance.Available), string(retrieved.Available))
+
+	// Test GetUserBalance with non-existent currency
+	_, err = client.GetUserBalance("NONEXISTENT")
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "balance not found")
 }

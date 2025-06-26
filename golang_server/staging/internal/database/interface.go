@@ -2,6 +2,7 @@ package database
 
 import (
 	"context"
+	"time"
 
 	"bitso_trading_bot/internal/queue"
 	"bitso_trading_bot/pkg/bitso"
@@ -18,6 +19,9 @@ type Client interface {
 	GetUserOrderById(orderId string) (bitso.UserOrder, error)
 	GetAllUserOrders() ([]bitso.UserOrder, error)
 	DeleteAllUserOrders() error
+	GetOrdersBySide(side string) (map[string]string, error)
+	GetOrdersByStatus(status string) (map[string]string, error)
+	SetOrderWithTTL(oid string, timeout time.Duration) error
 
 	// Trade operations
 	SaveTrade(trade *bitso.UserTrade) error

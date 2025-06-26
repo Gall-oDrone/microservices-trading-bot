@@ -1,4 +1,4 @@
-package pnl_test
+package tests
 
 import (
 	"fmt"

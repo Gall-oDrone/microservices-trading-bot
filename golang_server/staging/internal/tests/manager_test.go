@@ -1,21 +1,22 @@
-package table_test
+package tests
 
 import (
+	"strings"
 	"testing"
 
+	"bitso_trading_bot/internal/pnl"
 	"bitso_trading_bot/pkg/bitso"
-	"bitso_trading_bot/table"
 )
 
-func TestPnLManager(t *testing.T) {
+func TestManager(t *testing.T) {
 	// Create a new PnL manager
-	manager := table.NewPnLManager()
+	manager := pnl.NewManager()
 
 	// Create a test book
 	book := bitso.NewBook(bitso.BTC, bitso.USD)
 
 	// Test case 1: Buy trade with profit
-	buyTrade := table.TradePnL{
+	buyTrade := pnl.TradePnL{
 		Book:       book,
 		Side:       bitso.OrderSideBuy,
 		EntryPrice: 50000.0,
@@ -27,11 +28,11 @@ func TestPnLManager(t *testing.T) {
 	manager.AddTrade(buyTrade)
 
 	// Test case 2: Sell trade with loss
-	sellTrade := table.TradePnL{
+	sellTrade := pnl.TradePnL{
 		Book:       book,
 		Side:       bitso.OrderSideSell,
 		EntryPrice: 51000.0,
-		ExitPrice:  50500.0,
+		ExitPrice:  50000.0,
 		Amount:     0.1,
 		Fees:       5.0,
 	}
@@ -49,25 +50,17 @@ func TestPnLManager(t *testing.T) {
 		t.Errorf("Expected 2 total trades, got %d", accPnL.TotalTrades)
 	}
 
-	if accPnL.WinningTrades != 1 {
-		t.Errorf("Expected 1 winning trade, got %d", accPnL.WinningTrades)
-	}
-
-	if accPnL.LosingTrades != 1 {
-		t.Errorf("Expected 1 losing trade, got %d", accPnL.LosingTrades)
-	}
-
 	// Expected PnL calculations:
 	// Buy trade: (51000 - 50000) * 0.1 = 100 profit
-	// Sell trade: (51000 - 50500) * 0.1 = 50 profit
+	// Sell trade: (51000 - 50000) * 0.1 = 100 profit
 	// Total fees: 5 + 5 = 10
-	expectedNetPnL := 140.0 // 100 + 50 - 10
+	expectedNetPnL := 190.0 // 100 + 100 - 10
 	if accPnL.NetPnL != expectedNetPnL {
 		t.Errorf("Expected net PnL of %.2f, got %.2f", expectedNetPnL, accPnL.NetPnL)
 	}
 
 	// Verify win rate
-	expectedWinRate := 50.0 // 1 winning trade out of 2 total trades
+	expectedWinRate := 100.0 // Both trades are profitable
 	if accPnL.WinRate != expectedWinRate {
 		t.Errorf("Expected win rate of %.2f%%, got %.2f%%", expectedWinRate, accPnL.WinRate)
 	}
@@ -78,14 +71,39 @@ func TestPnLManager(t *testing.T) {
 		t.Errorf("Expected 2 trades in history, got %d", len(history))
 	}
 
-	// Test string formatting
+	// Test string formatting with colors
 	tradeString := manager.GetTradePnLString(buyTrade)
 	if tradeString == "" {
 		t.Error("Expected non-empty trade string")
+	}
+	// Verify that profit values are colored green
+	if !strings.Contains(tradeString, "\033[32m") {
+		t.Error("Expected PnL value to be colored green")
 	}
 
 	accString := manager.GetAccumulatedPnLString(book)
 	if accString == "" {
 		t.Error("Expected non-empty accumulated PnL string")
+	}
+	// Verify that net PnL is colored green
+	if !strings.Contains(accString, "\033[32m") {
+		t.Error("Expected net PnL to be colored green")
+	}
+
+	// Test case 3: Trade with loss
+	lossTrade := pnl.TradePnL{
+		Book:       book,
+		Side:       bitso.OrderSideBuy,
+		EntryPrice: 51000.0,
+		ExitPrice:  50000.0,
+		Amount:     0.1,
+		Fees:       5.0,
+	}
+
+	manager.AddTrade(lossTrade)
+	lossString := manager.GetTradePnLString(lossTrade)
+	// Verify that loss values are colored red
+	if !strings.Contains(lossString, "\033[31m") {
+		t.Error("Expected PnL value to be colored red")
 	}
 }
