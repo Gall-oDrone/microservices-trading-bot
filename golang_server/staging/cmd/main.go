@@ -82,7 +82,7 @@ func (app *Application) Start() error {
 
 	// Create trading configuration
 	tradingConfig := &models.TradingConfig{
-		Book:              bitso.NewBook(bitso.BTC, bitso.USD), // Example book
+		Book:              bitso.NewBook(bitso.BTC, bitso.MXN), // BTC/MXN trading pair
 		MinTradeAmount:    0.001,                               // Example minimum trade amount
 		MaxTradeAmount:    0.1,                                 // Example maximum trade amount
 		MaxTradeValue:     1000.0,                              // Example maximum trade value

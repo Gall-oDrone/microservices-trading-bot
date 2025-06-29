@@ -40,6 +40,31 @@ func NewTradingBot(config *models.TradingConfig, bitsoClient *bitso.Client, dbCl
 	}
 }
 
+// fetchAndStoreBalances fetches balances from Bitso API and stores them in Redis
+func (tb *TradingBot) fetchAndStoreBalances() error {
+	tb.logger.Println("Fetching balances from Bitso API...")
+
+	// Fetch balances from Bitso API
+	balances, err := tb.bitsoClient.Balances(nil)
+	if err != nil {
+		return fmt.Errorf("failed to fetch balances from Bitso: %w", err)
+	}
+
+	tb.logger.Printf("Retrieved %d balances from Bitso API", len(balances))
+
+	// Store each balance in Redis
+	for _, balance := range balances {
+		if err := tb.dbClient.SaveUserBalance(&balance); err != nil {
+			tb.logger.Printf("Warning: failed to save balance for %s: %v", balance.Currency.String(), err)
+			continue
+		}
+		tb.logger.Printf("Saved balance for %s: Available=%.8f, Locked=%.8f",
+			balance.Currency.String(), balance.Available.Float64(), balance.Locked.Float64())
+	}
+
+	return nil
+}
+
 // Initialize sets up the trading bot
 func (tb *TradingBot) Initialize() error {
 	tb.logger.Println("Initializing trading bot...")
@@ -52,6 +77,11 @@ func (tb *TradingBot) Initialize() error {
 	// Check if we're within trading hours
 	if !tb.config.IsWithinTradingHours() {
 		return fmt.Errorf("current time is outside trading hours")
+	}
+
+	// Fetch and store balances from Bitso API
+	if err := tb.fetchAndStoreBalances(); err != nil {
+		return fmt.Errorf("failed to fetch and store balances: %w", err)
 	}
 
 	// Initialize order manager
@@ -103,21 +133,25 @@ func (tb *TradingBot) tradingLoop() {
 	ticker := time.NewTicker(1 * time.Minute)
 	defer ticker.Stop()
 
-	for {
-		select {
-		case <-ticker.C:
-			if !tb.config.IsWithinTradingHours() {
-				tb.logger.Println("Outside trading hours, waiting...")
-				continue
-			}
+	for range ticker.C {
+		if !tb.config.IsWithinTradingHours() {
+			tb.logger.Println("Outside trading hours, waiting...")
+			continue
+		}
 
-			tb.logger.Println("Checking for trading opportunities...")
+		tb.logger.Println("Checking for trading opportunities...")
 
-			// Execute the trading strategy
-			if err := tb.strategy.Execute(tb); err != nil {
-				tb.logger.Printf("Strategy execution error: %v", err)
-				continue
-			}
+		// Get current ticker
+		ticker := tb.GetTicker(tb.book)
+		if ticker == nil {
+			tb.logger.Println("Failed to get ticker, skipping this iteration")
+			continue
+		}
+
+		// Execute the trading strategy
+		if err := tb.strategy.Execute(ticker); err != nil {
+			tb.logger.Printf("Strategy execution error: %v", err)
+			continue
 		}
 	}
 }
