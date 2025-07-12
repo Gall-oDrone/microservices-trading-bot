@@ -39,7 +39,7 @@ func (b *BuyBehavior) CheckFunds(min float64, balance *bitso.Balance) error {
 }
 
 // CalculateOptimalRate calculates the optimal rate for a buy order
-func (b *BuyBehavior) CalculateOptimalRate(ticker *bitso.Ticker, limit, amount float64, fee bitso.Fee, marketTrade string, tableData *table.TableData) (float64, error) {
+func (b *BuyBehavior) CalculateOptimalRate(ticker *bitso.Ticker, limit, amount float64, fee bitso.Fee, marketTrade string) (float64, error) {
 	if ticker == nil {
 		return 0, fmt.Errorf("ticker is nil")
 	}
@@ -79,7 +79,7 @@ func (b *BuyBehavior) ExecuteOrder(ticker *bitso.Ticker, amount, rate float64, o
 		Price: bitso.ToMonetary(rate),
 	}
 	// Place the order
-	oid, err := b.orderManager.GetBitsoClient().PlaceOrder(op)
+	oid, err := b.orderManager.PlaceOrder(op)
 	if err != nil {
 		return "", fmt.Errorf("failed to place order: %v", err)
 	}
@@ -123,7 +123,7 @@ func (b *BuyBehavior) ExecuteMakerStrategy(balance *bitso.Balance, ticker *bitso
 	}
 
 	// Calculate optimal rate
-	rate, err := b.CalculateOptimalRate(ticker, minTradeAmount, balance.Available.Float64(), fee, "", tableData)
+	rate, err := b.CalculateOptimalRate(ticker, minTradeAmount, balance.Available.Float64(), fee, "")
 	if err != nil {
 		return fmt.Errorf("failed to calculate optimal rate: %v", err)
 	}

@@ -103,6 +103,22 @@ func (m *Manager) SetOrderWithTTL(oid string) error {
 	return nil
 }
 
+// PlaceOrder places a buy or sell order using the Bitso API
+func (m *Manager) PlaceOrder(order *bitso.OrderPlacement) (string, error) {
+	log.Printf("Placing order: Book=%s, Side=%s, Type=%s",
+		order.Book.String(), order.Side.String(), order.Type.String())
+
+	// Call the Bitso client's PlaceOrder method
+	orderID, err := m.bitsoClient.PlaceOrder(order)
+	if err != nil {
+		log.Printf("Error placing order: %v", err)
+		return "", fmt.Errorf("failed to place order: %w", err)
+	}
+
+	log.Printf("Order placed successfully with ID: %s", orderID)
+	return orderID, nil
+}
+
 // Queue Operations
 
 // AppendToQueue adds an order ID to the queue

@@ -40,7 +40,7 @@ func (s *SellBehavior) CheckFunds(min float64, balance *bitso.Balance) error {
 }
 
 // CalculateOptimalRate calculates the optimal rate for a sell order
-func (s *SellBehavior) CalculateOptimalRate(ticker *bitso.Ticker, limit, amount float64, fee bitso.Fee, marketTrade string, tableData *table.TableData) (float64, error) {
+func (s *SellBehavior) CalculateOptimalRate(ticker *bitso.Ticker, limit, amount float64, fee bitso.Fee, marketTrade string) (float64, error) {
 	if ticker == nil {
 		return 0, fmt.Errorf("ticker is nil")
 	}
@@ -64,6 +64,26 @@ func (s *SellBehavior) ConfigureOrder(book bitso.Book, orderType bitso.OrderType
 	s.rate = rate
 }
 
+// GetBook returns the configured book
+func (s *SellBehavior) GetBook() bitso.Book {
+	return s.book
+}
+
+// GetOrderType returns the configured order type
+func (s *SellBehavior) GetOrderType() bitso.OrderType {
+	return s.orderType
+}
+
+// GetAmount returns the configured amount
+func (s *SellBehavior) GetAmount() float64 {
+	return s.amount
+}
+
+// GetRate returns the configured rate
+func (s *SellBehavior) GetRate() float64 {
+	return s.rate
+}
+
 // ExecuteOrder places a sell order
 func (s *SellBehavior) ExecuteOrder(ticker *bitso.Ticker, amount, rate float64, oid string, orderStatus bitso.OrderStatus, orderType bitso.OrderType, dbClient *database.RedisClient) (string, error) {
 	if ticker == nil {
@@ -80,7 +100,7 @@ func (s *SellBehavior) ExecuteOrder(ticker *bitso.Ticker, amount, rate float64, 
 		Price: bitso.ToMonetary(rate),
 	}
 	// Place the order
-	oid, err := s.orderManager.GetBitsoClient().PlaceOrder(op)
+	oid, err := s.orderManager.PlaceOrder(op)
 	if err != nil {
 		return "", fmt.Errorf("failed to place order: %v", err)
 	}
@@ -124,7 +144,7 @@ func (s *SellBehavior) ExecuteMakerStrategy(balance *bitso.Balance, ticker *bits
 	}
 
 	// Calculate optimal rate
-	rate, err := s.CalculateOptimalRate(ticker, minTradeAmount, balance.Available.Float64(), fee, "", tableData)
+	rate, err := s.CalculateOptimalRate(ticker, minTradeAmount, balance.Available.Float64(), fee, "")
 	if err != nil {
 		return fmt.Errorf("failed to calculate optimal rate: %v", err)
 	}

@@ -10,14 +10,14 @@ import (
 	"testing"
 )
 
-// setupTestBuyBehavior creates a new BuyBehavior instance with test data
-func setupTestBuyBehavior(t *testing.T) (*behaviors.BuyBehavior, *trading_bot.TradingBot) {
+// setupTestSellBehavior creates a new SellBehavior instance with test data
+func setupTestSellBehavior(t *testing.T) (*behaviors.SellBehavior, *trading_bot.TradingBot) {
 	// Create test balance
 	testBalance := bitso.Balance{
-		Currency:  bitso.ToCurrency("mxn"),
-		Total:     bitso.ToMonetary(1000.0),
+		Currency:  bitso.ToCurrency("btc"),
+		Total:     bitso.ToMonetary(1.0),
 		Locked:    bitso.ToMonetary(0.0),
-		Available: bitso.ToMonetary(1000.0),
+		Available: bitso.ToMonetary(1.0),
 	}
 
 	// Create test book
@@ -34,21 +34,21 @@ func setupTestBuyBehavior(t *testing.T) (*behaviors.BuyBehavior, *trading_bot.Tr
 	}
 	tb := trading_bot.NewTradingBot(config, bitsoClient, dbClient)
 
-	// Create buy behavior
-	buyBehavior := behaviors.NewBuyBehavior(testBalance, bitsoClient, orderManager)
+	// Create sell behavior
+	sellBehavior := behaviors.NewSellBehavior(testBalance, bitsoClient, orderManager)
 
-	return buyBehavior, tb
+	return sellBehavior, tb
 }
 
-func TestBuyBehavior_CheckFunds(t *testing.T) {
-	buyBehavior, _ := setupTestBuyBehavior(t)
+func TestSellBehavior_CheckFunds(t *testing.T) {
+	sellBehavior, _ := setupTestSellBehavior(t)
 
 	// Create test balance for this test
 	testBalance := bitso.Balance{
-		Currency:  bitso.ToCurrency("mxn"),
-		Total:     bitso.ToMonetary(1000.0),
+		Currency:  bitso.ToCurrency("btc"),
+		Total:     bitso.ToMonetary(1.0),
 		Locked:    bitso.ToMonetary(0.0),
-		Available: bitso.ToMonetary(1000.0),
+		Available: bitso.ToMonetary(1.0),
 	}
 
 	tests := []struct {
@@ -58,19 +58,19 @@ func TestBuyBehavior_CheckFunds(t *testing.T) {
 	}{
 		{
 			name:    "Sufficient funds",
-			min:     100.0,
+			min:     0.1,
 			wantErr: false,
 		},
 		{
 			name:    "Insufficient funds",
-			min:     2000.0,
+			min:     2.0,
 			wantErr: true,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := buyBehavior.CheckFunds(tt.min, &testBalance)
+			err := sellBehavior.CheckFunds(tt.min, &testBalance)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("CheckFunds() error = %v, wantErr %v", err, tt.wantErr)
 			}
@@ -78,8 +78,8 @@ func TestBuyBehavior_CheckFunds(t *testing.T) {
 	}
 }
 
-func TestBuyBehavior_CalculateOptimalRate(t *testing.T) {
-	buyBehavior, _ := setupTestBuyBehavior(t)
+func TestSellBehavior_CalculateOptimalRate(t *testing.T) {
+	sellBehavior, _ := setupTestSellBehavior(t)
 
 	// Create test ticker
 	testTicker := &bitso.Ticker{
@@ -107,27 +107,27 @@ func TestBuyBehavior_CalculateOptimalRate(t *testing.T) {
 			name:        "Normal calculation",
 			ticker:      testTicker,
 			limit:       0,
-			amount:      1000.0,
+			amount:      0.1,
 			fee:         testFee,
 			marketTrade: "",
-			wantRate:    49675.0, // Expected rate after fee adjustment
+			wantRate:    50224.35, // Expected rate after fee adjustment (49900 * 1.0065)
 			wantErr:     false,
 		},
 		{
 			name:        "With limit",
 			ticker:      testTicker,
-			limit:       49900.0,
-			amount:      1000.0,
+			limit:       51000.0,
+			amount:      0.1,
 			fee:         testFee,
 			marketTrade: "",
-			wantRate:    49900.0, // Should use limit
+			wantRate:    51000.0, // Should use limit
 			wantErr:     false,
 		},
 		{
 			name:        "Nil ticker",
 			ticker:      nil,
 			limit:       0,
-			amount:      1000.0,
+			amount:      0.1,
 			fee:         testFee,
 			marketTrade: "",
 			wantRate:    0,
@@ -137,7 +137,7 @@ func TestBuyBehavior_CalculateOptimalRate(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			gotRate, err := buyBehavior.CalculateOptimalRate(tt.ticker, tt.limit, tt.amount, tt.fee, tt.marketTrade)
+			gotRate, err := sellBehavior.CalculateOptimalRate(tt.ticker, tt.limit, tt.amount, tt.fee, tt.marketTrade)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("CalculateOptimalRate() error = %v, wantErr %v", err, tt.wantErr)
 				return
@@ -149,13 +149,13 @@ func TestBuyBehavior_CalculateOptimalRate(t *testing.T) {
 	}
 }
 
-func TestBuyBehavior_ConfigureOrder(t *testing.T) {
-	buyBehavior, _ := setupTestBuyBehavior(t)
+func TestSellBehavior_ConfigureOrder(t *testing.T) {
+	sellBehavior, _ := setupTestSellBehavior(t)
 
 	testBook := bitso.NewBook(bitso.ToCurrency("btc"), bitso.ToCurrency("mxn"))
 	testOrderType := bitso.OrderTypeLimit
-	testAmount := 1000.0
+	testAmount := 0.1
 	testRate := 50000.0
 
-	buyBehavior.ConfigureOrder(*testBook, testOrderType, testAmount, testRate)
+	sellBehavior.ConfigureOrder(*testBook, testOrderType, testAmount, testRate)
 }
