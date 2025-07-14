@@ -24,8 +24,20 @@ type Config struct {
 
 // LoadConfig loads the configuration from environment variables
 func LoadConfig() (*Config, error) {
-	// Load .env file if it exists
-	_ = godotenv.Load()
+	// Try to load .env file from multiple possible locations
+	envPaths := []string{
+		".env",          // Current directory
+		"../.env",       // Parent directory
+		"../../.env",    // Grandparent directory
+		"../../../.env", // Great-grandparent directory
+	}
+
+	for _, envPath := range envPaths {
+		if _, err := os.Stat(envPath); err == nil {
+			_ = godotenv.Load(envPath)
+			break
+		}
+	}
 
 	config := &Config{
 		// Bitso API configuration

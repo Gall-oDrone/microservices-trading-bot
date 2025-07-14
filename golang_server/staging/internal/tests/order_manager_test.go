@@ -1,6 +1,7 @@
 package tests
 
 import (
+	"bitso_trading_bot/internal/config"
 	"bitso_trading_bot/internal/database"
 	"bitso_trading_bot/internal/order"
 	"bitso_trading_bot/pkg/bitso"
@@ -13,9 +14,23 @@ func setupTestOrderManager(t *testing.T) *order.Manager {
 	// Create test book
 	testBook := bitso.NewBook(bitso.ToCurrency("btc"), bitso.ToCurrency("mxn"))
 
+	// Load configuration
+	cfg, err := config.LoadConfig()
+	if err != nil {
+		t.Fatalf("Failed to load configuration: %v", err)
+	}
+
 	// Create test clients
 	bitsoClient := bitso.NewClient()
-	dbClient := &database.RedisClient{} // Mock DB client
+	bitsoClient.SetLogLevel(bitso.LogLevelDebug)
+	bitsoClient.SetAuth(cfg.StageBitsoAPIKey, cfg.StageBitsoAPISecret)
+	bitsoClient.SetAPIBaseURL("https://stage.bitso.com/api")
+
+	// Initialize Redis client properly
+	dbClient, err := database.Initialize()
+	if err != nil {
+		t.Fatalf("Failed to initialize Redis client: %v", err)
+	}
 
 	// Create order manager
 	orderManager := order.NewManager(bitsoClient, *dbClient, testBook)
@@ -259,6 +274,298 @@ func TestOrderManager_PlaceOrder_MarketOrder(t *testing.T) {
 		fmt.Printf("  Book: %s\n", testOrder.Book.String())
 		fmt.Printf("  Side: %s\n", testOrder.Side.String())
 		fmt.Printf("  Type: %s\n", testOrder.Type.String())
+	}
+
+	fmt.Println("=== Test Complete ===")
+}
+
+// Getter method tests
+
+func TestOrderManager_GetBitsoClient(t *testing.T) {
+	orderManager := setupTestOrderManager(t)
+
+	fmt.Println("=== Testing GetBitsoClient() Method ===")
+
+	// Call GetBitsoClient method
+	bitsoClient := orderManager.GetBitsoClient()
+
+	fmt.Println("=== Response ===")
+	if bitsoClient == nil {
+		fmt.Println("Error: GetBitsoClient() returned nil")
+		t.Error("GetBitsoClient() returned nil")
+	} else {
+		fmt.Println("Success! GetBitsoClient() returned valid client")
+		fmt.Printf("Client Type: %T\n", bitsoClient)
+		fmt.Printf("API Base URL: %s\n", bitsoClient.APIBaseURL())
+	}
+
+	fmt.Println("=== Test Complete ===")
+}
+
+func TestOrderManager_GetBitsoBook(t *testing.T) {
+	orderManager := setupTestOrderManager(t)
+
+	fmt.Println("=== Testing GetBitsoBook() Method ===")
+
+	// Call GetBitsoBook method
+	book := orderManager.GetBitsoBook()
+
+	fmt.Println("=== Response ===")
+	if book == nil {
+		fmt.Println("Error: GetBitsoBook() returned nil")
+		t.Error("GetBitsoBook() returned nil")
+	} else {
+		fmt.Println("Success! GetBitsoBook() returned valid book")
+		fmt.Printf("Book: %s\n", book.String())
+		fmt.Printf("Major Currency: %s\n", book.Major().String())
+		fmt.Printf("Minor Currency: %s\n", book.Minor().String())
+	}
+
+	fmt.Println("=== Test Complete ===")
+}
+
+func TestOrderManager_GetDBClient(t *testing.T) {
+	orderManager := setupTestOrderManager(t)
+
+	fmt.Println("=== Testing GetDBClient() Method ===")
+
+	// Call GetDBClient method
+	dbClient := orderManager.GetDBClient()
+
+	fmt.Println("=== Response ===")
+	if dbClient == nil {
+		fmt.Println("Error: GetDBClient() returned nil")
+		t.Error("GetDBClient() returned nil")
+	} else {
+		fmt.Println("Success! GetDBClient() returned valid DB client")
+		fmt.Printf("DB Client Type: %T\n", dbClient)
+	}
+
+	fmt.Println("=== Test Complete ===")
+}
+
+// Database operation tests
+
+func TestOrderManager_SaveOrder(t *testing.T) {
+	orderManager := setupTestOrderManager(t)
+
+	fmt.Println("=== Testing SaveOrder() Method ===")
+	fmt.Println("Creating test order data...")
+
+	// Create test order data
+	testOrderID := "test_order_123"
+	testSide := bitso.OrderSideBuy
+	testStatus := bitso.OrderStatusOpen
+
+	fmt.Printf("Test Order Details:\n")
+	fmt.Printf("  Order ID: %s\n", testOrderID)
+	fmt.Printf("  Side: %s\n", testSide.String())
+	fmt.Printf("  Status: %s\n", testStatus.String())
+	fmt.Printf("  Book: %s\n", orderManager.GetBitsoBook().String())
+	fmt.Println("Calling SaveOrder()...")
+
+	// Call SaveOrder method
+	err := orderManager.SaveOrder(testOrderID, testSide, testStatus)
+
+	fmt.Println("=== Response ===")
+	if err != nil {
+		fmt.Printf("Error Type: %T\n", err)
+		fmt.Printf("Error Message: %v\n", err)
+		fmt.Printf("Error Details: %+v\n", err)
+		t.Logf("SaveOrder() returned error: %v", err)
+	} else {
+		fmt.Println("Success! Order saved to database")
+		fmt.Println("Order Details:")
+		fmt.Printf("  Order ID: %s\n", testOrderID)
+		fmt.Printf("  Side: %s\n", testSide.String())
+		fmt.Printf("  Status: %s\n", testStatus.String())
+	}
+
+	fmt.Println("=== Test Complete ===")
+}
+
+func TestOrderManager_GetOrdersByFilter_ByStatus(t *testing.T) {
+	orderManager := setupTestOrderManager(t)
+
+	fmt.Println("=== Testing GetOrdersByFilter() by Status ===")
+	fmt.Println("Filtering orders by status 'open'...")
+
+	// Call GetOrdersByFilter method with status filter
+	orders, err := orderManager.GetOrdersByFilter("status", "open")
+
+	fmt.Println("=== Response ===")
+	if err != nil {
+		fmt.Printf("Error Type: %T\n", err)
+		fmt.Printf("Error Message: %v\n", err)
+		fmt.Printf("Error Details: %+v\n", err)
+		t.Logf("GetOrdersByFilter() returned error: %v", err)
+	} else {
+		fmt.Printf("Success! Retrieved %d orders with status 'open'\n", len(orders))
+
+		if len(orders) > 0 {
+			fmt.Println("Orders Details:")
+			for orderID, status := range orders {
+				fmt.Printf("  Order ID: %s, Status: %s\n", orderID, status)
+			}
+		} else {
+			fmt.Println("No orders found with status 'open'")
+		}
+	}
+
+	fmt.Println("=== Test Complete ===")
+}
+
+func TestOrderManager_GetOrdersByFilter_BySide(t *testing.T) {
+	orderManager := setupTestOrderManager(t)
+
+	fmt.Println("=== Testing GetOrdersByFilter() by Side ===")
+	fmt.Println("Filtering orders by side 'buy'...")
+
+	// Call GetOrdersByFilter method with side filter
+	orders, err := orderManager.GetOrdersByFilter("side", "buy")
+
+	fmt.Println("=== Response ===")
+	if err != nil {
+		fmt.Printf("Error Type: %T\n", err)
+		fmt.Printf("Error Message: %v\n", err)
+		fmt.Printf("Error Details: %+v\n", err)
+		t.Logf("GetOrdersByFilter() returned error: %v", err)
+	} else {
+		fmt.Printf("Success! Retrieved %d orders with side 'buy'\n", len(orders))
+
+		if len(orders) > 0 {
+			fmt.Println("Orders Details:")
+			for orderID, side := range orders {
+				fmt.Printf("  Order ID: %s, Side: %s\n", orderID, side)
+			}
+		} else {
+			fmt.Println("No orders found with side 'buy'")
+		}
+	}
+
+	fmt.Println("=== Test Complete ===")
+}
+
+// Bitso API operation tests
+
+func TestOrderManager_LookupOrder(t *testing.T) {
+	orderManager := setupTestOrderManager(t)
+
+	fmt.Println("=== Testing LookupOrder() Method ===")
+	fmt.Println("Looking up a specific order...")
+
+	// Use a test order ID (this will likely fail with 401, but we can test the method)
+	testOrderID := "test_order_lookup_123"
+
+	fmt.Printf("Test Order ID: %s\n", testOrderID)
+	fmt.Println("Calling LookupOrder()...")
+
+	// Call LookupOrder method
+	order, err := orderManager.LookupOrder(testOrderID)
+
+	fmt.Println("=== HTTP Response ===")
+	if err != nil {
+		fmt.Printf("Error Type: %T\n", err)
+		fmt.Printf("Error Message: %v\n", err)
+		fmt.Printf("Error Details: %+v\n", err)
+
+		// Check if it's an API error
+		if apiErr, ok := err.(*bitso.Error); ok {
+			fmt.Printf("API Error Code: %d\n", apiErr.Code())
+			fmt.Printf("API Error Message: %s\n", apiErr.Error())
+		}
+
+		t.Logf("LookupOrder() returned error: %v", err)
+	} else {
+		fmt.Println("Success! Retrieved order details")
+		fmt.Println("Order Details:")
+		fmt.Printf("  OID: %s\n", order.OID)
+		fmt.Printf("  Book: %s\n", order.Book.String())
+		fmt.Printf("  Side: %s\n", order.Side.String())
+		fmt.Printf("  Status: %s\n", order.Status.String())
+		fmt.Printf("  Type: %s\n", order.Type)
+		fmt.Printf("  Price: %.8f\n", order.Price.Float64())
+		fmt.Printf("  Original Amount: %.8f\n", order.OriginalAmount.Float64())
+		fmt.Printf("  Unfilled Amount: %.8f\n", order.UnfilledAmount.Float64())
+		fmt.Printf("  Original Value: %.8f\n", order.OriginalValue.Float64())
+		fmt.Printf("  Created At: %s\n", order.CreatedAt)
+		fmt.Printf("  Updated At: %s\n", order.UpdatedAt)
+	}
+
+	fmt.Println("=== Test Complete ===")
+}
+
+func TestOrderManager_CancelOrder(t *testing.T) {
+	orderManager := setupTestOrderManager(t)
+
+	fmt.Println("=== Testing CancelOrder() Method ===")
+	fmt.Println("Attempting to cancel an order...")
+
+	// Use a test order ID (this will likely fail with 401, but we can test the method)
+	testOrderID := "test_order_cancel_123"
+
+	fmt.Printf("Test Order ID: %s\n", testOrderID)
+	fmt.Println("Calling CancelOrder()...")
+
+	// Call CancelOrder method
+	cancelledOrders, err := orderManager.CancelOrder(testOrderID)
+
+	fmt.Println("=== HTTP Response ===")
+	if err != nil {
+		fmt.Printf("Error Type: %T\n", err)
+		fmt.Printf("Error Message: %v\n", err)
+		fmt.Printf("Error Details: %+v\n", err)
+
+		// Check if it's an API error
+		if apiErr, ok := err.(*bitso.Error); ok {
+			fmt.Printf("API Error Code: %d\n", apiErr.Code())
+			fmt.Printf("API Error Message: %s\n", apiErr.Error())
+		}
+
+		t.Logf("CancelOrder() returned error: %v", err)
+	} else {
+		fmt.Printf("Success! Cancelled %d orders\n", len(cancelledOrders))
+
+		if len(cancelledOrders) > 0 {
+			fmt.Println("Cancelled Orders:")
+			for i, orderID := range cancelledOrders {
+				fmt.Printf("  %d. Order ID: %s\n", i+1, orderID)
+			}
+		} else {
+			fmt.Println("No orders were cancelled")
+		}
+	}
+
+	fmt.Println("=== Test Complete ===")
+}
+
+func TestOrderManager_SetOrderWithTTL(t *testing.T) {
+	orderManager := setupTestOrderManager(t)
+
+	fmt.Println("=== Testing SetOrderWithTTL() Method ===")
+	fmt.Println("Setting order with TTL in database...")
+
+	// Use a test order ID
+	testOrderID := "test_order_ttl_123"
+
+	fmt.Printf("Test Order ID: %s\n", testOrderID)
+	fmt.Println("TTL: 5 minutes")
+	fmt.Println("Calling SetOrderWithTTL()...")
+
+	// Call SetOrderWithTTL method
+	err := orderManager.SetOrderWithTTL(testOrderID)
+
+	fmt.Println("=== Response ===")
+	if err != nil {
+		fmt.Printf("Error Type: %T\n", err)
+		fmt.Printf("Error Message: %v\n", err)
+		fmt.Printf("Error Details: %+v\n", err)
+		t.Logf("SetOrderWithTTL() returned error: %v", err)
+	} else {
+		fmt.Println("Success! Order TTL set in database")
+		fmt.Println("Order Details:")
+		fmt.Printf("  Order ID: %s\n", testOrderID)
+		fmt.Printf("  TTL: 5 minutes\n")
 	}
 
 	fmt.Println("=== Test Complete ===")

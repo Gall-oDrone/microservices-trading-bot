@@ -21,9 +21,8 @@ import (
 )
 
 const (
-	apiBaseURL      = "https://bitso.com/api"
-	apiStageBaseURL = "https://stage.bitso.com/api"
-	apiVersion      = "v3"
+	apiBaseURL = "https://bitso.com/api"
+	apiVersion = "v3"
 )
 
 const (
