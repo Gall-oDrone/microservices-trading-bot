@@ -7,6 +7,7 @@ import (
 
 	"bitso_trading_bot/internal/behaviors"
 	"bitso_trading_bot/internal/database"
+	"bitso_trading_bot/internal/execution"
 	"bitso_trading_bot/internal/models"
 	"bitso_trading_bot/internal/order"
 	"bitso_trading_bot/internal/strategies"
@@ -25,6 +26,8 @@ type TradingBot struct {
 	buyBehavior  *behaviors.BuyBehavior
 	strategy     strategies.Strategy
 	orderManager *order.Manager
+	executor     execution.Executor
+	stopChan     chan struct{}
 }
 
 // NewTradingBot creates a new instance of the trading bot
@@ -37,6 +40,8 @@ func NewTradingBot(config *models.TradingConfig, bitsoClient *bitso.Client, dbCl
 		dbClient:    dbClient,
 		book:        config.Book,
 		strategy:    strategies.NewBasicStrategy(config.Book),
+		executor:    execution.NewBasicExecutor(),
+		stopChan:    make(chan struct{}),
 	}
 }
 
@@ -133,6 +138,9 @@ func (tb *TradingBot) tradingLoop() {
 	ticker := time.NewTicker(1 * time.Minute)
 	defer ticker.Stop()
 
+	// Start signal listening goroutine
+	go tb.listenToSignals()
+
 	for range ticker.C {
 		if !tb.config.IsWithinTradingHours() {
 			tb.logger.Println("Outside trading hours, waiting...")
@@ -156,9 +164,60 @@ func (tb *TradingBot) tradingLoop() {
 	}
 }
 
+// listenToSignals listens to the strategy's signal channels and executes orders
+func (tb *TradingBot) listenToSignals() {
+	tb.logger.Println("Starting signal listener...")
+
+	// Get the signal channels from the strategy
+	buySignalChan := tb.strategy.GetBuySignalChannel()
+	sellSignalChan := tb.strategy.GetSellSignalChannel()
+
+	// Get current fee structure
+	fee := tb.GetFee()
+
+	for {
+		select {
+		case buySignal := <-buySignalChan:
+			tb.logger.Printf("Received BUY signal: %s at price %.8f, amount: %.8f",
+				buySignal.Book.String(), buySignal.Price, buySignal.Amount)
+
+			// Execute the buy signal
+			if err := tb.executor.ExecuteBuySignal(buySignal, tb.buyBehavior, fee); err != nil {
+				tb.logger.Printf("Failed to execute buy signal: %v", err)
+			}
+
+		case sellSignal := <-sellSignalChan:
+			tb.logger.Printf("Received SELL signal: %s at price %.8f, amount: %.8f",
+				sellSignal.Book.String(), sellSignal.Price, sellSignal.Amount)
+
+			// Execute the sell signal
+			if err := tb.executor.ExecuteSellSignal(sellSignal, tb.sellBehavior, fee); err != nil {
+				tb.logger.Printf("Failed to execute sell signal: %v", err)
+			}
+
+		case <-time.After(5 * time.Second):
+			// Refresh fee structure periodically
+			fee = tb.GetFee()
+
+		case <-tb.stopChan:
+			tb.logger.Println("Signal listener stopped")
+			return
+		}
+	}
+}
+
 // Stop gracefully stops the trading bot
 func (tb *TradingBot) Stop() error {
 	tb.logger.Println("Stopping trading bot...")
+
+	// Stop the strategy
+	if err := tb.strategy.Stop(); err != nil {
+		tb.logger.Printf("Error stopping strategy: %v", err)
+	}
+
+	// Stop the signal listener
+	close(tb.stopChan)
+
 	// TODO: Implement cleanup and position closing logic
 	return nil
 }
@@ -226,6 +285,11 @@ func (tb *TradingBot) SetOrderWithTTL(oid string, timeout int) error {
 // GetDBClient returns the database client
 func (tb *TradingBot) GetDBClient() *database.RedisClient {
 	return tb.dbClient
+}
+
+// GetExecutor returns the executor
+func (tb *TradingBot) GetExecutor() execution.Executor {
+	return tb.executor
 }
 
 // GetTableData returns a new instance of TableData

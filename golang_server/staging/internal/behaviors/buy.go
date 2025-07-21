@@ -45,7 +45,7 @@ func (b *BuyBehavior) CalculateOptimalRate(ticker *bitso.Ticker, limit, amount f
 	}
 
 	// For buy orders, we want to place the order slightly below the current ask
-	optimalRate := ticker.Ask.Float64() * (1 - fee.TakerFeeDecimal.Float64())
+	optimalRate := ticker.Ask.Float64() // * (1 - fee.TakerFeeDecimal.Float64())
 
 	// Ensure the rate is not below the limit
 	if limit > 0 && optimalRate < limit {
