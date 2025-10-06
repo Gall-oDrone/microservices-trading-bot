@@ -1,0 +1,109 @@
+name: Deploy
+
+on:
+  push:
+    branches: [ main, staging ]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy to'
+        required: true
+        default: 'staging'
+        type: choice
+        options:
+        - staging
+        - production
+
+env:
+  KUBE_NAMESPACE: 'bitso-trading-platform'
+
+jobs:
+  deploy-staging:
+    if: github.ref == 'refs/heads/staging' || (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'staging')
+    runs-on: ubuntu-latest
+    environment: staging
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: us-west-2
+
+    - name: Update kubeconfig
+      run: |
+        aws eks update-kubeconfig --region us-west-2 --name bitso-trading-staging
+
+    - name: Deploy to staging
+      run: |
+        kubectl apply -k k8s/overlays/staging
+        kubectl rollout status deployment/trading-engine -n ${{ env.KUBE_NAMESPACE }} --timeout=300s
+        kubectl rollout status deployment/api-gateway -n ${{ env.KUBE_NAMESPACE }} --timeout=300s
+
+    - name: Run smoke tests
+      run: |
+        # Wait for services to be ready
+        kubectl wait --for=condition=available --timeout=300s deployment/trading-engine -n ${{ env.KUBE_NAMESPACE }}
+        kubectl wait --for=condition=available --timeout=300s deployment/api-gateway -n ${{ env.KUBE_NAMESPACE }}
+        
+        # Get service endpoints
+        API_GATEWAY_URL=$(kubectl get service api-gateway -n ${{ env.KUBE_NAMESPACE }} -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
+        
+        # Run basic health checks
+        curl -f http://$API_GATEWAY_URL:8085/health || exit 1
+
+  deploy-production:
+    if: github.ref == 'refs/heads/main' || (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'production')
+    runs-on: ubuntu-latest
+    environment: production
+    needs: []
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: us-west-2
+
+    - name: Update kubeconfig
+      run: |
+        aws eks update-kubeconfig --region us-west-2 --name bitso-trading-production
+
+    - name: Deploy to production
+      run: |
+        kubectl apply -k k8s/overlays/production
+        kubectl rollout status deployment/trading-engine -n ${{ env.KUBE_NAMESPACE }} --timeout=600s
+        kubectl rollout status deployment/api-gateway -n ${{ env.KUBE_NAMESPACE }} --timeout=600s
+
+    - name: Run production smoke tests
+      run: |
+        # Wait for services to be ready
+        kubectl wait --for=condition=available --timeout=600s deployment/trading-engine -n ${{ env.KUBE_NAMESPACE }}
+        kubectl wait --for=condition=available --timeout=600s deployment/api-gateway -n ${{ env.KUBE_NAMESPACE }}
+        
+        # Get service endpoints
+        API_GATEWAY_URL=$(kubectl get service api-gateway -n ${{ env.KUBE_NAMESPACE }} -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
+        
+        # Run comprehensive health checks
+        curl -f http://$API_GATEWAY_URL:8085/health || exit 1
+        curl -f http://$API_GATEWAY_URL:8085/api/v1/market-data/btc-mxn || exit 1
+
+    - name: Notify deployment success
+      if: success()
+      run: |
+        echo "✅ Production deployment successful!"
+        # Add Slack/Teams notification here
+
+    - name: Notify deployment failure
+      if: failure()
+      run: |
+        echo "❌ Production deployment failed!"
+        # Add Slack/Teams notification here

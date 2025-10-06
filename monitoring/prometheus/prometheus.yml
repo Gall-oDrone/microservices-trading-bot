@@ -1,0 +1,72 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+rule_files:
+  - "rules/*.yml"
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+          - alertmanager:9093
+
+scrape_configs:
+  # Prometheus itself
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+
+  # Trading Engine Service
+  - job_name: 'trading-engine'
+    static_configs:
+      - targets: ['trading-engine:8080']
+    metrics_path: '/metrics'
+    scrape_interval: 5s
+
+  # Backtesting Service
+  - job_name: 'backtesting'
+    static_configs:
+      - targets: ['backtesting:8081']
+    metrics_path: '/metrics'
+
+  # Strategy Executor Service
+  - job_name: 'strategy-executor'
+    static_configs:
+      - targets: ['strategy-executor:8082']
+    metrics_path: '/metrics'
+
+  # Market Data Service
+  - job_name: 'market-data'
+    static_configs:
+      - targets: ['market-data:8083']
+    metrics_path: '/metrics'
+
+  # Order Management Service
+  - job_name: 'order-management'
+    static_configs:
+      - targets: ['order-management:8084']
+    metrics_path: '/metrics'
+
+  # API Gateway Service
+  - job_name: 'api-gateway'
+    static_configs:
+      - targets: ['api-gateway:8085']
+    metrics_path: '/metrics'
+
+  # Infrastructure Services
+  - job_name: 'kafka'
+    static_configs:
+      - targets: ['kafka:9092']
+
+  - job_name: 'redis'
+    static_configs:
+      - targets: ['redis:6379']
+
+  - job_name: 'cassandra'
+    static_configs:
+      - targets: ['cassandra:9042']
+
+  - job_name: 'postgres'
+    static_configs:
+      - targets: ['postgres:5432']
