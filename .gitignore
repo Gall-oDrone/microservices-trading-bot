@@ -3,3 +3,14 @@ consumer-logger/.env
 bitso/bitso-variables.env
 golang_server/data_server/.env
 golang_server/consumer-logger/.env
+
+# Environment files (global pattern)
+.env
+.env.local
+.env.*.local
+**/.env
+**/.env.local
+
+# Keep example files (templates)
+!.env.example
+!**/.env.example
