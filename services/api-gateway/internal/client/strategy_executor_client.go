@@ -39,15 +39,15 @@ type ServiceStatus struct {
 
 // Strategy represents a trading strategy
 type Strategy struct {
-	Name        string                 `json:"name"`
-	Type        string                 `json:"type"`
-	Status      string                 `json:"status"`
-	Book        string                 `json:"book"`
-	Config      map[string]interface{} `json:"config,omitempty"`
-	Metadata    map[string]interface{} `json:"metadata,omitempty"`
-	StartedAt   *time.Time             `json:"started_at,omitempty"`
-	StoppedAt   *time.Time             `json:"stopped_at,omitempty"`
-	SignalsCount int64                 `json:"signals_count,omitempty"`
+	Name         string                 `json:"name"`
+	Type         string                 `json:"type"`
+	Status       string                 `json:"status"`
+	Book         string                 `json:"book"`
+	Config       map[string]interface{} `json:"config,omitempty"`
+	Metadata     map[string]interface{} `json:"metadata,omitempty"`
+	StartedAt    *time.Time             `json:"started_at,omitempty"`
+	StoppedAt    *time.Time             `json:"stopped_at,omitempty"`
+	SignalsCount int64                  `json:"signals_count,omitempty"`
 	LastSignal   *time.Time             `json:"last_signal,omitempty"`
 }
 
@@ -344,4 +344,3 @@ func (c *strategyExecutorClient) doRequest(ctx context.Context, method, url stri
 
 	return lastErr
 }
-

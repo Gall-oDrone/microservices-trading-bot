@@ -111,4 +111,3 @@ type RequestOptions struct {
 	Headers map[string]string
 	Timeout time.Duration
 }
-

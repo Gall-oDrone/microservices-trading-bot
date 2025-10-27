@@ -74,28 +74,28 @@ type OrderFilters struct {
 
 // Position represents a trading position
 type Position struct {
-	Book            string    `json:"book"`
-	Side            string    `json:"side"`
-	Size            float64   `json:"size"`
-	EntryPrice      float64   `json:"entry_price"`
-	CurrentPrice    float64   `json:"current_price"`
-	UnrealizedPnL   float64   `json:"unrealized_pnl"`
-	RealizedPnL     float64   `json:"realized_pnl"`
-	TotalPnL        float64   `json:"total_pnl"`
-	Status          string    `json:"status"`
-	OpenedAt        time.Time `json:"opened_at"`
-	UpdatedAt       time.Time `json:"updated_at"`
+	Book          string    `json:"book"`
+	Side          string    `json:"side"`
+	Size          float64   `json:"size"`
+	EntryPrice    float64   `json:"entry_price"`
+	CurrentPrice  float64   `json:"current_price"`
+	UnrealizedPnL float64   `json:"unrealized_pnl"`
+	RealizedPnL   float64   `json:"realized_pnl"`
+	TotalPnL      float64   `json:"total_pnl"`
+	Status        string    `json:"status"`
+	OpenedAt      time.Time `json:"opened_at"`
+	UpdatedAt     time.Time `json:"updated_at"`
 }
 
 // PositionSummary represents a summary of all positions
 type PositionSummary struct {
-	TotalPositions    int                        `json:"total_positions"`
-	OpenPositions     int                        `json:"open_positions"`
-	ClosedPositions   int                        `json:"closed_positions"`
-	TotalUnrealizedPnL float64                   `json:"total_unrealized_pnl"`
-	TotalRealizedPnL  float64                    `json:"total_realized_pnl"`
-	TotalPnL          float64                    `json:"total_pnl"`
-	PositionsByBook   map[string]*Position       `json:"positions_by_book"`
+	TotalPositions     int                  `json:"total_positions"`
+	OpenPositions      int                  `json:"open_positions"`
+	ClosedPositions    int                  `json:"closed_positions"`
+	TotalUnrealizedPnL float64              `json:"total_unrealized_pnl"`
+	TotalRealizedPnL   float64              `json:"total_realized_pnl"`
+	TotalPnL           float64              `json:"total_pnl"`
+	PositionsByBook    map[string]*Position `json:"positions_by_book"`
 }
 
 // PositionFilters represents filters for querying positions
@@ -484,4 +484,3 @@ func buildPositionQueryString(filters *PositionFilters) string {
 
 	return "?" + strings.Join(params, "&")
 }
-

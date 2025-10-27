@@ -52,19 +52,19 @@ type TradeStats struct {
 
 // MarketSummary represents market summary data
 type MarketSummary struct {
-	Books     []string  `json:"books"`
-	Timestamp time.Time `json:"timestamp"`
+	Books     []string                `json:"books"`
+	Timestamp time.Time               `json:"timestamp"`
 	Summary   map[string]*BookSummary `json:"summary"`
 }
 
 // BookSummary represents summary for a specific book
 type BookSummary struct {
-	Book       string  `json:"book"`
-	LastPrice  float64 `json:"last_price"`
-	Volume24h  float64 `json:"volume_24h"`
-	High24h    float64 `json:"high_24h"`
-	Low24h     float64 `json:"low_24h"`
-	Change24h  float64 `json:"change_24h"`
+	Book      string  `json:"book"`
+	LastPrice float64 `json:"last_price"`
+	Volume24h float64 `json:"volume_24h"`
+	High24h   float64 `json:"high_24h"`
+	Low24h    float64 `json:"low_24h"`
+	Change24h float64 `json:"change_24h"`
 }
 
 // marketDataClient implements MarketDataClient
@@ -362,4 +362,3 @@ func formatQueryParams(params map[string]string) string {
 func intToString(i int) string {
 	return strconv.Itoa(i)
 }
-

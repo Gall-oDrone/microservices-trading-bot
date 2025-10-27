@@ -180,4 +180,3 @@ func (f *ClientFactory) Close() error {
 
 	return nil
 }
-
