@@ -217,4 +217,3 @@ func (l *Logger) IsDebugEnabled() bool {
 func (l *Logger) IsTraceEnabled() bool {
 	return l.level <= zerolog.TraceLevel
 }
-

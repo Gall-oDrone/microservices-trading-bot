@@ -13,30 +13,30 @@ import (
 // MetricsCollector collects and exposes Prometheus metrics
 type MetricsCollector struct {
 	// HTTP metrics
-	httpRequestsTotal      *prometheus.CounterVec
-	httpRequestDuration    *prometheus.HistogramVec
-	httpRequestsInFlight   *prometheus.GaugeVec
-	httpRequestSize        *prometheus.HistogramVec
-	httpResponseSize       *prometheus.HistogramVec
+	httpRequestsTotal    *prometheus.CounterVec
+	httpRequestDuration  *prometheus.HistogramVec
+	httpRequestsInFlight *prometheus.GaugeVec
+	httpRequestSize      *prometheus.HistogramVec
+	httpResponseSize     *prometheus.HistogramVec
 
 	// Backend client metrics
-	backendCallsTotal      *prometheus.CounterVec
-	backendCallDuration    *prometheus.HistogramVec
-	backendErrorsTotal     *prometheus.CounterVec
+	backendCallsTotal   *prometheus.CounterVec
+	backendCallDuration *prometheus.HistogramVec
+	backendErrorsTotal  *prometheus.CounterVec
 
 	// Circuit breaker metrics
-	circuitBreakerState    *prometheus.GaugeVec
-	circuitBreakerOps      *prometheus.CounterVec
+	circuitBreakerState *prometheus.GaugeVec
+	circuitBreakerOps   *prometheus.CounterVec
 
 	// Rate limiter metrics
-	rateLimitHitsTotal     *prometheus.CounterVec
-	rateLimitAllowsTotal   *prometheus.CounterVec
+	rateLimitHitsTotal   *prometheus.CounterVec
+	rateLimitAllowsTotal *prometheus.CounterVec
 
 	// System metrics
-	serviceUptime          prometheus.Gauge
-	serviceHealth          *prometheus.GaugeVec
-	goroutines             prometheus.Gauge
-	memoryUsage            prometheus.Gauge
+	serviceUptime prometheus.Gauge
+	serviceHealth *prometheus.GaugeVec
+	goroutines    prometheus.Gauge
+	memoryUsage   prometheus.Gauge
 }
 
 // NewMetricsCollector creates a new metrics collector
@@ -329,4 +329,3 @@ func (mc *MetricsCollector) collectSystemMetrics() {
 func (mc *MetricsCollector) Handler() http.Handler {
 	return promhttp.Handler()
 }
-

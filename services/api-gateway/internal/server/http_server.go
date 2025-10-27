@@ -133,4 +133,3 @@ func (s *HTTPServer) GetAddr() string {
 func (s *HTTPServer) IsRunning() bool {
 	return s.server != nil
 }
-

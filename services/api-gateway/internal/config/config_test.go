@@ -20,17 +20,17 @@ func TestLoad(t *testing.T) {
 		{
 			name: "custom configuration",
 			envVars: map[string]string{
-				"SERVICE_NAME":             "test-gateway",
-				"SERVICE_PORT":             "9090",
-				"MARKET_DATA_URL":          "http://market-data:8083",
-				"ORDER_MANAGEMENT_URL":     "http://order-mgmt:8081",
-				"STRATEGY_EXECUTOR_URL":    "http://strategy:8082",
-				"CLIENT_TIMEOUT":           "45s",
-				"CLIENT_MAX_RETRIES":       "5",
-				"RATE_LIMIT_ENABLED":       "true",
-				"CIRCUIT_BREAKER_ENABLED":  "true",
-				"LOG_LEVEL":                "debug",
-				"LOG_FORMAT":               "json",
+				"SERVICE_NAME":            "test-gateway",
+				"SERVICE_PORT":            "9090",
+				"MARKET_DATA_URL":         "http://market-data:8083",
+				"ORDER_MANAGEMENT_URL":    "http://order-mgmt:8081",
+				"STRATEGY_EXECUTOR_URL":   "http://strategy:8082",
+				"CLIENT_TIMEOUT":          "45s",
+				"CLIENT_MAX_RETRIES":      "5",
+				"RATE_LIMIT_ENABLED":      "true",
+				"CIRCUIT_BREAKER_ENABLED": "true",
+				"LOG_LEVEL":               "debug",
+				"LOG_FORMAT":              "json",
 			},
 			wantErr: false,
 		},
@@ -453,4 +453,3 @@ func TestGetEnvAsDuration(t *testing.T) {
 		})
 	}
 }
-
