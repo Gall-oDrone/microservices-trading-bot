@@ -42,10 +42,10 @@ func FromBitsoWebSocketTrade(wsTrade *bitso.WebSocketTrade) *TradeEvent {
 	payload := wsTrade.Payload[0]
 
 	// Determine taker side (opposite of maker side)
-	takerSide := "sell"
-	if payload.MakerSide == "0" { // Maker was buyer
-		takerSide = "buy"
-	}
+	// takerSide := "sell"
+	// if payload.MakerSide == "0" { // Maker was buyer
+	// 	takerSide = "buy"
+	// }
 
 	return &TradeEvent{
 		ID:           payload.TID,

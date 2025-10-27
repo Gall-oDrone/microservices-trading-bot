@@ -9,12 +9,20 @@ import (
 	"syscall"
 	"time"
 
+	"bitso-trading-platform/market-data/internal/api"
+	"bitso-trading-platform/market-data/internal/cache"
 	"bitso-trading-platform/market-data/internal/config"
+	"bitso-trading-platform/market-data/internal/historical"
+	"bitso-trading-platform/market-data/internal/logger"
+	"bitso-trading-platform/market-data/internal/metrics"
 	"bitso-trading-platform/market-data/internal/processor"
 	"bitso-trading-platform/market-data/internal/publisher"
+	"bitso-trading-platform/market-data/internal/server"
 	"bitso-trading-platform/market-data/internal/websocket"
 	"bitso-trading-platform/shared/pkg/bitso"
+	"bitso-trading-platform/shared/pkg/health"
 	"bitso-trading-platform/shared/pkg/kafka"
+	"bitso-trading-platform/shared/pkg/service"
 )
 
 const (
@@ -26,14 +34,22 @@ const (
 
 // Application encapsulates all application components
 type Application struct {
-	logger *log.Logger
+	logger logger.Logger
 	config *config.Config
 
-	// Components
+	// Core components
 	wsManager      websocket.StreamManager
 	tradeProcessor processor.TradeProcessor
 	tradePublisher publisher.TradePublisher
 	kafkaProducer  *kafka.Producer
+
+	// New components
+	cacheLayer       cache.Cache
+	storage          historical.Storage
+	httpServer       *server.HTTPServer
+	metricsCollector *metrics.MetricsCollector
+	healthManager    *health.HealthManager
+	serviceManager   *service.Service
 
 	// Context
 	ctx    context.Context
@@ -42,9 +58,12 @@ type Application struct {
 
 // NewApplication creates and initializes the application
 func NewApplication() (*Application, error) {
-	// Initialize logger
-	logger := log.New(os.Stdout, fmt.Sprintf("[%s] ", appName), log.LstdFlags|log.Lshortfile)
-	logger.Printf("Starting %s v%s", appName, appVersion)
+	// Initialize structured logger
+	appLogger := logger.DefaultLogger()
+	appLogger.Info("Starting market-data service", map[string]interface{}{
+		"version": appVersion,
+		"name":    appName,
+	})
 
 	// Create context
 	ctx, cancel := context.WithCancel(context.Background())
@@ -55,7 +74,41 @@ func NewApplication() (*Application, error) {
 		cancel()
 		return nil, fmt.Errorf("failed to load config: %w", err)
 	}
-	logger.Println("✓ Configuration loaded")
+	appLogger.Info("Configuration loaded successfully")
+
+	// Initialize metrics collector
+	metricsCollector := metrics.NewMetricsCollector(appLogger)
+	appLogger.Info("Metrics collector initialized")
+
+	// Initialize health manager
+	healthManager := health.NewHealthManager(appLogger)
+	appLogger.Info("Health manager initialized")
+
+	// Initialize cache layer
+	cacheConfig := cache.DefaultCacheConfig()
+	cacheConfig.RedisHost = cfg.RedisHost
+	cacheConfig.RedisPort = cfg.RedisPort
+	cacheConfig.RedisPassword = cfg.RedisPassword
+	cacheConfig.RedisDB = cfg.RedisDB
+
+	cacheLayer, err := cache.NewRedisCache(cacheConfig, appLogger)
+	if err != nil {
+		cancel()
+		return nil, fmt.Errorf("failed to create cache layer: %w", err)
+	}
+	appLogger.Info("Cache layer initialized")
+
+	// Initialize historical storage
+	storageConfig := historical.DefaultStorageConfig()
+	storageConfig.BackendType = "redis"
+	storageConfig.RetentionDays = 30
+
+	storage, err := historical.NewRedisStorage(storageConfig, appLogger)
+	if err != nil {
+		cancel()
+		return nil, fmt.Errorf("failed to create storage: %w", err)
+	}
+	appLogger.Info("Historical storage initialized")
 
 	// Initialize Kafka producer
 	var kafkaProducer *kafka.Producer
@@ -76,7 +129,7 @@ func NewApplication() (*Application, error) {
 			cancel()
 			return nil, fmt.Errorf("failed to create Kafka producer: %w", err)
 		}
-		logger.Println("✓ Kafka producer initialized")
+		appLogger.Info("Kafka producer initialized")
 	}
 
 	// Initialize WebSocket Manager
@@ -84,48 +137,90 @@ func NewApplication() (*Application, error) {
 		ReconnectAttempts: cfg.WSReconnectAttempts,
 		ReconnectInterval: cfg.WSReconnectInterval,
 		ReconnectMaxDelay: cfg.WSReconnectMaxDelay,
-		Logger:            logger,
+		Logger:            appLogger,
 	}
 	wsManager := websocket.NewManager(wsManagerConfig)
-	logger.Println("✓ WebSocket manager created")
+	appLogger.Info("WebSocket manager created")
 
 	// Initialize Trade Processor
 	processorConfig := &processor.ProcessorConfig{
-		Logger:       logger,
+		Logger:       appLogger,
 		TradesInput:  wsManager.GetTradesStream(),
 		OutputBuffer: 100,
 	}
 	tradeProcessor := processor.NewProcessor(processorConfig)
-	logger.Println("✓ Trade processor created")
+	appLogger.Info("Trade processor created")
 
 	// Initialize Trade Publisher
 	var tradePublisher publisher.TradePublisher
 	if cfg.EnableKafka && kafkaProducer != nil {
 		publisherConfig := &publisher.PublisherConfig{
-			Logger:      logger,
+			Logger:      appLogger,
 			Producer:    kafkaProducer,
 			Topic:       cfg.KafkaTopicTrades,
 			TradesInput: tradeProcessor.GetProcessedTradesStream(),
 		}
 		tradePublisher = publisher.NewPublisher(publisherConfig)
-		logger.Println("✓ Trade publisher created")
+		appLogger.Info("Trade publisher created")
 	}
 
+	// Initialize API handler
+	apiHandler := api.NewHandler(cacheLayer, storage, appLogger)
+	appLogger.Info("API handler created")
+
+	// Initialize HTTP server
+	httpServer := server.NewHTTPServer(cfg.ServicePort, apiHandler, appLogger)
+	appLogger.Info("HTTP server created")
+
+	// Initialize service manager
+	serviceConfig := &service.ServiceConfig{
+		Name:        appName,
+		Version:     appVersion,
+		Host:        "localhost",
+		Port:        cfg.ServicePort,
+		HealthCheck: "/health",
+		Metadata: map[string]string{
+			"service": "market-data",
+			"version": appVersion,
+		},
+		Tags: []string{"market-data", "trading", "websocket"},
+	}
+	serviceManager := service.NewService(serviceConfig, nil, appLogger) // No registry for now
+	appLogger.Info("Service manager created")
+
 	return &Application{
-		logger:         logger,
-		config:         cfg,
-		wsManager:      wsManager,
-		tradeProcessor: tradeProcessor,
-		tradePublisher: tradePublisher,
-		kafkaProducer:  kafkaProducer,
-		ctx:            ctx,
-		cancel:         cancel,
+		logger:           appLogger,
+		config:           cfg,
+		wsManager:        wsManager,
+		tradeProcessor:   tradeProcessor,
+		tradePublisher:   tradePublisher,
+		kafkaProducer:    kafkaProducer,
+		cacheLayer:       cacheLayer,
+		storage:          storage,
+		httpServer:       httpServer,
+		metricsCollector: metricsCollector,
+		healthManager:    healthManager,
+		serviceManager:   serviceManager,
+		ctx:              ctx,
+		cancel:           cancel,
 	}, nil
 }
 
 // Start initializes and starts all components
 func (app *Application) Start() error {
-	app.logger.Println("Starting application components...")
+	app.logger.Info("Starting application components...")
+
+	// Start metrics collection
+	go app.metricsCollector.StartSystemMetricsCollection(app.ctx)
+	app.logger.Info("System metrics collection started")
+
+	// Start HTTP server
+	go func() {
+		if err := app.httpServer.Start(app.ctx); err != nil {
+			app.logger.Error("HTTP server error", map[string]interface{}{"error": err})
+		}
+	}()
+	app.logger.Info("HTTP server started")
 
 	// Parse trading books
 	books := make([]*bitso.Book, 0, len(app.config.BitsoBooks))
@@ -136,7 +231,7 @@ func (app *Application) Start() error {
 		}
 		books = append(books, book)
 	}
-	app.logger.Printf("✓ Trading books: %v", app.config.BitsoBooks)
+	app.logger.Info("Trading books configured", map[string]interface{}{"books": app.config.BitsoBooks})
 
 	// Connect to WebSocket
 	if err := app.wsManager.Connect(app.ctx); err != nil {
@@ -152,29 +247,33 @@ func (app *Application) Start() error {
 	if err := app.wsManager.Start(app.ctx); err != nil {
 		return fmt.Errorf("failed to start WebSocket manager: %w", err)
 	}
-	app.logger.Println("✓ WebSocket manager started")
+	app.logger.Info("WebSocket manager started")
 
 	// Start trade processor
 	if err := app.tradeProcessor.Start(app.ctx); err != nil {
 		return fmt.Errorf("failed to start trade processor: %w", err)
 	}
-	app.logger.Println("✓ Trade processor started")
+	app.logger.Info("Trade processor started")
 
 	// Start trade publisher
 	if app.tradePublisher != nil {
 		if err := app.tradePublisher.Start(app.ctx); err != nil {
 			return fmt.Errorf("failed to start trade publisher: %w", err)
 		}
-		app.logger.Println("✓ Trade publisher started")
+		app.logger.Info("Trade publisher started")
 	}
 
-	app.logger.Printf("🚀 %s is now running and streaming BTC/MXN market data", appName)
+	app.logger.Info("Market data service is now running", map[string]interface{}{
+		"service": appName,
+		"version": appVersion,
+		"port":    app.config.ServicePort,
+	})
 	return nil
 }
 
 // Stop gracefully shuts down the application
 func (app *Application) Stop() error {
-	app.logger.Println("Initiating graceful shutdown...")
+	app.logger.Info("Initiating graceful shutdown...")
 
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), shutdownTimeout)
 	defer shutdownCancel()
@@ -184,34 +283,55 @@ func (app *Application) Stop() error {
 	go func() {
 		var lastErr error
 
+		// Stop HTTP server
+		app.logger.Info("Stopping HTTP server...")
+		if err := app.httpServer.Stop(); err != nil {
+			app.logger.Error("Error stopping HTTP server", map[string]interface{}{"error": err})
+			lastErr = err
+		}
+
 		// Stop trade publisher
 		if app.tradePublisher != nil {
-			app.logger.Println("Stopping trade publisher...")
+			app.logger.Info("Stopping trade publisher...")
 			if err := app.tradePublisher.Stop(); err != nil {
-				app.logger.Printf("Error stopping trade publisher: %v", err)
+				app.logger.Error("Error stopping trade publisher", map[string]interface{}{"error": err})
 				lastErr = err
 			}
 		}
 
 		// Stop trade processor
-		app.logger.Println("Stopping trade processor...")
+		app.logger.Info("Stopping trade processor...")
 		if err := app.tradeProcessor.Stop(); err != nil {
-			app.logger.Printf("Error stopping trade processor: %v", err)
+			app.logger.Error("Error stopping trade processor", map[string]interface{}{"error": err})
 			lastErr = err
 		}
 
 		// Stop WebSocket manager
-		app.logger.Println("Stopping WebSocket manager...")
+		app.logger.Info("Stopping WebSocket manager...")
 		if err := app.wsManager.Stop(); err != nil {
-			app.logger.Printf("Error stopping WebSocket manager: %v", err)
+			app.logger.Error("Error stopping WebSocket manager", map[string]interface{}{"error": err})
+			lastErr = err
+		}
+
+		// Close cache layer
+		app.logger.Info("Closing cache layer...")
+		if err := app.cacheLayer.Close(); err != nil {
+			app.logger.Error("Error closing cache layer", map[string]interface{}{"error": err})
+			lastErr = err
+		}
+
+		// Close storage
+		app.logger.Info("Closing storage...")
+		if err := app.storage.Close(); err != nil {
+			app.logger.Error("Error closing storage", map[string]interface{}{"error": err})
 			lastErr = err
 		}
 
 		// Close Kafka producer
 		if app.kafkaProducer != nil {
-			app.logger.Println("Closing Kafka producer...")
+			app.logger.Info("Closing Kafka producer...")
 			if err := app.kafkaProducer.Close(); err != nil {
-				app.logger.Printf("Error closing Kafka producer: %v", err)
+				app.logger.Error("Error closing Kafka producer", map[string]interface{}{"error": err})
 				lastErr = err
 			}
 		}
@@ -226,14 +346,14 @@ func (app *Application) Stop() error {
 	select {
 	case err := <-shutdownComplete:
 		if err != nil {
-			app.logger.Printf("⚠ Shutdown completed with errors: %v", err)
+			app.logger.Error("Shutdown completed with errors", map[string]interface{}{"error": err})
 			return err
 		}
-		app.logger.Println("✓ Graceful shutdown completed successfully")
+		app.logger.Info("Graceful shutdown completed successfully")
 		return nil
 
 	case <-shutdownCtx.Done():
-		app.logger.Println("⚠ Shutdown timeout exceeded, forcing exit")
+		app.logger.Error("Shutdown timeout exceeded, forcing exit")
 		return fmt.Errorf("shutdown timeout exceeded")
 	}
 }
@@ -251,7 +371,7 @@ func (app *Application) Run() error {
 
 	// Wait for shutdown signal
 	sig := <-sigChan
-	app.logger.Printf("Received signal: %v", sig)
+	app.logger.Info("Received shutdown signal", map[string]interface{}{"signal": sig})
 
 	// Perform graceful shutdown
 	return app.Stop()
@@ -294,13 +414,13 @@ func main() {
 	// Create application
 	app, err := NewApplication()
 	if err != nil {
-		log.Fatalf("❌ Failed to create application: %v", err)
+		log.Fatalf("Failed to create application: %v", err)
 	}
 
 	// Run application
 	if err := app.Run(); err != nil {
-		log.Fatalf("❌ Application error: %v", err)
+		log.Fatalf("Application error: %v", err)
 	}
 
-	log.Println("👋 Application exited successfully")
+	log.Println("Application exited successfully")
 }
