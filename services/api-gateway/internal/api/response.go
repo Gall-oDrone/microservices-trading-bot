@@ -178,4 +178,3 @@ func ProxyResponse(w http.ResponseWriter, r *http.Request, data interface{}, err
 
 	SuccessResponse(w, r, data)
 }
-

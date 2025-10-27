@@ -117,7 +117,7 @@ func (h *StrategyHandler) HandleStartStrategy(w http.ResponseWriter, r *http.Req
 	// Extract strategy name from path
 	path := strings.TrimPrefix(r.URL.Path, "/api/v1/strategies/")
 	name := strings.TrimSuffix(path, "/start")
-	
+
 	if name == "" || name == path {
 		BadRequestResponse(w, r, "Strategy name is required")
 		return
@@ -154,7 +154,7 @@ func (h *StrategyHandler) HandleStopStrategy(w http.ResponseWriter, r *http.Requ
 	// Extract strategy name from path
 	path := strings.TrimPrefix(r.URL.Path, "/api/v1/strategies/")
 	name := strings.TrimSuffix(path, "/stop")
-	
+
 	if name == "" || name == path {
 		BadRequestResponse(w, r, "Strategy name is required")
 		return
@@ -191,7 +191,7 @@ func (h *StrategyHandler) HandleUpdateStrategyConfig(w http.ResponseWriter, r *h
 	// Extract strategy name from path
 	path := strings.TrimPrefix(r.URL.Path, "/api/v1/strategies/")
 	name := strings.TrimSuffix(path, "/config")
-	
+
 	if name == "" || name == path {
 		BadRequestResponse(w, r, "Strategy name is required")
 		return
@@ -238,4 +238,3 @@ func (h *StrategyHandler) HandleUpdateStrategyConfig(w http.ResponseWriter, r *h
 		"strategy": name,
 	})
 }
-

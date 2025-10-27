@@ -12,14 +12,14 @@ import (
 
 // Handler is the main API handler that aggregates all sub-handlers
 type Handler struct {
-	config              *config.Config
-	logger              *logger.Logger
-	metrics             *metrics.MetricsCollector
-	healthManager       *health.HealthManager
-	marketDataHandler   *MarketDataHandler
-	orderHandler        *OrderHandler
-	strategyHandler     *StrategyHandler
-	aggregationHandler  *AggregationHandler
+	config             *config.Config
+	logger             *logger.Logger
+	metrics            *metrics.MetricsCollector
+	healthManager      *health.HealthManager
+	marketDataHandler  *MarketDataHandler
+	orderHandler       *OrderHandler
+	strategyHandler    *StrategyHandler
+	aggregationHandler *AggregationHandler
 }
 
 // NewHandler creates a new main API handler
@@ -108,8 +108,8 @@ func (h *Handler) HandleVersion(w http.ResponseWriter, r *http.Request) {
 	}
 
 	version := map[string]interface{}{
-		"service": h.config.Service.Name,
-		"version": h.config.Service.Version,
+		"service":     h.config.Service.Name,
+		"version":     h.config.Service.Version,
 		"api_version": "v1",
 	}
 
@@ -216,4 +216,3 @@ func (h *Handler) handleStrategyRoutes(w http.ResponseWriter, r *http.Request) {
 	// Otherwise, it's a get strategy by name
 	h.strategyHandler.HandleGetStrategy(w, r)
 }
-

@@ -100,7 +100,7 @@ func (h *OrderHandler) HandleCancelOrder(w http.ResponseWriter, r *http.Request)
 	// Extract order ID from path
 	path := strings.TrimPrefix(r.URL.Path, "/api/v1/orders/")
 	orderID := strings.TrimSuffix(path, "/cancel")
-	
+
 	if orderID == "" || orderID == path {
 		BadRequestResponse(w, r, "Order ID is required")
 		return
@@ -269,7 +269,7 @@ func (h *OrderHandler) HandleGetPositionSummary(w http.ResponseWriter, r *http.R
 // parseOrderFilters parses order filters from query parameters
 func (h *OrderHandler) parseOrderFilters(r *http.Request) *client.OrderFilters {
 	query := r.URL.Query()
-	
+
 	filters := &client.OrderFilters{
 		Book:      query.Get("book"),
 		Status:    query.Get("status"),
@@ -312,7 +312,7 @@ func (h *OrderHandler) parseOrderFilters(r *http.Request) *client.OrderFilters {
 // parsePositionFilters parses position filters from query parameters
 func (h *OrderHandler) parsePositionFilters(r *http.Request) *client.PositionFilters {
 	query := r.URL.Query()
-	
+
 	filters := &client.PositionFilters{
 		Book:   query.Get("book"),
 		Status: query.Get("status"),
@@ -334,4 +334,3 @@ func (h *OrderHandler) parsePositionFilters(r *http.Request) *client.PositionFil
 
 	return filters
 }
-

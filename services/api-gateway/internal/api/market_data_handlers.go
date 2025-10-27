@@ -83,7 +83,7 @@ func (h *MarketDataHandler) HandleGetTrade(w http.ResponseWriter, r *http.Reques
 	// Extract path parameters
 	path := strings.TrimPrefix(r.URL.Path, "/api/v1/market-data/trades/")
 	parts := strings.Split(path, "/")
-	
+
 	if len(parts) != 2 {
 		BadRequestResponse(w, r, "Invalid path format. Expected: /api/v1/market-data/trades/{book}/{id}")
 		return
@@ -232,4 +232,3 @@ func (h *MarketDataHandler) HandleGetMarketSummary(w http.ResponseWriter, r *htt
 
 	SuccessResponse(w, r, summary)
 }
-

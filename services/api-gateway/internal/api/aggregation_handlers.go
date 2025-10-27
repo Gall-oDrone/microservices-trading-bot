@@ -11,11 +11,11 @@ import (
 
 // AggregationHandler handles aggregated data requests from multiple services
 type AggregationHandler struct {
-	marketDataClient  client.MarketDataClient
-	orderClient       client.OrderManagementClient
-	strategyClient    client.StrategyExecutorClient
-	logger            *logger.Logger
-	metrics           *metrics.MetricsCollector
+	marketDataClient client.MarketDataClient
+	orderClient      client.OrderManagementClient
+	strategyClient   client.StrategyExecutorClient
+	logger           *logger.Logger
+	metrics          *metrics.MetricsCollector
 }
 
 // NewAggregationHandler creates a new aggregation handler
@@ -400,4 +400,3 @@ func (h *AggregationHandler) HandleGetSystemStatus(w http.ResponseWriter, r *htt
 		SuccessResponse(w, r, status)
 	}
 }
-
