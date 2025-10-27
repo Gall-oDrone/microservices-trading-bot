@@ -250,4 +250,3 @@ func (rw *circuitBreakerResponseWriter) WriteHeader(statusCode int) {
 	rw.statusCode = statusCode
 	rw.ResponseWriter.WriteHeader(statusCode)
 }
-

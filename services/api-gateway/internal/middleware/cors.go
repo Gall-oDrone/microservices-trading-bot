@@ -150,4 +150,3 @@ func (m *CORSMiddleware) allowAll() bool {
 	}
 	return false
 }
-

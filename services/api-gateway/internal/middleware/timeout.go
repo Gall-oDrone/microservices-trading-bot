@@ -90,4 +90,3 @@ func (rw *timeoutResponseWriter) Write(b []byte) (int, error) {
 	rw.written = true
 	return rw.ResponseWriter.Write(b)
 }
-

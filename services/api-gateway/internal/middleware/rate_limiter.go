@@ -8,6 +8,7 @@ import (
 
 	"bitso-trading-platform/api-gateway/internal/logger"
 	"bitso-trading-platform/api-gateway/internal/metrics"
+
 	"golang.org/x/time/rate"
 )
 
@@ -149,15 +150,15 @@ func (m *RateLimiterMiddleware) cleanupInactiveLimiters() {
 		select {
 		case <-ticker.C:
 			m.mu.Lock()
-			
+
 			// Count before cleanup
 			beforeCount := len(m.limiters)
-			
+
 			// Remove all limiters (they will be recreated on next request)
 			// In a production system, you would track last access time
 			// For simplicity, we clear all inactive limiters periodically
 			m.limiters = make(map[string]*rate.Limiter)
-			
+
 			m.mu.Unlock()
 
 			if beforeCount > 0 {
@@ -176,4 +177,3 @@ func (m *RateLimiterMiddleware) cleanupInactiveLimiters() {
 func (m *RateLimiterMiddleware) Stop() {
 	close(m.stopCleanup)
 }
-

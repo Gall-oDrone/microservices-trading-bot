@@ -133,4 +133,3 @@ func isHealthCheckPath(path string) bool {
 
 	return false
 }
-

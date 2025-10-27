@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"bitso-trading-platform/api-gateway/internal/logger"
+
 	"github.com/google/uuid"
 )
 
@@ -121,4 +122,3 @@ func RequestIDFromContext(ctx context.Context) string {
 	}
 	return ""
 }
-

@@ -81,4 +81,3 @@ func (rw *metricsResponseWriter) Write(b []byte) (int, error) {
 	rw.size += size
 	return size, err
 }
-

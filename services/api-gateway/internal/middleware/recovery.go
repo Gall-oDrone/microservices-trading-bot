@@ -27,9 +27,9 @@ func (m *RecoveryMiddleware) Handler(next http.Handler) http.Handler {
 			if err := recover(); err != nil {
 				// Log the panic with stack trace
 				m.logger.Error("Panic recovered", map[string]interface{}{
-					"error":      fmt.Sprintf("%v", err),
-					"method":     r.Method,
-					"path":       r.URL.Path,
+					"error":       fmt.Sprintf("%v", err),
+					"method":      r.Method,
+					"path":        r.URL.Path,
 					"remote_addr": r.RemoteAddr,
 					"stack_trace": string(debug.Stack()),
 				})
@@ -45,4 +45,3 @@ func (m *RecoveryMiddleware) Handler(next http.Handler) http.Handler {
 		next.ServeHTTP(w, r)
 	})
 }
-
