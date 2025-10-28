@@ -19,11 +19,11 @@ type BacktestManager struct {
 	storage          storage.ResultStorage
 	logger           logger.Logger
 	metricsCollector *metrics.MetricsCollector
-	
+
 	maxConcurrent    int
 	runningBacktests map[string]*models.Backtest
 	mu               sync.RWMutex
-	
+
 	ctx    context.Context
 	cancel context.CancelFunc
 }
@@ -37,7 +37,7 @@ func NewBacktestManager(
 	metricsCollector *metrics.MetricsCollector,
 ) *BacktestManager {
 	ctx, cancel := context.WithCancel(context.Background())
-	
+
 	return &BacktestManager{
 		engine:           eng,
 		queue:            NewBacktestQueue(maxConcurrent * 2), // Queue size = 2x concurrent
@@ -57,20 +57,20 @@ func (m *BacktestManager) CreateBacktest(config *models.BacktestConfig) (*models
 	if err := config.Validate(); err != nil {
 		return nil, fmt.Errorf("invalid configuration: %w", err)
 	}
-	
+
 	// Create backtest
 	backtest := models.NewBacktest(config)
-	
+
 	// Record metrics
 	if m.metricsCollector != nil {
 		m.metricsCollector.RecordBacktestCreated()
 	}
-	
+
 	m.logger.Info("Backtest created", map[string]interface{}{
 		"backtest_id": backtest.ID,
 		"name":        config.Name,
 	})
-	
+
 	return backtest, nil
 }
 
@@ -82,15 +82,15 @@ func (m *BacktestManager) StartBacktest(backtestID string) error {
 		if err := m.queue.Enqueue(backtestID); err != nil {
 			return fmt.Errorf("failed to queue backtest: %w", err)
 		}
-		
+
 		m.logger.Info("Backtest queued", map[string]interface{}{
 			"backtest_id": backtestID,
 			"queue_size":  m.queue.Size(),
 		})
-		
+
 		return nil
 	}
-	
+
 	// Start immediately
 	return m.startBacktestNow(backtestID)
 }
@@ -101,13 +101,13 @@ func (m *BacktestManager) GetBacktest(backtestID string) (*models.Backtest, erro
 	if bt, err := m.getTrackedBacktest(backtestID); err == nil {
 		return bt, nil
 	}
-	
+
 	// Check storage
 	result, err := m.storage.Get(m.ctx, backtestID)
 	if err != nil {
 		return nil, fmt.Errorf("backtest not found: %s", backtestID)
 	}
-	
+
 	// Convert result to backtest
 	// (In a real implementation, we'd store the backtest separately)
 	backtest := &models.Backtest{
@@ -115,7 +115,7 @@ func (m *BacktestManager) GetBacktest(backtestID string) (*models.Backtest, erro
 		Status: models.BacktestStatus(result.Status),
 		Result: result,
 	}
-	
+
 	return backtest, nil
 }
 
@@ -130,7 +130,7 @@ func (m *BacktestManager) ListBacktests(filters *storage.ListFilters) ([]*models
 	if err != nil {
 		return nil, fmt.Errorf("failed to list backtests: %w", err)
 	}
-	
+
 	// Convert results to backtests
 	backtests := make([]*models.Backtest, len(results))
 	for i, result := range results {
@@ -140,7 +140,7 @@ func (m *BacktestManager) ListBacktests(filters *storage.ListFilters) ([]*models
 			Result: result,
 		}
 	}
-	
+
 	return backtests, nil
 }
 
@@ -153,14 +153,14 @@ func (m *BacktestManager) CancelBacktest(backtestID string) error {
 			return err
 		}
 	}
-	
+
 	// Untrack
 	m.untrackBacktest(backtestID)
-	
+
 	m.logger.Info("Backtest cancelled", map[string]interface{}{
 		"backtest_id": backtestID,
 	})
-	
+
 	return nil
 }
 
@@ -169,22 +169,22 @@ func (m *BacktestManager) Start(ctx context.Context) error {
 	m.logger.Info("Starting backtest manager", map[string]interface{}{
 		"max_concurrent": m.maxConcurrent,
 	})
-	
+
 	// Start queue processor
 	go m.processQueue()
-	
+
 	return nil
 }
 
 // Stop stops the manager
 func (m *BacktestManager) Stop() error {
 	m.logger.Info("Stopping backtest manager", nil)
-	
+
 	m.cancel()
-	
+
 	// Wait for running backtests to complete or timeout
 	// (In a production system, we'd want graceful shutdown)
-	
+
 	return nil
 }
 
@@ -194,14 +194,14 @@ func (m *BacktestManager) startBacktestNow(backtestID string) error {
 	// Get backtest config from storage or create new one
 	// For now, assume we have it
 	// TODO: Store backtest configs separately
-	
+
 	m.logger.Info("Starting backtest", map[string]interface{}{
 		"backtest_id": backtestID,
 	})
-	
+
 	// This would be implemented to actually start the backtest
 	// For now, it's a placeholder
-	
+
 	return nil
 }
 
@@ -221,4 +221,3 @@ func (m *BacktestManager) processQueue() {
 		}
 	}
 }
-

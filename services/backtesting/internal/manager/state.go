@@ -10,9 +10,9 @@ import (
 func (m *BacktestManager) trackBacktest(backtest *models.Backtest) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	
+
 	m.runningBacktests[backtest.ID] = backtest
-	
+
 	if m.metricsCollector != nil {
 		m.metricsCollector.RecordActiveBacktests(len(m.runningBacktests))
 	}
@@ -22,9 +22,9 @@ func (m *BacktestManager) trackBacktest(backtest *models.Backtest) {
 func (m *BacktestManager) untrackBacktest(backtestID string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	
+
 	delete(m.runningBacktests, backtestID)
-	
+
 	if m.metricsCollector != nil {
 		m.metricsCollector.RecordActiveBacktests(len(m.runningBacktests))
 	}
@@ -34,12 +34,12 @@ func (m *BacktestManager) untrackBacktest(backtestID string) {
 func (m *BacktestManager) getTrackedBacktest(backtestID string) (*models.Backtest, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	
+
 	backtest, exists := m.runningBacktests[backtestID]
 	if !exists {
 		return nil, fmt.Errorf("backtest not found in running backtests: %s", backtestID)
 	}
-	
+
 	return backtest, nil
 }
 
@@ -59,12 +59,12 @@ func (m *BacktestManager) canStartNewBacktest() bool {
 func (m *BacktestManager) GetRunningBacktests() []*models.Backtest {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	
+
 	backtests := make([]*models.Backtest, 0, len(m.runningBacktests))
 	for _, bt := range m.runningBacktests {
 		backtests = append(backtests, bt)
 	}
-	
+
 	return backtests
 }
 
@@ -76,10 +76,9 @@ func (m *BacktestManager) GetQueuedBacktests() []string {
 // GetStats returns manager statistics
 func (m *BacktestManager) GetStats() map[string]interface{} {
 	return map[string]interface{}{
-		"running_count":   m.getRunningCount(),
-		"queued_count":    m.queue.Size(),
-		"max_concurrent":  m.maxConcurrent,
-		"queue_capacity":  m.queue.capacity,
+		"running_count":  m.getRunningCount(),
+		"queued_count":   m.queue.Size(),
+		"max_concurrent": m.maxConcurrent,
+		"queue_capacity": m.queue.capacity,
 	}
 }
-

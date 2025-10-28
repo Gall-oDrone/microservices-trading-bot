@@ -24,11 +24,11 @@ func NewBacktestQueue(capacity int) *BacktestQueue {
 func (q *BacktestQueue) Enqueue(backtestID string) error {
 	q.mu.Lock()
 	defer q.mu.Unlock()
-	
+
 	if len(q.queue) >= q.capacity {
 		return fmt.Errorf("queue is full (capacity: %d)", q.capacity)
 	}
-	
+
 	q.queue = append(q.queue, backtestID)
 	return nil
 }
@@ -37,14 +37,14 @@ func (q *BacktestQueue) Enqueue(backtestID string) error {
 func (q *BacktestQueue) Dequeue() (string, error) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
-	
+
 	if len(q.queue) == 0 {
 		return "", fmt.Errorf("queue is empty")
 	}
-	
+
 	backtestID := q.queue[0]
 	q.queue = q.queue[1:]
-	
+
 	return backtestID, nil
 }
 
@@ -52,14 +52,14 @@ func (q *BacktestQueue) Dequeue() (string, error) {
 func (q *BacktestQueue) Remove(backtestID string) bool {
 	q.mu.Lock()
 	defer q.mu.Unlock()
-	
+
 	for i, id := range q.queue {
 		if id == backtestID {
 			q.queue = append(q.queue[:i], q.queue[i+1:]...)
 			return true
 		}
 	}
-	
+
 	return false
 }
 
@@ -95,11 +95,11 @@ func (q *BacktestQueue) Clear() {
 func (q *BacktestQueue) Peek() (string, error) {
 	q.mu.RLock()
 	defer q.mu.RUnlock()
-	
+
 	if len(q.queue) == 0 {
 		return "", fmt.Errorf("queue is empty")
 	}
-	
+
 	return q.queue[0], nil
 }
 
@@ -107,9 +107,8 @@ func (q *BacktestQueue) Peek() (string, error) {
 func (q *BacktestQueue) GetAll() []string {
 	q.mu.RLock()
 	defer q.mu.RUnlock()
-	
+
 	ids := make([]string, len(q.queue))
 	copy(ids, q.queue)
 	return ids
 }
-

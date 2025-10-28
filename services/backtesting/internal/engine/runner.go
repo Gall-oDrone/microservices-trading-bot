@@ -23,7 +23,7 @@ type BacktestRunner struct {
 	portfolio        *portfolio.VirtualPortfolio
 	analyzer         *analyzer.PerformanceAnalyzer
 	logger           logger.Logger
-	
+
 	progressCallback func(float64)
 	cancelChan       <-chan struct{}
 }
@@ -46,10 +46,10 @@ func (r *BacktestRunner) Initialize(ctx context.Context) error {
 	r.logger.Info("Initializing backtest runner", map[string]interface{}{
 		"backtest_id": r.config.ID,
 	})
-	
+
 	// Initialize virtual portfolio
 	r.portfolio = portfolio.NewVirtualPortfolio(r.config.ID, r.config.InitialBalance)
-	
+
 	// Initialize market simulator
 	simConfig := &simulator.SimulatorConfig{
 		SlippageModel:  r.config.SlippageModel,
@@ -60,56 +60,56 @@ func (r *BacktestRunner) Initialize(ctx context.Context) error {
 	if err := r.simulator.Initialize(ctx, simConfig); err != nil {
 		return fmt.Errorf("failed to initialize simulator: %w", err)
 	}
-	
+
 	// Initialize strategy
 	strategyImpl, err := strategy.CreateStrategy(r.config.Strategy, r.config.StrategyParams)
 	if err != nil {
 		return fmt.Errorf("failed to create strategy: %w", err)
 	}
 	r.strategyExecutor = strategy.NewStrategyExecutor(strategyImpl, r.logger)
-	
+
 	// Initialize analyzer
 	r.analyzer = analyzer.NewAnalyzer(r.logger)
-	
+
 	r.logger.Info("Backtest runner initialized", nil)
-	
+
 	return nil
 }
 
 // Execute executes the backtest
 func (r *BacktestRunner) Execute(ctx context.Context) (*models.BacktestResult, error) {
 	startTime := time.Now()
-	
+
 	r.logger.Info("Executing backtest", map[string]interface{}{
-		"book":        r.config.Book,
-		"start_date":  r.config.StartDate.Format("2006-01-02"),
-		"end_date":    r.config.EndDate.Format("2006-01-02"),
+		"book":       r.config.Book,
+		"start_date": r.config.StartDate.Format("2006-01-02"),
+		"end_date":   r.config.EndDate.Format("2006-01-02"),
 	})
-	
+
 	// Create result
 	result := models.NewBacktestResult(r.config.ID, r.config.ID)
-	
+
 	// Load historical data
 	request := data.NewDataRequest(r.config.Book, r.config.StartDate, r.config.EndDate).
 		WithEventTypes(models.EventTypeTrade).
 		WithGranularity(r.config.DataGranularity)
-	
+
 	events, err := r.dataProvider.LoadHistoricalData(ctx, request)
 	if err != nil {
 		result.MarkFailed(err)
 		return result, fmt.Errorf("failed to load historical data: %w", err)
 	}
-	
+
 	r.logger.Info("Historical data loaded", map[string]interface{}{
 		"event_count": len(events),
 	})
-	
+
 	// Run event loop
 	if err := r.runEventLoop(ctx, events, result); err != nil {
 		result.MarkFailed(err)
 		return result, fmt.Errorf("event loop failed: %w", err)
 	}
-	
+
 	// Analyze performance
 	summary, err := r.analyzer.Analyze(r.portfolio, result.Trades, result.EquityCurve)
 	if err != nil {
@@ -117,16 +117,16 @@ func (r *BacktestRunner) Execute(ctx context.Context) (*models.BacktestResult, e
 	} else {
 		result.SetSummary(summary)
 	}
-	
+
 	// Mark completed
 	result.MarkCompleted()
 	result.Duration = int64(time.Since(startTime).Seconds())
-	
+
 	r.logger.Info("Backtest execution completed", map[string]interface{}{
 		"duration":    time.Since(startTime),
 		"trade_count": len(result.Trades),
 	})
-	
+
 	return result, nil
 }
 
@@ -145,4 +145,3 @@ func (r *BacktestRunner) cleanup() {
 		r.strategyExecutor.Reset()
 	}
 }
-
