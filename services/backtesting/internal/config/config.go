@@ -82,4 +82,3 @@ func (c *ServiceConfig) GetAddress() string {
 func (c *RedisConfig) GetAddress() string {
 	return c.Host + ":" + string(rune(c.Port))
 }
-

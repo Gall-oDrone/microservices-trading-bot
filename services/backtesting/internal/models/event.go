@@ -28,8 +28,8 @@ type MarketEvent struct {
 func NewTradeEvent(trade *bitso.Trade) *MarketEvent {
 	return &MarketEvent{
 		EventType: EventTypeTrade,
-		Timestamp: trade.CreatedAt.Time,
-		Book:      string(trade.Book),
+		Timestamp: trade.CreatedAt.Time(),
+		Book:      trade.Book.String(),
 		Data:      trade,
 	}
 }
@@ -38,8 +38,8 @@ func NewTradeEvent(trade *bitso.Trade) *MarketEvent {
 func NewTickerEvent(ticker *bitso.Ticker) *MarketEvent {
 	return &MarketEvent{
 		EventType: EventTypeTicker,
-		Timestamp: ticker.Timestamp.Time,
-		Book:      string(ticker.Book),
+		Timestamp: ticker.CreatedAt.Time(),
+		Book:      ticker.Book.String(),
 		Data:      ticker,
 	}
 }
@@ -59,12 +59,12 @@ func (e *MarketEvent) GetTrade() (*bitso.Trade, error) {
 	if e.EventType != EventTypeTrade {
 		return nil, fmt.Errorf("event is not a trade event")
 	}
-	
+
 	trade, ok := e.Data.(*bitso.Trade)
 	if !ok {
 		return nil, fmt.Errorf("failed to cast event data to Trade")
 	}
-	
+
 	return trade, nil
 }
 
@@ -73,12 +73,12 @@ func (e *MarketEvent) GetTicker() (*bitso.Ticker, error) {
 	if e.EventType != EventTypeTicker {
 		return nil, fmt.Errorf("event is not a ticker event")
 	}
-	
+
 	ticker, ok := e.Data.(*bitso.Ticker)
 	if !ok {
 		return nil, fmt.Errorf("failed to cast event data to Ticker")
 	}
-	
+
 	return ticker, nil
 }
 
@@ -87,7 +87,7 @@ func (e *MarketEvent) GetOrderBook() (interface{}, error) {
 	if e.EventType != EventTypeOrderBook {
 		return nil, fmt.Errorf("event is not an order book event")
 	}
-	
+
 	return e.Data, nil
 }
 
@@ -115,7 +115,7 @@ func (e *MarketEvent) GetPrice() (float64, error) {
 			return 0, err
 		}
 		return trade.Price.Float64(), nil
-		
+
 	case EventTypeTicker:
 		ticker, err := e.GetTicker()
 		if err != nil {
@@ -123,7 +123,7 @@ func (e *MarketEvent) GetPrice() (float64, error) {
 		}
 		// Use last traded price
 		return ticker.Last.Float64(), nil
-		
+
 	default:
 		return 0, fmt.Errorf("cannot get price from event type: %s", e.EventType)
 	}
@@ -134,12 +134,12 @@ func (e *MarketEvent) GetAmount() (float64, error) {
 	if e.EventType != EventTypeTrade {
 		return 0, fmt.Errorf("only trade events have amount")
 	}
-	
+
 	trade, err := e.GetTrade()
 	if err != nil {
 		return 0, err
 	}
-	
+
 	return trade.Amount.Float64(), nil
 }
 
@@ -154,7 +154,7 @@ func (e *MarketEvent) GetSide() (string, error) {
 		return "", err
 	}
 	
-	return string(trade.Side), nil
+	return trade.MakerSide.String(), nil
 }
 
 // Validate validates the market event
@@ -162,25 +162,25 @@ func (e *MarketEvent) Validate() error {
 	if e.Book == "" {
 		return fmt.Errorf("book is required")
 	}
-	
+
 	if e.Timestamp.IsZero() {
 		return fmt.Errorf("timestamp is required")
 	}
-	
+
 	validTypes := map[MarketEventType]bool{
 		EventTypeTrade:     true,
 		EventTypeTicker:    true,
 		EventTypeOrderBook: true,
 	}
-	
+
 	if !validTypes[e.EventType] {
 		return fmt.Errorf("invalid event type: %s", e.EventType)
 	}
-	
+
 	if e.Data == nil {
 		return fmt.Errorf("event data is required")
 	}
-	
+
 	return nil
 }
 
@@ -199,4 +199,3 @@ func (e *MarketEvent) Compare(other *MarketEvent) int {
 	}
 	return 0
 }
-

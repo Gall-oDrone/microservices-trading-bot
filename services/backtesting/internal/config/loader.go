@@ -11,11 +11,11 @@ import (
 func Load() (*Config, error) {
 	config := loadFromEnv()
 	setDefaults(config)
-	
+
 	if err := config.Validate(); err != nil {
 		return nil, fmt.Errorf("configuration validation failed: %w", err)
 	}
-	
+
 	return config, nil
 }
 
@@ -78,7 +78,7 @@ func setDefaults(config *Config) {
 	if config.Service.Host == "" {
 		config.Service.Host = "0.0.0.0"
 	}
-	
+
 	// Execution defaults
 	if config.Execution.MaxConcurrentBacktests == 0 {
 		config.Execution.MaxConcurrentBacktests = 5
@@ -89,7 +89,7 @@ func setDefaults(config *Config) {
 	if config.Execution.EventBatchSize == 0 {
 		config.Execution.EventBatchSize = 1000
 	}
-	
+
 	// Storage defaults
 	if config.Storage.RetentionDays == 0 {
 		config.Storage.RetentionDays = 90
@@ -112,12 +112,12 @@ func getEnvAsInt(key string, defaultValue int) int {
 	if valueStr == "" {
 		return defaultValue
 	}
-	
+
 	value, err := strconv.Atoi(valueStr)
 	if err != nil {
 		return defaultValue
 	}
-	
+
 	return value
 }
 
@@ -127,12 +127,12 @@ func getEnvAsFloat(key string, defaultValue float64) float64 {
 	if valueStr == "" {
 		return defaultValue
 	}
-	
+
 	value, err := strconv.ParseFloat(valueStr, 64)
 	if err != nil {
 		return defaultValue
 	}
-	
+
 	return value
 }
 
@@ -142,7 +142,7 @@ func getEnvAsBool(key string, defaultValue bool) bool {
 	if valueStr == "" {
 		return defaultValue
 	}
-	
+
 	value, err := strconv.ParseBool(valueStr)
 	if err != nil {
 		// Try parsing as 1/0
@@ -154,7 +154,7 @@ func getEnvAsBool(key string, defaultValue bool) bool {
 		}
 		return defaultValue
 	}
-	
+
 	return value
 }
 
@@ -164,12 +164,11 @@ func getEnvAsDuration(key string, defaultValue time.Duration) time.Duration {
 	if valueStr == "" {
 		return defaultValue
 	}
-	
+
 	duration, err := time.ParseDuration(valueStr)
 	if err != nil {
 		return defaultValue
 	}
-	
+
 	return duration
 }
-

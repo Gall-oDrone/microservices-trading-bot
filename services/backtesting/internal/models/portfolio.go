@@ -39,11 +39,11 @@ func (p *Position) AddSize(amount, price float64) {
 	totalCost := p.CostBasis + (amount * price)
 	p.Size += amount
 	p.CostBasis = totalCost
-	
+
 	if p.Size != 0 {
 		p.AveragePrice = p.CostBasis / p.Size
 	}
-	
+
 	p.Timestamp = time.Now()
 	p.CalculateUnrealizedPL()
 }
@@ -174,4 +174,3 @@ func (p *Position) String() string {
 		p.Book, direction, p.Size, p.AveragePrice, p.CurrentPrice,
 		p.UnrealizedPL, p.GetProfitLossPercent())
 }
-

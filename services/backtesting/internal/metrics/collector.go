@@ -82,4 +82,3 @@ func (m *MetricsCollector) RecordTickersProcessed(count int) {
 func (m *MetricsCollector) RecordOrderBooksProcessed(count int) {
 	m.RecordEventsProcessed("orderbook", count)
 }
-

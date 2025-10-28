@@ -153,4 +153,3 @@ func (t *Trade) String() string {
 func generateTradeID() string {
 	return fmt.Sprintf("trd-%d", time.Now().UnixNano())
 }
-

@@ -70,9 +70,9 @@ type PerformanceSummary struct {
 type EquityPoint struct {
 	Timestamp time.Time `json:"timestamp"`
 	Balance   float64   `json:"balance"`
-	Equity    float64   `json:"equity"`    // Balance + unrealized P&L
-	Return    float64   `json:"return"`    // Cumulative return
-	Drawdown  float64   `json:"drawdown"`  // Current drawdown from peak
+	Equity    float64   `json:"equity"`   // Balance + unrealized P&L
+	Return    float64   `json:"return"`   // Cumulative return
+	Drawdown  float64   `json:"drawdown"` // Current drawdown from peak
 }
 
 // NewBacktestResult creates a new backtest result
@@ -169,4 +169,3 @@ func (r *BacktestResult) GetLosingTrades() []Trade {
 func generateResultID() string {
 	return fmt.Sprintf("res-%d", time.Now().UnixNano())
 }
-

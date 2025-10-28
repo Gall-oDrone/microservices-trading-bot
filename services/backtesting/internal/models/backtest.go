@@ -109,12 +109,12 @@ func (b *Backtest) Duration() time.Duration {
 	if b.StartedAt == nil {
 		return 0
 	}
-	
+
 	endTime := time.Now()
 	if b.CompletedAt != nil {
 		endTime = *b.CompletedAt
 	}
-	
+
 	return endTime.Sub(*b.StartedAt)
 }
 
@@ -137,4 +137,3 @@ func BacktestFromJSON(data []byte) (*Backtest, error) {
 func generateBacktestID() string {
 	return fmt.Sprintf("bt-%d", time.Now().UnixNano())
 }
-

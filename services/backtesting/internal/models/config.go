@@ -137,7 +137,7 @@ func (c *BacktestConfig) GetDays() int {
 // Clone creates a deep copy of the configuration
 func (c *BacktestConfig) Clone() *BacktestConfig {
 	clone := *c
-	
+
 	// Deep copy strategy params
 	if c.StrategyParams != nil {
 		clone.StrategyParams = make(map[string]interface{})
@@ -145,7 +145,7 @@ func (c *BacktestConfig) Clone() *BacktestConfig {
 			clone.StrategyParams[k] = v
 		}
 	}
-	
+
 	return &clone
 }
 
@@ -179,4 +179,3 @@ func (c *BacktestConfig) WithCommission(rate float64) *BacktestConfig {
 func generateConfigID() string {
 	return fmt.Sprintf("cfg-%d", time.Now().UnixNano())
 }
-

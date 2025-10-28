@@ -12,7 +12,7 @@ func TestLoad(t *testing.T) {
 		"SERVICE_NAME": os.Getenv("SERVICE_NAME"),
 		"SERVICE_PORT": os.Getenv("SERVICE_PORT"),
 	}
-	
+
 	// Restore after test
 	defer func() {
 		for key, value := range originalVars {
@@ -23,20 +23,20 @@ func TestLoad(t *testing.T) {
 			}
 		}
 	}()
-	
+
 	// Set test env vars
 	os.Setenv("SERVICE_NAME", "test-service")
 	os.Setenv("SERVICE_PORT", "9999")
-	
+
 	config, err := Load()
 	if err != nil {
 		t.Fatalf("Load() failed: %v", err)
 	}
-	
+
 	if config.Service.Name != "test-service" {
 		t.Errorf("Expected service name 'test-service', got '%s'", config.Service.Name)
 	}
-	
+
 	if config.Service.Port != 9999 {
 		t.Errorf("Expected port 9999, got %d", config.Service.Port)
 	}
@@ -45,21 +45,21 @@ func TestLoad(t *testing.T) {
 func TestLoadDefaults(t *testing.T) {
 	// Clear env vars
 	os.Clearenv()
-	
+
 	config, err := Load()
 	if err != nil {
 		t.Fatalf("Load() failed: %v", err)
 	}
-	
+
 	// Check defaults
 	if config.Service.Name != "backtesting" {
 		t.Errorf("Expected default service name 'backtesting', got '%s'", config.Service.Name)
 	}
-	
+
 	if config.Service.Port != 8084 {
 		t.Errorf("Expected default port 8084, got %d", config.Service.Port)
 	}
-	
+
 	if config.Execution.MaxConcurrentBacktests != 5 {
 		t.Errorf("Expected default max concurrent 5, got %d", config.Execution.MaxConcurrentBacktests)
 	}
@@ -112,7 +112,7 @@ func TestValidateServiceConfig(t *testing.T) {
 			wantErr: true,
 		},
 	}
-	
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			err := validateServiceConfig(&tt.config)
@@ -167,7 +167,7 @@ func TestValidateMarketDataConfig(t *testing.T) {
 			wantErr: true,
 		},
 	}
-	
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			err := validateMarketDataConfig(&tt.config)
@@ -180,7 +180,7 @@ func TestValidateMarketDataConfig(t *testing.T) {
 
 func TestGetEnvHelpers(t *testing.T) {
 	os.Clearenv()
-	
+
 	// Test getEnv
 	os.Setenv("TEST_STRING", "value")
 	if got := getEnv("TEST_STRING", "default"); got != "value" {
@@ -189,7 +189,7 @@ func TestGetEnvHelpers(t *testing.T) {
 	if got := getEnv("NONEXISTENT", "default"); got != "default" {
 		t.Errorf("getEnv() = %v, want %v", got, "default")
 	}
-	
+
 	// Test getEnvAsInt
 	os.Setenv("TEST_INT", "123")
 	if got := getEnvAsInt("TEST_INT", 0); got != 123 {
@@ -198,7 +198,7 @@ func TestGetEnvHelpers(t *testing.T) {
 	if got := getEnvAsInt("NONEXISTENT", 456); got != 456 {
 		t.Errorf("getEnvAsInt() = %v, want %v", got, 456)
 	}
-	
+
 	// Test getEnvAsBool
 	os.Setenv("TEST_BOOL", "true")
 	if got := getEnvAsBool("TEST_BOOL", false); got != true {
@@ -208,7 +208,7 @@ func TestGetEnvHelpers(t *testing.T) {
 	if got := getEnvAsBool("TEST_BOOL", false); got != true {
 		t.Errorf("getEnvAsBool() = %v, want %v", got, true)
 	}
-	
+
 	// Test getEnvAsDuration
 	os.Setenv("TEST_DURATION", "10s")
 	if got := getEnvAsDuration("TEST_DURATION", 0); got != 10*time.Second {
@@ -257,7 +257,7 @@ func TestValidateStorageConfig(t *testing.T) {
 			wantErr: true,
 		},
 	}
-	
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			err := validateStorageConfig(&tt.config)
@@ -267,4 +267,3 @@ func TestValidateStorageConfig(t *testing.T) {
 		})
 	}
 }
-

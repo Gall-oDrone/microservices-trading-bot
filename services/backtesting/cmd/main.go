@@ -204,7 +204,7 @@ func (app *Application) startMetricsCollection() {
 			uptime := time.Since(startTime)
 			app.metricsCollector.RecordServiceUptime(uptime)
 			app.metricsCollector.RecordServiceHealth(true)
-			
+
 			// Record component health
 			app.metricsCollector.RecordComponentHealth("service", true)
 			// TODO: Add more component health checks

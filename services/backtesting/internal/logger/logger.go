@@ -39,7 +39,7 @@ func New(cfg *Config) *ZerologLogger {
 		level = zerolog.InfoLevel
 	}
 	zerolog.SetGlobalLevel(level)
-	
+
 	// Configure output writer
 	var output io.Writer
 	switch strings.ToLower(cfg.Output) {
@@ -57,7 +57,7 @@ func New(cfg *Config) *ZerologLogger {
 			output = file
 		}
 	}
-	
+
 	// Configure format
 	var logger zerolog.Logger
 	if strings.ToLower(cfg.Format) == "console" {
@@ -67,13 +67,13 @@ func New(cfg *Config) *ZerologLogger {
 			TimeFormat: time.RFC3339,
 		}
 	}
-	
+
 	logger = zerolog.New(output).
 		With().
 		Timestamp().
 		Caller().
 		Logger()
-	
+
 	return &ZerologLogger{logger: logger}
 }
 
@@ -126,7 +126,7 @@ func addFields(event *zerolog.Event, fields map[string]interface{}) *zerolog.Eve
 	if fields == nil {
 		return event
 	}
-	
+
 	for key, value := range fields {
 		switch v := value.(type) {
 		case string:
@@ -149,7 +149,7 @@ func addFields(event *zerolog.Event, fields map[string]interface{}) *zerolog.Eve
 			event = event.Interface(key, v)
 		}
 	}
-	
+
 	return event
 }
 
@@ -161,4 +161,3 @@ func NewDefault() *ZerologLogger {
 		Output: "stdout",
 	})
 }
-

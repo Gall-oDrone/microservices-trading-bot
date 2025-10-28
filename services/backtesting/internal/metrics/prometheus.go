@@ -10,15 +10,15 @@ import (
 // MetricsCollector collects and exposes Prometheus metrics
 type MetricsCollector struct {
 	// Backtest metrics
-	backtestsCreated       prometheus.Counter
-	backtestsCompleted     *prometheus.CounterVec
-	backtestsFailed        *prometheus.CounterVec
-	backtestDuration       *prometheus.HistogramVec
-	activeBacktests        prometheus.Gauge
+	backtestsCreated   prometheus.Counter
+	backtestsCompleted *prometheus.CounterVec
+	backtestsFailed    *prometheus.CounterVec
+	backtestDuration   *prometheus.HistogramVec
+	activeBacktests    prometheus.Gauge
 
 	// Data processing metrics
-	eventsProcessed   *prometheus.CounterVec
-	dataLoadDuration  *prometheus.HistogramVec
+	eventsProcessed  *prometheus.CounterVec
+	dataLoadDuration *prometheus.HistogramVec
 
 	// Performance metrics
 	metricsCalculationTime *prometheus.HistogramVec
@@ -160,4 +160,3 @@ func (m *MetricsCollector) RecordComponentHealth(component string, healthy bool)
 	}
 	m.serviceHealth.WithLabelValues(component).Set(value)
 }
-
