@@ -148,12 +148,12 @@ func (e *MarketEvent) GetSide() (string, error) {
 	if e.EventType != EventTypeTrade {
 		return "", fmt.Errorf("only trade events have side")
 	}
-	
+
 	trade, err := e.GetTrade()
 	if err != nil {
 		return "", err
 	}
-	
+
 	return trade.MakerSide.String(), nil
 }
 

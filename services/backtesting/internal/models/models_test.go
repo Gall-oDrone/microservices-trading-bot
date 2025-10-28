@@ -9,12 +9,12 @@ import (
 
 // TestBacktestLifecycle tests the complete lifecycle of a backtest
 func TestBacktestLifecycle(t *testing.T) {
-	config := NewBacktestConfig("Test Backtest", "btc_mxn", 
+	config := NewBacktestConfig("Test Backtest", "btc_mxn",
 		time.Now().AddDate(0, -1, 0), time.Now())
 	config.WithInitialBalance(100000.0)
-	
+
 	backtest := NewBacktest(config)
-	
+
 	// Initial state
 	if backtest.Status != BacktestStatusPending {
 		t.Errorf("Expected status %s, got %s", BacktestStatusPending, backtest.Status)
@@ -22,7 +22,7 @@ func TestBacktestLifecycle(t *testing.T) {
 	if backtest.Progress != 0.0 {
 		t.Errorf("Expected progress 0.0, got %f", backtest.Progress)
 	}
-	
+
 	// Start backtest
 	backtest.Start()
 	if backtest.Status != BacktestStatusRunning {
@@ -31,20 +31,20 @@ func TestBacktestLifecycle(t *testing.T) {
 	if backtest.StartedAt == nil {
 		t.Error("Expected StartedAt to be set")
 	}
-	
+
 	// Update progress
 	backtest.UpdateProgress(0.5)
 	if backtest.Progress != 0.5 {
 		t.Errorf("Expected progress 0.5, got %f", backtest.Progress)
 	}
-	
+
 	// Complete backtest
 	result := NewBacktestResult(backtest.ID, config.ID)
 	result.SetSummary(&PerformanceSummary{
 		TotalReturn: 5000,
 		WinRate:     0.65,
 	})
-	
+
 	backtest.Complete(result)
 	if backtest.Status != BacktestStatusCompleted {
 		t.Errorf("Expected status %s, got %s", BacktestStatusCompleted, backtest.Status)
@@ -55,7 +55,7 @@ func TestBacktestLifecycle(t *testing.T) {
 	if backtest.CompletedAt == nil {
 		t.Error("Expected CompletedAt to be set")
 	}
-	
+
 	// Test IsActive and IsCompleted
 	if backtest.IsActive() {
 		t.Error("Expected backtest to not be active")
@@ -68,14 +68,14 @@ func TestBacktestLifecycle(t *testing.T) {
 func TestBacktestStatusTransitions(t *testing.T) {
 	config := NewBacktestConfig("Test", "btc_mxn", time.Now(), time.Now().Add(time.Hour))
 	backtest := NewBacktest(config)
-	
+
 	// Test Cancel
 	backtest.Start()
 	backtest.Cancel()
 	if backtest.Status != BacktestStatusCancelled {
 		t.Errorf("Expected status %s, got %s", BacktestStatusCancelled, backtest.Status)
 	}
-	
+
 	// Test Fail
 	backtest2 := NewBacktest(config)
 	backtest2.Start()
@@ -152,7 +152,7 @@ func TestBacktestConfigValidation(t *testing.T) {
 			wantErr: true,
 		},
 	}
-	
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			cfg := tt.config()
@@ -171,13 +171,13 @@ func TestBacktestConfigClone(t *testing.T) {
 		"param1": 10,
 		"param2": "value",
 	}
-	
+
 	clone := original.Clone()
-	
+
 	// Modify clone
 	clone.Name = "Modified"
 	clone.StrategyParams["param1"] = 20
-	
+
 	// Original should not be affected
 	if original.Name == "Modified" {
 		t.Error("Clone modified original name")
@@ -190,37 +190,37 @@ func TestBacktestConfigClone(t *testing.T) {
 // TestTradeCalculations tests trade P&L calculations
 func TestTradeCalculations(t *testing.T) {
 	now := time.Now()
-	
+
 	// Test long trade (buy)
 	longTrade := NewTrade("buy", "btc_mxn", 500000.0, 0.01, 50.0, 5.0, now)
 	longTrade.Close(510000.0, now.Add(time.Hour))
-	
-	expectedPL := (510000.0 - 500000.0) * 0.01 - 50.0 // (exit - entry) * amount - commission
+
+	expectedPL := (510000.0-500000.0)*0.01 - 50.0 // (exit - entry) * amount - commission
 	if longTrade.ProfitLoss != expectedPL {
 		t.Errorf("Expected P&L %f, got %f", expectedPL, longTrade.ProfitLoss)
 	}
-	
+
 	if !longTrade.IsWinning() {
 		t.Error("Expected trade to be winning")
 	}
-	
+
 	// Test short trade (sell)
 	shortTrade := NewTrade("sell", "btc_mxn", 500000.0, 0.01, 50.0, 5.0, now)
 	shortTrade.Close(490000.0, now.Add(time.Hour))
-	
-	expectedPL = (500000.0 - 490000.0) * 0.01 - 50.0 // (entry - exit) * amount - commission
+
+	expectedPL = (500000.0-490000.0)*0.01 - 50.0 // (entry - exit) * amount - commission
 	if shortTrade.ProfitLoss != expectedPL {
 		t.Errorf("Expected P&L %f, got %f", expectedPL, shortTrade.ProfitLoss)
 	}
-	
+
 	if !shortTrade.IsWinning() {
 		t.Error("Expected trade to be winning")
 	}
-	
+
 	// Test losing trade
 	losingTrade := NewTrade("buy", "btc_mxn", 500000.0, 0.01, 50.0, 5.0, now)
 	losingTrade.Close(490000.0, now.Add(time.Hour))
-	
+
 	if !losingTrade.IsLosing() {
 		t.Error("Expected trade to be losing")
 	}
@@ -228,7 +228,7 @@ func TestTradeCalculations(t *testing.T) {
 
 func TestTradeValidation(t *testing.T) {
 	now := time.Now()
-	
+
 	tests := []struct {
 		name    string
 		trade   *Trade
@@ -262,7 +262,7 @@ func TestTradeValidation(t *testing.T) {
 			wantErr: true,
 		},
 	}
-	
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			err := tt.trade.Validate()
@@ -276,12 +276,12 @@ func TestTradeValidation(t *testing.T) {
 // TestPositionTracking tests position management
 func TestPositionTracking(t *testing.T) {
 	pos := NewPosition("btc_mxn")
-	
+
 	// Test empty position
 	if !pos.IsEmpty() {
 		t.Error("Expected position to be empty")
 	}
-	
+
 	// Add to position (buy)
 	pos.AddSize(0.01, 500000.0)
 	if pos.Size != 0.01 {
@@ -293,7 +293,7 @@ func TestPositionTracking(t *testing.T) {
 	if !pos.IsLong() {
 		t.Error("Expected position to be long")
 	}
-	
+
 	// Add more to position (average price calculation)
 	pos.AddSize(0.01, 510000.0)
 	expectedAvg := (500000.0 + 510000.0) / 2
@@ -303,14 +303,14 @@ func TestPositionTracking(t *testing.T) {
 	if pos.AveragePrice != expectedAvg {
 		t.Errorf("Expected avg price %f, got %f", expectedAvg, pos.AveragePrice)
 	}
-	
+
 	// Update current price and calculate unrealized P&L
 	pos.UpdateCurrentPrice(520000.0)
 	expectedPL := (520000.0 - pos.AveragePrice) * pos.Size
 	if pos.UnrealizedPL != expectedPL {
 		t.Errorf("Expected unrealized P&L %f, got %f", expectedPL, pos.UnrealizedPL)
 	}
-	
+
 	// Reduce position
 	realizedPL := pos.ReduceSize(0.01, 520000.0)
 	if pos.Size != 0.01 {
@@ -319,7 +319,7 @@ func TestPositionTracking(t *testing.T) {
 	if realizedPL <= 0 {
 		t.Errorf("Expected positive realized P&L, got %f", realizedPL)
 	}
-	
+
 	// Close position completely
 	pos.ReduceSize(0.01, 520000.0)
 	if !pos.IsEmpty() {
@@ -339,7 +339,7 @@ func TestMarketEventCreation(t *testing.T) {
 		MakerSide: bitso.OrderSideBuy,
 		CreatedAt: bitso.Time(now),
 	}
-	
+
 	tradeEvent := NewTradeEvent(trade)
 	if !tradeEvent.IsTradeEvent() {
 		t.Error("Expected trade event")
@@ -347,7 +347,7 @@ func TestMarketEventCreation(t *testing.T) {
 	if tradeEvent.IsTickerEvent() {
 		t.Error("Did not expect ticker event")
 	}
-	
+
 	retrievedTrade, err := tradeEvent.GetTrade()
 	if err != nil {
 		t.Errorf("GetTrade() error = %v", err)
@@ -355,13 +355,13 @@ func TestMarketEventCreation(t *testing.T) {
 	if retrievedTrade.TID != trade.TID {
 		t.Error("Trade ID mismatch")
 	}
-	
+
 	// Test error on wrong type
 	_, err = tradeEvent.GetTicker()
 	if err == nil {
 		t.Error("Expected error when getting ticker from trade event")
 	}
-	
+
 	// Create ticker event
 	ticker := &bitso.Ticker{
 		Book:      *bitso.NewBook(bitso.BTC, bitso.MXN),
@@ -370,12 +370,12 @@ func TestMarketEventCreation(t *testing.T) {
 		Ask:       "501000.0",
 		CreatedAt: bitso.Time(time.Now()),
 	}
-	
+
 	tickerEvent := NewTickerEvent(ticker)
 	if !tickerEvent.IsTickerEvent() {
 		t.Error("Expected ticker event")
 	}
-	
+
 	price, err := tickerEvent.GetPrice()
 	if err != nil {
 		t.Errorf("GetPrice() error = %v", err)
@@ -390,16 +390,16 @@ func TestValidationFunctions(t *testing.T) {
 	// Test ValidateTimeRange
 	now := time.Now()
 	pastDate := now.AddDate(0, -1, 0)
-	
+
 	if err := ValidateTimeRange(pastDate, now); err != nil {
 		t.Errorf("ValidateTimeRange() error = %v", err)
 	}
-	
+
 	// Test invalid range (end before start)
 	if err := ValidateTimeRange(now, pastDate); err == nil {
 		t.Error("Expected error for invalid time range")
 	}
-	
+
 	// Test ValidateBook
 	validBooks := []string{"btc_mxn", "eth_mxn", "btc_usd"}
 	for _, book := range validBooks {
@@ -407,25 +407,25 @@ func TestValidationFunctions(t *testing.T) {
 			t.Errorf("ValidateBook(%s) error = %v", book, err)
 		}
 	}
-	
+
 	// Test invalid book
 	if err := ValidateBook("invalid"); err == nil {
 		t.Error("Expected error for invalid book")
 	}
-	
+
 	// Test ValidateBalance
 	if err := ValidateBalance(100000.0); err != nil {
 		t.Errorf("ValidateBalance() error = %v", err)
 	}
-	
+
 	if err := ValidateBalance(-1000.0); err == nil {
 		t.Error("Expected error for negative balance")
 	}
-	
+
 	if err := ValidateBalance(50.0); err == nil {
 		t.Error("Expected error for balance too small")
 	}
-	
+
 	// Test ValidateStrategy
 	params := map[string]interface{}{
 		"rsi_period":     14.0,
@@ -435,7 +435,7 @@ func TestValidationFunctions(t *testing.T) {
 	if err := ValidateStrategy("basic", params); err != nil {
 		t.Errorf("ValidateStrategy() error = %v", err)
 	}
-	
+
 	// Test unknown strategy
 	if err := ValidateStrategy("unknown", params); err == nil {
 		t.Error("Expected error for unknown strategy")
@@ -444,32 +444,32 @@ func TestValidationFunctions(t *testing.T) {
 
 func TestBacktestResultMethods(t *testing.T) {
 	result := NewBacktestResult("bt-123", "cfg-456")
-	
+
 	// Add trades
 	now := time.Now()
 	winningTrade := NewTrade("buy", "btc_mxn", 500000.0, 0.01, 50.0, 5.0, now)
 	winningTrade.Close(510000.0, now.Add(time.Hour))
-	
+
 	losingTrade := NewTrade("buy", "btc_mxn", 500000.0, 0.01, 50.0, 5.0, now)
 	losingTrade.Close(490000.0, now.Add(time.Hour))
-	
+
 	result.AddTrade(*winningTrade)
 	result.AddTrade(*losingTrade)
-	
+
 	if result.GetTradeCount() != 2 {
 		t.Errorf("Expected 2 trades, got %d", result.GetTradeCount())
 	}
-	
+
 	winningTrades := result.GetWinningTrades()
 	if len(winningTrades) != 1 {
 		t.Errorf("Expected 1 winning trade, got %d", len(winningTrades))
 	}
-	
+
 	losingTrades := result.GetLosingTrades()
 	if len(losingTrades) != 1 {
 		t.Errorf("Expected 1 losing trade, got %d", len(losingTrades))
 	}
-	
+
 	// Add equity points
 	result.AddEquityPoint(EquityPoint{
 		Timestamp: now,
@@ -477,11 +477,11 @@ func TestBacktestResultMethods(t *testing.T) {
 		Equity:    100000.0,
 		Return:    0.0,
 	})
-	
+
 	if len(result.EquityCurve) != 1 {
 		t.Errorf("Expected 1 equity point, got %d", len(result.EquityCurve))
 	}
-	
+
 	// Mark completed
 	result.MarkCompleted()
 	if result.Status != "completed" {
@@ -498,4 +498,3 @@ type testError string
 func (e testError) Error() string {
 	return string(e)
 }
-
