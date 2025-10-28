@@ -25,7 +25,7 @@ func NewStrategyExecutor(strategy Strategy, log logger.Logger) *StrategyExecutor
 func (e *StrategyExecutor) ProcessEvent(event *models.MarketEvent) (*Signal, error) {
 	var signal *Signal
 	var err error
-	
+
 	// Process based on event type
 	switch event.EventType {
 	case models.EventTypeTrade:
@@ -34,29 +34,29 @@ func (e *StrategyExecutor) ProcessEvent(event *models.MarketEvent) (*Signal, err
 			return nil, fmt.Errorf("failed to get trade: %w", err)
 		}
 		signal, err = e.strategy.OnTrade(trade)
-		
+
 	case models.EventTypeTicker:
 		ticker, err := event.GetTicker()
 		if err != nil {
 			return nil, fmt.Errorf("failed to get ticker: %w", err)
 		}
 		signal, err = e.strategy.OnTicker(ticker)
-		
+
 	case models.EventTypeOrderBook:
 		orderBook, err := event.GetOrderBook()
 		if err != nil {
 			return nil, fmt.Errorf("failed to get order book: %w", err)
 		}
 		signal, err = e.strategy.OnOrderBook(orderBook)
-		
+
 	default:
 		return nil, fmt.Errorf("unsupported event type: %s", event.EventType)
 	}
-	
+
 	if err != nil {
 		return nil, fmt.Errorf("strategy processing error: %w", err)
 	}
-	
+
 	// Log signal if actionable
 	if signal != nil && signal.IsActionableSignal() && e.logger != nil {
 		e.logger.Debug("Strategy signal generated", map[string]interface{}{
@@ -67,7 +67,7 @@ func (e *StrategyExecutor) ProcessEvent(event *models.MarketEvent) (*Signal, err
 			"reason": signal.Reason,
 		})
 	}
-	
+
 	return signal, nil
 }
 
@@ -85,4 +85,3 @@ func (e *StrategyExecutor) GetStrategy() Strategy {
 func (e *StrategyExecutor) GetStrategyName() string {
 	return e.strategy.GetName()
 }
-

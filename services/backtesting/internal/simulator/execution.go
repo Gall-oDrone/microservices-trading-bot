@@ -27,23 +27,23 @@ func validateOrder(order *models.Order) error {
 	if order == nil {
 		return fmt.Errorf("order cannot be nil")
 	}
-	
+
 	if order.Symbol == "" {
 		return fmt.Errorf("order symbol is required")
 	}
-	
+
 	if order.Side != "buy" && order.Side != "sell" {
 		return fmt.Errorf("invalid order side: %s (must be 'buy' or 'sell')", order.Side)
 	}
-	
+
 	if order.Amount <= 0 {
 		return fmt.Errorf("order amount must be positive, got: %f", order.Amount)
 	}
-	
+
 	if order.Price < 0 {
 		return fmt.Errorf("order price cannot be negative, got: %f", order.Price)
 	}
-	
+
 	return nil
 }
 
@@ -58,16 +58,16 @@ func executeMarketOrder(sim *Simulator, order *models.Order) (*OrderExecution, e
 			Error:   err.Error(),
 		}, err
 	}
-	
+
 	// Calculate slippage
 	slippage := sim.slippageModel.Calculate(order, currentPrice)
-	
+
 	// Calculate execution price
 	executionPrice := calculateExecutionPrice(currentPrice, order.Side, slippage)
-	
+
 	// Calculate commission
 	commission := calculateCommission(order.Amount, executionPrice, sim.config.CommissionRate)
-	
+
 	return &OrderExecution{
 		OrderID:        order.ID,
 		ExecutedPrice:  executionPrice,
@@ -90,7 +90,7 @@ func executeLimitOrder(sim *Simulator, order *models.Order) (*OrderExecution, er
 			Error:   err.Error(),
 		}, err
 	}
-	
+
 	// Check if limit price is reached
 	canExecute := false
 	if order.Side == "buy" && currentPrice <= order.Price {
@@ -98,7 +98,7 @@ func executeLimitOrder(sim *Simulator, order *models.Order) (*OrderExecution, er
 	} else if order.Side == "sell" && currentPrice >= order.Price {
 		canExecute = true
 	}
-	
+
 	if !canExecute {
 		return &OrderExecution{
 			OrderID: order.ID,
@@ -106,17 +106,17 @@ func executeLimitOrder(sim *Simulator, order *models.Order) (*OrderExecution, er
 			Error:   "limit price not reached",
 		}, fmt.Errorf("limit price not reached")
 	}
-	
+
 	// Execute at limit price (or better)
 	executionPrice := order.Price
-	
+
 	// Calculate slippage (minimal for limit orders)
 	slippage := sim.slippageModel.Calculate(order, executionPrice) * 0.5 // Reduced slippage
 	executionPrice = calculateExecutionPrice(executionPrice, order.Side, slippage)
-	
+
 	// Calculate commission
 	commission := calculateCommission(order.Amount, executionPrice, sim.config.CommissionRate)
-	
+
 	return &OrderExecution{
 		OrderID:        order.ID,
 		ExecutedPrice:  executionPrice,
@@ -127,4 +127,3 @@ func executeLimitOrder(sim *Simulator, order *models.Order) (*OrderExecution, er
 		Success:        true,
 	}, nil
 }
-

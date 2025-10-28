@@ -34,19 +34,19 @@ type Signal struct {
 type Strategy interface {
 	// Initialize initializes the strategy with parameters
 	Initialize(params map[string]interface{}) error
-	
+
 	// OnTrade processes a trade event and returns a signal
 	OnTrade(trade *bitso.Trade) (*Signal, error)
-	
+
 	// OnTicker processes a ticker event and returns a signal
 	OnTicker(ticker *bitso.Ticker) (*Signal, error)
-	
+
 	// OnOrderBook processes an order book event and returns a signal
 	OnOrderBook(orderBook interface{}) (*Signal, error)
-	
+
 	// GetName returns the strategy name
 	GetName() string
-	
+
 	// Reset resets the strategy state
 	Reset() error
 }
@@ -102,11 +102,11 @@ func (s *Signal) Validate() error {
 	if s.Type == "" {
 		return fmt.Errorf("signal type is required")
 	}
-	
+
 	if s.Book == "" {
 		return fmt.Errorf("book is required")
 	}
-	
+
 	if s.IsActionableSignal() {
 		if s.Price <= 0 {
 			return fmt.Errorf("price must be positive for actionable signals")
@@ -115,11 +115,10 @@ func (s *Signal) Validate() error {
 			return fmt.Errorf("amount must be positive for actionable signals")
 		}
 	}
-	
+
 	if s.Confidence < 0 || s.Confidence > 1.0 {
 		return fmt.Errorf("confidence must be between 0 and 1, got: %f", s.Confidence)
 	}
-	
+
 	return nil
 }
-

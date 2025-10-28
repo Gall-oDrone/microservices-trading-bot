@@ -69,7 +69,6 @@ func (v *VolumeBasedSlippage) Calculate(order *sharedModels.Order, marketPrice f
 	if order.Amount > 1.0 {
 		volumeFactor = 1.0 + (order.Amount * 0.1)
 	}
-	
+
 	return marketPrice * v.BasePercentage * volumeFactor
 }
-

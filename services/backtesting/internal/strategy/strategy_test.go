@@ -9,7 +9,7 @@ import (
 
 func TestNewSignal(t *testing.T) {
 	signal := NewSignal(SignalBuy, "btc_mxn", 500000.0, 0.01)
-	
+
 	if signal.Type != SignalBuy {
 		t.Errorf("Expected type %s, got %s", SignalBuy, signal.Type)
 	}
@@ -29,7 +29,7 @@ func TestSignalBuilders(t *testing.T) {
 		WithReason("Test reason").
 		WithConfidence(0.8).
 		WithMetadata("key", "value")
-	
+
 	if signal.Reason != "Test reason" {
 		t.Errorf("Expected reason 'Test reason', got '%s'", signal.Reason)
 	}
@@ -78,7 +78,7 @@ func TestSignalValidation(t *testing.T) {
 			wantErr: true,
 		},
 	}
-	
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			err := tt.signal.Validate()
@@ -95,16 +95,16 @@ func TestBasicStrategy(t *testing.T) {
 		"rsi_oversold":   30.0,
 		"rsi_overbought": 70.0,
 	}
-	
+
 	strategy, err := NewBasicStrategy(params)
 	if err != nil {
 		t.Fatalf("NewBasicStrategy() error = %v", err)
 	}
-	
+
 	if strategy.GetName() != "basic" {
 		t.Errorf("Expected name 'basic', got '%s'", strategy.GetName())
 	}
-	
+
 	// Test with ticker event
 	ticker := &bitso.Ticker{
 		Book:      *bitso.NewBook(bitso.BTC, bitso.MXN),
@@ -113,12 +113,12 @@ func TestBasicStrategy(t *testing.T) {
 		Ask:       "501000.0",
 		CreatedAt: bitso.Time(time.Now()),
 	}
-	
+
 	signal, err := strategy.OnTicker(ticker)
 	if err != nil {
 		t.Fatalf("OnTicker() error = %v", err)
 	}
-	
+
 	// First signal should be HOLD (not enough data)
 	if signal.Type != SignalHold {
 		t.Errorf("Expected first signal to be HOLD, got %s", signal.Type)
@@ -159,7 +159,7 @@ func TestBasicStrategyInvalidParams(t *testing.T) {
 			wantErr: true,
 		},
 	}
-	
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			_, err := NewBasicStrategy(tt.params)
@@ -172,13 +172,13 @@ func TestBasicStrategyInvalidParams(t *testing.T) {
 
 func TestStrategyFactory(t *testing.T) {
 	factory := NewStrategyFactory()
-	
+
 	// Test available strategies
 	strategies := factory.GetAvailableStrategies()
 	if len(strategies) == 0 {
 		t.Error("Expected at least one strategy to be registered")
 	}
-	
+
 	// Test IsStrategyAvailable
 	if !factory.IsStrategyAvailable("basic") {
 		t.Error("Expected 'basic' strategy to be available")
@@ -186,7 +186,7 @@ func TestStrategyFactory(t *testing.T) {
 	if factory.IsStrategyAvailable("nonexistent") {
 		t.Error("Expected 'nonexistent' strategy to not be available")
 	}
-	
+
 	// Test Create
 	params := map[string]interface{}{
 		"rsi_period":     14.0,
@@ -200,7 +200,7 @@ func TestStrategyFactory(t *testing.T) {
 	if strategy == nil {
 		t.Error("Expected strategy to be created")
 	}
-	
+
 	// Test unknown strategy
 	_, err = factory.Create("unknown", params)
 	if err == nil {
@@ -214,17 +214,16 @@ func TestStrategyExecutor(t *testing.T) {
 		"rsi_oversold":   30.0,
 		"rsi_overbought": 70.0,
 	}
-	
+
 	strategy, _ := NewBasicStrategy(params)
 	executor := NewStrategyExecutor(strategy, nil)
-	
+
 	if executor.GetStrategyName() != "basic" {
 		t.Errorf("Expected strategy name 'basic', got '%s'", executor.GetStrategyName())
 	}
-	
+
 	// Test Reset
 	if err := executor.Reset(); err != nil {
 		t.Errorf("Reset() error = %v", err)
 	}
 }
-

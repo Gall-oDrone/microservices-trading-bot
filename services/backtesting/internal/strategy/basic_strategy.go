@@ -11,15 +11,15 @@ import (
 // Adapted from strategy-executor for synchronous backtesting
 type BasicStrategy struct {
 	name string
-	
+
 	// Parameters
 	rsiPeriod     int
 	rsiOversold   float64
 	rsiOverbought float64
-	
+
 	// State
-	priceHistory  []float64
-	rsiValues     []float64
+	priceHistory   []float64
+	rsiValues      []float64
 	lastSignalTime time.Time
 	minInterval    time.Duration
 }
@@ -28,18 +28,18 @@ type BasicStrategy struct {
 func NewBasicStrategy(params map[string]interface{}) (Strategy, error) {
 	strategy := &BasicStrategy{
 		name:          "basic",
-		rsiPeriod:     14,   // Default
-		rsiOversold:   30,   // Default
-		rsiOverbought: 70,   // Default
+		rsiPeriod:     14, // Default
+		rsiOversold:   30, // Default
+		rsiOverbought: 70, // Default
 		priceHistory:  make([]float64, 0),
 		rsiValues:     make([]float64, 0),
 		minInterval:   5 * time.Minute, // Minimum time between signals
 	}
-	
+
 	if err := strategy.Initialize(params); err != nil {
 		return nil, err
 	}
-	
+
 	return strategy, nil
 }
 
@@ -54,7 +54,7 @@ func (s *BasicStrategy) Initialize(params map[string]interface{}) error {
 			s.rsiPeriod = v
 		}
 	}
-	
+
 	// Parse RSI oversold level
 	if oversold, ok := params["rsi_oversold"]; ok {
 		switch v := oversold.(type) {
@@ -64,7 +64,7 @@ func (s *BasicStrategy) Initialize(params map[string]interface{}) error {
 			s.rsiOversold = float64(v)
 		}
 	}
-	
+
 	// Parse RSI overbought level
 	if overbought, ok := params["rsi_overbought"]; ok {
 		switch v := overbought.(type) {
@@ -74,16 +74,16 @@ func (s *BasicStrategy) Initialize(params map[string]interface{}) error {
 			s.rsiOverbought = float64(v)
 		}
 	}
-	
+
 	// Validate parameters
 	if s.rsiPeriod < 2 || s.rsiPeriod > 100 {
 		return fmt.Errorf("rsi_period must be between 2 and 100, got: %d", s.rsiPeriod)
 	}
-	
+
 	if s.rsiOversold >= s.rsiOverbought {
 		return fmt.Errorf("rsi_oversold must be less than rsi_overbought")
 	}
-	
+
 	return nil
 }
 
@@ -92,19 +92,19 @@ func (s *BasicStrategy) OnTrade(trade *bitso.Trade) (*Signal, error) {
 	price := trade.Price.Float64()
 	book := trade.Book.String()
 	timestamp := trade.CreatedAt.Time()
-	
+
 	// Add price to history
 	s.priceHistory = append(s.priceHistory, price)
-	
+
 	// Calculate RSI if we have enough data
 	if len(s.priceHistory) >= s.rsiPeriod+1 {
 		rsi := s.calculateRSI()
 		s.rsiValues = append(s.rsiValues, rsi)
-		
+
 		// Generate signal based on RSI
 		return s.generateSignalFromRSI(rsi, book, price, timestamp)
 	}
-	
+
 	// Not enough data yet
 	return NewSignal(SignalHold, book, price, 0), nil
 }
@@ -114,19 +114,19 @@ func (s *BasicStrategy) OnTicker(ticker *bitso.Ticker) (*Signal, error) {
 	price := ticker.Last.Float64()
 	book := ticker.Book.String()
 	timestamp := ticker.CreatedAt.Time()
-	
+
 	// Add price to history
 	s.priceHistory = append(s.priceHistory, price)
-	
+
 	// Calculate RSI if we have enough data
 	if len(s.priceHistory) >= s.rsiPeriod+1 {
 		rsi := s.calculateRSI()
 		s.rsiValues = append(s.rsiValues, rsi)
-		
+
 		// Generate signal based on RSI
 		return s.generateSignalFromRSI(rsi, book, price, timestamp)
 	}
-	
+
 	// Not enough data yet
 	return NewSignal(SignalHold, book, price, 0), nil
 }
@@ -155,14 +155,14 @@ func (s *BasicStrategy) calculateRSI() float64 {
 	if len(s.priceHistory) < s.rsiPeriod+1 {
 		return 50.0 // Neutral
 	}
-	
+
 	// Get last N+1 prices
 	prices := s.priceHistory[len(s.priceHistory)-s.rsiPeriod-1:]
-	
+
 	// Calculate price changes
 	gains := 0.0
 	losses := 0.0
-	
+
 	for i := 1; i < len(prices); i++ {
 		change := prices[i] - prices[i-1]
 		if change > 0 {
@@ -171,19 +171,19 @@ func (s *BasicStrategy) calculateRSI() float64 {
 			losses += -change
 		}
 	}
-	
+
 	// Calculate average gain and loss
 	avgGain := gains / float64(s.rsiPeriod)
 	avgLoss := losses / float64(s.rsiPeriod)
-	
+
 	// Calculate RS and RSI
 	if avgLoss == 0 {
 		return 100.0
 	}
-	
+
 	rs := avgGain / avgLoss
 	rsi := 100.0 - (100.0 / (1.0 + rs))
-	
+
 	return rsi
 }
 
@@ -193,7 +193,7 @@ func (s *BasicStrategy) generateSignalFromRSI(rsi float64, book string, price fl
 	if time.Since(s.lastSignalTime) < s.minInterval {
 		return NewSignal(SignalHold, book, price, 0), nil
 	}
-	
+
 	// Generate signal based on RSI levels
 	if rsi < s.rsiOversold {
 		// Oversold - BUY signal
@@ -202,7 +202,7 @@ func (s *BasicStrategy) generateSignalFromRSI(rsi float64, book string, price fl
 			WithReason(fmt.Sprintf("RSI oversold: %.2f < %.2f", rsi, s.rsiOversold)).
 			WithMetadata("rsi", rsi).
 			WithConfidence(calculateConfidence(rsi, s.rsiOversold, 0)), nil
-			
+
 	} else if rsi > s.rsiOverbought {
 		// Overbought - SELL signal
 		s.lastSignalTime = timestamp
@@ -211,7 +211,7 @@ func (s *BasicStrategy) generateSignalFromRSI(rsi float64, book string, price fl
 			WithMetadata("rsi", rsi).
 			WithConfidence(calculateConfidence(rsi, s.rsiOverbought, 100)), nil
 	}
-	
+
 	// No signal - HOLD
 	return NewSignal(SignalHold, book, price, 0).
 		WithMetadata("rsi", rsi), nil
@@ -221,16 +221,16 @@ func (s *BasicStrategy) generateSignalFromRSI(rsi float64, book string, price fl
 func calculateConfidence(rsi, threshold, extreme float64) float64 {
 	distance := abs(rsi - threshold)
 	maxDistance := abs(extreme - threshold)
-	
+
 	if maxDistance == 0 {
 		return 1.0
 	}
-	
+
 	confidence := 0.5 + (distance / maxDistance * 0.5)
 	if confidence > 1.0 {
 		confidence = 1.0
 	}
-	
+
 	return confidence
 }
 
@@ -241,4 +241,3 @@ func abs(x float64) float64 {
 	}
 	return x
 }
-

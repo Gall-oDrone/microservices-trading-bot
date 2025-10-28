@@ -8,7 +8,7 @@ import (
 func UpdateBalance(portfolio *VirtualPortfolio, amount float64) {
 	portfolio.mu.Lock()
 	defer portfolio.mu.Unlock()
-	
+
 	portfolio.CurrentBalance += amount
 	updatePeakBalance(portfolio)
 }
@@ -17,7 +17,7 @@ func UpdateBalance(portfolio *VirtualPortfolio, amount float64) {
 func RecordCommission(portfolio *VirtualPortfolio, commission float64) {
 	portfolio.mu.Lock()
 	defer portfolio.mu.Unlock()
-	
+
 	portfolio.TotalCommissions += commission
 	portfolio.CurrentBalance -= commission
 }
@@ -33,12 +33,12 @@ func updatePeakBalance(portfolio *VirtualPortfolio) {
 func CalculateDrawdown(portfolio *VirtualPortfolio) float64 {
 	portfolio.mu.RLock()
 	defer portfolio.mu.RUnlock()
-	
+
 	drawdown := portfolio.PeakBalance - portfolio.CurrentBalance
 	if drawdown < 0 {
 		drawdown = 0
 	}
-	
+
 	return drawdown
 }
 
@@ -46,16 +46,16 @@ func CalculateDrawdown(portfolio *VirtualPortfolio) float64 {
 func CalculateDrawdownPercent(portfolio *VirtualPortfolio) float64 {
 	portfolio.mu.RLock()
 	defer portfolio.mu.RUnlock()
-	
+
 	if portfolio.PeakBalance == 0 {
 		return 0
 	}
-	
+
 	drawdown := portfolio.PeakBalance - portfolio.CurrentBalance
 	if drawdown < 0 {
 		return 0
 	}
-	
+
 	return (drawdown / portfolio.PeakBalance) * 100
 }
 
@@ -63,9 +63,9 @@ func CalculateDrawdownPercent(portfolio *VirtualPortfolio) float64 {
 func GetTotalValue(portfolio *VirtualPortfolio, prices map[string]float64) float64 {
 	portfolio.mu.RLock()
 	defer portfolio.mu.RUnlock()
-	
+
 	totalValue := portfolio.CurrentBalance
-	
+
 	// Add value of all positions
 	for book, pos := range portfolio.Positions {
 		if currentPrice, exists := prices[book]; exists {
@@ -74,7 +74,7 @@ func GetTotalValue(portfolio *VirtualPortfolio, prices map[string]float64) float
 			totalValue += pos.AveragePrice * pos.Size
 		}
 	}
-	
+
 	return totalValue
 }
 
@@ -82,7 +82,7 @@ func GetTotalValue(portfolio *VirtualPortfolio, prices map[string]float64) float
 func CalculateReturn(portfolio *VirtualPortfolio) float64 {
 	portfolio.mu.RLock()
 	defer portfolio.mu.RUnlock()
-	
+
 	return portfolio.CurrentBalance - portfolio.InitialBalance
 }
 
@@ -90,11 +90,11 @@ func CalculateReturn(portfolio *VirtualPortfolio) float64 {
 func CalculateReturnPercent(portfolio *VirtualPortfolio) float64 {
 	portfolio.mu.RLock()
 	defer portfolio.mu.RUnlock()
-	
+
 	if portfolio.InitialBalance == 0 {
 		return 0
 	}
-	
+
 	return ((portfolio.CurrentBalance - portfolio.InitialBalance) / portfolio.InitialBalance) * 100
 }
 
@@ -102,11 +102,11 @@ func CalculateReturnPercent(portfolio *VirtualPortfolio) float64 {
 func ValidateBalance(portfolio *VirtualPortfolio) error {
 	portfolio.mu.RLock()
 	defer portfolio.mu.RUnlock()
-	
+
 	if portfolio.CurrentBalance < 0 {
 		return fmt.Errorf("negative balance: %.2f", portfolio.CurrentBalance)
 	}
-	
+
 	return nil
 }
 
@@ -114,7 +114,6 @@ func ValidateBalance(portfolio *VirtualPortfolio) error {
 func CanAfford(portfolio *VirtualPortfolio, amount float64) bool {
 	portfolio.mu.RLock()
 	defer portfolio.mu.RUnlock()
-	
+
 	return portfolio.CurrentBalance >= amount
 }
-

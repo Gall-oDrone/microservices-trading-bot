@@ -35,7 +35,7 @@ func NewOrderBook(book string) *OrderBook {
 func (ob *OrderBook) Update(bids, asks []PriceLevel, timestamp time.Time) {
 	ob.mu.Lock()
 	defer ob.mu.Unlock()
-	
+
 	ob.Bids = bids
 	ob.Asks = asks
 	ob.Timestamp = timestamp
@@ -45,11 +45,11 @@ func (ob *OrderBook) Update(bids, asks []PriceLevel, timestamp time.Time) {
 func (ob *OrderBook) GetBestBid() (float64, float64, error) {
 	ob.mu.RLock()
 	defer ob.mu.RUnlock()
-	
+
 	if len(ob.Bids) == 0 {
 		return 0, 0, fmt.Errorf("no bids available")
 	}
-	
+
 	bestBid := ob.Bids[0]
 	return bestBid.Price, bestBid.Amount, nil
 }
@@ -58,11 +58,11 @@ func (ob *OrderBook) GetBestBid() (float64, float64, error) {
 func (ob *OrderBook) GetBestAsk() (float64, float64, error) {
 	ob.mu.RLock()
 	defer ob.mu.RUnlock()
-	
+
 	if len(ob.Asks) == 0 {
 		return 0, 0, fmt.Errorf("no asks available")
 	}
-	
+
 	bestAsk := ob.Asks[0]
 	return bestAsk.Price, bestAsk.Amount, nil
 }
@@ -73,12 +73,12 @@ func (ob *OrderBook) GetMidPrice() (float64, error) {
 	if err != nil {
 		return 0, err
 	}
-	
+
 	askPrice, _, err := ob.GetBestAsk()
 	if err != nil {
 		return 0, err
 	}
-	
+
 	return (bidPrice + askPrice) / 2, nil
 }
 
@@ -88,12 +88,12 @@ func (ob *OrderBook) GetSpread() float64 {
 	if err != nil {
 		return 0
 	}
-	
+
 	askPrice, _, err := ob.GetBestAsk()
 	if err != nil {
 		return 0
 	}
-	
+
 	return askPrice - bidPrice
 }
 
@@ -101,7 +101,7 @@ func (ob *OrderBook) GetSpread() float64 {
 func (ob *OrderBook) CanFillOrder(side string, amount float64) bool {
 	ob.mu.RLock()
 	defer ob.mu.RUnlock()
-	
+
 	if side == "buy" {
 		// Check ask side liquidity
 		totalAvailable := 0.0
@@ -129,15 +129,15 @@ func (ob *OrderBook) CanFillOrder(side string, amount float64) bool {
 func (ob *OrderBook) GetDepth() (bidDepth, askDepth float64) {
 	ob.mu.RLock()
 	defer ob.mu.RUnlock()
-	
+
 	for _, bid := range ob.Bids {
 		bidDepth += bid.Amount
 	}
-	
+
 	for _, ask := range ob.Asks {
 		askDepth += ask.Amount
 	}
-	
+
 	return bidDepth, askDepth
 }
 
@@ -145,39 +145,38 @@ func (ob *OrderBook) GetDepth() (bidDepth, askDepth float64) {
 func (ob *OrderBook) GetVWAP(side string, amount float64) (float64, error) {
 	ob.mu.RLock()
 	defer ob.mu.RUnlock()
-	
+
 	var levels []PriceLevel
 	if side == "buy" {
 		levels = ob.Asks
 	} else {
 		levels = ob.Bids
 	}
-	
+
 	if len(levels) == 0 {
 		return 0, fmt.Errorf("no liquidity available")
 	}
-	
+
 	totalCost := 0.0
 	totalAmount := 0.0
-	
+
 	for _, level := range levels {
 		takeAmount := level.Amount
 		if totalAmount+takeAmount > amount {
 			takeAmount = amount - totalAmount
 		}
-		
+
 		totalCost += level.Price * takeAmount
 		totalAmount += takeAmount
-		
+
 		if totalAmount >= amount {
 			break
 		}
 	}
-	
+
 	if totalAmount < amount {
 		return 0, fmt.Errorf("insufficient liquidity: need %.8f, available %.8f", amount, totalAmount)
 	}
-	
+
 	return totalCost / totalAmount, nil
 }
-

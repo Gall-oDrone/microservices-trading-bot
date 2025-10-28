@@ -17,13 +17,13 @@ func NewStrategyFactory() *StrategyFactory {
 	factory := &StrategyFactory{
 		constructors: make(map[string]StrategyConstructor),
 	}
-	
+
 	// Register built-in strategies
 	factory.Register("basic", NewBasicStrategy)
 	// TODO: Register more strategies
 	// factory.Register("trend", NewTrendStrategy)
 	// factory.Register("arbitrage", NewArbitrageStrategy)
-	
+
 	return factory
 }
 
@@ -38,7 +38,7 @@ func (f *StrategyFactory) Create(name string, params map[string]interface{}) (St
 	if !exists {
 		return nil, fmt.Errorf("unknown strategy: %s", name)
 	}
-	
+
 	return constructor(params)
 }
 
@@ -74,4 +74,3 @@ func RegisterStrategy(name string, constructor StrategyConstructor) {
 func GetAvailableStrategies() []string {
 	return defaultFactory.GetAvailableStrategies()
 }
-

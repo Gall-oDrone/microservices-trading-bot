@@ -15,22 +15,22 @@ import (
 type MarketSimulator interface {
 	// Initialize initializes the simulator with configuration
 	Initialize(ctx context.Context, config *SimulatorConfig) error
-	
+
 	// ProcessEvent processes a market event
 	ProcessEvent(event *models.MarketEvent) error
-	
+
 	// ExecuteOrder executes an order and returns execution details
 	ExecuteOrder(order *sharedModels.Order) (*OrderExecution, error)
-	
+
 	// GetCurrentPrice returns the current price for a book
 	GetCurrentPrice(book string) (float64, error)
-	
+
 	// GetOrderBook returns the current order book (if available)
 	GetOrderBook(book string) (*OrderBook, error)
-	
+
 	// GetState returns the current market state
 	GetState() *MarketState
-	
+
 	// Reset resets the simulator to initial state
 	Reset() error
 }
@@ -68,8 +68,8 @@ type OrderExecution struct {
 
 // MarketState represents the current state of the market
 type MarketState struct {
-	Timestamp  time.Time            `json:"timestamp"`
-	Prices     map[string]float64   `json:"prices"`
+	Timestamp  time.Time             `json:"timestamp"`
+	Prices     map[string]float64    `json:"prices"`
 	OrderBooks map[string]*OrderBook `json:"order_books,omitempty"`
 }
 
@@ -88,17 +88,17 @@ func NewSimulator(config *SimulatorConfig, log logger.Logger) *Simulator {
 func (s *Simulator) Initialize(ctx context.Context, config *SimulatorConfig) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	
+
 	s.config = config
 	s.slippageModel = NewSlippageModel(config.SlippageModel, config.SlippageValue)
-	
+
 	if s.logger != nil {
 		s.logger.Info("Simulator initialized", map[string]interface{}{
 			"slippage_model":  config.SlippageModel,
 			"commission_rate": config.CommissionRate,
 		})
 	}
-	
+
 	return nil
 }
 
@@ -106,22 +106,22 @@ func (s *Simulator) Initialize(ctx context.Context, config *SimulatorConfig) err
 func (s *Simulator) ProcessEvent(event *models.MarketEvent) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	
+
 	s.lastUpdate = event.Timestamp
-	
+
 	// Update price based on event type
 	price, err := event.GetPrice()
 	if err != nil {
 		return fmt.Errorf("failed to get price from event: %w", err)
 	}
-	
+
 	s.currentPrices[event.Book] = price
-	
+
 	// Update order book if enabled
 	if s.config.EnableOrderBook && event.IsOrderBookEvent() {
 		// TODO: Update order book
 	}
-	
+
 	return nil
 }
 
@@ -129,7 +129,7 @@ func (s *Simulator) ProcessEvent(event *models.MarketEvent) error {
 func (s *Simulator) ExecuteOrder(order *sharedModels.Order) (*OrderExecution, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	
+
 	// Get current price
 	currentPrice, exists := s.currentPrices[order.Symbol]
 	if !exists {
@@ -139,16 +139,16 @@ func (s *Simulator) ExecuteOrder(order *sharedModels.Order) (*OrderExecution, er
 			Error:   fmt.Sprintf("no price available for book: %s", order.Symbol),
 		}, fmt.Errorf("no price available for book: %s", order.Symbol)
 	}
-	
+
 	// Calculate slippage
 	slippage := s.slippageModel.Calculate(order, currentPrice)
-	
+
 	// Calculate execution price
 	executionPrice := calculateExecutionPrice(currentPrice, order.Side, slippage)
-	
+
 	// Calculate commission
 	commission := calculateCommission(order.Amount, executionPrice, s.config.CommissionRate)
-	
+
 	return &OrderExecution{
 		OrderID:        order.ID,
 		ExecutedPrice:  executionPrice,
@@ -164,12 +164,12 @@ func (s *Simulator) ExecuteOrder(order *sharedModels.Order) (*OrderExecution, er
 func (s *Simulator) GetCurrentPrice(book string) (float64, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	
+
 	price, exists := s.currentPrices[book]
 	if !exists {
 		return 0, fmt.Errorf("no price available for book: %s", book)
 	}
-	
+
 	return price, nil
 }
 
@@ -177,12 +177,12 @@ func (s *Simulator) GetCurrentPrice(book string) (float64, error) {
 func (s *Simulator) GetOrderBook(book string) (*OrderBook, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	
+
 	ob, exists := s.orderBooks[book]
 	if !exists {
 		return nil, fmt.Errorf("no order book available for book: %s", book)
 	}
-	
+
 	return ob, nil
 }
 
@@ -190,19 +190,19 @@ func (s *Simulator) GetOrderBook(book string) (*OrderBook, error) {
 func (s *Simulator) GetState() *MarketState {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	
+
 	// Clone prices
 	prices := make(map[string]float64)
 	for book, price := range s.currentPrices {
 		prices[book] = price
 	}
-	
+
 	// Clone order books
 	orderBooks := make(map[string]*OrderBook)
 	for book, ob := range s.orderBooks {
 		orderBooks[book] = ob // TODO: Deep clone if needed
 	}
-	
+
 	return &MarketState{
 		Timestamp:  s.lastUpdate,
 		Prices:     prices,
@@ -214,15 +214,14 @@ func (s *Simulator) GetState() *MarketState {
 func (s *Simulator) Reset() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	
+
 	s.currentPrices = make(map[string]float64)
 	s.orderBooks = make(map[string]*OrderBook)
 	s.lastUpdate = time.Time{}
-	
+
 	if s.logger != nil {
 		s.logger.Info("Simulator reset", nil)
 	}
-	
+
 	return nil
 }
-
