@@ -33,23 +33,23 @@ func (p *FileProvider) LoadHistoricalData(ctx context.Context, req *DataRequest)
 	if err := req.Validate(); err != nil {
 		return nil, fmt.Errorf("invalid request: %w", err)
 	}
-	
+
 	p.logger.Info("Loading historical data from files", map[string]interface{}{
 		"book":      req.Book,
 		"base_path": p.basePath,
 	})
-	
+
 	events := make([]models.MarketEvent, 0)
-	
+
 	for _, eventType := range req.EventTypes {
 		// Build file path based on event type
 		fileName := p.buildFileName(req.Book, eventType, req.StartDate, req.EndDate)
 		filePath := filepath.Join(p.basePath, fileName)
-		
+
 		p.logger.Debug("Reading data file", map[string]interface{}{
 			"file": filePath,
 		})
-		
+
 		// Check if file exists
 		if _, err := os.Stat(filePath); os.IsNotExist(err) {
 			p.logger.Warn("Data file not found", map[string]interface{}{
@@ -57,13 +57,13 @@ func (p *FileProvider) LoadHistoricalData(ctx context.Context, req *DataRequest)
 			})
 			continue
 		}
-		
+
 		// Read and parse file
 		fileEvents, err := p.readDataFile(filePath, eventType)
 		if err != nil {
 			return nil, fmt.Errorf("failed to read file %s: %w", filePath, err)
 		}
-		
+
 		// Filter by date range
 		for _, event := range fileEvents {
 			if event.Timestamp.After(req.StartDate) && event.Timestamp.Before(req.EndDate) {
@@ -71,19 +71,19 @@ func (p *FileProvider) LoadHistoricalData(ctx context.Context, req *DataRequest)
 			}
 		}
 	}
-	
+
 	// Sort by timestamp
 	sortEventsByTimestamp(events)
-	
+
 	// Apply limit if specified
 	if req.Limit > 0 && len(events) > req.Limit {
 		events = events[:req.Limit]
 	}
-	
+
 	p.logger.Info("Historical data loaded from files", map[string]interface{}{
 		"count": len(events),
 	})
-	
+
 	return events, nil
 }
 
@@ -92,19 +92,19 @@ func (p *FileProvider) StreamData(ctx context.Context, req *DataRequest) (<-chan
 	if err := req.Validate(); err != nil {
 		return nil, fmt.Errorf("invalid request: %w", err)
 	}
-	
+
 	eventChan := make(chan models.MarketEvent, 100)
-	
+
 	go func() {
 		defer close(eventChan)
-		
+
 		// Load all data
 		events, err := p.LoadHistoricalData(ctx, req)
 		if err != nil {
 			p.logger.Error("Failed to load data for streaming", map[string]interface{}{"error": err})
 			return
 		}
-		
+
 		// Stream events
 		for _, event := range events {
 			select {
@@ -114,7 +114,7 @@ func (p *FileProvider) StreamData(ctx context.Context, req *DataRequest) (<-chan
 			}
 		}
 	}()
-	
+
 	return eventChan, nil
 }
 
@@ -126,11 +126,11 @@ func (p *FileProvider) GetDataRange(ctx context.Context, book string) (*DateRang
 	if err != nil {
 		return nil, fmt.Errorf("failed to scan directory: %w", err)
 	}
-	
+
 	if len(files) == 0 {
 		return nil, fmt.Errorf("no data files found for book: %s", book)
 	}
-	
+
 	// Parse dates from file names
 	var firstDate, lastDate time.Time
 	for _, file := range files {
@@ -138,7 +138,7 @@ func (p *FileProvider) GetDataRange(ctx context.Context, book string) (*DateRang
 		if err != nil {
 			continue
 		}
-		
+
 		if firstDate.IsZero() || date.Before(firstDate) {
 			firstDate = date
 		}
@@ -146,7 +146,7 @@ func (p *FileProvider) GetDataRange(ctx context.Context, book string) (*DateRang
 			lastDate = date
 		}
 	}
-	
+
 	return &DateRange{
 		FirstDate: firstDate,
 		LastDate:  lastDate,
@@ -159,9 +159,9 @@ func (p *FileProvider) readDataFile(filePath string, eventType models.MarketEven
 	if err != nil {
 		return nil, fmt.Errorf("failed to read file: %w", err)
 	}
-	
+
 	events := make([]models.MarketEvent, 0)
-	
+
 	switch eventType {
 	case models.EventTypeTrade:
 		var trades []bitso.Trade
@@ -171,7 +171,7 @@ func (p *FileProvider) readDataFile(filePath string, eventType models.MarketEven
 		for _, trade := range trades {
 			events = append(events, *models.NewTradeEvent(&trade))
 		}
-		
+
 	case models.EventTypeTicker:
 		var tickers []bitso.Ticker
 		if err := json.Unmarshal(data, &tickers); err != nil {
@@ -181,7 +181,7 @@ func (p *FileProvider) readDataFile(filePath string, eventType models.MarketEven
 			events = append(events, *models.NewTickerEvent(&ticker))
 		}
 	}
-	
+
 	return events, nil
 }
 
@@ -200,13 +200,13 @@ func (p *FileProvider) buildFileName(book string, eventType models.MarketEventTy
 func (p *FileProvider) parseDateFromFileName(fileName string) (time.Time, error) {
 	// Remove extension
 	name := strings.TrimSuffix(fileName, ".json")
-	
+
 	// Split by underscore
 	parts := strings.Split(name, "_")
 	if len(parts) < 4 {
 		return time.Time{}, fmt.Errorf("invalid file name format: %s", fileName)
 	}
-	
+
 	// Parse date (e.g., "20240101")
 	dateStr := parts[len(parts)-2] // Second to last part is start date
 	return time.Parse("20060102", dateStr)
@@ -228,4 +228,3 @@ func sortEventsByTimestamp(events []models.MarketEvent) {
 		}
 	}
 }
-

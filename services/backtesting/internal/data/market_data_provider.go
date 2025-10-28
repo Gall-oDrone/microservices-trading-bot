@@ -48,14 +48,14 @@ func (p *MarketDataProvider) LoadHistoricalData(ctx context.Context, req *DataRe
 	if err := req.Validate(); err != nil {
 		return nil, fmt.Errorf("invalid request: %w", err)
 	}
-	
+
 	p.logger.Info("Loading historical data", map[string]interface{}{
-		"book":       req.Book,
-		"start_date": req.StartDate.Format("2006-01-02"),
-		"end_date":   req.EndDate.Format("2006-01-02"),
+		"book":        req.Book,
+		"start_date":  req.StartDate.Format("2006-01-02"),
+		"end_date":    req.EndDate.Format("2006-01-02"),
 		"event_types": req.EventTypes,
 	})
-	
+
 	// Check cache first
 	if p.cache != nil {
 		cacheKey := p.cache.generateKey(req.Book, req.StartDate, req.EndDate, string(req.EventTypes[0]))
@@ -67,10 +67,10 @@ func (p *MarketDataProvider) LoadHistoricalData(ctx context.Context, req *DataRe
 			return events, nil
 		}
 	}
-	
+
 	// Load data from API
 	events := make([]models.MarketEvent, 0)
-	
+
 	for _, eventType := range req.EventTypes {
 		switch eventType {
 		case models.EventTypeTrade:
@@ -81,7 +81,7 @@ func (p *MarketDataProvider) LoadHistoricalData(ctx context.Context, req *DataRe
 			for _, trade := range trades {
 				events = append(events, *models.NewTradeEvent(&trade))
 			}
-			
+
 		case models.EventTypeTicker:
 			tickers, err := p.fetchTickers(ctx, req.Book, req.StartDate, req.EndDate)
 			if err != nil {
@@ -92,10 +92,10 @@ func (p *MarketDataProvider) LoadHistoricalData(ctx context.Context, req *DataRe
 			}
 		}
 	}
-	
+
 	// Sort events by timestamp
 	p.sortEventsByTimestamp(events)
-	
+
 	// Cache the results
 	if p.cache != nil {
 		cacheKey := p.cache.generateKey(req.Book, req.StartDate, req.EndDate, string(req.EventTypes[0]))
@@ -103,11 +103,11 @@ func (p *MarketDataProvider) LoadHistoricalData(ctx context.Context, req *DataRe
 			p.logger.Warn("Failed to cache data", map[string]interface{}{"error": err})
 		}
 	}
-	
+
 	p.logger.Info("Historical data loaded", map[string]interface{}{
 		"count": len(events),
 	})
-	
+
 	return events, nil
 }
 
@@ -116,19 +116,19 @@ func (p *MarketDataProvider) StreamData(ctx context.Context, req *DataRequest) (
 	if err := req.Validate(); err != nil {
 		return nil, fmt.Errorf("invalid request: %w", err)
 	}
-	
+
 	eventChan := make(chan models.MarketEvent, 100)
-	
+
 	go func() {
 		defer close(eventChan)
-		
+
 		// Load all data
 		events, err := p.LoadHistoricalData(ctx, req)
 		if err != nil {
 			p.logger.Error("Failed to load data for streaming", map[string]interface{}{"error": err})
 			return
 		}
-		
+
 		// Stream events
 		for _, event := range events {
 			select {
@@ -138,7 +138,7 @@ func (p *MarketDataProvider) StreamData(ctx context.Context, req *DataRequest) (
 			}
 		}
 	}()
-	
+
 	return eventChan, nil
 }
 
@@ -156,7 +156,7 @@ func (p *MarketDataProvider) GetDataRange(ctx context.Context, book string) (*Da
 func (p *MarketDataProvider) fetchTrades(ctx context.Context, book string, startDate, endDate time.Time, limit int) ([]bitso.Trade, error) {
 	// Build URL
 	endpoint := fmt.Sprintf("%s/api/v1/trades", p.baseURL)
-	
+
 	params := url.Values{}
 	params.Add("book", book)
 	params.Add("from", startDate.Format(time.RFC3339))
@@ -166,44 +166,44 @@ func (p *MarketDataProvider) fetchTrades(ctx context.Context, book string, start
 	} else {
 		params.Add("limit", "10000") // Default limit
 	}
-	
+
 	fullURL := fmt.Sprintf("%s?%s", endpoint, params.Encode())
-	
+
 	p.logger.Debug("Fetching trades", map[string]interface{}{
 		"url": fullURL,
 	})
-	
+
 	// Make HTTP request with retries
 	resp, err := p.makeRequestWithRetry(ctx, fullURL)
 	if err != nil {
 		return nil, fmt.Errorf("HTTP request failed: %w", err)
 	}
 	defer resp.Body.Close()
-	
+
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
 		return nil, fmt.Errorf("API returned status %d: %s", resp.StatusCode, string(body))
 	}
-	
+
 	// Parse response
 	var result struct {
 		Success bool          `json:"success"`
 		Data    []bitso.Trade `json:"data"`
 		Error   string        `json:"error,omitempty"`
 	}
-	
+
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		return nil, fmt.Errorf("failed to decode response: %w", err)
 	}
-	
+
 	if !result.Success {
 		return nil, fmt.Errorf("API error: %s", result.Error)
 	}
-	
+
 	p.logger.Debug("Fetched trades", map[string]interface{}{
 		"count": len(result.Data),
 	})
-	
+
 	return result.Data, nil
 }
 
@@ -211,52 +211,52 @@ func (p *MarketDataProvider) fetchTrades(ctx context.Context, book string, start
 func (p *MarketDataProvider) fetchTickers(ctx context.Context, book string, startDate, endDate time.Time) ([]bitso.Ticker, error) {
 	// Build URL
 	endpoint := fmt.Sprintf("%s/api/v1/ticker/history", p.baseURL)
-	
+
 	params := url.Values{}
 	params.Add("book", book)
 	params.Add("from", startDate.Format(time.RFC3339))
 	params.Add("to", endDate.Format(time.RFC3339))
-	
+
 	fullURL := fmt.Sprintf("%s?%s", endpoint, params.Encode())
-	
+
 	p.logger.Debug("Fetching tickers", map[string]interface{}{
 		"url": fullURL,
 	})
-	
+
 	// Make HTTP request with retries
 	resp, err := p.makeRequestWithRetry(ctx, fullURL)
 	if err != nil {
 		return nil, fmt.Errorf("HTTP request failed: %w", err)
 	}
 	defer resp.Body.Close()
-	
+
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
 		return nil, fmt.Errorf("API returned status %d: %s", resp.StatusCode, string(body))
 	}
-	
+
 	// Parse response
 	var result struct {
 		Success bool           `json:"success"`
 		Data    []bitso.Ticker `json:"data"`
 		Error   string         `json:"error,omitempty"`
 	}
-	
+
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		return nil, fmt.Errorf("failed to decode response: %w", err)
 	}
-	
+
 	if !result.Success {
 		return nil, fmt.Errorf("API error: %s", result.Error)
 	}
-	
+
 	return result.Data, nil
 }
 
 // makeRequestWithRetry makes an HTTP request with retry logic
 func (p *MarketDataProvider) makeRequestWithRetry(ctx context.Context, url string) (*http.Response, error) {
 	var lastErr error
-	
+
 	for attempt := 0; attempt <= p.retryCount; attempt++ {
 		if attempt > 0 {
 			// Wait before retry with exponential backoff
@@ -265,24 +265,24 @@ func (p *MarketDataProvider) makeRequestWithRetry(ctx context.Context, url strin
 				"attempt": attempt,
 				"backoff": backoff,
 			})
-			
+
 			select {
 			case <-ctx.Done():
 				return nil, ctx.Err()
 			case <-time.After(backoff):
 			}
 		}
-		
+
 		// Create request
 		req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create request: %w", err)
 		}
-		
+
 		// Set headers
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("Accept", "application/json")
-		
+
 		// Execute request
 		resp, err := p.httpClient.Do(req)
 		if err != nil {
@@ -293,11 +293,11 @@ func (p *MarketDataProvider) makeRequestWithRetry(ctx context.Context, url strin
 			})
 			continue
 		}
-		
+
 		// Success
 		return resp, nil
 	}
-	
+
 	return nil, fmt.Errorf("request failed after %d attempts: %w", p.retryCount+1, lastErr)
 }
 
@@ -322,4 +322,3 @@ func (p *MarketDataProvider) Close() error {
 	}
 	return nil
 }
-

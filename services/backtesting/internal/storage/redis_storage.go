@@ -9,6 +9,7 @@ import (
 
 	"bitso-trading-platform/backtesting/internal/logger"
 	"bitso-trading-platform/backtesting/internal/models"
+
 	"github.com/redis/go-redis/v9"
 )
 
@@ -35,32 +36,32 @@ func (s *RedisStorage) Save(ctx context.Context, result *models.BacktestResult) 
 	if err != nil {
 		return fmt.Errorf("failed to marshal result: %w", err)
 	}
-	
+
 	// Generate key
 	key := s.generateKey(result.BacktestID)
-	
+
 	// Save to Redis with TTL
 	if err := s.client.Set(ctx, key, data, s.ttl).Err(); err != nil {
 		return fmt.Errorf("redis set error: %w", err)
 	}
-	
+
 	// Add to index sets for filtering
 	if err := s.addToIndexes(ctx, result); err != nil {
 		s.logger.Warn("Failed to update indexes", map[string]interface{}{"error": err})
 	}
-	
+
 	s.logger.Debug("Saved backtest result", map[string]interface{}{
 		"backtest_id": result.BacktestID,
 		"key":         key,
 	})
-	
+
 	return nil
 }
 
 // Get retrieves a backtest result by ID
 func (s *RedisStorage) Get(ctx context.Context, backtestID string) (*models.BacktestResult, error) {
 	key := s.generateKey(backtestID)
-	
+
 	data, err := s.client.Get(ctx, key).Result()
 	if err != nil {
 		if err == redis.Nil {
@@ -68,13 +69,13 @@ func (s *RedisStorage) Get(ctx context.Context, backtestID string) (*models.Back
 		}
 		return nil, fmt.Errorf("redis get error: %w", err)
 	}
-	
+
 	// Deserialize
 	var result models.BacktestResult
 	if err := json.Unmarshal([]byte(data), &result); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal result: %w", err)
 	}
-	
+
 	return &result, nil
 }
 
@@ -84,14 +85,14 @@ func (s *RedisStorage) List(ctx context.Context, filters *ListFilters) ([]*model
 		filters = NewListFilters()
 	}
 	filters.Validate()
-	
+
 	// Get all backtest keys
 	pattern := "backtest:result:*"
 	keys, err := s.scanKeys(ctx, pattern)
 	if err != nil {
 		return nil, fmt.Errorf("failed to scan keys: %w", err)
 	}
-	
+
 	// Fetch all results
 	results := make([]*models.BacktestResult, 0)
 	for _, key := range keys {
@@ -103,47 +104,47 @@ func (s *RedisStorage) List(ctx context.Context, filters *ListFilters) ([]*model
 			})
 			continue
 		}
-		
+
 		// Apply filters
 		if s.matchesFilters(result, filters) {
 			results = append(results, result)
 		}
 	}
-	
+
 	// Sort results
 	s.sortResults(results, filters.SortBy, filters.SortOrder)
-	
+
 	// Apply pagination
 	start := filters.Offset
 	if start > len(results) {
 		start = len(results)
 	}
-	
+
 	end := start + filters.Limit
 	if end > len(results) {
 		end = len(results)
 	}
-	
+
 	return results[start:end], nil
 }
 
 // Delete deletes a backtest result
 func (s *RedisStorage) Delete(ctx context.Context, backtestID string) error {
 	key := s.generateKey(backtestID)
-	
+
 	if err := s.client.Del(ctx, key).Err(); err != nil {
 		return fmt.Errorf("redis delete error: %w", err)
 	}
-	
+
 	// Remove from indexes
 	if err := s.removeFromIndexes(ctx, backtestID); err != nil {
 		s.logger.Warn("Failed to remove from indexes", map[string]interface{}{"error": err})
 	}
-	
+
 	s.logger.Info("Deleted backtest result", map[string]interface{}{
 		"backtest_id": backtestID,
 	})
-	
+
 	return nil
 }
 
@@ -154,11 +155,11 @@ func (s *RedisStorage) UpdateStatus(ctx context.Context, backtestID string, stat
 	if err != nil {
 		return fmt.Errorf("failed to get result: %w", err)
 	}
-	
+
 	// Update fields
 	result.Status = status
 	result.Progress = progress
-	
+
 	// Save updated result
 	return s.Save(ctx, result)
 }
@@ -182,7 +183,7 @@ func (s *RedisStorage) addToIndexes(ctx context.Context, result *models.Backtest
 	if err := s.client.SAdd(ctx, statusKey, result.BacktestID).Err(); err != nil {
 		return err
 	}
-	
+
 	// Add to all results index
 	allKey := "backtest:index:all"
 	if err := s.client.ZAdd(ctx, allKey, redis.Z{
@@ -191,7 +192,7 @@ func (s *RedisStorage) addToIndexes(ctx context.Context, result *models.Backtest
 	}).Err(); err != nil {
 		return err
 	}
-	
+
 	return nil
 }
 
@@ -203,27 +204,27 @@ func (s *RedisStorage) removeFromIndexes(ctx context.Context, backtestID string)
 		statusKey := fmt.Sprintf("backtest:index:status:%s", status)
 		s.client.SRem(ctx, statusKey, backtestID)
 	}
-	
+
 	// Remove from all results index
 	allKey := "backtest:index:all"
 	s.client.ZRem(ctx, allKey, backtestID)
-	
+
 	return nil
 }
 
 // scanKeys scans for keys matching a pattern
 func (s *RedisStorage) scanKeys(ctx context.Context, pattern string) ([]string, error) {
 	keys := make([]string, 0)
-	
+
 	iter := s.client.Scan(ctx, 0, pattern, 0).Iterator()
 	for iter.Next(ctx) {
 		keys = append(keys, iter.Val())
 	}
-	
+
 	if err := iter.Err(); err != nil {
 		return nil, err
 	}
-	
+
 	return keys, nil
 }
 
@@ -233,7 +234,7 @@ func (s *RedisStorage) matchesFilters(result *models.BacktestResult, filters *Li
 	if filters.Status != "" && result.Status != filters.Status {
 		return false
 	}
-	
+
 	// Date range filters
 	if filters.StartDate != nil && result.StartedAt.Before(*filters.StartDate) {
 		return false
@@ -241,7 +242,7 @@ func (s *RedisStorage) matchesFilters(result *models.BacktestResult, filters *Li
 	if filters.EndDate != nil && result.StartedAt.After(*filters.EndDate) {
 		return false
 	}
-	
+
 	return true
 }
 
@@ -252,7 +253,7 @@ func (s *RedisStorage) sortResults(results []*models.BacktestResult, sortBy, sor
 	for i := 0; i < n-1; i++ {
 		for j := 0; j < n-i-1; j++ {
 			shouldSwap := false
-			
+
 			// Determine if swap is needed based on sort field
 			switch sortBy {
 			case "created_at":
@@ -265,11 +266,10 @@ func (s *RedisStorage) sortResults(results []*models.BacktestResult, sortBy, sor
 				// Default sort by created_at desc
 				shouldSwap = results[j].StartedAt.Before(results[j+1].StartedAt)
 			}
-			
+
 			if shouldSwap {
 				results[j], results[j+1] = results[j+1], results[j]
 			}
 		}
 	}
 }
-

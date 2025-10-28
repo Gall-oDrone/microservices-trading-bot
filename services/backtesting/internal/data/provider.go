@@ -12,25 +12,25 @@ import (
 type DataProvider interface {
 	// LoadHistoricalData loads historical data for the given request
 	LoadHistoricalData(ctx context.Context, req *DataRequest) ([]models.MarketEvent, error)
-	
+
 	// StreamData streams historical data through a channel
 	StreamData(ctx context.Context, req *DataRequest) (<-chan models.MarketEvent, error)
-	
+
 	// GetDataRange returns the available date range for a book
 	GetDataRange(ctx context.Context, book string) (*DateRange, error)
-	
+
 	// Close closes the provider and releases resources
 	Close() error
 }
 
 // DataRequest represents a request for historical data
 type DataRequest struct {
-	Book        string                    `json:"book"`
-	StartDate   time.Time                 `json:"start_date"`
-	EndDate     time.Time                 `json:"end_date"`
-	EventTypes  []models.MarketEventType  `json:"event_types"` // trades, tickers, orderbooks
-	Granularity string                    `json:"granularity"`  // "tick", "1m", "5m", etc.
-	Limit       int                       `json:"limit"`        // Max events to fetch (0 = no limit)
+	Book        string                   `json:"book"`
+	StartDate   time.Time                `json:"start_date"`
+	EndDate     time.Time                `json:"end_date"`
+	EventTypes  []models.MarketEventType `json:"event_types"` // trades, tickers, orderbooks
+	Granularity string                   `json:"granularity"` // "tick", "1m", "5m", etc.
+	Limit       int                      `json:"limit"`       // Max events to fetch (0 = no limit)
 }
 
 // DateRange represents an available date range
@@ -46,8 +46,8 @@ func NewDataRequest(book string, startDate, endDate time.Time) *DataRequest {
 		StartDate:   startDate,
 		EndDate:     endDate,
 		EventTypes:  []models.MarketEventType{models.EventTypeTrade}, // Default to trades
-		Granularity: "tick",                                           // Default to tick data
-		Limit:       0,                                                // No limit by default
+		Granularity: "tick",                                          // Default to tick data
+		Limit:       0,                                               // No limit by default
 	}
 }
 
@@ -56,23 +56,23 @@ func (r *DataRequest) Validate() error {
 	if r.Book == "" {
 		return fmt.Errorf("book is required")
 	}
-	
+
 	if r.StartDate.IsZero() {
 		return fmt.Errorf("start_date is required")
 	}
-	
+
 	if r.EndDate.IsZero() {
 		return fmt.Errorf("end_date is required")
 	}
-	
+
 	if r.EndDate.Before(r.StartDate) {
 		return fmt.Errorf("end_date must be after start_date")
 	}
-	
+
 	if len(r.EventTypes) == 0 {
 		return fmt.Errorf("at least one event type is required")
 	}
-	
+
 	// Validate event types
 	validTypes := map[models.MarketEventType]bool{
 		models.EventTypeTrade:     true,
@@ -84,11 +84,11 @@ func (r *DataRequest) Validate() error {
 			return fmt.Errorf("invalid event type: %s", eventType)
 		}
 	}
-	
+
 	if r.Limit < 0 {
 		return fmt.Errorf("limit cannot be negative")
 	}
-	
+
 	return nil
 }
 
@@ -128,4 +128,3 @@ func (r *DataRequest) String() string {
 		r.EndDate.Format("2006-01-02"),
 		r.EventTypes)
 }
-

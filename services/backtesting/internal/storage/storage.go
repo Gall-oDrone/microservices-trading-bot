@@ -11,34 +11,34 @@ import (
 type ResultStorage interface {
 	// Save saves a backtest result
 	Save(ctx context.Context, result *models.BacktestResult) error
-	
+
 	// Get retrieves a backtest result by ID
 	Get(ctx context.Context, backtestID string) (*models.BacktestResult, error)
-	
+
 	// List lists backtest results with optional filters
 	List(ctx context.Context, filters *ListFilters) ([]*models.BacktestResult, error)
-	
+
 	// Delete deletes a backtest result
 	Delete(ctx context.Context, backtestID string) error
-	
+
 	// UpdateStatus updates the status and progress of a backtest
 	UpdateStatus(ctx context.Context, backtestID string, status string, progress float64) error
-	
+
 	// Close closes the storage and releases resources
 	Close() error
 }
 
 // ListFilters defines filters for listing backtest results
 type ListFilters struct {
-	Status     string     `json:"status,omitempty"`     // Filter by status
-	Strategy   string     `json:"strategy,omitempty"`   // Filter by strategy
-	Book       string     `json:"book,omitempty"`       // Filter by book
-	StartDate  *time.Time `json:"start_date,omitempty"` // Filter by creation date (after)
-	EndDate    *time.Time `json:"end_date,omitempty"`   // Filter by creation date (before)
-	Limit      int        `json:"limit"`                // Maximum results (default: 20)
-	Offset     int        `json:"offset"`               // Pagination offset (default: 0)
-	SortBy     string     `json:"sort_by"`              // Sort field (default: created_at)
-	SortOrder  string     `json:"sort_order"`           // asc or desc (default: desc)
+	Status    string     `json:"status,omitempty"`     // Filter by status
+	Strategy  string     `json:"strategy,omitempty"`   // Filter by strategy
+	Book      string     `json:"book,omitempty"`       // Filter by book
+	StartDate *time.Time `json:"start_date,omitempty"` // Filter by creation date (after)
+	EndDate   *time.Time `json:"end_date,omitempty"`   // Filter by creation date (before)
+	Limit     int        `json:"limit"`                // Maximum results (default: 20)
+	Offset    int        `json:"offset"`               // Pagination offset (default: 0)
+	SortBy    string     `json:"sort_by"`              // Sort field (default: created_at)
+	SortOrder string     `json:"sort_order"`           // asc or desc (default: desc)
 }
 
 // NewListFilters creates a new list filters with defaults
@@ -89,15 +89,14 @@ func (f *ListFilters) Validate() error {
 	if f.Limit > 1000 {
 		f.Limit = 1000 // Max 1000 results
 	}
-	
+
 	if f.Offset < 0 {
 		f.Offset = 0
 	}
-	
+
 	if f.SortOrder != "asc" && f.SortOrder != "desc" {
 		f.SortOrder = "desc"
 	}
-	
+
 	return nil
 }
-

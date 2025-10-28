@@ -11,7 +11,7 @@ import (
 func TestListFilters(t *testing.T) {
 	// Test NewListFilters defaults
 	filters := NewListFilters()
-	
+
 	if filters.Limit != 20 {
 		t.Errorf("Expected default limit 20, got %d", filters.Limit)
 	}
@@ -28,28 +28,28 @@ func TestListFilters(t *testing.T) {
 
 func TestListFiltersBuilders(t *testing.T) {
 	filters := NewListFilters()
-	
+
 	// Test builder methods
 	filters.WithStatus("completed")
 	if filters.Status != "completed" {
 		t.Error("WithStatus failed")
 	}
-	
+
 	filters.WithStrategy("basic")
 	if filters.Strategy != "basic" {
 		t.Error("WithStrategy failed")
 	}
-	
+
 	filters.WithBook("btc_mxn")
 	if filters.Book != "btc_mxn" {
 		t.Error("WithBook failed")
 	}
-	
+
 	filters.WithLimit(100)
 	if filters.Limit != 100 {
 		t.Error("WithLimit failed")
 	}
-	
+
 	filters.WithOffset(20)
 	if filters.Offset != 20 {
 		t.Error("WithOffset failed")
@@ -115,11 +115,11 @@ func TestListFiltersValidation(t *testing.T) {
 			},
 		},
 	}
-	
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			tt.filters.Validate()
-			
+
 			if tt.filters.Limit != tt.want.Limit {
 				t.Errorf("Limit = %d, want %d", tt.filters.Limit, tt.want.Limit)
 			}
@@ -136,16 +136,16 @@ func TestListFiltersValidation(t *testing.T) {
 func TestFileStorageBasics(t *testing.T) {
 	// Create temp directory for testing
 	tempDir := t.TempDir()
-	
+
 	storage := NewFileStorage(tempDir, nil)
 	if storage == nil {
 		t.Fatal("NewFileStorage returned nil")
 	}
-	
+
 	if storage.basePath != tempDir {
 		t.Errorf("Expected basePath '%s', got '%s'", tempDir, storage.basePath)
 	}
-	
+
 	// Test Close
 	if err := storage.Close(); err != nil {
 		t.Errorf("Close() error = %v", err)
@@ -157,7 +157,7 @@ func TestFileStorageSaveAndGet(t *testing.T) {
 	tempDir := t.TempDir()
 	storage := NewFileStorage(tempDir, nil)
 	ctx := context.Background()
-	
+
 	// Create test result
 	result := models.NewBacktestResult("bt-test-123", "cfg-test-456")
 	result.Status = "completed"
@@ -165,18 +165,18 @@ func TestFileStorageSaveAndGet(t *testing.T) {
 		TotalReturn: 5000,
 		WinRate:     0.65,
 	})
-	
+
 	// Save
 	if err := storage.Save(ctx, result); err != nil {
 		t.Fatalf("Save() error = %v", err)
 	}
-	
+
 	// Get
 	retrieved, err := storage.Get(ctx, "bt-test-123")
 	if err != nil {
 		t.Fatalf("Get() error = %v", err)
 	}
-	
+
 	// Verify
 	if retrieved.BacktestID != result.BacktestID {
 		t.Errorf("BacktestID mismatch: expected %s, got %s", result.BacktestID, retrieved.BacktestID)
@@ -193,23 +193,23 @@ func TestFileStorageDelete(t *testing.T) {
 	tempDir := t.TempDir()
 	storage := NewFileStorage(tempDir, nil)
 	ctx := context.Background()
-	
+
 	// Create and save result
 	result := models.NewBacktestResult("bt-delete-test", "cfg-test")
 	if err := storage.Save(ctx, result); err != nil {
 		t.Fatalf("Save() error = %v", err)
 	}
-	
+
 	// Verify it exists
 	if _, err := storage.Get(ctx, "bt-delete-test"); err != nil {
 		t.Fatalf("Get() error = %v", err)
 	}
-	
+
 	// Delete
 	if err := storage.Delete(ctx, "bt-delete-test"); err != nil {
 		t.Fatalf("Delete() error = %v", err)
 	}
-	
+
 	// Verify it's deleted
 	if _, err := storage.Get(ctx, "bt-delete-test"); err == nil {
 		t.Error("Expected error when getting deleted result")
@@ -220,7 +220,7 @@ func TestFileStorageUpdateStatus(t *testing.T) {
 	tempDir := t.TempDir()
 	storage := NewFileStorage(tempDir, nil)
 	ctx := context.Background()
-	
+
 	// Create and save result
 	result := models.NewBacktestResult("bt-update-test", "cfg-test")
 	result.Status = "running"
@@ -228,18 +228,18 @@ func TestFileStorageUpdateStatus(t *testing.T) {
 	if err := storage.Save(ctx, result); err != nil {
 		t.Fatalf("Save() error = %v", err)
 	}
-	
+
 	// Update status
 	if err := storage.UpdateStatus(ctx, "bt-update-test", "completed", 1.0); err != nil {
 		t.Fatalf("UpdateStatus() error = %v", err)
 	}
-	
+
 	// Verify update
 	updated, err := storage.Get(ctx, "bt-update-test")
 	if err != nil {
 		t.Fatalf("Get() error = %v", err)
 	}
-	
+
 	if updated.Status != "completed" {
 		t.Errorf("Status not updated: expected 'completed', got '%s'", updated.Status)
 	}
@@ -250,7 +250,7 @@ func TestFileStorageUpdateStatus(t *testing.T) {
 
 func TestFileStorageExtractBacktestID(t *testing.T) {
 	storage := NewFileStorage("/tmp", nil)
-	
+
 	tests := []struct {
 		name     string
 		filePath string
@@ -267,7 +267,7 @@ func TestFileStorageExtractBacktestID(t *testing.T) {
 			want:     "bt-456",
 		},
 	}
-	
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got := storage.extractBacktestID(tt.filePath)
@@ -280,9 +280,9 @@ func TestFileStorageExtractBacktestID(t *testing.T) {
 
 func TestFileStorageGeneratePath(t *testing.T) {
 	storage := NewFileStorage("/var/lib/backtesting", nil)
-	
+
 	path := storage.generatePath("bt-test-123")
-	
+
 	// Should contain base path and backtest ID
 	if !strings.Contains(path, "/var/lib/backtesting") {
 		t.Error("Path should contain base path")
@@ -291,4 +291,3 @@ func TestFileStorageGeneratePath(t *testing.T) {
 		t.Error("Path should contain backtest ID")
 	}
 }
-

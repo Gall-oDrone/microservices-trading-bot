@@ -8,6 +8,7 @@ import (
 
 	"bitso-trading-platform/backtesting/internal/logger"
 	"bitso-trading-platform/backtesting/internal/models"
+
 	"github.com/redis/go-redis/v9"
 )
 
@@ -36,18 +37,18 @@ func (c *Cache) Get(ctx context.Context, key string) ([]models.MarketEvent, erro
 		}
 		return nil, fmt.Errorf("redis get error: %w", err)
 	}
-	
+
 	// Deserialize
 	var events []models.MarketEvent
 	if err := json.Unmarshal([]byte(data), &events); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal events: %w", err)
 	}
-	
+
 	c.logger.Debug("Cache hit", map[string]interface{}{
 		"key":   key,
 		"count": len(events),
 	})
-	
+
 	return events, nil
 }
 
@@ -58,18 +59,18 @@ func (c *Cache) Set(ctx context.Context, key string, events []models.MarketEvent
 	if err != nil {
 		return fmt.Errorf("failed to marshal events: %w", err)
 	}
-	
+
 	// Store with TTL
 	if err := c.redis.Set(ctx, key, data, c.ttl).Err(); err != nil {
 		return fmt.Errorf("redis set error: %w", err)
 	}
-	
+
 	c.logger.Debug("Cached data", map[string]interface{}{
 		"key":   key,
 		"count": len(events),
 		"ttl":   c.ttl,
 	})
-	
+
 	return nil
 }
 
@@ -78,11 +79,11 @@ func (c *Cache) Delete(ctx context.Context, key string) error {
 	if err := c.redis.Del(ctx, key).Err(); err != nil {
 		return fmt.Errorf("redis delete error: %w", err)
 	}
-	
+
 	c.logger.Debug("Deleted cache key", map[string]interface{}{
 		"key": key,
 	})
-	
+
 	return nil
 }
 
@@ -90,7 +91,7 @@ func (c *Cache) Delete(ctx context.Context, key string) error {
 func (c *Cache) Clear(ctx context.Context) error {
 	// Delete all keys matching the cache prefix
 	pattern := "backtest:data:*"
-	
+
 	iter := c.redis.Scan(ctx, 0, pattern, 0).Iterator()
 	for iter.Next(ctx) {
 		if err := c.redis.Del(ctx, iter.Val()).Err(); err != nil {
@@ -100,11 +101,11 @@ func (c *Cache) Clear(ctx context.Context) error {
 			})
 		}
 	}
-	
+
 	if err := iter.Err(); err != nil {
 		return fmt.Errorf("redis scan error: %w", err)
 	}
-	
+
 	c.logger.Info("Cache cleared", nil)
 	return nil
 }
@@ -122,20 +123,20 @@ func (c *Cache) generateKey(book string, start, end time.Time, eventType string)
 func (c *Cache) GetStats(ctx context.Context) (map[string]interface{}, error) {
 	// Get number of cached keys
 	pattern := "backtest:data:*"
-	
+
 	var keyCount int64
 	iter := c.redis.Scan(ctx, 0, pattern, 0).Iterator()
 	for iter.Next(ctx) {
 		keyCount++
 	}
-	
+
 	if err := iter.Err(); err != nil {
 		return nil, fmt.Errorf("redis scan error: %w", err)
 	}
-	
+
 	// Get memory usage (if available)
 	memoryStats, _ := c.redis.Info(ctx, "memory").Result()
-	
+
 	return map[string]interface{}{
 		"key_count": keyCount,
 		"ttl":       c.ttl.String(),
@@ -152,4 +153,3 @@ func (c *Cache) Ping(ctx context.Context) error {
 func (c *Cache) Close() error {
 	return c.redis.Close()
 }
-
