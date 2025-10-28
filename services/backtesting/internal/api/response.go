@@ -23,12 +23,12 @@ type APIError struct {
 func SendJSON(w http.ResponseWriter, statusCode int, data interface{}) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(statusCode)
-	
+
 	response := APIResponse{
 		Success: statusCode >= 200 && statusCode < 300,
 		Data:    data,
 	}
-	
+
 	json.NewEncoder(w).Encode(response)
 }
 
@@ -36,7 +36,7 @@ func SendJSON(w http.ResponseWriter, statusCode int, data interface{}) {
 func SendError(w http.ResponseWriter, statusCode int, code, message string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(statusCode)
-	
+
 	response := APIResponse{
 		Success: false,
 		Error: &APIError{
@@ -44,7 +44,7 @@ func SendError(w http.ResponseWriter, statusCode int, code, message string) {
 			Message: message,
 		},
 	}
-	
+
 	json.NewEncoder(w).Encode(response)
 }
 
@@ -61,4 +61,3 @@ func ParseRequest(r *http.Request, v interface{}) error {
 	defer r.Body.Close()
 	return nil
 }
-

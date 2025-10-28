@@ -13,7 +13,7 @@ func (h *Handler) GetBacktestResults(w http.ResponseWriter, r *http.Request, bac
 		SendError(w, http.StatusNotFound, "NOT_FOUND", fmt.Sprintf("Results not found: %s", backtestID))
 		return
 	}
-	
+
 	SendSuccess(w, result)
 }
 
@@ -24,12 +24,12 @@ func (h *Handler) GetBacktestSummary(w http.ResponseWriter, r *http.Request, bac
 		SendError(w, http.StatusNotFound, "NOT_FOUND", fmt.Sprintf("Results not found: %s", backtestID))
 		return
 	}
-	
+
 	if result.Summary == nil {
 		SendError(w, http.StatusNotFound, "NO_SUMMARY", "Summary not available yet")
 		return
 	}
-	
+
 	SendSuccess(w, result.Summary)
 }
 
@@ -40,39 +40,39 @@ func (h *Handler) GetBacktestTrades(w http.ResponseWriter, r *http.Request, back
 		SendError(w, http.StatusNotFound, "NOT_FOUND", fmt.Sprintf("Results not found: %s", backtestID))
 		return
 	}
-	
+
 	// Parse pagination parameters
 	query := r.URL.Query()
 	limit := 100
 	offset := 0
-	
+
 	if limitStr := query.Get("limit"); limitStr != "" {
 		if l, err := strconv.Atoi(limitStr); err == nil {
 			limit = l
 		}
 	}
-	
+
 	if offsetStr := query.Get("offset"); offsetStr != "" {
 		if o, err := strconv.Atoi(offsetStr); err == nil {
 			offset = o
 		}
 	}
-	
+
 	// Apply pagination
 	trades := result.Trades
 	total := len(trades)
-	
+
 	if offset > total {
 		offset = total
 	}
-	
+
 	end := offset + limit
 	if end > total {
 		end = total
 	}
-	
+
 	paginatedTrades := trades[offset:end]
-	
+
 	SendSuccess(w, map[string]interface{}{
 		"trades": paginatedTrades,
 		"total":  total,
@@ -88,32 +88,31 @@ func (h *Handler) DownloadBacktestReport(w http.ResponseWriter, r *http.Request,
 		SendError(w, http.StatusNotFound, "NOT_FOUND", fmt.Sprintf("Results not found: %s", backtestID))
 		return
 	}
-	
+
 	// Get format from query parameter
 	format := r.URL.Query().Get("format")
 	if format == "" {
 		format = "json"
 	}
-	
+
 	switch format {
 	case "json":
 		w.Header().Set("Content-Type", "application/json")
 		w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=backtest-%s.json", backtestID))
 		SendJSON(w, http.StatusOK, result)
-		
+
 	case "text":
 		// TODO: Generate text report
 		w.Header().Set("Content-Type", "text/plain")
 		w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=backtest-%s.txt", backtestID))
 		w.Write([]byte("Text report coming soon"))
-		
+
 	case "html":
 		// TODO: Generate HTML report
 		w.Header().Set("Content-Type", "text/html")
 		w.Write([]byte("<html><body>HTML report coming soon</body></html>"))
-		
+
 	default:
 		SendError(w, http.StatusBadRequest, "INVALID_FORMAT", "Invalid format (use: json, text, html)")
 	}
 }
-

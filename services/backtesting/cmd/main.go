@@ -16,9 +16,11 @@ import (
 	"bitso-trading-platform/backtesting/internal/logger"
 	"bitso-trading-platform/backtesting/internal/manager"
 	"bitso-trading-platform/backtesting/internal/metrics"
+	"bitso-trading-platform/backtesting/internal/optimizer"
 	"bitso-trading-platform/backtesting/internal/server"
 	"bitso-trading-platform/backtesting/internal/storage"
 	"bitso-trading-platform/shared/pkg/health"
+
 	"github.com/redis/go-redis/v9"
 )
 
@@ -45,6 +47,7 @@ type Application struct {
 	// Business logic
 	backtestEngine  engine.BacktestEngine
 	backtestManager *manager.BacktestManager
+	optimizer       optimizer.Optimizer
 
 	// API
 	apiHandler *api.Handler
@@ -154,8 +157,12 @@ func NewApplication() (*Application, error) {
 	)
 	appLogger.Info("Backtest manager initialized", nil)
 
+	// Initialize optimizer
+	opt := optimizer.NewOptimizer(backtestEngine, resultStorage, appLogger)
+	appLogger.Info("Optimizer initialized", nil)
+
 	// Initialize API handlers
-	apiHandler := api.NewHandler(backtestManager, appLogger, metricsCollector)
+	apiHandler := api.NewHandler(backtestManager, opt, appLogger, metricsCollector)
 	appLogger.Info("API handler initialized", nil)
 
 	// Initialize HTTP server
@@ -183,6 +190,7 @@ func NewApplication() (*Application, error) {
 		resultStorage:    resultStorage,
 		backtestEngine:   backtestEngine,
 		backtestManager:  backtestManager,
+		optimizer:        opt,
 		apiHandler:       apiHandler,
 		httpServer:       httpServer,
 		ctx:              ctx,

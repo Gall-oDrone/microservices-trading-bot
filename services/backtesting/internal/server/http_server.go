@@ -11,7 +11,7 @@ import (
 	"bitso-trading-platform/backtesting/internal/logger"
 	"bitso-trading-platform/backtesting/internal/metrics"
 	"bitso-trading-platform/shared/pkg/health"
-	
+
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
@@ -46,10 +46,10 @@ func NewHTTPServer(
 func (s *HTTPServer) Start(ctx context.Context) error {
 	// Set up router
 	mux := http.NewServeMux()
-	
+
 	// Register routes
 	s.registerRoutes(mux)
-	
+
 	// Create HTTP server
 	addr := fmt.Sprintf("%s:%d", s.config.Host, s.config.Port)
 	s.server = &http.Server{
@@ -59,11 +59,11 @@ func (s *HTTPServer) Start(ctx context.Context) error {
 		WriteTimeout: 15 * time.Second,
 		IdleTimeout:  60 * time.Second,
 	}
-	
+
 	s.logger.Info("Starting HTTP server", map[string]interface{}{
 		"address": addr,
 	})
-	
+
 	// Start server
 	errChan := make(chan error, 1)
 	go func() {
@@ -71,7 +71,7 @@ func (s *HTTPServer) Start(ctx context.Context) error {
 			errChan <- err
 		}
 	}()
-	
+
 	// Check for immediate errors
 	select {
 	case err := <-errChan:
@@ -87,13 +87,13 @@ func (s *HTTPServer) Stop(ctx context.Context) error {
 	if s.server == nil {
 		return nil
 	}
-	
+
 	s.logger.Info("Stopping HTTP server", nil)
-	
+
 	if err := s.server.Shutdown(ctx); err != nil {
 		return fmt.Errorf("server shutdown error: %w", err)
 	}
-	
+
 	s.logger.Info("HTTP server stopped", nil)
 	return nil
 }
@@ -104,13 +104,15 @@ func (s *HTTPServer) registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/health", s.healthManager.HTTPHandler())
 	mux.HandleFunc("/health/live", s.healthManager.LivenessHandler())
 	mux.HandleFunc("/health/ready", s.healthManager.ReadinessHandler())
-	
+
 	// Metrics endpoint
 	mux.Handle("/metrics", promhttp.Handler())
-	
+
 	// API endpoints
 	mux.HandleFunc("/api/v1/backtests", s.handler.HandleBacktests)
 	mux.HandleFunc("/api/v1/backtests/", s.handler.HandleBacktestByID)
+	mux.HandleFunc("/api/v1/optimizations", s.handler.HandleOptimizations)
+	mux.HandleFunc("/api/v1/optimizations/", s.handler.HandleOptimizationByID)
 	
 	s.logger.Info("Routes registered", map[string]interface{}{
 		"endpoints": []string{
@@ -121,6 +123,8 @@ func (s *HTTPServer) registerRoutes(mux *http.ServeMux) {
 			"POST /api/v1/backtests",
 			"GET /api/v1/backtests",
 			"GET /api/v1/backtests/{id}",
+			"POST /api/v1/optimizations",
+			"GET /api/v1/optimizations/{id}",
 		},
 	})
 }
@@ -129,21 +133,20 @@ func (s *HTTPServer) registerRoutes(mux *http.ServeMux) {
 func (s *HTTPServer) wrapWithMiddleware(handler http.Handler) http.Handler {
 	// Apply middleware in reverse order (last wraps first)
 	wrapped := handler
-	
+
 	// Recovery middleware (outermost)
 	wrapped = recoveryMiddleware(s.logger)(wrapped)
-	
+
 	// Metrics middleware
 	if s.metricsCollector != nil {
 		wrapped = metricsMiddleware(s.metricsCollector)(wrapped)
 	}
-	
+
 	// Logging middleware
 	wrapped = loggingMiddleware(s.logger)(wrapped)
-	
+
 	// CORS middleware
 	wrapped = corsMiddleware()(wrapped)
-	
+
 	return wrapped
 }
-
