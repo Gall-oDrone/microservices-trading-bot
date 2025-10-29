@@ -50,14 +50,14 @@ func (h *Handler) HandleBacktestByID(w http.ResponseWriter, r *http.Request) {
 	// Extract ID from path
 	path := strings.TrimPrefix(r.URL.Path, "/api/v1/backtests/")
 	parts := strings.Split(path, "/")
-	
+
 	if len(parts) == 0 || parts[0] == "" {
 		SendError(w, http.StatusBadRequest, "INVALID_REQUEST", "Backtest ID required")
 		return
 	}
-	
+
 	backtestID := parts[0]
-	
+
 	// Check for sub-resources
 	if len(parts) > 1 {
 		subResource := parts[1]
@@ -81,7 +81,7 @@ func (h *Handler) HandleBacktestByID(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
-	
+
 	// Handle main resource
 	switch r.Method {
 	case http.MethodGet:
@@ -108,14 +108,14 @@ func (h *Handler) HandleOptimizationByID(w http.ResponseWriter, r *http.Request)
 	// Extract ID from path
 	path := strings.TrimPrefix(r.URL.Path, "/api/v1/optimizations/")
 	parts := strings.Split(path, "/")
-	
+
 	if len(parts) == 0 || parts[0] == "" {
 		SendError(w, http.StatusBadRequest, "INVALID_REQUEST", "Optimization ID required")
 		return
 	}
-	
+
 	optimizationID := parts[0]
-	
+
 	// Check for sub-resources
 	if len(parts) > 1 {
 		subResource := parts[1]
@@ -135,7 +135,7 @@ func (h *Handler) HandleOptimizationByID(w http.ResponseWriter, r *http.Request)
 		}
 		return
 	}
-	
+
 	// Handle main resource
 	switch r.Method {
 	case http.MethodGet:

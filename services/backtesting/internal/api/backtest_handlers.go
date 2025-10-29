@@ -45,7 +45,7 @@ func (h *Handler) CreateBacktest(w http.ResponseWriter, r *http.Request) {
 		SendError(w, http.StatusBadRequest, "INVALID_DATE", "Invalid start_date format")
 		return
 	}
-	
+
 	endDate, err := parseDate(req.EndDate)
 	if err != nil {
 		SendError(w, http.StatusBadRequest, "INVALID_DATE", "Invalid end_date format")

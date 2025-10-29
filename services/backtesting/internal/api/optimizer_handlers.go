@@ -10,20 +10,20 @@ import (
 
 // CreateOptimizationRequest represents a request to create an optimization
 type CreateOptimizationRequest struct {
-	Name            string                               `json:"name"`
-	Description     string                               `json:"description"`
-	StartDate       string                               `json:"start_date"`
-	EndDate         string                               `json:"end_date"`
-	Book            string                               `json:"book"`
-	InitialBalance  float64                              `json:"initial_balance"`
-	Strategy        string                               `json:"strategy"`
-	Parameters      map[string]*optimizer.ParameterRange `json:"parameters"`
-	Metric          string                               `json:"metric"`
-	MaxWorkers      int                                  `json:"max_workers"`
-	TopN            int                                  `json:"top_n"`
-	SlippageModel   string                               `json:"slippage_model"`
-	SlippageValue   float64                              `json:"slippage_value"`
-	CommissionRate  float64                              `json:"commission_rate"`
+	Name           string                               `json:"name"`
+	Description    string                               `json:"description"`
+	StartDate      string                               `json:"start_date"`
+	EndDate        string                               `json:"end_date"`
+	Book           string                               `json:"book"`
+	InitialBalance float64                              `json:"initial_balance"`
+	Strategy       string                               `json:"strategy"`
+	Parameters     map[string]*optimizer.ParameterRange `json:"parameters"`
+	Metric         string                               `json:"metric"`
+	MaxWorkers     int                                  `json:"max_workers"`
+	TopN           int                                  `json:"top_n"`
+	SlippageModel  string                               `json:"slippage_model"`
+	SlippageValue  float64                              `json:"slippage_value"`
+	CommissionRate float64                              `json:"commission_rate"`
 }
 
 // CreateOptimization creates a new optimization
@@ -33,33 +33,33 @@ func (h *Handler) CreateOptimization(w http.ResponseWriter, r *http.Request) {
 		SendError(w, http.StatusBadRequest, "INVALID_REQUEST", "Invalid request body")
 		return
 	}
-	
+
 	// Parse dates
 	startDate, err := parseDate(req.StartDate)
 	if err != nil {
 		SendError(w, http.StatusBadRequest, "INVALID_DATE", "Invalid start_date format")
 		return
 	}
-	
+
 	endDate, err := parseDate(req.EndDate)
 	if err != nil {
 		SendError(w, http.StatusBadRequest, "INVALID_DATE", "Invalid end_date format")
 		return
 	}
-	
+
 	// Create base backtest config
 	baseConfig := models.NewBacktestConfig(req.Name, req.Book, startDate, endDate)
 	baseConfig.Description = req.Description
 	baseConfig.WithInitialBalance(req.InitialBalance)
 	baseConfig.WithStrategy(req.Strategy, make(map[string]interface{}))
-	
+
 	if req.SlippageModel != "" {
 		baseConfig.WithSlippage(req.SlippageModel, req.SlippageValue)
 	}
 	if req.CommissionRate > 0 {
 		baseConfig.WithCommission(req.CommissionRate)
 	}
-	
+
 	// Create optimization config
 	optConfig := &optimizer.OptimizationConfig{
 		Name:        req.Name,
@@ -70,14 +70,14 @@ func (h *Handler) CreateOptimization(w http.ResponseWriter, r *http.Request) {
 		MaxWorkers:  req.MaxWorkers,
 		TopN:        req.TopN,
 	}
-	
+
 	// Start optimization
 	opt, err := h.optimizer.Optimize(r.Context(), optConfig)
 	if err != nil {
 		SendError(w, http.StatusBadRequest, "OPTIMIZATION_FAILED", err.Error())
 		return
 	}
-	
+
 	// Return response
 	SendJSON(w, http.StatusCreated, map[string]interface{}{
 		"id":         opt.ID,
@@ -94,10 +94,10 @@ func (h *Handler) GetOptimization(w http.ResponseWriter, r *http.Request, optimi
 		SendError(w, http.StatusNotFound, "NOT_FOUND", fmt.Sprintf("Optimization not found: %s", optimizationID))
 		return
 	}
-	
+
 	// Return simplified view or full view based on query param
 	detailed := r.URL.Query().Get("detailed") == "true"
-	
+
 	if detailed {
 		SendSuccess(w, opt)
 	} else {
@@ -123,12 +123,12 @@ func (h *Handler) GetOptimizationResults(w http.ResponseWriter, r *http.Request,
 		SendError(w, http.StatusNotFound, "NOT_FOUND", fmt.Sprintf("Optimization not found: %s", optimizationID))
 		return
 	}
-	
+
 	if opt.Status != "completed" {
 		SendError(w, http.StatusBadRequest, "NOT_COMPLETED", "Optimization is not completed yet")
 		return
 	}
-	
+
 	SendSuccess(w, map[string]interface{}{
 		"results":     opt.Results,
 		"best_result": opt.BestResult,
@@ -143,12 +143,12 @@ func (h *Handler) GetOptimizationBest(w http.ResponseWriter, r *http.Request, op
 		SendError(w, http.StatusNotFound, "NOT_FOUND", fmt.Sprintf("Optimization not found: %s", optimizationID))
 		return
 	}
-	
+
 	if opt.BestResult == nil {
 		SendError(w, http.StatusNotFound, "NO_RESULTS", "No results available yet")
 		return
 	}
-	
+
 	SendSuccess(w, opt.BestResult)
 }
 
@@ -158,11 +158,10 @@ func (h *Handler) CancelOptimization(w http.ResponseWriter, r *http.Request, opt
 		SendError(w, http.StatusBadRequest, "CANCEL_FAILED", err.Error())
 		return
 	}
-	
+
 	SendSuccess(w, map[string]interface{}{
 		"id":      optimizationID,
 		"status":  "cancelled",
 		"message": "Optimization cancelled successfully",
 	})
 }
-

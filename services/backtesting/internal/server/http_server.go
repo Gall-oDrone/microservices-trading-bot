@@ -113,7 +113,7 @@ func (s *HTTPServer) registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/v1/backtests/", s.handler.HandleBacktestByID)
 	mux.HandleFunc("/api/v1/optimizations", s.handler.HandleOptimizations)
 	mux.HandleFunc("/api/v1/optimizations/", s.handler.HandleOptimizationByID)
-	
+
 	s.logger.Info("Routes registered", map[string]interface{}{
 		"endpoints": []string{
 			"GET /health",

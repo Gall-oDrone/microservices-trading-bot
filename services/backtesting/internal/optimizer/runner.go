@@ -26,7 +26,7 @@ func NewParallelRunner(
 	if maxWorkers <= 0 {
 		maxWorkers = 4
 	}
-	
+
 	return &ParallelRunner{
 		engine:     engine,
 		maxWorkers: maxWorkers,
@@ -43,12 +43,12 @@ func (r *ParallelRunner) RunAll(
 	if len(combinations) == 0 {
 		return []*OptimizationResult{}, nil
 	}
-	
+
 	// Create channels
 	jobs := make(chan *runJob, len(combinations))
 	results := make(chan *OptimizationResult, len(combinations))
 	errors := make(chan error, len(combinations))
-	
+
 	// Create jobs
 	for _, params := range combinations {
 		jobs <- &runJob{
@@ -57,25 +57,25 @@ func (r *ParallelRunner) RunAll(
 		}
 	}
 	close(jobs)
-	
+
 	// Start workers
 	var wg sync.WaitGroup
 	for i := 0; i < r.maxWorkers; i++ {
 		wg.Add(1)
 		go r.worker(ctx, opt, jobs, results, errors, &wg)
 	}
-	
+
 	// Wait for completion in separate goroutine
 	go func() {
 		wg.Wait()
 		close(results)
 		close(errors)
 	}()
-	
+
 	// Collect results
 	optResults := make([]*OptimizationResult, 0, len(combinations))
 	var lastErr error
-	
+
 	for {
 		select {
 		case result, ok := <-results:
@@ -87,7 +87,7 @@ func (r *ParallelRunner) RunAll(
 				return optResults, nil
 			}
 			optResults = append(optResults, result)
-			
+
 		case err, ok := <-errors:
 			if ok && err != nil {
 				lastErr = err
@@ -95,7 +95,7 @@ func (r *ParallelRunner) RunAll(
 					"error": err,
 				})
 			}
-			
+
 		case <-ctx.Done():
 			return nil, ctx.Err()
 		}
@@ -118,56 +118,56 @@ func (r *ParallelRunner) worker(
 	wg *sync.WaitGroup,
 ) {
 	defer wg.Done()
-	
+
 	for job := range jobs {
 		// Check if optimization was cancelled
 		opt.mu.RLock()
 		cancelled := opt.Status == "cancelled"
 		opt.mu.RUnlock()
-		
+
 		if cancelled {
 			return
 		}
-		
+
 		// Apply parameters to config
 		if err := applyParameters(job.config, job.parameters); err != nil {
 			errors <- fmt.Errorf("failed to apply parameters: %w", err)
 			continue
 		}
-		
+
 		// Run backtest
 		result, err := r.engine.Run(ctx, job.config)
 		if err != nil {
 			errors <- fmt.Errorf("backtest failed: %w", err)
-			
+
 			// Update progress even on error
 			opt.mu.Lock()
 			opt.CompletedRuns++
 			opt.Progress = float64(opt.CompletedRuns) / float64(opt.TotalRuns)
 			opt.mu.Unlock()
-			
+
 			continue
 		}
-		
+
 		// Create optimization result
 		optResult := &OptimizationResult{
 			Parameters: job.parameters,
 			Result:     result,
 			Score:      0.0, // Will be set by evaluator
 		}
-		
+
 		results <- optResult
-		
+
 		// Update progress
 		opt.mu.Lock()
 		opt.CompletedRuns++
 		opt.Progress = float64(opt.CompletedRuns) / float64(opt.TotalRuns)
 		opt.mu.Unlock()
-		
+
 		r.logger.Debug("Backtest completed", map[string]interface{}{
 			"optimization_id": opt.ID,
-			"progress":       opt.Progress,
-			"parameters":     job.parameters,
+			"progress":        opt.Progress,
+			"parameters":      job.parameters,
 		})
 	}
 }
@@ -178,7 +178,6 @@ func applyParameters(config *models.BacktestConfig, params map[string]interface{
 	for key, value := range params {
 		config.StrategyParams[key] = value
 	}
-	
+
 	return nil
 }
-
