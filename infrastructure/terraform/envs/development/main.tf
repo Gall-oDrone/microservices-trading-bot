@@ -236,6 +236,31 @@ module "ci_github_oidc" {
   ]
 }
 
+resource "helm_release" "kube_prometheus_stack" {
+  name       = "kube-prometheus-stack"
+  repository = "https://prometheus-community.github.io/helm-charts"
+  chart      = "kube-prometheus-stack"
+  namespace  = "monitoring"
+  version    = "58.3.2"
+
+  create_namespace = true
+
+  values = [
+    yamlencode({
+      grafana = {
+        adminPassword = "admin"
+        service = { type = "ClusterIP" }
+      }
+      prometheus = {
+        service = { type = "ClusterIP" }
+      }
+      alertmanager = {
+        enabled = false
+      }
+    })
+  ]
+}
+
 output "cluster_name" { value = module.eks.cluster_name }
 output "cluster_endpoint" { value = module.eks.cluster_endpoint }
 output "ci_role_arn" { value = module.ci_github_oidc.role_arn }
