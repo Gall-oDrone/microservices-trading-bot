@@ -1,3 +1,60 @@
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# VSCode
+.vscode/
+
+# JetBrains
+.idea/
+
+# Go
+bin/
+coverage.out
+*.test
+
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.*
+crash.log
+crash.*.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+terraform.tfvars
+terraform.tfvars.json
+# Keep provider lock files committed
+!**/.terraform.lock.hcl
+
+# Node/JS (tools, tests)
+node_modules/
+dist/
+build/
+
+# Python (tools, tests)
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Logs
+*.log
+logs/
+
+# Docker artifacts
+.docker/
+
+# Editor backups
+*~
+*.swp
+*.swo
+
+# Local env files
+.env
+.env.*
+
 data_server/.env
 consumer-logger/.env
 bitso/bitso-variables.env
