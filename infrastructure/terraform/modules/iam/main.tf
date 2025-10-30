@@ -8,6 +8,11 @@ provider "aws" {
 
 locals {
   irsa_map = var.irsa_policies
+  policy_attachments = {
+    for pair in flatten([
+      for role, arns in var.irsa_policies : [for arn in arns : { role = role, arn = arn }]
+    ]) : "${pair.role}|${pair.arn}" => pair
+  }
 }
 
 resource "aws_iam_role" "irsa" {
@@ -37,9 +42,9 @@ data "aws_iam_policy_document" "irsa" {
 }
 
 resource "aws_iam_role_policy_attachment" "attach" {
-  for_each   = local.irsa_map
-  role       = aws_iam_role.irsa[each.key].name
-  policy_arn = each.value
+  for_each   = local.policy_attachments
+  role       = aws_iam_role.irsa[each.value.role].name
+  policy_arn = each.value.arn
 }
 
 output "irsa_role_arns" {

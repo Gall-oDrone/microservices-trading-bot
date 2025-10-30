@@ -45,9 +45,13 @@ module "iam_irsa" {
   oidc_provider_arn = module.eks.oidc_provider_arn
 
   irsa_policies = {
-    external-dns = "arn:aws:iam::aws:policy/AmazonRoute53FullAccess"
-    alb          = "arn:aws:iam::aws:policy/ElasticLoadBalancingFullAccess"
-    cert-manager = "arn:aws:iam::aws:policy/AmazonRoute53FullAccess"
+    external-dns   = ["arn:aws:iam::aws:policy/AmazonRoute53FullAccess"]
+    alb            = ["arn:aws:iam::aws:policy/ElasticLoadBalancingFullAccess"]
+    cert-manager   = ["arn:aws:iam::aws:policy/AmazonRoute53FullAccess"]
+    external-secrets = [
+      "arn:aws:iam::aws:policy/SecretsManagerReadWrite",
+      "arn:aws:iam::aws:policy/AmazonSSMReadOnlyAccess"
+    ]
   }
 }
 
@@ -171,6 +175,26 @@ resource "helm_release" "cert_manager" {
   set {
     name  = "serviceAccount.annotations.eks\.amazonaws\.com/role-arn"
     value = module.iam_irsa.irsa_role_arns["cert-manager"]
+  }
+}
+
+resource "helm_release" "external_secrets" {
+  name       = "external-secrets"
+  repository = "https://charts.external-secrets.io"
+  chart      = "external-secrets"
+  namespace  = "external-secrets"
+  version    = "0.9.14"
+
+  create_namespace = true
+
+  set {
+    name  = "serviceAccount.create"
+    value = true
+  }
+
+  set {
+    name  = "serviceAccount.annotations.eks\.amazonaws\.com/role-arn"
+    value = module.iam_irsa.irsa_role_arns["external-secrets"]
   }
 }
 
