@@ -40,6 +40,13 @@ Phase 5 – Hardening & Observability
 - Prometheus/Grafana or AMP/AMG integration; ALB and autoscaling dashboards.
 - Backup/restore strategy for any stateful data plane components.
 
+Implemented
+- kube-prometheus-stack (Prometheus + Grafana) via Helm in `monitoring` namespace.
+  - Grafana/Prometheus as ClusterIP for internal access only (can expose via Ingress later).
+Next
+- Enforce baseline NetworkPolicies (already present in `security/network-policies/`).
+- Consider PodSecurity admission standards (baseline/restricted) at namespace level.
+
 Phase 6 – Promote to Staging/Prod
 - Replicate env with right sizing, QoS, quotas.
 - Gradual rollout (blue/green, canary) using Ingress or Argo Rollouts (optional).
