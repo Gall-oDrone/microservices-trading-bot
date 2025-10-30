@@ -47,6 +47,7 @@ module "iam_irsa" {
   irsa_policies = {
     external-dns = "arn:aws:iam::aws:policy/AmazonRoute53FullAccess"
     alb          = "arn:aws:iam::aws:policy/ElasticLoadBalancingFullAccess"
+    cert-manager = "arn:aws:iam::aws:policy/AmazonRoute53FullAccess"
   }
 }
 
@@ -107,6 +108,69 @@ resource "helm_release" "aws_load_balancer_controller" {
   set {
     name  = "serviceAccount.annotations.eks\.amazonaws\.com/role-arn"
     value = module.iam_irsa.irsa_role_arns["alb"]
+  }
+}
+
+resource "helm_release" "external_dns" {
+  name       = "external-dns"
+  repository = "https://kubernetes-sigs.github.io/external-dns/"
+  chart      = "external-dns"
+  namespace  = "kube-system"
+  version    = "1.15.0"
+
+  set {
+    name  = "provider"
+    value = "aws"
+  }
+
+  set {
+    name  = "policy"
+    value = "upsert-only"
+  }
+
+  set {
+    name  = "registry"
+    value = "txt"
+  }
+
+  set {
+    name  = "txtOwnerId"
+    value = local.name
+  }
+
+  set {
+    name  = "serviceAccount.create"
+    value = true
+  }
+
+  set {
+    name  = "serviceAccount.annotations.eks\.amazonaws\.com/role-arn"
+    value = module.iam_irsa.irsa_role_arns["external-dns"]
+  }
+}
+
+resource "helm_release" "cert_manager" {
+  name       = "cert-manager"
+  repository = "https://charts.jetstack.io"
+  chart      = "cert-manager"
+  namespace  = "cert-manager"
+  version    = "v1.15.1"
+
+  create_namespace = true
+
+  set {
+    name  = "installCRDs"
+    value = true
+  }
+
+  set {
+    name  = "serviceAccount.create"
+    value = true
+  }
+
+  set {
+    name  = "serviceAccount.annotations.eks\.amazonaws\.com/role-arn"
+    value = module.iam_irsa.irsa_role_arns["cert-manager"]
   }
 }
 
