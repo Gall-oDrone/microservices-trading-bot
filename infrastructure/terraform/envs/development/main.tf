@@ -36,6 +36,32 @@ module "ecr" {
   repositories = var.repos
 }
 
+module "msk" {
+  source = "../modules/msk"
+  count  = var.enable_msk ? 1 : 0
+
+  region                 = var.aws_region
+  cluster_name           = "${local.name}-msk"
+  vpc_id                 = module.vpc.vpc_id
+  subnet_ids             = module.vpc.private_subnet_ids
+  kafka_version          = "3.6.0"
+  broker_instance_type   = "kafka.m5.large"
+  number_of_broker_nodes = 2
+}
+
+module "redis" {
+  source = "../modules/redis"
+  count  = var.enable_redis ? 1 : 0
+
+  region          = var.aws_region
+  name            = "${local.name}-redis"
+  vpc_id          = module.vpc.vpc_id
+  subnet_ids      = module.vpc.private_subnet_ids
+  node_type       = "cache.t3.micro"
+  num_cache_clusters = 1
+  engine_version  = "7.1"
+}
+
 module "iam_irsa" {
   source = "../modules/iam"
 

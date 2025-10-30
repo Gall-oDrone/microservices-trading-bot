@@ -10,3 +10,6 @@ variable "public_subnets" { type = list(string)  default = ["10.0.101.0/24","10.
 variable "repos" { type = list(string)  default = [
   "api-gateway","market-data","order-management","strategy-executor","trading-engine","backtesting"
 ] }
+
+variable "enable_msk" { type = bool  default = false }
+variable "enable_redis" { type = bool  default = false }
