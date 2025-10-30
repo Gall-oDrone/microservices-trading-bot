@@ -16,6 +16,7 @@ on:
 
 env:
   KUBE_NAMESPACE: 'bitso-trading-platform'
+  AWS_REGION: us-east-1
 
 jobs:
   deploy-staging:
@@ -27,16 +28,18 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
 
-    - name: Configure AWS credentials
+    - name: Configure AWS credentials (OIDC)
+      permissions:
+        id-token: write
+        contents: read
       uses: aws-actions/configure-aws-credentials@v4
       with:
-        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-        aws-region: us-west-2
+        role-to-assume: ${{ secrets.AWS_GITHUB_ACTIONS_ROLE_ARN }}
+        aws-region: ${{ env.AWS_REGION }}
 
     - name: Update kubeconfig
       run: |
-        aws eks update-kubeconfig --region us-west-2 --name bitso-trading-staging
+        aws eks update-kubeconfig --region ${{ env.AWS_REGION }} --name ${{ secrets.EKS_CLUSTER_NAME_STAGING }}
 
     - name: Deploy to staging
       run: |
@@ -66,16 +69,18 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
 
-    - name: Configure AWS credentials
+    - name: Configure AWS credentials (OIDC)
+      permissions:
+        id-token: write
+        contents: read
       uses: aws-actions/configure-aws-credentials@v4
       with:
-        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-        aws-region: us-west-2
+        role-to-assume: ${{ secrets.AWS_GITHUB_ACTIONS_ROLE_ARN }}
+        aws-region: ${{ env.AWS_REGION }}
 
     - name: Update kubeconfig
       run: |
-        aws eks update-kubeconfig --region us-west-2 --name bitso-trading-production
+        aws eks update-kubeconfig --region ${{ env.AWS_REGION }} --name ${{ secrets.EKS_CLUSTER_NAME_PRODUCTION }}
 
     - name: Deploy to production
       run: |
