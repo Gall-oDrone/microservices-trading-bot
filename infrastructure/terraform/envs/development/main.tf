@@ -76,5 +76,39 @@ resource "helm_release" "metrics_server" {
   version    = "3.12.2"
 }
 
+resource "helm_release" "aws_load_balancer_controller" {
+  name       = "aws-load-balancer-controller"
+  repository = "https://aws.github.io/eks-charts"
+  chart      = "aws-load-balancer-controller"
+  namespace  = "kube-system"
+  version    = "1.8.2"
+
+  set {
+    name  = "clusterName"
+    value = module.eks.cluster_name
+  }
+
+  set {
+    name  = "region"
+    value = var.aws_region
+  }
+
+  set {
+    name  = "vpcId"
+    value = module.vpc.vpc_id
+  }
+
+  # Use IRSA role created above
+  set {
+    name  = "serviceAccount.create"
+    value = true
+  }
+
+  set {
+    name  = "serviceAccount.annotations.eks\.amazonaws\.com/role-arn"
+    value = module.iam_irsa.irsa_role_arns["alb"]
+  }
+}
+
 output "cluster_name" { value = module.eks.cluster_name }
 output "cluster_endpoint" { value = module.eks.cluster_endpoint }
