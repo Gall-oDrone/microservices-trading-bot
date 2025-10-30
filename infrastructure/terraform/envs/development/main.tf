@@ -224,5 +224,18 @@ resource "helm_release" "external_secrets" {
   }
 }
 
+module "ci_github_oidc" {
+  source = "../modules/github-oidc"
+
+  region     = var.aws_region
+  repo       = var.github_repo
+  role_name  = "${local.name}-github-actions"
+  permissions = [
+    "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryPowerUser",
+    "arn:aws:iam::aws:policy/AmazonEKSClusterPolicy"
+  ]
+}
+
 output "cluster_name" { value = module.eks.cluster_name }
 output "cluster_endpoint" { value = module.eks.cluster_endpoint }
+output "ci_role_arn" { value = module.ci_github_oidc.role_arn }

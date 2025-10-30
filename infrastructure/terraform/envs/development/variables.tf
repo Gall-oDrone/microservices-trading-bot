@@ -13,3 +13,5 @@ variable "repos" { type = list(string)  default = [
 
 variable "enable_msk" { type = bool  default = false }
 variable "enable_redis" { type = bool  default = false }
+
+variable "github_repo" { type = string  default = "Gall-oDrone/microservices-trading-bot" }
