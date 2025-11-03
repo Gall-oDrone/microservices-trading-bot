@@ -779,6 +779,7 @@ Resources:
     Type: AWS::EC2::Instance
     DependsOn:
       - TradingBotIdeInstanceProfile
+      - GatewayAttachment
     Properties:
       ImageId: !Ref AmiParameterStoreName
       InstanceType: t3.medium
@@ -803,6 +804,8 @@ Resources:
           #!/bin/bash
           sleep 30
           echo "Instance ready for SSM commands" > /tmp/instance-ready
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
   TradingBotIdePassword:
     Type: AWS::SecretsManager::Secret
     Properties:
