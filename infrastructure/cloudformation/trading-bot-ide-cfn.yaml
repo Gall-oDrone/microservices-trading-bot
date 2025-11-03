@@ -1,0 +1,880 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Creates a code-server IDE for Microservices Trading Bot with EKS development environment
+Parameters:
+  InstanceVolumeSize:
+    Type: Number
+    Description: The Size in GB of the Cloud9 Instance Volume.
+    Default: 50
+  RepositoryOwner:
+    Type: String
+    Description: The owner of the GitHub repository to be used to bootstrap the IDE
+    Default: "Gall-oDrone"
+  RepositoryName:
+    Type: String
+    Description: The name of the GitHub repository to be used to bootstrap the IDE
+    Default: "microservices-trading-bot"
+  RepositoryRef:
+    Type: String
+    Description: The Git reference to be used to bootstrap the IDE
+    Default: "main"
+  ResourcesPrecreated:
+    Type: String
+    Description: Whether lab infrastructure has been pre-provisioned
+    Default: "false"
+    AllowedValues:
+      - "false"
+      - "true"
+  AnalyticsEndpoint:
+    Type: String
+    Description: Analytics endpoint used for AWS events
+    Default: ""
+  CodeServerVersion:
+    Type: String
+    Description: Default code-server version to use
+    Default: "4.91.1"
+  AmiParameterStoreName:
+    Type: "AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>"
+    Default: "/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-6.1-x86_64"
+  Environment:
+    Type: String
+    Description: For testing purposes only
+    Default: ""
+  EksClusterId:
+    Type: String
+    Description: Project ID for resource tagging
+    Default: "microservices-trading-bot"
+  AwsRegion:
+    Type: String
+    Description: AWS Region for the IDE
+    Default: "us-east-1"
+Conditions:
+  IsKnownRegion: !Not
+    - !Equals
+      - !FindInMap [PrefixListID, !Ref "AWS::Region", PrefixList]
+      - ""
+Mappings:
+  PrefixListID:
+    # US Regions
+    us-east-1:
+      PrefixList: pl-3b927c52
+    us-east-2:
+      PrefixList: pl-b6a144df
+    us-west-1:
+      PrefixList: pl-4ea04527
+    us-west-2:
+      PrefixList: pl-82a045eb
+    # Europe Regions
+    eu-central-1:
+      PrefixList: pl-a3a144ca
+    eu-north-1:
+      PrefixList: pl-fab65393
+    eu-west-1:
+      PrefixList: pl-4fa04526
+    eu-west-2:
+      PrefixList: pl-93a247fa
+    eu-west-3:
+      PrefixList: pl-75b1541c
+    eu-south-1:
+      PrefixList: pl-1bfc5972
+    eu-south-2:
+      PrefixList: pl-01c1b570
+    eu-central-2:
+      PrefixList: pl-04ca1465
+    # Asia Pacific Regions
+    ap-northeast-1:
+      PrefixList: pl-58a04531
+    ap-northeast-2:
+      PrefixList: pl-22a6434b
+    ap-northeast-3:
+      PrefixList: pl-31a14658
+    ap-south-1:
+      PrefixList: pl-9aa247f3
+    ap-south-2:
+      PrefixList: pl-0ab16164
+    ap-southeast-1:
+      PrefixList: pl-31a34658
+    ap-southeast-2:
+      PrefixList: pl-b8a742d1
+    ap-southeast-3:
+      PrefixList: pl-05a2436e
+    ap-southeast-4:
+      PrefixList: pl-09a56470
+    ap-east-1:
+      PrefixList: pl-14b2577d
+    # Canada
+    ca-central-1:
+      PrefixList: pl-38a64351
+    ca-west-1:
+      PrefixList: pl-0ea16166
+    # South America
+    sa-east-1:
+      PrefixList: pl-5da64334
+    # Middle East
+    me-south-1:
+      PrefixList: pl-0ca54761
+    me-central-1:
+      PrefixList: pl-05c1b377
+    # Africa
+    af-south-1:
+      PrefixList: pl-0ab06164
+    # Israel
+    il-central-1:
+      PrefixList: pl-0fa54b66
+    # Default for unknown regions (empty string will be handled by condition)
+    default:
+      PrefixList: ""
+Resources:
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.0.0.0/24
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+  GatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref VPC
+      InternetGatewayId: !Ref InternetGateway
+  PublicSubnet:
+    Type: AWS::EC2::Subnet
+    Properties:
+      CidrBlock: 10.0.0.0/24
+      VpcId: !Ref VPC
+      MapPublicIpOnLaunch: true
+      AvailabilityZone: !Select [0, !GetAZs ""]
+  PublicSubnetRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+  PublicSubnetRoute:
+    Type: AWS::EC2::Route
+    DependsOn: GatewayAttachment
+    Properties:
+      RouteTableId: !Ref PublicSubnetRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+  PublicSubnetRouteTableAssoc:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PublicSubnetRouteTable
+      SubnetId: !Ref PublicSubnet
+  SecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: SG for IDE
+      SecurityGroupIngress:
+        - Description: Allow HTTP from CloudFront
+          IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          SourcePrefixListId: !If
+            - IsKnownRegion
+            - !FindInMap [PrefixListID, !Ref "AWS::Region", PrefixList]
+            - !FindInMap [PrefixListID, "us-east-1", PrefixList]  # Fallback to us-east-1
+      SecurityGroupEgress:
+        - Description: Allow all outbound traffic
+          IpProtocol: -1
+          CidrIp: 0.0.0.0/0
+      VpcId: !Ref VPC
+  TradingBotIdeLambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Path: "/"
+      Policies:
+        - PolicyName:
+            Fn::Join:
+              - ""
+              - - TradingBotIdeLambdaPolicy-
+                - Ref: AWS::Region
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: arn:aws:logs:*:*:*
+              - Effect: Allow
+                Action:
+                  - iam:PassRole
+                  - ssm:SendCommand
+                  - ssm:GetCommandInvocation
+                  - ssm:ListCommandInvocations
+                Resource: "*"
+  TradingBotIdeBootstrapInstanceLambda:
+    Type: Custom::TradingBotIdeBootstrapInstanceLambda
+    DependsOn:
+      - TradingBotIdeLambdaExecutionRole
+      - TradingBotIdeInstance
+      - TradingBotIdeSSMDocument
+      - TradingBotIdePassword
+      - TradingBotIdeCloudFrontDistribution
+    Properties:
+      ServiceToken:
+        Fn::GetAtt:
+          - TradingBotIdeBootstrapInstanceLambdaFunction
+          - Arn
+      REGION:
+        Ref: AWS::Region
+      InstanceId:
+        Ref: TradingBotIdeInstance
+      SsmDocument:
+        Ref: TradingBotIdeSSMDocument
+  TradingBotIdeBootstrapInstanceLambdaFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      Handler: index.lambda_handler
+      Role:
+        Fn::GetAtt:
+          - TradingBotIdeLambdaExecutionRole
+          - Arn
+      Runtime: python3.12
+      Environment:
+        Variables:
+          DiskSize:
+            Ref: InstanceVolumeSize
+      MemorySize: 256
+      Timeout: "900"
+      Code:
+        ZipFile: |
+          from __future__ import print_function
+          import boto3
+          import json
+          import os
+          import time
+          import traceback
+          import cfnresponse
+          import logging
+          logger = logging.getLogger(__name__)
+
+          def lambda_handler(event, context):
+              print(event.values())
+              print('context: {}'.format(context))
+              responseData = {}
+
+              status = cfnresponse.SUCCESS
+              
+              if event['RequestType'] == 'Delete':
+                  responseData = {'Success': 'Custom Resource removed'}
+                  cfnresponse.send(event, context, status, responseData, 'CustomResourcePhysicalID')              
+              else:
+                  try:
+                      # Open AWS clients
+                      ssm = boto3.client('ssm')
+
+                      instance_id = event['ResourceProperties']['InstanceId']
+                      ssm_document = event['ResourceProperties']['SsmDocument']
+
+                      print('Waiting for instance to be ready...')
+                      time.sleep(30)  # Give instance time to fully initialize
+                      
+                      print('Sending SSM command...')
+                      
+                      # Retry logic for sending command
+                      max_retries = 3
+                      for attempt in range(max_retries):
+                          try:
+                              response = ssm.send_command(
+                                InstanceIds=[instance_id],
+                                DocumentName=ssm_document,
+                                TimeoutSeconds=1800)  # 30 minute timeout for command execution
+                              
+                              command_id = response['Command']['CommandId']
+                              print(f'Command sent successfully: {command_id}')
+                              break
+                          except Exception as e:
+                              if attempt < max_retries - 1:
+                                  print(f'Attempt {attempt + 1} failed, retrying...')
+                                  time.sleep(10)
+                              else:
+                                  raise e
+
+                      waiter = ssm.get_waiter('command_executed')
+
+                      waiter.wait(
+                        CommandId=command_id,
+                        InstanceId=instance_id,
+                        WaiterConfig={
+                          'Delay': 10,
+                          'MaxAttempts': 90  # Increased from 60 to handle longer bootstrap
+                        }
+                      )
+                      
+                      # Check command execution status
+                      result = ssm.get_command_invocation(
+                          CommandId=command_id,
+                          InstanceId=instance_id
+                      )
+                      
+                      if result['Status'] != 'Success':
+                          print(f"Command failed with status: {result['Status']}")
+                          print(f"Error output: {result.get('StandardErrorContent', 'No error output')}")
+                          raise Exception(f"SSM command failed with status: {result['Status']}")
+
+                      responseData = {'Success': 'Started bootstrapping for instance: '+instance_id}
+                      cfnresponse.send(event, context, status, responseData, 'CustomResourcePhysicalID')
+                      
+                  except Exception as e:
+                      status = cfnresponse.FAILED
+                      print(traceback.format_exc())
+                      responseData = {'Error': str(e)}
+                  finally:
+                      cfnresponse.send(event, context, status, responseData, 'CustomResourcePhysicalID')
+  TradingBotIdeSSMDocument:
+    Type: AWS::SSM::Document
+    Properties:
+      DocumentType: Command
+      DocumentFormat: YAML
+      Content:
+        schemaVersion: "2.2"
+        description: Bootstrap Trading Bot IDE Instance
+        mainSteps:
+          - action: aws:runShellScript
+            name: TradingBotIdeBootstrap
+            inputs:
+              timeoutSeconds: 1800
+              runCommand:
+                - !Sub |
+                  #!/bin/bash
+                  set -e
+                  
+                  # Error handling function
+                  error_exit() {
+                      echo "Error on line $1"
+                      exit 1
+                  }
+                  trap 'error_exit $LINENO' ERR
+
+                  echo "Starting bootstrap process..."
+                  
+                  # Install packages with retry logic
+                  install_packages() {
+                      local max_attempts=3
+                      local attempt=1
+                      while [ $attempt -le $max_attempts ]; do
+                          echo "Attempt $attempt to install packages..."
+                          if yum install -y git tar gzip vim nodejs npm make gcc g++ argon2 curl jq unzip zip; then
+                              echo "Package installation successful"
+                              return 0
+                          fi
+                          echo "Package installation failed, retrying..."
+                          sleep 5
+                          attempt=$((attempt + 1))
+                      done
+                      return 1
+                  }
+                  
+                  install_packages || error_exit $LINENO
+
+                  # Install AWS CLI v2
+                  echo "Installing AWS CLI v2..."
+                  max_attempts=3
+                  attempt=1
+                  while [ $attempt -le $max_attempts ]; do
+                      if curl -s "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"; then
+                          unzip -q awscliv2.zip
+                          sudo ./aws/install
+                          rm -rf awscliv2.zip aws
+                          # Verify installation
+                          if aws --version; then
+                              echo "AWS CLI v2 installed successfully"
+                              break
+                          fi
+                      fi
+                      echo "AWS CLI installation attempt $attempt failed, retrying..."
+                      sleep 5
+                      attempt=$((attempt + 1))
+                  done
+
+                  # Install AWS Course CLI
+                  echo "Installing AWS Course CLI..."
+                  max_attempts=3
+                  attempt=1
+                  while [ $attempt -le $max_attempts ]; do
+                      if npm install -g aws-course-cli; then
+                          if aws-course --version; then
+                              echo "AWS Course CLI installed successfully"
+                              break
+                          fi
+                      fi
+                      echo "AWS Course CLI installation attempt $attempt failed, retrying..."
+                      sleep 5
+                      attempt=$((attempt + 1))
+                  done
+
+                  # Install Session Manager Plugin for Amazon Linux 2023
+                  echo "Installing Session Manager Plugin..."
+                  max_attempts=3
+                  attempt=1
+                  while [ $attempt -le $max_attempts ]; do
+                      if curl -o /tmp/session-manager-plugin.rpm "https://s3.amazonaws.com/session-manager-downloads/plugin/latest/linux_64bit/session-manager-plugin.rpm"; then
+                          if sudo yum install -y /tmp/session-manager-plugin.rpm; then
+                              if session-manager-plugin --version; then
+                                  echo "Session Manager Plugin installed successfully"
+                                  rm -f /tmp/session-manager-plugin.rpm
+                                  break
+                              fi
+                          fi
+                      fi
+                      echo "Session Manager Plugin installation attempt $attempt failed, retrying..."
+                      sleep 5
+                      attempt=$((attempt + 1))
+                  done
+                
+                  # Verify SSM Agent is installed and running (should be pre-installed on AL2023)
+                  echo "Checking SSM Agent status..."
+                  if systemctl is-active amazon-ssm-agent; then
+                      echo "SSM Agent is running"
+                  else
+                      echo "Starting SSM Agent..."
+                      sudo systemctl enable amazon-ssm-agent
+                      sudo systemctl start amazon-ssm-agent
+                  fi
+
+                  # Install Docker with retry
+                  echo "Installing Docker..."
+                  max_attempts=3
+                  attempt=1
+                  while [ $attempt -le $max_attempts ]; do
+                      if dnf install docker -y; then
+                          break
+                      fi
+                      sleep 5
+                      attempt=$((attempt + 1))
+                  done
+                  
+                  systemctl enable docker
+                  systemctl start docker
+                  usermod -a -G docker ec2-user
+
+                  # Install Docker Compose
+                  echo "Installing Docker Compose..."
+                  max_attempts=3
+                  attempt=1
+                  while [ $attempt -le $max_attempts ]; do
+                      if sudo curl -L "https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -m)" \
+                          -o /usr/local/bin/docker-compose; then
+                          sudo chmod +x /usr/local/bin/docker-compose
+                          if docker-compose version; then
+                              echo "Docker Compose installed successfully"
+                              break
+                          fi
+                      fi
+                      echo "Docker Compose installation attempt $attempt failed, retrying..."
+                      sleep 5
+                      attempt=$((attempt + 1))
+                  done
+
+                  # Install Terraform
+                  echo "Installing Terraform..."
+                  TERRAFORM_VERSION="1.9.8"
+                  max_attempts=3
+                  attempt=1
+                  while [ $attempt -le $max_attempts ]; do
+                      if curl -LO "https://releases.hashicorp.com/terraform/${!TERRAFORM_VERSION}/terraform_${!TERRAFORM_VERSION}_linux_amd64.zip"; then
+                          unzip -o terraform_${!TERRAFORM_VERSION}_linux_amd64.zip
+                          sudo mv terraform /usr/local/bin/
+                          rm -f terraform_${!TERRAFORM_VERSION}_linux_amd64.zip
+                          sudo chmod +x /usr/local/bin/terraform
+                          if terraform version; then
+                              echo "Terraform ${!TERRAFORM_VERSION} installed successfully"
+                              break
+                          fi
+                      fi
+                      echo "Terraform installation attempt $attempt failed, retrying..."
+                      sleep 5
+                      attempt=$((attempt + 1))
+                  done
+
+                  # Install kubectl
+                  echo "Installing kubectl..."
+                  max_attempts=3
+                  attempt=1
+                  while [ $attempt -le $max_attempts ]; do
+                      KUBECTL_VERSION=$(curl -L -s https://dl.k8s.io/release/stable.txt)
+                      if curl -LO "https://dl.k8s.io/release/${!KUBECTL_VERSION}/bin/linux/amd64/kubectl"; then
+                          if curl -LO "https://dl.k8s.io/release/${!KUBECTL_VERSION}/bin/linux/amd64/kubectl.sha256"; then
+                              if echo "$(cat kubectl.sha256)  kubectl" | sha256sum --check; then
+                                  sudo install -o root -g root -m 0755 kubectl /usr/local/bin/kubectl
+                                  rm -f kubectl kubectl.sha256
+                                  if kubectl version --client; then
+                                      echo "kubectl ${!KUBECTL_VERSION} installed successfully"
+                                      break
+                                  fi
+                              else
+                                  echo "kubectl checksum verification failed"
+                              fi
+                          fi
+                      fi
+                      echo "kubectl installation attempt $attempt failed, retrying..."
+                      rm -f kubectl kubectl.sha256
+                      sleep 5
+                      attempt=$((attempt + 1))
+                  done
+
+                  # Install Helm
+                  echo "Installing Helm..."
+                  max_attempts=3
+                  attempt=1
+                  while [ $attempt -le $max_attempts ]; do
+                      if curl -fsSL -o get_helm.sh https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3; then
+                          chmod 700 get_helm.sh
+                          if ./get_helm.sh; then
+                              rm -f get_helm.sh
+                              if helm version; then
+                                  echo "Helm installed successfully"
+                                  break
+                              fi
+                          fi
+                      fi
+                      echo "Helm installation attempt $attempt failed, retrying..."
+                      rm -f get_helm.sh
+                      sleep 5
+                      attempt=$((attempt + 1))
+                  done
+
+                  # Install eksctl
+                  echo "Installing eksctl..."
+                  max_attempts=3
+                  attempt=1
+                  while [ $attempt -le $max_attempts ]; do
+                      ARCH=amd64
+                      PLATFORM=$(uname -s)_$ARCH
+                      if curl -sLO "https://github.com/eksctl-io/eksctl/releases/latest/download/eksctl_$PLATFORM.tar.gz"; then
+                          tar -xzf eksctl_$PLATFORM.tar.gz -C /tmp
+                          sudo mv /tmp/eksctl /usr/local/bin
+                          rm -f eksctl_$PLATFORM.tar.gz
+                          if eksctl version; then
+                              echo "eksctl installed successfully"
+                              break
+                          fi
+                      fi
+                      echo "eksctl installation attempt $attempt failed, retrying..."
+                      sleep 5
+                      attempt=$((attempt + 1))
+                  done
+
+                  # Install Go (for microservices development)
+                  echo "Installing Go..."
+                  max_attempts=3
+                  attempt=1
+                  while [ $attempt -le $max_attempts ]; do
+                      GO_VERSION="1.23.4"
+                      if curl -LO "https://go.dev/dl/go${!GO_VERSION}.linux-amd64.tar.gz"; then
+                          sudo rm -rf /usr/local/go
+                          sudo tar -C /usr/local -xzf go${!GO_VERSION}.linux-amd64.tar.gz
+                          rm -f go${!GO_VERSION}.linux-amd64.tar.gz
+                          if /usr/local/go/bin/go version; then
+                              echo "Go ${!GO_VERSION} installed successfully"
+                              break
+                          fi
+                      fi
+                      echo "Go installation attempt $attempt failed, retrying..."
+                      sleep 5
+                      attempt=$((attempt + 1))
+                  done
+
+                  export environment="${Environment}"
+
+                  # Install Caddy
+                  echo "Installing Caddy..."
+                  dnf copr enable -y @caddy/caddy epel-9-x86_64 || error_exit $LINENO
+                  dnf install -y caddy || error_exit $LINENO
+                  systemctl enable --now caddy
+
+                  # Configure Caddy - wait for CloudFront to be available
+                  echo "Configuring Caddy..."
+                  tee /etc/caddy/Caddyfile <<EOF
+                  http://${TradingBotIdeCloudFrontDistribution.DomainName} {
+                    reverse_proxy 127.0.0.1:8889
+                  }
+                  EOF
+
+                  systemctl restart caddy
+
+                  # Setup custom prompt
+                  tee /etc/profile.d/custom_prompt.sh <<EOF
+                  #!/bin/sh
+                  export PROMPT_COMMAND='export PS1="\u:\w:$ "'
+                  EOF
+
+                  # Export environment variables
+                  export AWS_REGION="${AWS::Region}"
+                  export REPOSITORY_OWNER="${RepositoryOwner}"
+                  export REPOSITORY_NAME="${RepositoryName}"
+                  export REPOSITORY_REF="${RepositoryRef}"
+                  export RESOURCES_PRECREATED="${ResourcesPrecreated}"
+                  export ANALYTICS_ENDPOINT="${AnalyticsEndpoint}"
+
+                  # Setup user environment
+                  echo "Setting up user environment..."
+                  cat <<"EOT" | sudo -E -H -u ec2-user bash
+                  set -e
+                  
+                  # Error handling for user script
+                  error_exit() {
+                      echo "User script error on line $1"
+                      exit 1
+                  }
+                  trap 'error_exit $LINENO' ERR
+
+                  # Add Go to PATH
+                  echo 'export PATH=$PATH:/usr/local/go/bin' >> ~/.bashrc
+                  echo 'export PATH=$PATH:~/go/bin' >> ~/.bashrc
+
+                  mkdir -p ~/environment
+
+                  # Install code-server if not already installed
+                  codeServer=$(dnf list installed code-server 2>/dev/null | wc -l)
+                  if [ "$codeServer" -eq "0" ]; then
+                      echo "Installing code-server..."
+                      curl -Ls -o /tmp/coder.rpm https://github.com/coder/code-server/releases/download/v${CodeServerVersion}/code-server-${CodeServerVersion}-amd64.rpm || {
+                          echo "Specific version failed, trying latest..."
+                          curl -Ls -o /tmp/coder.rpm https://github.com/coder/code-server/releases/latest/download/code-server-amd64.rpm
+                      }
+                      sudo rpm -U "/tmp/coder.rpm"
+                      sudo systemctl enable --now code-server@ec2-user
+                  fi
+
+                  # Retrieve password with retry logic
+                  echo "Retrieving password from Secrets Manager..."
+                  max_attempts=5
+                  attempt=1
+                  while [ $attempt -le $max_attempts ]; do
+                      PASSWORD_SECRET_VALUE=$(aws secretsmanager get-secret-value --secret-id "${TradingBotIdePassword.Id}" --query 'SecretString' --output text 2>/dev/null) && break
+                      echo "Attempt $attempt failed, retrying..."
+                      sleep 5
+                      attempt=$((attempt + 1))
+                  done
+                  
+                  if [ -z "$PASSWORD_SECRET_VALUE" ]; then
+                      echo "Failed to retrieve password from Secrets Manager"
+                      exit 1
+                  fi
+                  
+                  IDE_PASSWORD=$(echo "$PASSWORD_SECRET_VALUE" | jq -r '.password')
+                  HASHED_PASSWORD=$(echo -n "$IDE_PASSWORD" | argon2 saltItWithSalt -l 32 -e)
+
+                  # Configure code-server
+                  mkdir -p ~/.config/code-server
+                  touch ~/.config/code-server/config.yaml
+                  tee ~/.config/code-server/config.yaml <<EOF
+                  cert: false
+                  auth: password
+                  hashed-password: "$HASHED_PASSWORD"
+                  bind-addr: 127.0.0.1:8889
+                  EOF
+
+                  # Clone repository in user environment
+                  echo "Cloning Microservices Trading Bot repository..."
+                  cd ~/environment
+                  if [ ! -d "${RepositoryName}" ]; then
+                      git clone https://github.com/${RepositoryOwner}/${RepositoryName}.git || error_exit $LINENO
+                      echo "Repository cloned successfully!"
+                  fi
+                  
+                  EOT
+
+                  # Restart code-server to apply configuration
+                  echo "Restarting code-server..."
+                  systemctl restart code-server@ec2-user
+                  
+                  echo "Bootstrap completed successfully!"
+  TradingBotIdeRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - ec2.amazonaws.com
+                - ssm.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Policies:
+        - PolicyName: ide-password
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - secretsmanager:GetResourcePolicy
+                  - secretsmanager:GetSecretValue
+                  - secretsmanager:DescribeSecret
+                  - secretsmanager:ListSecretVersionIds
+                Resource:
+                  - !Ref TradingBotIdePassword
+              - Effect: Allow
+                Action: secretsmanager:ListSecrets
+                Resource: "*"
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+        - arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryPowerUser
+        - arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy
+      Path: "/"
+  TradingBotIdeInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Path: "/"
+      Roles:
+        - Ref: TradingBotIdeRole
+  TradingBotIdeInstance:
+    Type: AWS::EC2::Instance
+    DependsOn:
+      - TradingBotIdeInstanceProfile
+    Properties:
+      ImageId: !Ref AmiParameterStoreName
+      InstanceType: t3.medium
+      BlockDeviceMappings:
+        - Ebs:
+            VolumeSize: !Ref InstanceVolumeSize
+            VolumeType: gp3
+            DeleteOnTermination: true
+            Encrypted: true
+          DeviceName: /dev/xvda
+      SubnetId: !Ref PublicSubnet
+      SecurityGroupIds:
+        - !Ref SecurityGroup
+      IamInstanceProfile: !Ref TradingBotIdeInstanceProfile
+      Tags:
+        - Key: type
+          Value: trading-bot-ide
+        - Key: Name
+          Value: !Sub ${AWS::StackName}-instance
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          sleep 30
+          echo "Instance ready for SSM commands" > /tmp/instance-ready
+  TradingBotIdePassword:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: !Sub ${AWS::StackName}-password
+      GenerateSecretString:
+        ExcludeCharacters: "\"@/\\"
+        ExcludePunctuation: true
+        GenerateStringKey: password
+        IncludeSpace: false
+        PasswordLength: 32
+        SecretStringTemplate: '{"password":""}'
+    UpdateReplacePolicy: Delete
+    DeletionPolicy: Delete
+  TradingBotIdeCachePolicy:
+    Type: AWS::CloudFront::CachePolicy
+    Properties:
+      CachePolicyConfig:
+        DefaultTTL: 86400
+        MaxTTL: 31536000
+        MinTTL: 1
+        Name: !Ref AWS::StackName
+        ParametersInCacheKeyAndForwardedToOrigin:
+          CookiesConfig:
+            CookieBehavior: all
+          EnableAcceptEncodingGzip: False
+          EnableAcceptEncodingBrotli: False
+          HeadersConfig:
+            HeaderBehavior: whitelist
+            Headers:
+              - Accept-Charset
+              - Authorization
+              - Origin
+              - Accept
+              - Referer
+              - Host
+              - Accept-Language
+              - Accept-Datetime
+          QueryStringsConfig:
+            QueryStringBehavior: all
+  TradingBotIdeCloudFrontDistribution:
+    Type: AWS::CloudFront::Distribution
+    DependsOn:
+      - TradingBotIdeInstance
+    Properties:
+      DistributionConfig:
+        Enabled: True
+        HttpVersion: http2and3
+        CacheBehaviors:
+          - AllowedMethods:
+              - GET
+              - HEAD
+              - OPTIONS
+              - PUT
+              - PATCH
+              - POST
+              - DELETE
+            CachePolicyId: 4135ea2d-6df8-44a3-9df3-4b5a84be39ad
+            Compress: True
+            OriginRequestPolicyId: 216adef6-5c7f-47e4-b989-5492eafa07d3
+            TargetOriginId: !Sub CloudFront-${AWS::StackName}
+            ViewerProtocolPolicy: allow-all
+            PathPattern: "/proxy/*"
+          - AllowedMethods:
+              - GET
+              - HEAD
+              - OPTIONS
+              - PUT
+              - PATCH
+              - POST
+              - DELETE
+            CachePolicyId: 4135ea2d-6df8-44a3-9df3-4b5a84be39ad
+            Compress: True
+            OriginRequestPolicyId: 216adef6-5c7f-47e4-b989-5492eafa07d3
+            TargetOriginId: !Sub CloudFront-${AWS::StackName}
+            ViewerProtocolPolicy: allow-all
+            PathPattern: "/ws/*"
+        DefaultCacheBehavior:
+          AllowedMethods:
+            - GET
+            - HEAD
+            - OPTIONS
+            - PUT
+            - PATCH
+            - POST
+            - DELETE
+          CachePolicyId: !Ref TradingBotIdeCachePolicy
+          OriginRequestPolicyId: 216adef6-5c7f-47e4-b989-5492eafa07d3
+          TargetOriginId: !Sub CloudFront-${AWS::StackName}
+          ViewerProtocolPolicy: allow-all
+        Origins:
+          - DomainName: !GetAtt TradingBotIdeInstance.PublicDnsName
+            Id: !Sub CloudFront-${AWS::StackName}
+            CustomOriginConfig:
+              OriginProtocolPolicy: http-only
+              OriginReadTimeout: 60
+              OriginKeepaliveTimeout: 60
+Outputs:
+  IdeUrl:
+    Description: URL to access the code-server IDE
+    Value: !Sub https://${TradingBotIdeCloudFrontDistribution.DomainName}
+  IdePasswordSecret:
+    Description: Link to AWS Secrets Manager console to retrieve the password
+    Value: !Sub
+      - https://console.aws.amazon.com/secretsmanager/secret?name=${SecretName}&region=${AWS::Region}
+      - SecretName: !Sub ${AWS::StackName}-password
+  IdePasswordSecretName:
+    Description: Name of the secret containing the IDE password
+    Value: !Sub ${AWS::StackName}-password
+  IdeRole:
+    Description: IAM Role ARN used by the IDE instance
+    Value: !Sub ${TradingBotIdeRole.Arn}
+  InstanceId:
+    Description: EC2 Instance ID of the IDE
+    Value: !Ref TradingBotIdeInstance
+  CloudFrontDistributionId:
+    Description: CloudFront Distribution ID
+    Value: !Ref TradingBotIdeCloudFrontDistribution
+
