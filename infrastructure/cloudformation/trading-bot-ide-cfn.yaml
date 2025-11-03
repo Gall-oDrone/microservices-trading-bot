@@ -300,17 +300,23 @@ Resources:
                                   ]
                               )
                               
-                              if response['InstanceInformationList']:
+                              if response.get('InstanceInformationList'):
                                   instance_info = response['InstanceInformationList'][0]
-                                  if instance_info['PingStatus'] == 'Online':
+                                  ping_status = instance_info.get('PingStatus', 'Unknown')
+                                  if ping_status == 'Online':
                                       print(f'Instance is registered and online with SSM (PingStatus: Online)')
                                       break
                                   else:
-                                      print(f'Instance registered but not online yet. PingStatus: {instance_info.get("PingStatus", "Unknown")}')
+                                      print(f'Instance registered but not online yet. PingStatus: {ping_status} (attempt {attempt + 1}/{max_wait_attempts})')
                               else:
                                   print(f'Instance not yet registered with SSM (attempt {attempt + 1}/{max_wait_attempts})')
                           except Exception as e:
-                              print(f'Error checking SSM registration (attempt {attempt + 1}): {str(e)}')
+                              error_msg = str(e)
+                              # If it's a ClientError, check if it's because instance is not registered yet
+                              if 'InvalidInstanceId' in error_msg or 'not found' in error_msg.lower():
+                                  print(f'Instance not yet registered with SSM (attempt {attempt + 1}/{max_wait_attempts})')
+                              else:
+                                  print(f'Error checking SSM registration (attempt {attempt + 1}): {error_msg}')
                           
                           if attempt < max_wait_attempts - 1:
                               time.sleep(wait_interval)
