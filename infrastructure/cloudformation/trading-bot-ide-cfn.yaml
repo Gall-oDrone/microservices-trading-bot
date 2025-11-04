@@ -403,12 +403,15 @@ Resources:
                   echo "Starting bootstrap process..."
                   
                   # Install packages with retry logic
+                  # Note: curl-minimal is pre-installed on AL2023 and conflicts with curl
+                  # We'll use curl-minimal which is sufficient for our needs
                   install_packages() {
                       local max_attempts=3
                       local attempt=1
                       while [ $attempt -le $max_attempts ]; do
                           echo "Attempt $attempt to install packages..."
-                          if yum install -y git tar gzip vim nodejs npm make gcc g++ argon2 curl jq unzip zip; then
+                          # Don't install curl - curl-minimal is already installed and sufficient
+                          if dnf install -y git tar gzip vim nodejs npm make gcc g++ argon2 jq unzip zip; then
                               echo "Package installation successful"
                               return 0
                           fi
