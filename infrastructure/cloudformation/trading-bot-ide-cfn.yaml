@@ -411,9 +411,16 @@ Resources:
                       while [ $attempt -le $max_attempts ]; do
                           echo "Attempt $attempt to install packages..."
                           # Don't install curl - curl-minimal is already installed and sufficient
-                          if dnf install -y git tar gzip vim nodejs npm make gcc g++ argon2 jq unzip zip; then
+                          # Exclude curl from dependency resolution to avoid conflicts
+                          if dnf install -y git tar gzip vim nodejs npm make gcc g++ argon2 jq unzip zip --exclude=curl 2>&1 | tee /tmp/package-install.log; then
                               echo "Package installation successful"
                               return 0
+                          else
+                              # Check if it's just a curl conflict but other packages installed
+                              if grep -q "curl" /tmp/package-install.log && ! grep -q "Error" /tmp/package-install.log; then
+                                  echo "Package installation completed (curl conflict ignored, curl-minimal is sufficient)"
+                                  return 0
+                              fi
                           fi
                           echo "Package installation failed, retrying..."
                           sleep 5
