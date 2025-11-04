@@ -439,23 +439,30 @@ Resources:
 
                   # Install AWS CLI v2
                   echo "Installing AWS CLI v2..."
-                  max_attempts=3
-                  attempt=1
-                  while [ $attempt -le $max_attempts ]; do
-                      if curl -s "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"; then
-                          unzip -q awscliv2.zip
-                          sudo ./aws/install
-                          rm -rf awscliv2.zip aws
-                          # Verify installation
-                          if aws --version; then
-                              echo "AWS CLI v2 installed successfully"
-                              break
+                  # Check if AWS CLI is already installed
+                  if command -v aws &> /dev/null && aws --version &> /dev/null; then
+                      echo "AWS CLI is already installed: $(aws --version)"
+                  else
+                      max_attempts=3
+                      attempt=1
+                      while [ $attempt -le $max_attempts ]; do
+                          # Clean up any existing aws directory or file
+                          rm -rf aws awscliv2.zip
+                          if curl -s "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"; then
+                              unzip -q awscliv2.zip
+                              sudo ./aws/install
+                              rm -rf awscliv2.zip aws
+                              # Verify installation
+                              if aws --version; then
+                                  echo "AWS CLI v2 installed successfully"
+                                  break
+                              fi
                           fi
-                      fi
-                      echo "AWS CLI installation attempt $attempt failed, retrying..."
-                      sleep 5
-                      attempt=$((attempt + 1))
-                  done
+                          echo "AWS CLI installation attempt $attempt failed, retrying..."
+                          sleep 5
+                          attempt=$((attempt + 1))
+                      done
+                  fi
 
                   # Install AWS Course CLI
                   echo "Installing AWS Course CLI..."
