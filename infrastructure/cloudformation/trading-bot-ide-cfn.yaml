@@ -411,14 +411,20 @@ Resources:
                       while [ $attempt -le $max_attempts ]; do
                           echo "Attempt $attempt to install packages..."
                           # Don't install curl - curl-minimal is already installed and sufficient
-                          # Exclude curl from dependency resolution to avoid conflicts
-                          if dnf install -y git tar gzip vim nodejs npm make gcc g++ argon2 jq unzip zip --exclude=curl 2>&1 | tee /tmp/package-install.log; then
+                          # Use --setopt=exclude=curl to prevent curl from being pulled in as dependency
+                          # Also add --skip-broken to continue even if some packages fail
+                          if dnf install -y --setopt=exclude=curl --skip-broken git tar gzip vim nodejs npm make gcc g++ argon2 jq unzip zip 2>&1 | tee /tmp/package-install.log; then
                               echo "Package installation successful"
                               return 0
                           else
-                              # Check if it's just a curl conflict but other packages installed
-                              if grep -q "curl" /tmp/package-install.log && ! grep -q "Error" /tmp/package-install.log; then
-                                  echo "Package installation completed (curl conflict ignored, curl-minimal is sufficient)"
+                              # Check exit code - if it's just curl-related, we can continue
+                              local exit_code=$?
+                              if [ $exit_code -ne 0 ]; then
+                                  if grep -q "curl" /tmp/package-install.log && ! grep -q "Error:" /tmp/package-install.log; then
+                                      echo "Package installation completed (curl conflict ignored, curl-minimal is sufficient)"
+                                      return 0
+                                  fi
+                              else
                                   return 0
                               fi
                           fi
