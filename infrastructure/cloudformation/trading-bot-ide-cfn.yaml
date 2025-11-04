@@ -699,6 +699,26 @@ Resources:
                   # Add Go to PATH
                   echo 'export PATH=$PATH:/usr/local/go/bin' >> ~/.bashrc
                   echo 'export PATH=$PATH:~/go/bin' >> ~/.bashrc
+                  
+                  # Add ~/.local/bin to PATH (for Cursor CLI)
+                  echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc
+                  source ~/.bashrc
+
+                  # Install Cursor CLI
+                  echo "Installing Cursor CLI..."
+                  max_attempts=3
+                  attempt=1
+                  while [ $attempt -le $max_attempts ]; do
+                      if curl -fsSL https://cursor.sh/install | sh; then
+                          if command -v cursor &> /dev/null || [ -f ~/.local/bin/cursor ]; then
+                              echo "Cursor CLI installed successfully"
+                              break
+                          fi
+                      fi
+                      echo "Cursor CLI installation attempt $attempt failed, retrying..."
+                      sleep 5
+                      attempt=$((attempt + 1))
+                  done
 
                   mkdir -p ~/environment
 
