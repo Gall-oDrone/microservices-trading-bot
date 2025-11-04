@@ -2,8 +2,6 @@ terraform {
   required_version = ">= 1.5.0"
 }
 
-provider "aws" { region = var.region }
-
 resource "aws_security_group" "redis" {
   name        = "${var.name}-redis-sg"
   description = "Security group for Redis"
@@ -28,7 +26,7 @@ resource "aws_elasticache_replication_group" "this" {
   engine                        = "redis"
   engine_version                = var.engine_version
   node_type                     = var.node_type
-  number_cache_clusters         = var.num_cache_clusters
+  num_cache_clusters            = var.num_cache_clusters
   automatic_failover_enabled    = false
   transit_encryption_enabled    = true
   at_rest_encryption_enabled    = true

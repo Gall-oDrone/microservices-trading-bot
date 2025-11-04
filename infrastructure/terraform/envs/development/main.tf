@@ -3,7 +3,7 @@ locals {
 }
 
 module "vpc" {
-  source = "../modules/vpc"
+  source = "../../modules/vpc"
 
   region          = var.aws_region
   name            = local.name
@@ -14,7 +14,7 @@ module "vpc" {
 }
 
 module "eks" {
-  source = "../modules/eks"
+  source = "../../modules/eks"
 
   region             = var.aws_region
   cluster_name       = local.name
@@ -30,14 +30,14 @@ module "eks" {
 }
 
 module "ecr" {
-  source = "../modules/ecr"
+  source = "../../modules/ecr"
 
   region       = var.aws_region
   repositories = var.repos
 }
 
 module "msk" {
-  source = "../modules/msk"
+  source = "../../modules/msk"
   count  = var.enable_msk ? 1 : 0
 
   region                 = var.aws_region
@@ -50,7 +50,7 @@ module "msk" {
 }
 
 module "redis" {
-  source = "../modules/redis"
+  source = "../../modules/redis"
   count  = var.enable_redis ? 1 : 0
 
   region          = var.aws_region
@@ -63,7 +63,7 @@ module "redis" {
 }
 
 module "iam_irsa" {
-  source = "../modules/iam"
+  source = "../../modules/iam"
 
   region            = var.aws_region
   cluster_name      = module.eks.cluster_name
@@ -136,7 +136,7 @@ resource "helm_release" "aws_load_balancer_controller" {
   }
 
   set {
-    name  = "serviceAccount.annotations.eks\.amazonaws\.com/role-arn"
+    name  = "serviceAccount.annotations.eks.amazonaws.com/role-arn"
     value = module.iam_irsa.irsa_role_arns["alb"]
   }
 }
@@ -174,7 +174,7 @@ resource "helm_release" "external_dns" {
   }
 
   set {
-    name  = "serviceAccount.annotations.eks\.amazonaws\.com/role-arn"
+    name  = "serviceAccount.annotations.eks.amazonaws.com/role-arn"
     value = module.iam_irsa.irsa_role_arns["external-dns"]
   }
 }
@@ -199,7 +199,7 @@ resource "helm_release" "cert_manager" {
   }
 
   set {
-    name  = "serviceAccount.annotations.eks\.amazonaws\.com/role-arn"
+    name  = "serviceAccount.annotations.eks.amazonaws.com/role-arn"
     value = module.iam_irsa.irsa_role_arns["cert-manager"]
   }
 }
@@ -219,13 +219,13 @@ resource "helm_release" "external_secrets" {
   }
 
   set {
-    name  = "serviceAccount.annotations.eks\.amazonaws\.com/role-arn"
+    name  = "serviceAccount.annotations.eks.amazonaws.com/role-arn"
     value = module.iam_irsa.irsa_role_arns["external-secrets"]
   }
 }
 
 module "ci_github_oidc" {
-  source = "../modules/github-oidc"
+  source = "../../modules/github-oidc"
 
   region     = var.aws_region
   repo       = var.github_repo

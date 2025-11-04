@@ -2,8 +2,6 @@ terraform {
   required_version = ">= 1.5.0"
 }
 
-provider "aws" { region = var.region }
-
 resource "aws_security_group" "msk" {
   name        = "${var.cluster_name}-msk-sg"
   description = "Security group for MSK brokers"

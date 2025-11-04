@@ -127,11 +127,55 @@ wait_for_nodes() {
 
 # Stage 1: Initialize Terraform
 print_info "📦 Stage 1: Initializing Terraform..."
-terraform init -upgrade
+
+# Check for backend configuration
+BACKEND_CONFIG_FILE="$ENV_DIR/backend.hcl"
+TF_BACKEND_REGION="${AWS_REGION:-us-east-1}"
+
+if [ ! -f "$BACKEND_CONFIG_FILE" ]; then
+    print_warning "No backend.hcl file found. Checking for backend configuration via environment variables..."
+    
+    # Check if backend config is provided via environment variables
+    if [ -z "$TF_STATE_BUCKET" ] || [ -z "$TF_LOCK_TABLE" ]; then
+        print_warning "Backend configuration not found. Using local backend for development..."
+        print_info "To use S3 backend, set TF_STATE_BUCKET and TF_LOCK_TABLE environment variables"
+        print_info "or create a backend.hcl file in $ENV_DIR"
+        
+        # Temporarily modify backend.tf to use local backend
+        BACKEND_TF_BACKUP="$ENV_DIR/backend.tf.backup"
+        if [ ! -f "$BACKEND_TF_BACKUP" ]; then
+            cp "$ENV_DIR/backend.tf" "$BACKEND_TF_BACKUP"
+            cat > "$ENV_DIR/backend.tf" << 'EOF'
+terraform {
+  backend "local" {
+    path = "terraform.tfstate"
+  }
+}
+EOF
+        fi
+        terraform init -upgrade -reconfigure
+    else
+        print_info "Using S3 backend with environment variables..."
+        terraform init -upgrade \
+            -backend-config="bucket=$TF_STATE_BUCKET" \
+            -backend-config="key=microservices-trading-bot/dev/terraform.tfstate" \
+            -backend-config="region=$TF_BACKEND_REGION" \
+            -backend-config="dynamodb_table=$TF_LOCK_TABLE" \
+            -backend-config="encrypt=true"
+    fi
+else
+    print_info "Using backend configuration from backend.hcl"
+    terraform init -upgrade -backend-config="$BACKEND_CONFIG_FILE"
+fi
 
 # Stage 2: Deploy core infrastructure (VPC, EKS, ECR)
 print_info "📦 Stage 2: Deploying core infrastructure (VPC, EKS, ECR)..."
-terraform apply -target=module.vpc -target=module.eks -target=module.ecr -auto-approve
+print_info "This may take 10-15 minutes..."
+timeout 1800 terraform apply -target=module.vpc -target=module.eks -target=module.ecr -auto-approve || {
+    print_error "Terraform apply timed out or failed after 30 minutes"
+    print_warning "This may indicate a resource dependency issue. Check Terraform state and AWS console."
+    exit 1
+}
 
 # Get outputs from Terraform
 print_info "📋 Getting infrastructure details..."
@@ -177,7 +221,12 @@ fi
 
 # Stage 3: Deploy remaining infrastructure (MSK, Redis, IAM, GitHub OIDC, etc.)
 print_info "📦 Stage 3: Deploying remaining infrastructure (MSK, Redis, IAM, GitHub OIDC, Helm addons)..."
-terraform apply -auto-approve
+print_info "This may take 10-20 minutes..."
+timeout 1800 terraform apply -auto-approve || {
+    print_error "Terraform apply timed out or failed after 30 minutes"
+    print_warning "Some resources may still be deploying. Check Terraform state and AWS console."
+    exit 1
+}
 
 # Wait for deployments to stabilize
 print_info "⏳ Waiting for deployments to stabilize (60 seconds)..."
@@ -194,19 +243,19 @@ if command -v kubectl &> /dev/null && command -v helm &> /dev/null; then
         print_info "Checking for metrics-server..."
         if kubectl get deployment metrics-server -n kube-system &>/dev/null; then
             print_success "✅ metrics-server is deployed"
-            kubectl rollout status deployment/metrics-server -n kube-system --timeout=2m || true
+            timeout 180 kubectl rollout status deployment/metrics-server -n kube-system --timeout=2m 2>/dev/null || print_warning "metrics-server rollout status check timed out or failed"
         fi
         
         print_info "Checking for aws-load-balancer-controller..."
         if kubectl get deployment aws-load-balancer-controller -n kube-system &>/dev/null; then
             print_success "✅ aws-load-balancer-controller is deployed"
-            kubectl rollout status deployment/aws-load-balancer-controller -n kube-system --timeout=2m || true
+            timeout 180 kubectl rollout status deployment/aws-load-balancer-controller -n kube-system --timeout=2m 2>/dev/null || print_warning "aws-load-balancer-controller rollout status check timed out or failed"
         fi
         
         print_info "Checking for external-dns..."
         if kubectl get deployment external-dns -n kube-system &>/dev/null; then
             print_success "✅ external-dns is deployed"
-            kubectl rollout status deployment/external-dns -n kube-system --timeout=2m || true
+            timeout 180 kubectl rollout status deployment/external-dns -n kube-system --timeout=2m 2>/dev/null || print_warning "external-dns rollout status check timed out or failed"
         fi
     fi
     

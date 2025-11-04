@@ -18,6 +18,9 @@ module "eks" {
   control_plane_subnet_ids = var.private_subnet_ids
 
   enable_irsa = true
+  
+  # Disable cluster creator admin permissions to avoid IAM session context lookup
+  enable_cluster_creator_admin_permissions = false
 
   eks_managed_node_groups = {
     default = {

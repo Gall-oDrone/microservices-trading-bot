@@ -1,2 +1,5 @@
 variable "region" { type = string }
-variable "repositories" { type = list(string)  default = [] }
+variable "repositories" { 
+  type    = list(string)
+  default = []
+}
