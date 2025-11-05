@@ -1,10 +1,32 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
-bases:
+resources:
   - ../../base
 
 patchesStrategicMerge:
   - staging-patches.yaml
 
 namespace: bitso-trading-staging
+
+# ECR registry URL will be set via kustomize edit or CI/CD pipeline
+# Example: kustomize edit set image ECR_REGISTRY_PLACEHOLDER/trading-engine=ACCOUNT_ID.dkr.ecr.us-east-1.amazonaws.com/trading-engine:latest
+images:
+  - name: ECR_REGISTRY_PLACEHOLDER/trading-engine
+    newName: ECR_REGISTRY_PLACEHOLDER/trading-engine
+    newTag: latest
+  - name: ECR_REGISTRY_PLACEHOLDER/market-data
+    newName: ECR_REGISTRY_PLACEHOLDER/market-data
+    newTag: latest
+  - name: ECR_REGISTRY_PLACEHOLDER/api-gateway
+    newName: ECR_REGISTRY_PLACEHOLDER/api-gateway
+    newTag: latest
+  - name: ECR_REGISTRY_PLACEHOLDER/strategy-executor
+    newName: ECR_REGISTRY_PLACEHOLDER/strategy-executor
+    newTag: latest
+  - name: ECR_REGISTRY_PLACEHOLDER/order-management
+    newName: ECR_REGISTRY_PLACEHOLDER/order-management
+    newTag: latest
+  - name: ECR_REGISTRY_PLACEHOLDER/backtesting
+    newName: ECR_REGISTRY_PLACEHOLDER/backtesting
+    newTag: latest

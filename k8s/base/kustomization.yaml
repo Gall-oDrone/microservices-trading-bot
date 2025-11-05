@@ -11,3 +11,17 @@ resources:
 
 commonLabels:
   app: bitso-trading-platform
+
+images:
+  - name: trading-engine
+    newName: ECR_REGISTRY_PLACEHOLDER/trading-engine
+  - name: market-data
+    newName: ECR_REGISTRY_PLACEHOLDER/market-data
+  - name: api-gateway
+    newName: ECR_REGISTRY_PLACEHOLDER/api-gateway
+  - name: strategy-executor
+    newName: ECR_REGISTRY_PLACEHOLDER/strategy-executor
+  - name: order-management
+    newName: ECR_REGISTRY_PLACEHOLDER/order-management
+  - name: backtesting
+    newName: ECR_REGISTRY_PLACEHOLDER/backtesting
