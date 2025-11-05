@@ -1,0 +1,25 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: trading-config
+  labels:
+    app: bitso-trading-platform
+data:
+  # Redis configuration
+  redis-host: "redis"
+  redis-port: "6379"
+  redis-db: "0"
+  
+  # Kafka configuration
+  kafka-brokers: "kafka:9092"
+  kafka-topic-trades: "market-data.trades"
+  kafka-topic-orderbook: "market-data.orderbook"
+  kafka-topic-ticker: "market-data.ticker"
+  kafka-topic-orders: "trading.orders"
+  kafka-topic-signals: "trading.signals"
+  
+  # Bitso API configuration
+  bitso-ws-url: "wss://ws.bitso.com"
+  bitso-books: "btc_mxn"
+  bitso-channels: "trades"
+
