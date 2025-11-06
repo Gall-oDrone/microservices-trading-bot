@@ -3,7 +3,9 @@ kind: Kustomization
 
 resources:
   - configmap.yaml
-  - secret.yaml
+  - external-secret.yaml
+  # Note: secret.yaml is kept as fallback but external-secret.yaml is preferred
+  # Remove secret.yaml from git and use External Secrets Operator for production
   - trading-engine.yaml
   - backtesting.yaml
   - strategy-executor.yaml

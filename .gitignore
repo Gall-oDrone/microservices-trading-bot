@@ -70,4 +70,5 @@ golang_server/consumer-logger/.env
 
 # Keep example files (templates)
 !.env.example
-!**/.env.example
+!**/.env.examplek8s/base/secret.yaml
+k8s/overlays/*/secret.yaml
