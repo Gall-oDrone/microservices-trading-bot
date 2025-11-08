@@ -43,6 +43,9 @@ Parameters:
     Type: String
     Description: Project ID for resource tagging
     Default: "microservices-trading-bot"
+  InstanceProfileName:
+    Type: String
+    Description: Name of the IAM instance profile to attach to the IDE EC2 instance
   AwsRegion:
     Type: String
     Description: AWS Region for the IDE
@@ -214,15 +217,15 @@ Resources:
                   - ssm:ListCommandInvocations
                   - ssm:DescribeInstanceInformation
                   - ssm:DescribeInstanceStatus
+                  - ec2:DescribeInstances
                 Resource: "*"
   TradingBotIdeBootstrapInstanceLambda:
     Type: Custom::TradingBotIdeBootstrapInstanceLambda
     DependsOn:
       - TradingBotIdeLambdaExecutionRole
-      - TradingBotIdeInstance
       - TradingBotIdeSSMDocument
       - TradingBotIdePassword
-      - TradingBotIdeCloudFrontDistribution
+      - TradingBotIdeBootstrapLogGroup
     Properties:
       ServiceToken:
         Fn::GetAtt:
@@ -230,10 +233,17 @@ Resources:
           - Arn
       REGION:
         Ref: AWS::Region
-      InstanceId:
-        Ref: TradingBotIdeInstance
+      StackName:
+        Ref: AWS::StackName
       SsmDocument:
         Ref: TradingBotIdeSSMDocument
+      BootstrapLogGroup:
+        Ref: TradingBotIdeBootstrapLogGroup
+  TradingBotIdeBootstrapLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/ssm/${AWS::StackName}/bootstrap
+      RetentionInDays: 14
   TradingBotIdeBootstrapInstanceLambdaFunction:
     Type: AWS::Lambda::Function
     Properties:
@@ -277,8 +287,50 @@ Resources:
                       ssm = boto3.client('ssm')
                       ec2 = boto3.client('ec2')
 
-                      instance_id = event['ResourceProperties']['InstanceId']
-                      ssm_document = event['ResourceProperties']['SsmDocument']
+                      resource_props = event.get('ResourceProperties', {})
+                      stack_name = resource_props.get('StackName')
+                      instance_id = resource_props.get('InstanceId')
+                      ssm_document = resource_props['SsmDocument']
+                      log_group_name = resource_props.get('BootstrapLogGroup')
+
+                      if not stack_name:
+                          raise Exception('StackName property is required')
+
+                      if not instance_id:
+                          print(f'Looking up instance ID for stack: {stack_name}')
+                          max_lookup_attempts = 30
+                          lookup_interval = 10
+
+                          for attempt in range(max_lookup_attempts):
+                              reservations = ec2.describe_instances(
+                                  Filters=[
+                                      {
+                                          'Name': 'tag:aws:cloudformation:stack-name',
+                                          'Values': [stack_name]
+                                      },
+                                      {
+                                          'Name': 'instance-state-name',
+                                          'Values': ['pending', 'running']
+                                      }
+                                  ]
+                              )
+
+                              instances = [
+                                  instance for reservation in reservations.get('Reservations', [])
+                                  for instance in reservation.get('Instances', [])
+                              ]
+
+                              if instances:
+                                  instance = instances[0]
+                                  instance_id = instance['InstanceId']
+                                  print(f'Found instance ID by tag: {instance_id}')
+                                  break
+
+                              print(f'Instance not found yet (attempt {attempt + 1}/{max_lookup_attempts}), waiting...')
+                              time.sleep(lookup_interval)
+
+                          if not instance_id:
+                              raise Exception(f'Unable to locate instance for stack {stack_name}')
 
                       print('Waiting for instance to be fully ready...')
                       time.sleep(30)  # Give instance time to fully initialize
@@ -329,10 +381,19 @@ Resources:
                       max_retries = 3
                       for attempt in range(max_retries):
                           try:
-                              response = ssm.send_command(
-                                InstanceIds=[instance_id],
-                                DocumentName=ssm_document,
-                                TimeoutSeconds=1800)  # 30 minute timeout for command execution
+                              send_command_args = {
+                                'InstanceIds': [instance_id],
+                                'DocumentName': ssm_document,
+                                'TimeoutSeconds': 1800  # 30 minute timeout for command execution
+                              }
+
+                              if log_group_name:
+                                send_command_args['CloudWatchOutputConfig'] = {
+                                  'CloudWatchLogGroupName': log_group_name,
+                                  'CloudWatchOutputEnabled': True
+                                }
+
+                              response = ssm.send_command(**send_command_args)
                               
                               command_id = response['Command']['CommandId']
                               print(f'Command sent successfully: {command_id}')
@@ -393,9 +454,17 @@ Resources:
                   #!/bin/bash
                   set -e
                   
+                  LOG_FILE="/var/log/trading-bot-bootstrap.log"
+                  mkdir -p "$(dirname "$LOG_FILE")"
+                  touch "$LOG_FILE"
+                  chmod 600 "$LOG_FILE"
+                  exec > >(tee -a "$LOG_FILE") 2>&1
+                  echo "Bootstrap log file: $LOG_FILE"
+                  
                   # Error handling function
                   error_exit() {
                       echo "Error on line $1"
+                      echo "Bootstrap log available at $LOG_FILE"
                       exit 1
                   }
                   trap 'error_exit $LINENO' ERR
@@ -660,10 +729,10 @@ Resources:
                   dnf install -y caddy || error_exit $LINENO
                   systemctl enable --now caddy
 
-                  # Configure Caddy - wait for CloudFront to be available
+                  # Configure Caddy for local proxy
                   echo "Configuring Caddy..."
                   tee /etc/caddy/Caddyfile <<EOF
-                  http://${TradingBotIdeCloudFrontDistribution.DomainName} {
+                  http://:80 {
                     reverse_proxy 127.0.0.1:8889
                   }
                   EOF
@@ -739,7 +808,7 @@ Resources:
                   max_attempts=5
                   attempt=1
                   while [ $attempt -le $max_attempts ]; do
-                      PASSWORD_SECRET_VALUE=$(aws secretsmanager get-secret-value --secret-id "${TradingBotIdePassword.Id}" --query 'SecretString' --output text 2>/dev/null) && break
+                      PASSWORD_SECRET_VALUE=$(aws secretsmanager get-secret-value --secret-id "${TradingBotIdePassword}" --query 'SecretString' --output text 2>/dev/null) && break
                       echo "Attempt $attempt failed, retrying..."
                       sleep 5
                       attempt=$((attempt + 1))
@@ -778,414 +847,9 @@ Resources:
                   systemctl restart code-server@ec2-user
                   
                   echo "Bootstrap completed successfully!"
-  TradingBotIdeRole:
-    Type: AWS::IAM::Role
-    Properties:
-      AssumeRolePolicyDocument:
-        Version: "2012-10-17"
-        Statement:
-          - Effect: Allow
-            Principal:
-              Service:
-                - ec2.amazonaws.com
-                - ssm.amazonaws.com
-            Action:
-              - sts:AssumeRole
-      Policies:
-        - PolicyName: ide-password
-          PolicyDocument:
-            Version: "2012-10-17"
-            Statement:
-              - Effect: Allow
-                Action:
-                  - secretsmanager:GetResourcePolicy
-                  - secretsmanager:GetSecretValue
-                  - secretsmanager:DescribeSecret
-                  - secretsmanager:ListSecretVersionIds
-                Resource:
-                  - !Ref TradingBotIdePassword
-              - Effect: Allow
-                Action: secretsmanager:ListSecrets
-                Resource: "*"
-        - PolicyName: ide-get-role
-          PolicyDocument:
-            Version: "2012-10-17"
-            Statement:
-              - Effect: Allow
-                Action:
-                  - iam:GetRole
-                Resource: !GetAtt TradingBotIdeRole.Arn
-        - PolicyName: terraform-deployment-permissions
-          PolicyDocument:
-            Version: "2012-10-17"
-            Statement:
-              # VPC and Networking Permissions
-              - Effect: Allow
-                Action:
-                  - ec2:CreateVpc
-                  - ec2:DeleteVpc
-                  - ec2:DescribeVpcs
-                  - ec2:DescribeVpcAttribute
-                  - ec2:ModifyVpcAttribute
-                  - ec2:CreateSubnet
-                  - ec2:DeleteSubnet
-                  - ec2:DescribeSubnets
-                  - ec2:ModifySubnetAttribute
-                  - ec2:CreateInternetGateway
-                  - ec2:DeleteInternetGateway
-                  - ec2:AttachInternetGateway
-                  - ec2:DetachInternetGateway
-                  - ec2:DescribeInternetGateways
-                  - ec2:CreateNatGateway
-                  - ec2:DeleteNatGateway
-                  - ec2:DescribeNatGateways
-                  - ec2:CreateRouteTable
-                  - ec2:DeleteRouteTable
-                  - ec2:DescribeRouteTables
-                  - ec2:CreateRoute
-                  - ec2:DeleteRoute
-                  - ec2:DescribeRoutes
-                  - ec2:ReplaceRoute
-                  - ec2:AssociateRouteTable
-                  - ec2:DisassociateRouteTable
-                  - ec2:AllocateAddress
-                  - ec2:ReleaseAddress
-                  - ec2:DescribeAddresses
-                  - ec2:AssociateAddress
-                  - ec2:DisassociateAddress
-                Resource: "*"
-              # Security Groups
-              - Effect: Allow
-                Action:
-                  - ec2:CreateSecurityGroup
-                  - ec2:DeleteSecurityGroup
-                  - ec2:DescribeSecurityGroups
-                  - ec2:DescribeSecurityGroupRules
-                  - ec2:AuthorizeSecurityGroupIngress
-                  - ec2:RevokeSecurityGroupIngress
-                  - ec2:AuthorizeSecurityGroupEgress
-                  - ec2:RevokeSecurityGroupEgress
-                  - ec2:CreateTags
-                  - ec2:DeleteTags
-                  - ec2:DescribeTags
-                Resource: "*"
-              # EC2 Instances and Launch Templates
-              - Effect: Allow
-                Action:
-                  - ec2:DescribeInstances
-                  - ec2:DescribeInstanceTypes
-                  - ec2:DescribeInstanceAttribute
-                  - ec2:DescribeImages
-                  - ec2:DescribeAvailabilityZones
-                  - ec2:CreateLaunchTemplate
-                  - ec2:DeleteLaunchTemplate
-                  - ec2:DescribeLaunchTemplates
-                  - ec2:DescribeLaunchTemplateVersions
-                  - ec2:CreateLaunchTemplateVersion
-                  - ec2:DeleteLaunchTemplateVersion
-                Resource: "*"
-              # EKS Permissions
-              - Effect: Allow
-                Action:
-                  - eks:CreateCluster
-                  - eks:DeleteCluster
-                  - eks:DescribeCluster
-                  - eks:ListClusters
-                  - eks:UpdateClusterConfig
-                  - eks:UpdateClusterVersion
-                  - eks:CreateNodegroup
-                  - eks:DeleteNodegroup
-                  - eks:DescribeNodegroup
-                  - eks:ListNodegroups
-                  - eks:UpdateNodegroupConfig
-                  - eks:UpdateNodegroupVersion
-                  - eks:ListAddons
-                  - eks:DescribeAddon
-                  - eks:CreateAddon
-                  - eks:DeleteAddon
-                  - eks:UpdateAddon
-                  - eks:DescribeIdentityProviderConfig
-                  - eks:ListIdentityProviderConfigs
-                  - eks:AssociateIdentityProviderConfig
-                  - eks:DisassociateIdentityProviderConfig
-                Resource: "*"
-              # ECR Permissions
-              - Effect: Allow
-                Action:
-                  - ecr:CreateRepository
-                  - ecr:DeleteRepository
-                  - ecr:DescribeRepositories
-                  - ecr:PutImageScanningConfiguration
-                  - ecr:PutImageTagMutability
-                  - ecr:SetRepositoryPolicy
-                  - ecr:GetRepositoryPolicy
-                  - ecr:PutLifecyclePolicy
-                  - ecr:GetLifecyclePolicy
-                  - ecr:DeleteLifecyclePolicy
-                  - ecr:ListImages
-                  - ecr:DescribeImages
-                  - ecr:BatchGetImage
-                  - ecr:BatchCheckLayerAvailability
-                  - ecr:GetDownloadUrlForLayer
-                  - ecr:PutImage
-                  - ecr:InitiateLayerUpload
-                  - ecr:UploadLayerPart
-                  - ecr:CompleteLayerUpload
-                Resource: "*"
-              # MSK Permissions
-              - Effect: Allow
-                Action:
-                  - kafka:CreateCluster
-                  - kafka:DeleteCluster
-                  - kafka:DescribeCluster
-                  - kafka:ListClusters
-                  - kafka:ListNodes
-                  - kafka:UpdateBrokerCount
-                  - kafka:UpdateBrokerStorage
-                  - kafka:UpdateBrokerType
-                  - kafka:GetBootstrapBrokers
-                  - kafka:DescribeConfiguration
-                  - kafka:DescribeConfigurationRevision
-                  - kafka:ListConfigurationRevisions
-                  - kafka:ListConfigurations
-                  - kafka:CreateConfiguration
-                  - kafka:DeleteConfiguration
-                  - kafka:UpdateConfiguration
-                  - kafka:UpdateConnectivity
-                  - kafka:UpdateSecurity
-                  - kafka:UpdateMonitoring
-                  - kafka:UpdateStorage
-                  - kafka:UpdateClusterConfiguration
-                  - kafka:TagResource
-                  - kafka:UntagResource
-                  - kafka:ListTagsForResource
-                Resource: "*"
-              # ElastiCache/Redis Permissions
-              - Effect: Allow
-                Action:
-                  - elasticache:CreateReplicationGroup
-                  - elasticache:DeleteReplicationGroup
-                  - elasticache:DescribeReplicationGroups
-                  - elasticache:ModifyReplicationGroup
-                  - elasticache:DescribeCacheSubnetGroups
-                  - elasticache:CreateCacheSubnetGroup
-                  - elasticache:DeleteCacheSubnetGroup
-                  - elasticache:ModifyCacheSubnetGroup
-                  - elasticache:DescribeCacheClusters
-                  - elasticache:CreateCacheCluster
-                  - elasticache:DeleteCacheCluster
-                  - elasticache:ModifyCacheCluster
-                  - elasticache:DescribeCacheParameterGroups
-                  - elasticache:DescribeCacheParameters
-                  - elasticache:CreateCacheParameterGroup
-                  - elasticache:DeleteCacheParameterGroup
-                  - elasticache:ModifyCacheParameterGroup
-                  - elasticache:AddTagsToResource
-                  - elasticache:RemoveTagsFromResource
-                  - elasticache:ListTagsForResource
-                Resource: "*"
-              # IAM Permissions for Roles, Policies, and OIDC
-              - Effect: Allow
-                Action:
-                  - iam:CreateRole
-                  - iam:DeleteRole
-                  - iam:GetRole
-                  - iam:ListRoles
-                  - iam:UpdateAssumeRolePolicy
-                  - iam:PutRolePolicy
-                  - iam:DeleteRolePolicy
-                  - iam:GetRolePolicy
-                  - iam:ListRolePolicies
-                  - iam:AttachRolePolicy
-                  - iam:DetachRolePolicy
-                  - iam:ListAttachedRolePolicies
-                  - iam:CreateServiceLinkedRole
-                  - iam:DeleteServiceLinkedRole
-                  - iam:GetServiceLinkedRoleDeletionStatus
-                  - iam:PassRole
-                  - iam:CreateInstanceProfile
-                  - iam:DeleteInstanceProfile
-                  - iam:GetInstanceProfile
-                  - iam:AddRoleToInstanceProfile
-                  - iam:RemoveRoleFromInstanceProfile
-                  - iam:ListInstanceProfilesForRole
-                  - iam:CreateOpenIDConnectProvider
-                  - iam:DeleteOpenIDConnectProvider
-                  - iam:GetOpenIDConnectProvider
-                  - iam:ListOpenIDConnectProviders
-                  - iam:TagOpenIDConnectProvider
-                  - iam:UntagOpenIDConnectProvider
-                  - iam:ListOpenIDConnectProviderTags
-                  - iam:GetPolicy
-                  - iam:ListPolicies
-                  - iam:GetPolicyVersion
-                  - iam:ListPolicyVersions
-                  - iam:TagRole
-                  - iam:UntagRole
-                  - iam:ListRoleTags
-                Resource: "*"
-              # Route53 Permissions (for External DNS and Cert Manager)
-              - Effect: Allow
-                Action:
-                  - route53:GetHostedZone
-                  - route53:ListHostedZones
-                  - route53:ListHostedZonesByName
-                  - route53:ChangeResourceRecordSets
-                  - route53:ListResourceRecordSets
-                  - route53:GetChange
-                  - route53:CreateHostedZone
-                  - route53:DeleteHostedZone
-                  - route53:UpdateHostedZoneComment
-                  - route53:ListTagsForResource
-                  - route53:ChangeTagsForResource
-                Resource: "*"
-              # Elastic Load Balancing (for ALB Controller)
-              - Effect: Allow
-                Action:
-                  - elasticloadbalancing:CreateLoadBalancer
-                  - elasticloadbalancing:DeleteLoadBalancer
-                  - elasticloadbalancing:DescribeLoadBalancers
-                  - elasticloadbalancing:DescribeLoadBalancerAttributes
-                  - elasticloadbalancing:ModifyLoadBalancerAttributes
-                  - elasticloadbalancing:CreateTargetGroup
-                  - elasticloadbalancing:DeleteTargetGroup
-                  - elasticloadbalancing:DescribeTargetGroups
-                  - elasticloadbalancing:DescribeTargetGroupAttributes
-                  - elasticloadbalancing:ModifyTargetGroup
-                  - elasticloadbalancing:ModifyTargetGroupAttributes
-                  - elasticloadbalancing:RegisterTargets
-                  - elasticloadbalancing:DeregisterTargets
-                  - elasticloadbalancing:DescribeTargetHealth
-                  - elasticloadbalancing:CreateListener
-                  - elasticloadbalancing:DeleteListener
-                  - elasticloadbalancing:DescribeListeners
-                  - elasticloadbalancing:ModifyListener
-                  - elasticloadbalancing:AddTags
-                  - elasticloadbalancing:RemoveTags
-                  - elasticloadbalancing:DescribeTags
-                  - elasticloadbalancing:AddListenerCertificates
-                  - elasticloadbalancing:RemoveListenerCertificates
-                  - elasticloadbalancing:DescribeListenerCertificates
-                  - elasticloadbalancing:SetSecurityGroups
-                  - elasticloadbalancing:SetSubnets
-                Resource: "*"
-              # Auto Scaling Permissions (for EKS Node Groups)
-              - Effect: Allow
-                Action:
-                  - autoscaling:CreateAutoScalingGroup
-                  - autoscaling:DeleteAutoScalingGroup
-                  - autoscaling:DescribeAutoScalingGroups
-                  - autoscaling:UpdateAutoScalingGroup
-                  - autoscaling:DescribeScalingActivities
-                  - autoscaling:CreateLaunchConfiguration
-                  - autoscaling:DeleteLaunchConfiguration
-                  - autoscaling:DescribeLaunchConfigurations
-                  - autoscaling:CreateOrUpdateTags
-                  - autoscaling:DeleteTags
-                  - autoscaling:DescribeTags
-                  - autoscaling:SetDesiredCapacity
-                  - autoscaling:TerminateInstanceInAutoScalingGroup
-                  - autoscaling:DescribeAutoScalingInstances
-                Resource: "*"
-              # Secrets Manager and SSM Permissions (for External Secrets)
-              - Effect: Allow
-                Action:
-                  - secretsmanager:CreateSecret
-                  - secretsmanager:DeleteSecret
-                  - secretsmanager:DescribeSecret
-                  - secretsmanager:GetSecretValue
-                  - secretsmanager:PutSecretValue
-                  - secretsmanager:UpdateSecret
-                  - secretsmanager:ListSecrets
-                  - secretsmanager:ListSecretVersionIds
-                  - secretsmanager:GetResourcePolicy
-                  - secretsmanager:PutResourcePolicy
-                  - secretsmanager:DeleteResourcePolicy
-                  - secretsmanager:TagResource
-                  - secretsmanager:UntagResource
-                  - secretsmanager:ListTagsForResource
-                  - ssm:GetParameter
-                  - ssm:GetParameters
-                  - ssm:GetParametersByPath
-                  - ssm:PutParameter
-                  - ssm:DeleteParameter
-                  - ssm:DescribeParameters
-                  - ssm:GetParameterHistory
-                  - ssm:LabelParameterVersion
-                  - ssm:AddTagsToResource
-                  - ssm:RemoveTagsFromResource
-                  - ssm:ListTagsForResource
-                Resource: "*"
-              # CloudWatch Logs (for various services)
-              - Effect: Allow
-                Action:
-                  - logs:CreateLogGroup
-                  - logs:DeleteLogGroup
-                  - logs:DescribeLogGroups
-                  - logs:CreateLogStream
-                  - logs:DeleteLogStream
-                  - logs:DescribeLogStreams
-                  - logs:PutLogEvents
-                  - logs:TagLogGroup
-                  - logs:UntagLogGroup
-                  - logs:ListTagsLogGroup
-                Resource: "*"
-              # EventBridge/CloudWatch Events (for EKS)
-              - Effect: Allow
-                Action:
-                  - events:PutRule
-                  - events:DeleteRule
-                  - events:DescribeRule
-                  - events:ListRules
-                  - events:PutTargets
-                  - events:RemoveTargets
-                  - events:ListTargetsByRule
-                  - events:EnableRule
-                  - events:DisableRule
-                  - events:TagResource
-                  - events:UntagResource
-                  - events:ListTagsForResource
-                Resource: "*"
-              # ACM (Certificate Manager) Permissions
-              - Effect: Allow
-                Action:
-                  - acm:RequestCertificate
-                  - acm:DeleteCertificate
-                  - acm:DescribeCertificate
-                  - acm:ListCertificates
-                  - acm:AddTagsToCertificate
-                  - acm:RemoveTagsFromCertificate
-                  - acm:ListTagsForCertificate
-                Resource: "*"
-              # Service Quotas (for checking limits)
-              - Effect: Allow
-                Action:
-                  - servicequotas:GetServiceQuota
-                  - servicequotas:ListServiceQuotas
-                  - servicequotas:GetAWSDefaultServiceQuota
-                  - servicequotas:ListAWSDefaultServiceQuotas
-                Resource: "*"
-              # STS (for getting account info)
-              - Effect: Allow
-                Action:
-                  - sts:GetCallerIdentity
-                  - sts:GetSessionToken
-                Resource: "*"
-      ManagedPolicyArns:
-        - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
-        - arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryPowerUser
-        - arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy
-      Path: "/"
-  TradingBotIdeInstanceProfile:
-    Type: AWS::IAM::InstanceProfile
-    Properties:
-      Path: "/"
-      Roles:
-        - Ref: TradingBotIdeRole
   TradingBotIdeInstance:
     Type: AWS::EC2::Instance
     DependsOn:
-      - TradingBotIdeInstanceProfile
       - GatewayAttachment
     Properties:
       ImageId: !Ref AmiParameterStoreName
@@ -1200,7 +864,7 @@ Resources:
       SubnetId: !Ref PublicSubnet
       SecurityGroupIds:
         - !Ref SecurityGroup
-      IamInstanceProfile: !Ref TradingBotIdeInstanceProfile
+      IamInstanceProfile: !Ref InstanceProfileName
       Tags:
         - Key: type
           Value: trading-bot-ide
@@ -1226,93 +890,7 @@ Resources:
         SecretStringTemplate: '{"password":""}'
     UpdateReplacePolicy: Delete
     DeletionPolicy: Delete
-  TradingBotIdeCachePolicy:
-    Type: AWS::CloudFront::CachePolicy
-    Properties:
-      CachePolicyConfig:
-        DefaultTTL: 86400
-        MaxTTL: 31536000
-        MinTTL: 1
-        Name: !Ref AWS::StackName
-        ParametersInCacheKeyAndForwardedToOrigin:
-          CookiesConfig:
-            CookieBehavior: all
-          EnableAcceptEncodingGzip: False
-          EnableAcceptEncodingBrotli: False
-          HeadersConfig:
-            HeaderBehavior: whitelist
-            Headers:
-              - Accept-Charset
-              - Authorization
-              - Origin
-              - Accept
-              - Referer
-              - Host
-              - Accept-Language
-              - Accept-Datetime
-          QueryStringsConfig:
-            QueryStringBehavior: all
-  TradingBotIdeCloudFrontDistribution:
-    Type: AWS::CloudFront::Distribution
-    DependsOn:
-      - TradingBotIdeInstance
-    Properties:
-      DistributionConfig:
-        Enabled: True
-        HttpVersion: http2and3
-        CacheBehaviors:
-          - AllowedMethods:
-              - GET
-              - HEAD
-              - OPTIONS
-              - PUT
-              - PATCH
-              - POST
-              - DELETE
-            CachePolicyId: 4135ea2d-6df8-44a3-9df3-4b5a84be39ad
-            Compress: True
-            OriginRequestPolicyId: 216adef6-5c7f-47e4-b989-5492eafa07d3
-            TargetOriginId: !Sub CloudFront-${AWS::StackName}
-            ViewerProtocolPolicy: allow-all
-            PathPattern: "/proxy/*"
-          - AllowedMethods:
-              - GET
-              - HEAD
-              - OPTIONS
-              - PUT
-              - PATCH
-              - POST
-              - DELETE
-            CachePolicyId: 4135ea2d-6df8-44a3-9df3-4b5a84be39ad
-            Compress: True
-            OriginRequestPolicyId: 216adef6-5c7f-47e4-b989-5492eafa07d3
-            TargetOriginId: !Sub CloudFront-${AWS::StackName}
-            ViewerProtocolPolicy: allow-all
-            PathPattern: "/ws/*"
-        DefaultCacheBehavior:
-          AllowedMethods:
-            - GET
-            - HEAD
-            - OPTIONS
-            - PUT
-            - PATCH
-            - POST
-            - DELETE
-          CachePolicyId: !Ref TradingBotIdeCachePolicy
-          OriginRequestPolicyId: 216adef6-5c7f-47e4-b989-5492eafa07d3
-          TargetOriginId: !Sub CloudFront-${AWS::StackName}
-          ViewerProtocolPolicy: allow-all
-        Origins:
-          - DomainName: !GetAtt TradingBotIdeInstance.PublicDnsName
-            Id: !Sub CloudFront-${AWS::StackName}
-            CustomOriginConfig:
-              OriginProtocolPolicy: http-only
-              OriginReadTimeout: 60
-              OriginKeepaliveTimeout: 60
 Outputs:
-  IdeUrl:
-    Description: URL to access the code-server IDE
-    Value: !Sub https://${TradingBotIdeCloudFrontDistribution.DomainName}
   IdePasswordSecret:
     Description: Link to AWS Secrets Manager console to retrieve the password
     Value: !Sub
@@ -1321,13 +899,10 @@ Outputs:
   IdePasswordSecretName:
     Description: Name of the secret containing the IDE password
     Value: !Sub ${AWS::StackName}-password
-  IdeRole:
-    Description: IAM Role ARN used by the IDE instance
-    Value: !Sub ${TradingBotIdeRole.Arn}
   InstanceId:
     Description: EC2 Instance ID of the IDE
     Value: !Ref TradingBotIdeInstance
-  CloudFrontDistributionId:
-    Description: CloudFront Distribution ID
-    Value: !Ref TradingBotIdeCloudFrontDistribution
+  InstancePublicDnsName:
+    Description: Public DNS name of the IDE instance
+    Value: !GetAtt TradingBotIdeInstance.PublicDnsName
 

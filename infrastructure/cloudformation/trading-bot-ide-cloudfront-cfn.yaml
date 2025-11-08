@@ -1,0 +1,116 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: CloudFront distribution for the Trading Bot IDE environment.
+
+Parameters:
+  ParentStackName:
+    Type: String
+    Description: Name of the base Trading Bot IDE stack
+  InstancePublicDnsName:
+    Type: String
+    Description: Public DNS name of the IDE EC2 instance (without protocol)
+  PriceClass:
+    Type: String
+    Default: PriceClass_All
+    AllowedValues:
+      - PriceClass_All
+      - PriceClass_200
+      - PriceClass_100
+    Description: CloudFront price class for the distribution
+
+Resources:
+  TradingBotIdeCachePolicy:
+    Type: AWS::CloudFront::CachePolicy
+    Properties:
+      CachePolicyConfig:
+        DefaultTTL: 86400
+        MaxTTL: 31536000
+        MinTTL: 1
+        Name: !Sub ${ParentStackName}-ide-cache-policy
+        ParametersInCacheKeyAndForwardedToOrigin:
+          CookiesConfig:
+            CookieBehavior: all
+          EnableAcceptEncodingGzip: false
+          EnableAcceptEncodingBrotli: false
+          HeadersConfig:
+            HeaderBehavior: whitelist
+            Headers:
+              - Accept-Charset
+              - Authorization
+              - Origin
+              - Accept
+              - Referer
+              - Host
+              - Accept-Language
+              - Accept-Datetime
+          QueryStringsConfig:
+            QueryStringBehavior: all
+
+  TradingBotIdeCloudFrontDistribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Comment: !Sub Trading Bot IDE distribution for ${ParentStackName}
+        Enabled: true
+        HttpVersion: http2and3
+        PriceClass: !Ref PriceClass
+        CacheBehaviors:
+          - AllowedMethods:
+              - GET
+              - HEAD
+              - OPTIONS
+              - PUT
+              - PATCH
+              - POST
+              - DELETE
+            CachePolicyId: 4135ea2d-6df8-44a3-9df3-4b5a84be39ad
+            Compress: true
+            OriginRequestPolicyId: 216adef6-5c7f-47e4-b989-5492eafa07d3
+            TargetOriginId: !Sub CloudFront-${ParentStackName}
+            ViewerProtocolPolicy: allow-all
+            PathPattern: "/proxy/*"
+          - AllowedMethods:
+              - GET
+              - HEAD
+              - OPTIONS
+              - PUT
+              - PATCH
+              - POST
+              - DELETE
+            CachePolicyId: 4135ea2d-6df8-44a3-9df3-4b5a84be39ad
+            Compress: true
+            OriginRequestPolicyId: 216adef6-5c7f-47e4-b989-5492eafa07d3
+            TargetOriginId: !Sub CloudFront-${ParentStackName}
+            ViewerProtocolPolicy: allow-all
+            PathPattern: "/ws/*"
+        DefaultCacheBehavior:
+          AllowedMethods:
+            - GET
+            - HEAD
+            - OPTIONS
+            - PUT
+            - PATCH
+            - POST
+            - DELETE
+          CachePolicyId: !Ref TradingBotIdeCachePolicy
+          OriginRequestPolicyId: 216adef6-5c7f-47e4-b989-5492eafa07d3
+          TargetOriginId: !Sub CloudFront-${ParentStackName}
+          ViewerProtocolPolicy: allow-all
+        Origins:
+          - DomainName: !Ref InstancePublicDnsName
+            Id: !Sub CloudFront-${ParentStackName}
+            CustomOriginConfig:
+              OriginProtocolPolicy: http-only
+              OriginReadTimeout: 60
+              OriginKeepaliveTimeout: 60
+
+Outputs:
+  IdeUrl:
+    Description: URL to access the code-server IDE via CloudFront
+    Value: !Sub https://${TradingBotIdeCloudFrontDistribution.DomainName}
+  CloudFrontDistributionId:
+    Description: CloudFront Distribution ID
+    Value: !Ref TradingBotIdeCloudFrontDistribution
+  CloudFrontDomainName:
+    Description: CloudFront distribution domain name
+    Value: !GetAtt TradingBotIdeCloudFrontDistribution.DomainName
+
