@@ -349,6 +349,38 @@ cleanup_target_groups() {
     fi
 }
 
+# Function to clean up CloudWatch Log Groups
+cleanup_cloudwatch_logs() {
+    print_info "📊 Cleaning up CloudWatch Log Groups..."
+    
+    # Get all log groups that might belong to our cluster
+    local log_groups=$(aws logs describe-log-groups --region $AWS_REGION --query "logGroups[?contains(logGroupName, '/aws/eks/$CLUSTER_NAME') || contains(logGroupName, '$CLUSTER_NAME')].logGroupName" --output text 2>/dev/null || echo "")
+    
+    if [ -n "$log_groups" ] && [ "$log_groups" != "" ]; then
+        print_warning "Found CloudWatch Log Groups to delete:"
+        echo "$log_groups" | tr '\t' '\n'
+        
+        echo "$log_groups" | tr '\t' '\n' | while read -r log_group; do
+            if [ -n "$log_group" ] && [ "$log_group" != "None" ]; then
+                print_info "🗑️  Deleting Log Group: $log_group"
+                aws logs delete-log-group --log-group-name "$log_group" --region $AWS_REGION 2>/dev/null || {
+                    print_warning "Failed to delete $log_group - trying to remove retention policy first..."
+                    # Try removing retention policy and retry
+                    aws logs put-retention-policy --log-group-name "$log_group" --retention-in-days 1 --region $AWS_REGION 2>/dev/null || true
+                    sleep 2
+                    aws logs delete-log-group --log-group-name "$log_group" --region $AWS_REGION 2>/dev/null || {
+                        print_warning "Could not delete $log_group - may need manual cleanup"
+                    }
+                }
+            fi
+        done
+        
+        print_success "CloudWatch Log Groups cleanup completed"
+    else
+        print_success "No CloudWatch Log Groups found"
+    fi
+}
+
 # Function to remove problematic resources from Terraform state
 clean_terraform_state() {
     print_info "🧹 ENHANCED: Cleaning Terraform state of problematic resources..."
@@ -379,17 +411,37 @@ clean_terraform_state() {
         "module.application.kubernetes_deployment.this"
         "kubernetes_deployment.*"
         
-        # Helm releases
+        # Helm releases (CRITICAL - they depend on cluster)
         "helm_release.*"
+        
+        # Data sources that reference deleted cluster (CRITICAL)
+        "data.aws_eks_cluster.this"
+        "data.aws_eks_cluster_auth.this"
     )
     
     print_info "Checking for stuck resources in Terraform state..."
     for resource in "${problematic_resources[@]}"; do
-        if terraform state list 2>/dev/null | grep -q "$resource"; then
-            print_warning "Found problematic resource: $resource"
-            print_info "Removing $resource from Terraform state"
-            terraform state rm "$resource" 2>/dev/null || true
-            print_success "Removed $resource from state"
+        # Handle wildcard patterns
+        if [[ "$resource" == *"*"* ]]; then
+            local pattern="${resource//\*/.*}"
+            local matching_resources=$(terraform state list 2>/dev/null | grep -E "$pattern" || echo "")
+            if [ -n "$matching_resources" ]; then
+                echo "$matching_resources" | while read -r matching_resource; do
+                    if [ -n "$matching_resource" ]; then
+                        print_warning "Found problematic resource: $matching_resource"
+                        print_info "Removing $matching_resource from Terraform state"
+                        terraform state rm "$matching_resource" 2>/dev/null || true
+                        print_success "Removed $matching_resource from state"
+                    fi
+                done
+            fi
+        else
+            if terraform state list 2>/dev/null | grep -q "^${resource}$"; then
+                print_warning "Found problematic resource: $resource"
+                print_info "Removing $resource from Terraform state"
+                terraform state rm "$resource" 2>/dev/null || true
+                print_success "Removed $resource from state"
+            fi
         fi
     done
     
@@ -482,6 +534,101 @@ terraform_destroy() {
     print_success "Terraform destroy completed"
 }
 
+# Function to manually clean up VPC if Terraform fails
+cleanup_vpc_manually() {
+    print_info "🌐 Attempting manual VPC cleanup..."
+    
+    if [ ! -d "$TERRAFORM_DIR" ]; then
+        return 0
+    fi
+    
+    cd "$TERRAFORM_DIR"
+    
+    # Get VPC ID from state
+    local vpc_id=$(terraform state show module.vpc.module.vpc.aws_vpc.this[0] 2>/dev/null | grep -E "^id\s+=" | awk '{print $3}' | tr -d '"' || echo "")
+    
+    if [ -z "$vpc_id" ] || [ "$vpc_id" = "" ]; then
+        print_info "No VPC found in state"
+        cd - >/dev/null
+        return 0
+    fi
+    
+    print_warning "Found VPC in state: $vpc_id"
+    
+    # Check if VPC actually exists in AWS
+    if ! aws ec2 describe-vpcs --vpc-ids "$vpc_id" --region $AWS_REGION >/dev/null 2>&1; then
+        print_info "VPC $vpc_id doesn't exist in AWS - removing from state only"
+        terraform state rm module.vpc.module.vpc.aws_vpc.this[0] 2>/dev/null || true
+        cd - >/dev/null
+        return 0
+    fi
+    
+    print_warning "VPC $vpc_id still exists - attempting manual cleanup..."
+    
+    # Get all resources in the VPC
+    local enis=$(aws ec2 describe-network-interfaces --filters "Name=vpc-id,Values=$vpc_id" --region $AWS_REGION --query 'NetworkInterfaces[*].NetworkInterfaceId' --output text 2>/dev/null || echo "")
+    
+    if [ -n "$enis" ] && [ "$enis" != "" ]; then
+        print_warning "Found network interfaces attached to VPC - these need to be deleted first"
+        echo "$enis" | tr '\t' '\n' | while read -r eni; do
+            if [ -n "$eni" ]; then
+                print_info "Checking ENI: $eni"
+                # Try to detach and delete (this might fail if still in use)
+                aws ec2 detach-network-interface --network-interface-id "$eni" --force --region $AWS_REGION 2>/dev/null || true
+                aws ec2 delete-network-interface --network-interface-id "$eni" --region $AWS_REGION 2>/dev/null || true
+            fi
+        done
+    fi
+    
+    # Get NAT Gateway
+    local nat_gw=$(aws ec2 describe-nat-gateways --filter "Name=vpc-id,Values=$vpc_id" --region $AWS_REGION --query 'NatGateways[?State==`available`].NatGatewayId' --output text 2>/dev/null || echo "")
+    if [ -n "$nat_gw" ] && [ "$nat_gw" != "" ]; then
+        echo "$nat_gw" | tr '\t' '\n' | while read -r nat; do
+            if [ -n "$nat" ]; then
+                print_info "Deleting NAT Gateway: $nat"
+                aws ec2 delete-nat-gateway --nat-gateway-id "$nat" --region $AWS_REGION 2>/dev/null || true
+            fi
+        done
+        print_info "Waiting 30 seconds for NAT Gateway deletion to start..."
+        sleep 30
+    fi
+    
+    # Get Internet Gateway
+    local igw=$(aws ec2 describe-internet-gateways --filters "Name=attachment.vpc-id,Values=$vpc_id" --region $AWS_REGION --query 'InternetGateways[*].InternetGatewayId' --output text 2>/dev/null || echo "")
+    if [ -n "$igw" ] && [ "$igw" != "" ]; then
+        echo "$igw" | tr '\t' '\n' | while read -r gateway; do
+            if [ -n "$gateway" ]; then
+                print_info "Detaching and deleting Internet Gateway: $gateway"
+                aws ec2 detach-internet-gateway --internet-gateway-id "$gateway" --vpc-id "$vpc_id" --region $AWS_REGION 2>/dev/null || true
+                aws ec2 delete-internet-gateway --internet-gateway-id "$gateway" --region $AWS_REGION 2>/dev/null || true
+            fi
+        done
+    fi
+    
+    # Get and delete subnets
+    local subnets=$(aws ec2 describe-subnets --filters "Name=vpc-id,Values=$vpc_id" --region $AWS_REGION --query 'Subnets[*].SubnetId' --output text 2>/dev/null || echo "")
+    if [ -n "$subnets" ] && [ "$subnets" != "" ]; then
+        echo "$subnets" | tr '\t' '\n' | while read -r subnet; do
+            if [ -n "$subnet" ]; then
+                print_info "Deleting subnet: $subnet"
+                aws ec2 delete-subnet --subnet-id "$subnet" --region $AWS_REGION 2>/dev/null || true
+            fi
+        done
+    fi
+    
+    # Finally delete VPC
+    print_info "Deleting VPC: $vpc_id"
+    if aws ec2 delete-vpc --vpc-id "$vpc_id" --region $AWS_REGION 2>/dev/null; then
+        print_success "VPC $vpc_id deleted successfully"
+        # Remove from state
+        terraform state rm module.vpc.module.vpc.aws_vpc.this[0] 2>/dev/null || true
+    else
+        print_warning "Could not delete VPC $vpc_id - may have dependencies"
+    fi
+    
+    cd - >/dev/null
+}
+
 # Function to verify complete cleanup
 verify_cleanup() {
     print_info "🔍 Verifying complete cleanup..."
@@ -505,6 +652,34 @@ verify_cleanup() {
         echo "$remaining_tgs"
     else
         print_success "✅ No remaining Target Groups"
+    fi
+    
+    # Check CloudWatch Log Groups
+    print_info "Checking CloudWatch Log Groups..."
+    local remaining_logs=$(aws logs describe-log-groups --region $AWS_REGION --query "logGroups[?contains(logGroupName, '/aws/eks/$CLUSTER_NAME') || contains(logGroupName, '$CLUSTER_NAME')].logGroupName" --output text 2>/dev/null || echo "")
+    if [ -n "$remaining_logs" ] && [ "$remaining_logs" != "" ]; then
+        print_warning "⚠️  Found remaining CloudWatch Log Groups:"
+        echo "$remaining_logs"
+    else
+        print_success "✅ No remaining CloudWatch Log Groups"
+    fi
+    
+    # Check VPC
+    print_info "Checking VPC..."
+    if [ -d "$TERRAFORM_DIR" ]; then
+        cd "$TERRAFORM_DIR"
+        local vpc_id=$(terraform state show module.vpc.module.vpc.aws_vpc.this[0] 2>/dev/null | grep -E "^id\s+=" | awk '{print $3}' | tr -d '"' || echo "")
+        cd - >/dev/null
+        
+        if [ -n "$vpc_id" ] && [ "$vpc_id" != "" ]; then
+            if aws ec2 describe-vpcs --vpc-ids "$vpc_id" --region $AWS_REGION >/dev/null 2>&1; then
+                print_warning "⚠️  VPC still exists: $vpc_id"
+            else
+                print_success "✅ VPC is gone (may still be in state)"
+            fi
+        else
+            print_success "✅ No VPC found in state"
+        fi
     fi
     
     # Check if cluster still exists
@@ -556,6 +731,9 @@ main() {
     # Step 5.5: Clean up ECR repositories
     cleanup_ecr_repositories
     
+    # Step 5.6: Clean up CloudWatch Log Groups
+    cleanup_cloudwatch_logs
+    
     # Step 6: Wait for AWS to process deletions
     print_info "⏳ Waiting 2 minutes for AWS to process Load Balancer deletions..."
     sleep 120
@@ -569,13 +747,42 @@ main() {
     else
         print_warning "⚠️  Terraform destroy had issues, but continuing with cleanup..."
         
+        # Clean up state again after failed destroy
+        clean_terraform_state
+        
         # Retry AWS cleanup
         cleanup_aws_load_balancers
         cleanup_target_groups
+        cleanup_cloudwatch_logs
         
         # Try Terraform destroy again
         print_info "🔄 Retrying Terraform destroy..."
-        terraform_destroy || print_warning "Second attempt also failed, but AWS resources should be cleaned"
+        if terraform_destroy; then
+            print_success "✅ Terraform destroy completed on retry"
+        else
+            print_warning "Second attempt also failed"
+            
+            # Final cleanup: Force remove remaining resources from state and try manual deletion
+            print_info "🔧 Attempting final cleanup of remaining resources..."
+            cd "$TERRAFORM_DIR"
+            
+            # Remove CloudWatch Log Group from state if it exists
+            if terraform state list 2>/dev/null | grep -q "aws_cloudwatch_log_group"; then
+                print_info "Removing CloudWatch Log Groups from state..."
+                terraform state list 2>/dev/null | grep "aws_cloudwatch_log_group" | while read -r resource; do
+                    terraform state rm "$resource" 2>/dev/null || true
+                done
+            fi
+            
+            # Try to delete VPC resources manually if they're stuck
+            cleanup_vpc_manually
+            
+            # Try destroy one more time after manual cleanup
+            print_info "Retrying destroy after manual cleanup..."
+            terraform destroy -auto-approve 2>&1 | tail -20 || true
+            
+            cd - >/dev/null
+        fi
     fi
     
     # Step 9: Final verification
