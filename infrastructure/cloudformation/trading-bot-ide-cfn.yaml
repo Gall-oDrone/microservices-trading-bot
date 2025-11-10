@@ -777,10 +777,14 @@ Resources:
                   echo "Installing Cursor CLI..."
                   max_attempts=3
                   attempt=1
+                  cursor_installed=0
                   while [ $attempt -le $max_attempts ]; do
                       if curl -fsSL https://cursor.sh/install | sh; then
-                          if command -v cursor &> /dev/null || [ -f ~/.local/bin/cursor ]; then
+                          hash -r
+                          if command -v cursor &> /dev/null || command -v cursor-agent &> /dev/null || \
+                             [ -f ~/.local/bin/cursor ] || [ -f ~/.local/bin/cursor-agent ]; then
                               echo "Cursor CLI installed successfully"
+                              cursor_installed=1
                               break
                           fi
                       fi
@@ -788,6 +792,10 @@ Resources:
                       sleep 5
                       attempt=$((attempt + 1))
                   done
+                  if [ $cursor_installed -ne 1 ]; then
+                      echo "Cursor CLI installation failed after $max_attempts attempts"
+                      exit 1
+                  fi
 
                   mkdir -p ~/environment
 
