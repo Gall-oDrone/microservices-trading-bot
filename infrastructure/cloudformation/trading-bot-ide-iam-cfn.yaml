@@ -131,6 +131,7 @@ Resources:
                   - eks:UpdateNodegroupVersion
                   - eks:ListAddons
                   - eks:DescribeAddon
+                  - eks:DescribeAddonVersions
                   - eks:CreateAddon
                   - eks:DeleteAddon
                   - eks:UpdateAddon
@@ -138,6 +139,9 @@ Resources:
                   - eks:ListIdentityProviderConfigs
                   - eks:AssociateIdentityProviderConfig
                   - eks:DisassociateIdentityProviderConfig
+                  - eks:TagResource
+                  - eks:UntagResource
+                  - eks:ListTagsForResource
                 Resource: "*"
               # ECR Permissions
               - Effect: Allow
@@ -246,13 +250,49 @@ Resources:
                   - iam:TagOpenIDConnectProvider
                   - iam:UntagOpenIDConnectProvider
                   - iam:ListOpenIDConnectProviderTags
+                  - iam:CreatePolicy
+                  - iam:DeletePolicy
                   - iam:GetPolicy
                   - iam:ListPolicies
                   - iam:GetPolicyVersion
                   - iam:ListPolicyVersions
+                  - iam:TagPolicy
+                  - iam:UntagPolicy
+                  - iam:ListPolicyTags
                   - iam:TagRole
                   - iam:UntagRole
                   - iam:ListRoleTags
+                Resource: "*"
+              # KMS Permissions (for EKS encryption and other services)
+              - Effect: Allow
+                Action:
+                  - kms:CreateKey
+                  - kms:DescribeKey
+                  - kms:ListKeys
+                  - kms:ListAliases
+                  - kms:PutKeyPolicy
+                  - kms:GetKeyPolicy
+                  - kms:ListKeyPolicies
+                  - kms:CreateAlias
+                  - kms:DeleteAlias
+                  - kms:UpdateAlias
+                  - kms:EnableKey
+                  - kms:DisableKey
+                  - kms:ScheduleKeyDeletion
+                  - kms:CancelKeyDeletion
+                  - kms:TagResource
+                  - kms:UntagResource
+                  - kms:ListResourceTags
+                  - kms:GenerateDataKey
+                  - kms:Decrypt
+                  - kms:Encrypt
+                  - kms:ReEncrypt
+                  - kms:DescribeCustomKeyStores
+                  - kms:ConnectCustomKeyStore
+                  - kms:DisconnectCustomKeyStore
+                  - kms:CreateCustomKeyStore
+                  - kms:DeleteCustomKeyStore
+                  - kms:UpdateCustomKeyStore
                 Resource: "*"
               # Route53 Permissions (for External DNS and Cert Manager)
               - Effect: Allow
