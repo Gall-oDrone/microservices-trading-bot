@@ -349,6 +349,84 @@ cleanup_target_groups() {
     fi
 }
 
+# Function to clean up KMS keys
+cleanup_kms_keys() {
+    print_info "🔐 Cleaning up KMS keys..."
+    
+    if [ ! -d "$TERRAFORM_DIR" ]; then
+        return 0
+    fi
+    
+    cd "$TERRAFORM_DIR"
+    terraform init >/dev/null 2>&1 || true
+    
+    # Get KMS key ID from Terraform state
+    local kms_key_id=$(terraform state show 'module.eks.module.eks.module.kms.aws_kms_key.this[0]' 2>/dev/null | grep -E "^id\s+=" | awk '{print $3}' | tr -d '"' || echo "")
+    
+    if [ -z "$kms_key_id" ] || [ "$kms_key_id" = "" ]; then
+        print_info "No KMS key found in Terraform state"
+        cd - >/dev/null
+        return 0
+    fi
+    
+    print_warning "Found KMS key in state: $kms_key_id"
+    
+    # Check if KMS key actually exists in AWS
+    if ! aws kms describe-key --key-id "$kms_key_id" --region $AWS_REGION >/dev/null 2>&1; then
+        print_info "KMS key $kms_key_id doesn't exist in AWS - removing from state only"
+        terraform state rm 'module.eks.module.eks.module.kms.aws_kms_key.this[0]' 2>/dev/null || true
+        terraform state rm 'module.eks.module.eks.module.kms.aws_kms_alias.this["cluster"]' 2>/dev/null || true
+        cd - >/dev/null
+        return 0
+    fi
+    
+    # Get KMS key details
+    local key_state=$(aws kms describe-key --key-id "$kms_key_id" --region $AWS_REGION --query 'KeyMetadata.KeyState' --output text 2>/dev/null || echo "Unknown")
+    
+    print_info "KMS key state: $key_state"
+    
+    if [ "$key_state" = "PendingDeletion" ]; then
+        print_info "KMS key $kms_key_id is already pending deletion"
+        cd - >/dev/null
+        return 0
+    fi
+    
+    if [ "$key_state" = "Disabled" ]; then
+        print_info "KMS key $kms_key_id is disabled, scheduling for deletion..."
+    else
+        # Disable the key first (required before deletion)
+        print_info "Disabling KMS key $kms_key_id..."
+        aws kms disable-key --key-id "$kms_key_id" --region $AWS_REGION 2>/dev/null || {
+            print_warning "Failed to disable KMS key $kms_key_id"
+            cd - >/dev/null
+            return 0
+        }
+        
+        # Wait a moment for the disable to take effect
+        sleep 2
+    fi
+    
+    # Schedule key deletion (7-day window)
+    print_info "Scheduling KMS key $kms_key_id for deletion (7-day window)..."
+    aws kms schedule-key-deletion --key-id "$kms_key_id" --pending-window-in-days 7 --region $AWS_REGION 2>/dev/null || {
+        print_warning "Failed to schedule KMS key deletion. It may already be scheduled or in use."
+        print_info "KMS keys cannot be deleted immediately if they're in use by other resources."
+        print_info "The key will be automatically deleted after the pending window expires."
+    }
+    
+    # Also try to delete the alias (it will be removed automatically, but let's try)
+    local kms_alias=$(terraform state show 'module.eks.module.eks.module.kms.aws_kms_alias.this["cluster"]' 2>/dev/null | grep -E "^name\s+=" | awk '{print $3}' | tr -d '"' || echo "")
+    if [ -n "$kms_alias" ] && [ "$kms_alias" != "" ]; then
+        print_info "Removing KMS alias: $kms_alias"
+        aws kms delete-alias --alias-name "$kms_alias" --region $AWS_REGION 2>/dev/null || {
+            print_info "Alias will be removed automatically when key is deleted"
+        }
+    fi
+    
+    cd - >/dev/null
+    print_success "KMS key cleanup initiated"
+}
+
 # Function to clean up CloudWatch Log Groups
 cleanup_cloudwatch_logs() {
     print_info "📊 Cleaning up CloudWatch Log Groups..."
@@ -705,6 +783,28 @@ verify_cleanup() {
         print_success "✅ No remaining ECR repositories"
     fi
     
+    # Check KMS keys
+    print_info "Checking KMS keys..."
+    if [ -d "$TERRAFORM_DIR" ]; then
+        cd "$TERRAFORM_DIR"
+        local kms_key_id=$(terraform state show 'module.eks.module.eks.module.kms.aws_kms_key.this[0]' 2>/dev/null | grep -E "^id\s+=" | awk '{print $3}' | tr -d '"' || echo "")
+        cd - >/dev/null
+        
+        if [ -n "$kms_key_id" ] && [ "$kms_key_id" != "" ]; then
+            local key_state=$(aws kms describe-key --key-id "$kms_key_id" --region $AWS_REGION --query 'KeyMetadata.KeyState' --output text 2>/dev/null || echo "Unknown")
+            if [ "$key_state" = "PendingDeletion" ]; then
+                print_success "✅ KMS key is scheduled for deletion (pending window: 7 days)"
+            elif [ "$key_state" = "Enabled" ] || [ "$key_state" = "Disabled" ]; then
+                print_warning "⚠️  KMS key still exists: $kms_key_id (State: $key_state)"
+                print_info "KMS keys have a 7-day deletion window and cannot be deleted immediately if in use"
+            else
+                print_info "KMS key state: $key_state"
+            fi
+        else
+            print_success "✅ No KMS key found in state"
+        fi
+    fi
+    
     print_success "🎉 Cleanup verification completed!"
 }
 
@@ -734,6 +834,9 @@ main() {
     # Step 5.6: Clean up CloudWatch Log Groups
     cleanup_cloudwatch_logs
     
+    # Step 5.7: Clean up KMS keys
+    cleanup_kms_keys
+    
     # Step 6: Wait for AWS to process deletions
     print_info "⏳ Waiting 2 minutes for AWS to process Load Balancer deletions..."
     sleep 120
@@ -754,6 +857,7 @@ main() {
         cleanup_aws_load_balancers
         cleanup_target_groups
         cleanup_cloudwatch_logs
+        cleanup_kms_keys
         
         # Try Terraform destroy again
         print_info "🔄 Retrying Terraform destroy..."
