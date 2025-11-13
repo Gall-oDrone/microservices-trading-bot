@@ -146,6 +146,14 @@ resource "helm_release" "aws_load_balancer_controller" {
   ]
 }
 
+# Wait for AWS Load Balancer Controller webhook to be ready
+# This prevents other Helm releases from failing due to webhook not being available
+resource "time_sleep" "wait_for_alb_controller_webhook" {
+  depends_on = [helm_release.aws_load_balancer_controller]
+  
+  create_duration = "90s"
+}
+
 resource "helm_release" "external_dns" {
   name       = "external-dns"
   repository = "https://kubernetes-sigs.github.io/external-dns/"
@@ -197,6 +205,10 @@ resource "helm_release" "cert_manager" {
   version    = "v1.15.1"
 
   create_namespace = true
+
+  # Wait for AWS Load Balancer Controller webhook to be ready
+  # This prevents webhook errors when creating services
+  depends_on = [time_sleep.wait_for_alb_controller_webhook]
 
   set {
     name  = "installCRDs"
@@ -264,6 +276,10 @@ resource "helm_release" "kube_prometheus_stack" {
   version    = "58.3.2"
 
   create_namespace = true
+
+  # Wait for AWS Load Balancer Controller webhook to be ready
+  # This prevents webhook errors when creating services
+  depends_on = [time_sleep.wait_for_alb_controller_webhook]
 
   values = [
     yamlencode({

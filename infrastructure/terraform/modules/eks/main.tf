@@ -23,8 +23,9 @@ module "eks" {
   cluster_endpoint_public_access  = true
   cluster_endpoint_private_access = true
   
-  # Disable cluster creator admin permissions to avoid IAM session context lookup
-  enable_cluster_creator_admin_permissions = false
+  # Enable cluster creator admin permissions for development environments
+  # This allows the IAM role/user that created the cluster to access it
+  enable_cluster_creator_admin_permissions = true
 
   # KMS key is created by default for cluster encryption
   # The deletion window (7 days) is set when scheduling deletion via cleanup script
