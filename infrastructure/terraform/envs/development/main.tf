@@ -135,10 +135,15 @@ resource "helm_release" "aws_load_balancer_controller" {
     value = true
   }
 
-  set {
-    name  = "serviceAccount.annotations.eks.amazonaws.com/role-arn"
-    value = module.iam_irsa.irsa_role_arns["alb"]
-  }
+  values = [
+    yamlencode({
+      serviceAccount = {
+        annotations = {
+          "eks.amazonaws.com/role-arn" = module.iam_irsa.irsa_role_arns["alb"]
+        }
+      }
+    })
+  ]
 }
 
 resource "helm_release" "external_dns" {
@@ -173,10 +178,15 @@ resource "helm_release" "external_dns" {
     value = true
   }
 
-  set {
-    name  = "serviceAccount.annotations.eks.amazonaws.com/role-arn"
-    value = module.iam_irsa.irsa_role_arns["external-dns"]
-  }
+  values = [
+    yamlencode({
+      serviceAccount = {
+        annotations = {
+          "eks.amazonaws.com/role-arn" = module.iam_irsa.irsa_role_arns["external-dns"]
+        }
+      }
+    })
+  ]
 }
 
 resource "helm_release" "cert_manager" {
@@ -198,10 +208,15 @@ resource "helm_release" "cert_manager" {
     value = true
   }
 
-  set {
-    name  = "serviceAccount.annotations.eks.amazonaws.com/role-arn"
-    value = module.iam_irsa.irsa_role_arns["cert-manager"]
-  }
+  values = [
+    yamlencode({
+      serviceAccount = {
+        annotations = {
+          "eks.amazonaws.com/role-arn" = module.iam_irsa.irsa_role_arns["cert-manager"]
+        }
+      }
+    })
+  ]
 }
 
 resource "helm_release" "external_secrets" {
@@ -218,10 +233,15 @@ resource "helm_release" "external_secrets" {
     value = true
   }
 
-  set {
-    name  = "serviceAccount.annotations.eks.amazonaws.com/role-arn"
-    value = module.iam_irsa.irsa_role_arns["external-secrets"]
-  }
+  values = [
+    yamlencode({
+      serviceAccount = {
+        annotations = {
+          "eks.amazonaws.com/role-arn" = module.iam_irsa.irsa_role_arns["external-secrets"]
+        }
+      }
+    })
+  ]
 }
 
 module "ci_github_oidc" {

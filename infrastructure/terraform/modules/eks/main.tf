@@ -19,6 +19,10 @@ module "eks" {
 
   enable_irsa = true
   
+  # Enable public endpoint access for development environments
+  cluster_endpoint_public_access  = true
+  cluster_endpoint_private_access = true
+  
   # Disable cluster creator admin permissions to avoid IAM session context lookup
   enable_cluster_creator_admin_permissions = false
 
