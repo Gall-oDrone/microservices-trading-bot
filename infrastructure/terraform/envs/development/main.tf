@@ -18,7 +18,7 @@ module "eks" {
 
   region             = var.aws_region
   cluster_name       = local.name
-  cluster_version    = "1.30"
+  cluster_version    = "1.33"
   vpc_id             = module.vpc.vpc_id
   private_subnet_ids = module.vpc.private_subnet_ids
   public_subnet_ids  = module.vpc.public_subnet_ids
@@ -239,6 +239,10 @@ resource "helm_release" "external_secrets" {
   version    = "0.9.14"
 
   create_namespace = true
+
+  # Wait for AWS Load Balancer Controller webhook to be ready
+  # This prevents webhook errors when creating services
+  depends_on = [time_sleep.wait_for_alb_controller_webhook]
 
   set {
     name  = "serviceAccount.create"

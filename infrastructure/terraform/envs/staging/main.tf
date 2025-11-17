@@ -18,7 +18,7 @@ module "eks" {
 
   region             = var.aws_region
   cluster_name       = local.name
-  cluster_version    = "1.30"
+  cluster_version    = "1.33"
   vpc_id             = module.vpc.vpc_id
   private_subnet_ids = module.vpc.private_subnet_ids
   public_subnet_ids  = module.vpc.public_subnet_ids

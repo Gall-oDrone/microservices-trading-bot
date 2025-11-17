@@ -14,7 +14,7 @@ Scope of this phase
 Phase 1 – Foundations (Dev)
 - Terraform state, AWS provider, versions pinning.
 - VPC with 2–3 AZs: private subnets for nodes, public for ingress, NAT for egress.
-- EKS cluster v1.30: IRSA enabled; managed addons (VPC CNI, CoreDNS, kube-proxy, EBS CSI).
+- EKS cluster v1.33: IRSA enabled; managed addons (VPC CNI, CoreDNS, kube-proxy, EBS CSI).
 - ECR repositories for services.
 - IAM OIDC provider + base IRSA roles for controllers (placeholders narrowed later).
 

@@ -5,7 +5,7 @@ variable "private_subnet_ids" { type = list(string) }
 variable "public_subnet_ids" { type = list(string) }
 variable "cluster_version" { 
   type    = string
-  default = "1.30"
+  default = "1.33"
 }
 variable "node_instance_types" { 
   type    = list(string)

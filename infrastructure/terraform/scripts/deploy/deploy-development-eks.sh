@@ -180,12 +180,45 @@ timeout 1800 terraform apply -target=module.vpc -target=module.eks -target=modul
 # Get outputs from Terraform
 print_info "📋 Getting infrastructure details..."
 CLUSTER_NAME=$(terraform output -raw cluster_name 2>/dev/null || echo "")
-AWS_REGION=$(terraform output -raw aws_region 2>/dev/null || terraform output -raw region 2>/dev/null || echo "")
 
+# Try multiple methods to determine AWS region (in order of preference)
+# Save environment variable first before we create local variable
+ENV_AWS_REGION="${AWS_REGION:-}"
+ENV_AWS_DEFAULT_REGION="${AWS_DEFAULT_REGION:-}"
+
+AWS_REGION=""
+
+# Method 1: Try Terraform outputs
 if [ -z "$AWS_REGION" ]; then
-    # Try to get region from variables or provider
-    AWS_REGION=$(terraform show -json 2>/dev/null | grep -o '"aws_region"[^}]*' | grep -o '"[^"]*"' | head -1 | tr -d '"' || echo "us-east-1")
-    print_warning "Could not get region from outputs, using: $AWS_REGION"
+    AWS_REGION=$(terraform output -raw aws_region 2>/dev/null || terraform output -raw region 2>/dev/null || echo "")
+fi
+
+# Method 2: Try environment variable AWS_REGION
+if [ -z "$AWS_REGION" ] && [ -n "$ENV_AWS_REGION" ]; then
+    AWS_REGION="$ENV_AWS_REGION"
+fi
+
+# Method 3: Try environment variable AWS_DEFAULT_REGION
+if [ -z "$AWS_REGION" ] && [ -n "$ENV_AWS_DEFAULT_REGION" ]; then
+    AWS_REGION="$ENV_AWS_DEFAULT_REGION"
+fi
+
+# Method 4: Try AWS CLI configuration
+if [ -z "$AWS_REGION" ]; then
+    AWS_REGION=$(aws configure get region 2>/dev/null || echo "")
+fi
+
+# Method 5: Try to extract from Terraform variables/defaults
+if [ -z "$AWS_REGION" ]; then
+    AWS_REGION=$(terraform show -json 2>/dev/null | grep -o '"aws_region"[^}]*' | grep -o '"[^"]*"' | head -1 | tr -d '"' || echo "")
+fi
+
+# Method 6: Default to us-east-1 if all else fails
+if [ -z "$AWS_REGION" ]; then
+    AWS_REGION="us-east-1"
+    print_warning "Could not determine region from outputs/config, defaulting to: $AWS_REGION"
+else
+    print_info "Using AWS Region: $AWS_REGION"
 fi
 
 if [ -z "$CLUSTER_NAME" ]; then
