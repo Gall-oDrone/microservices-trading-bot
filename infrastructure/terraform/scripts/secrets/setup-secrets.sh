@@ -28,6 +28,37 @@ print_error() {
     echo -e "${RED}[ERROR]${NC} $1"
 }
 
+# Function to validate secret value
+validate_secret_value() {
+    local secret_value=$1
+    local secret_name=$2
+    local allow_empty=${3:-false}
+    
+    # Check if empty (skip if empty values are allowed)
+    if [ -z "$secret_value" ]; then
+        if [ "$allow_empty" = "true" ]; then
+            return 0
+        fi
+        print_error "$secret_name cannot be empty"
+        return 1
+    fi
+    
+    # Check for null bytes (can cause issues)
+    if echo "$secret_value" | grep -q $'\0'; then
+        print_error "$secret_name contains null bytes which are not allowed"
+        return 1
+    fi
+    
+    # Check length (AWS Secrets Manager has limits)
+    local length=${#secret_value}
+    if [ $length -gt 65536 ]; then
+        print_error "$secret_name exceeds AWS Secrets Manager limit of 65536 characters"
+        return 1
+    fi
+    
+    return 0
+}
+
 # ============================================================================
 # CONFIGURATION VARIABLES
 # ============================================================================
@@ -108,45 +139,73 @@ create_or_update_secret() {
     
     print_info "Creating/updating secret: $secret_name"
     
+    # Validate secret value
+    if ! validate_secret_value "$secret_value" "$secret_name"; then
+        return 1
+    fi
+    
     # Check if secret already exists
-    if aws secretsmanager describe-secret --secret-id "$secret_name" --region "$AWS_REGION" &>/dev/null; then
+    if aws secretsmanager describe-secret --secret-id "$secret_name" --region "$AWS_REGION" 1>/dev/null 2>&1; then
         print_warning "Secret '$secret_name' already exists. Updating..."
-        aws secretsmanager update-secret \
+        if ! aws secretsmanager update-secret \
             --secret-id "$secret_name" \
             --secret-string "$secret_value" \
             --region "$AWS_REGION" \
             --description "$description" \
-            >/dev/null
+            1>/dev/null 2>&1; then
+            print_error "Failed to update secret: $secret_name"
+            return 1
+        fi
         print_success "✅ Updated secret: $secret_name"
     else
-        aws secretsmanager create-secret \
+        if ! aws secretsmanager create-secret \
             --name "$secret_name" \
             --secret-string "$secret_value" \
             --region "$AWS_REGION" \
             --description "$description" \
-            >/dev/null
+            1>/dev/null 2>&1; then
+            print_error "Failed to create secret: $secret_name"
+            # Show the actual error from AWS CLI
+            print_error "AWS CLI error details:"
+            aws secretsmanager create-secret \
+                --name "$secret_name" \
+                --secret-string "$secret_value" \
+                --region "$AWS_REGION" \
+                --description "$description" 2>&1 | sed 's/^/  /' || true
+            return 1
+        fi
         print_success "✅ Created secret: $secret_name"
     fi
+    return 0
 }
 
 # Create Bitso API Key secret
-create_or_update_secret \
+if ! create_or_update_secret \
     "${SECRET_PREFIX}/bitso-api-key" \
     "$BITSO_KEY" \
-    "Bitso API Key for trading bot"
+    "Bitso API Key for trading bot"; then
+    print_error "Failed to create/update Bitso API Key secret"
+    exit 1
+fi
 
 # Create Bitso API Secret
-create_or_update_secret \
+if ! create_or_update_secret \
     "${SECRET_PREFIX}/bitso-api-secret" \
     "$BITSO_SECRET" \
-    "Bitso API Secret for trading bot"
+    "Bitso API Secret for trading bot"; then
+    print_error "Failed to create/update Bitso API Secret"
+    exit 1
+fi
 
 # Create Redis password secret (only if provided)
 if [ -n "$REDIS_PASSWORD" ]; then
-    create_or_update_secret \
+    if ! create_or_update_secret \
         "${SECRET_PREFIX}/redis-password" \
         "$REDIS_PASSWORD" \
-        "Redis password for trading bot"
+        "Redis password for trading bot"; then
+        print_error "Failed to create/update Redis password secret"
+        exit 1
+    fi
 else
     print_info "Skipping Redis password secret (not provided)"
 fi
@@ -154,20 +213,38 @@ fi
 # Verify secrets were created
 print_info "📋 Verifying secrets..."
 SECRETS_CREATED=0
+VERIFICATION_FAILED=0
+
 for secret in "${SECRET_PREFIX}/bitso-api-key" "${SECRET_PREFIX}/bitso-api-secret"; do
-    if aws secretsmanager describe-secret --secret-id "$secret" --region "$AWS_REGION" &>/dev/null; then
+    if aws secretsmanager describe-secret --secret-id "$secret" --region "$AWS_REGION" 1>/dev/null 2>&1; then
         print_success "✅ Verified: $secret"
         SECRETS_CREATED=$((SECRETS_CREATED + 1))
     else
         print_error "❌ Failed to verify: $secret"
+        VERIFICATION_FAILED=1
+        # Show the actual error
+        print_error "Verification error details:"
+        aws secretsmanager describe-secret --secret-id "$secret" --region "$AWS_REGION" 2>&1 | sed 's/^/  /' || true
     fi
 done
 
 if [ -n "$REDIS_PASSWORD" ]; then
-    if aws secretsmanager describe-secret --secret-id "${SECRET_PREFIX}/redis-password" --region "$AWS_REGION" &>/dev/null; then
+    if aws secretsmanager describe-secret --secret-id "${SECRET_PREFIX}/redis-password" --region "$AWS_REGION" 1>/dev/null 2>&1; then
         print_success "✅ Verified: ${SECRET_PREFIX}/redis-password"
         SECRETS_CREATED=$((SECRETS_CREATED + 1))
+    else
+        print_error "❌ Failed to verify: ${SECRET_PREFIX}/redis-password"
+        VERIFICATION_FAILED=1
+        # Show the actual error
+        print_error "Verification error details:"
+        aws secretsmanager describe-secret --secret-id "${SECRET_PREFIX}/redis-password" --region "$AWS_REGION" 2>&1 | sed 's/^/  /' || true
     fi
+fi
+
+# Exit with error if verification failed
+if [ $VERIFICATION_FAILED -eq 1 ]; then
+    print_error "One or more secrets failed verification. Please check the errors above."
+    exit 1
 fi
 
 echo ""
