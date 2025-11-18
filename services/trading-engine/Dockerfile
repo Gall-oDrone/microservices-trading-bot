@@ -1,10 +1,15 @@
 FROM golang:1.21-alpine AS builder
 
 WORKDIR /app
-COPY go.mod go.sum ./
+# Copy service-specific go.mod and go.sum
+COPY services/trading-engine/go.mod services/trading-engine/go.sum ./
+# Copy shared directory to match replace directive (../../shared from go.mod location)
+# Since go.mod is at /app/go.mod, ../../shared means /shared
+COPY shared /shared
 RUN go mod download
 
-COPY . .
+# Copy service source code
+COPY services/trading-engine .
 RUN go build -o trading-engine ./cmd/main.go
 
 FROM alpine:latest
