@@ -1,6 +1,6 @@
 module kafka-test
 
-go 1.24.3
+go 1.21
 
 replace bitso-trading-platform/shared => ./shared
 
