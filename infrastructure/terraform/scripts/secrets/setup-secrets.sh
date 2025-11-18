@@ -44,8 +44,20 @@ validate_secret_value() {
     fi
     
     # Check for null bytes (can cause issues)
-    if echo "$secret_value" | grep -q $'\0'; then
-        print_error "$secret_name contains null bytes which are not allowed"
+    # Note: bash strips null bytes in variables, but we check anyway for safety
+    # Use a more reliable method: check if the string contains the null byte pattern
+    local contains_null=false
+    # Check using od (octal dump) which can detect null bytes
+    if printf "%s" "$secret_value" | od -An -tx1 | grep -q " 00 "; then
+        contains_null=true
+    fi
+    # Also check length consistency as a secondary check
+    local printf_length=$(printf "%s" "$secret_value" | wc -c)
+    local bash_length=${#secret_value}
+    
+    if [ "$contains_null" = "true" ] || [ "$printf_length" -ne "$bash_length" ]; then
+        print_error "$secret_name contains null bytes or invalid characters"
+        print_error "  Bash length: ${bash_length}, Printf length: ${printf_length}"
         return 1
     fi
     
