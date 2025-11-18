@@ -7,4 +7,4 @@ kind: ServiceAccount
 metadata:
   name: external-secrets
   annotations:
-    eks.amazonaws.com/role-arn: "arn:aws:iam::326105557351:role/mtb-development-external-secrets"
+    eks.amazonaws.com/role-arn: "ROLE_ARN_PLACEHOLDER"
