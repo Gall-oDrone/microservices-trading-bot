@@ -1,0 +1,6 @@
+# Staging environment patches
+# This file is used by kustomize to apply environment-specific configurations
+
+# Patch the ServiceAccount with the actual IAM role ARN for staging
+# The role ARN should be set via kustomize edit or CI/CD pipeline
+# Example: kustomize edit set annotation serviceAccount/external-secrets:eks.amazonaws.com/role-arn=arn:aws:iam::ACCOUNT_ID:role/eks-external-secrets-role
