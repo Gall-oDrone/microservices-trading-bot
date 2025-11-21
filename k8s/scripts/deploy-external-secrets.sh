@@ -31,10 +31,12 @@ print_error() {
 NAMESPACE="${NAMESPACE:-bitso-trading-dev}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BASE_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
+SERVICE_ACCOUNT_FILE="${BASE_DIR}/base/service-account-external-secrets.yaml"
 MANIFEST_FILE="${BASE_DIR}/base/external-secret.yaml"
 
 print_info "🔐 Deploying ExternalSecret to Kubernetes..."
 print_info "Namespace: $NAMESPACE"
+print_info "ServiceAccount: $SERVICE_ACCOUNT_FILE"
 print_info "Manifest: $MANIFEST_FILE"
 
 # Check prerequisites
@@ -61,7 +63,47 @@ else
     print_success "✅ Created namespace: $NAMESPACE"
 fi
 
-# Step 2: Apply ExternalSecret manifest
+# Step 2: Apply ServiceAccount manifest (required for SecretStore)
+print_info "👤 Applying ServiceAccount manifest..."
+if [ ! -f "$SERVICE_ACCOUNT_FILE" ]; then
+    print_error "ServiceAccount file not found: $SERVICE_ACCOUNT_FILE"
+    exit 1
+fi
+
+if kubectl apply -f "$SERVICE_ACCOUNT_FILE" -n "$NAMESPACE"; then
+    print_success "✅ Applied ServiceAccount manifest"
+else
+    print_error "Failed to apply ServiceAccount manifest"
+    exit 1
+fi
+
+# Step 2.1: Verify IAM role ARN is configured
+print_info "🔍 Verifying IAM role ARN configuration..."
+CURRENT_ROLE_ARN=$(kubectl get serviceaccount external-secrets -n "$NAMESPACE" -o jsonpath='{.metadata.annotations.eks\.amazonaws\.com/role-arn}' 2>/dev/null || echo "")
+if [ -z "$CURRENT_ROLE_ARN" ] || [ "$CURRENT_ROLE_ARN" = "PLACEHOLDER_ROLE_ARN" ] || [ "$CURRENT_ROLE_ARN" = "ROLE_ARN_PLACEHOLDER" ]; then
+    print_warning "⚠️  ServiceAccount has placeholder IAM role ARN: $CURRENT_ROLE_ARN"
+    print_info "Attempting to detect and set the correct IAM role ARN..."
+    
+    # Try to find the development external-secrets IAM role
+    DETECTED_ROLE_ARN=$(aws iam get-role --role-name mtb-development-external-secrets --query 'Role.Arn' --output text 2>/dev/null || echo "")
+    
+    if [ -n "$DETECTED_ROLE_ARN" ] && [ "$DETECTED_ROLE_ARN" != "None" ]; then
+        print_info "Found IAM role: $DETECTED_ROLE_ARN"
+        print_info "Patching ServiceAccount with detected IAM role ARN..."
+        kubectl annotate serviceaccount external-secrets -n "$NAMESPACE" \
+            eks.amazonaws.com/role-arn="$DETECTED_ROLE_ARN" \
+            --overwrite
+        print_success "✅ Updated ServiceAccount with IAM role ARN: $DETECTED_ROLE_ARN"
+    else
+        print_warning "Could not automatically detect IAM role ARN"
+        print_info "Please manually update the ServiceAccount annotation:"
+        print_info "  kubectl annotate serviceaccount external-secrets -n $NAMESPACE eks.amazonaws.com/role-arn=<YOUR_ROLE_ARN> --overwrite"
+    fi
+else
+    print_success "✅ ServiceAccount has IAM role ARN configured: $CURRENT_ROLE_ARN"
+fi
+
+# Step 3: Apply ExternalSecret manifest
 print_info "📋 Applying ExternalSecret manifest..."
 if [ ! -f "$MANIFEST_FILE" ]; then
     print_error "Manifest file not found: $MANIFEST_FILE"
@@ -75,7 +117,7 @@ else
     exit 1
 fi
 
-# Step 3: Wait for SecretStore to be ready
+# Step 4: Wait for SecretStore to be ready
 print_info "⏳ Waiting for SecretStore to be validated..."
 SECRETSTORE_READY=false
 MAX_WAIT=120
@@ -100,7 +142,7 @@ else
     kubectl describe secretstore aws-secrets-manager -n "$NAMESPACE" | tail -10
 fi
 
-# Step 4: Wait for ExternalSecret to sync
+# Step 5: Wait for ExternalSecret to sync
 print_info "⏳ Waiting for ExternalSecret to sync secrets..."
 EXTERNAL_SECRET_READY=false
 WAIT_TIME=0
@@ -125,7 +167,7 @@ else
     kubectl describe externalsecret trading-secrets -n "$NAMESPACE" | tail -10
 fi
 
-# Step 5: Verify secrets are synced
+# Step 6: Verify secrets are synced
 print_info "📋 Verifying secrets..."
 echo ""
 
@@ -166,6 +208,8 @@ print_success "🎉 ExternalSecret deployment complete!"
 print_info ""
 print_info "📝 Summary:"
 print_info "  - Namespace: $NAMESPACE"
+FINAL_ROLE_ARN=$(kubectl get serviceaccount external-secrets -n "$NAMESPACE" -o jsonpath='{.metadata.annotations.eks\.amazonaws\.com/role-arn}' 2>/dev/null || echo "Not configured")
+print_info "  - ServiceAccount: external-secrets (IAM Role: $FINAL_ROLE_ARN)"
 print_info "  - SecretStore: aws-secrets-manager (Ready: $SECRETSTORE_READY)"
 print_info "  - ExternalSecret: trading-secrets (Ready: $EXTERNAL_SECRET_READY)"
 print_info "  - Kubernetes Secret: trading-secrets"
