@@ -32,7 +32,7 @@ data "aws_iam_policy_document" "irsa" {
       identifiers = [var.oidc_provider_arn]
     }
     condition {
-      test     = "StringEquals"
+      test     = "StringLike"
       variable = "${var.oidc_provider}:sub"
       values   = [
         "system:serviceaccount:*:*"
