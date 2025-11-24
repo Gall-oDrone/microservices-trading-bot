@@ -1,10 +1,17 @@
 FROM golang:1.21-alpine AS builder
 
 WORKDIR /app
-COPY go.mod go.sum ./
+# Copy service-specific go.mod and go.sum (go.sum exists for this service)
+COPY services/strategy-executor/go.mod ./
+# Copy shared directory to match replace directive (../../shared from go.mod location)
+# Since go.mod is at /app/go.mod, ../../shared means /shared
+COPY shared /shared
+# Copy go.sum (it exists for strategy-executor)
+COPY services/strategy-executor/go.sum ./
 RUN go mod download
 
-COPY . .
+# Copy service source code
+COPY services/strategy-executor .
 RUN go build -o strategy-executor ./cmd/main.go
 
 FROM alpine:latest
