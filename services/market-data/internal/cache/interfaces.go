@@ -53,10 +53,10 @@ type TradeStats struct {
 
 // OrderBookSnapshot represents a cached order book snapshot
 type OrderBookSnapshot struct {
-	Book      string                 `json:"book"`
-	Bids      []bitso.OrderBookLevel `json:"bids"`
-	Asks      []bitso.OrderBookLevel `json:"asks"`
-	Timestamp time.Time              `json:"timestamp"`
+	Book      string        `json:"book"`
+	Bids      []bitso.Order `json:"bids"`
+	Asks      []bitso.Order `json:"asks"`
+	Timestamp time.Time     `json:"timestamp"`
 }
 
 // CacheConfig holds configuration for the cache layer

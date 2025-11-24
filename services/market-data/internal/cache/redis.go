@@ -212,8 +212,8 @@ func (r *RedisCache) GetOrderBook(ctx context.Context, book string) (*bitso.Orde
 	}
 
 	// Convert snapshot to OrderBook
+	// Note: OrderBook doesn't have a Book field - each Order has a Book field
 	orderBook := &bitso.OrderBook{
-		Book: bitso.ToBook(book),
 		Bids: snapshot.Bids,
 		Asks: snapshot.Asks,
 	}
@@ -238,9 +238,8 @@ func (r *RedisCache) UpdateOrderBook(ctx context.Context, book string, diff *bit
 	if orderBook == nil {
 		// Create new order book if it doesn't exist
 		orderBook = &bitso.OrderBook{
-			Book: bitso.ToBook(book),
-			Bids: []bitso.OrderBookLevel{},
-			Asks: []bitso.OrderBookLevel{},
+			Bids: []bitso.Order{},
+			Asks: []bitso.Order{},
 		}
 	}
 

@@ -294,3 +294,25 @@ func DefaultLogger() Logger {
 	level := ParseLogLevel(os.Getenv("LOG_LEVEL"))
 	return NewStructuredLogger(level, os.Stdout)
 }
+
+// ToStdLogger converts a Logger interface to a *log.Logger for compatibility
+// This creates a wrapper that adapts the Logger interface to *log.Logger
+func ToStdLogger(l Logger) *log.Logger {
+	// Create a simple logger that wraps the Logger interface
+	return log.New(&loggerWriter{logger: l}, "", log.LstdFlags|log.Lshortfile)
+}
+
+// loggerWriter implements io.Writer and forwards to Logger interface
+type loggerWriter struct {
+	logger Logger
+}
+
+func (w *loggerWriter) Write(p []byte) (n int, err error) {
+	msg := string(p)
+	// Remove trailing newline
+	if len(msg) > 0 && msg[len(msg)-1] == '\n' {
+		msg = msg[:len(msg)-1]
+	}
+	w.logger.Info(msg)
+	return len(p), nil
+}

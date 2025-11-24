@@ -1,0 +1,80 @@
+name: Build and Push to ECR (TEST MODE - No Push)
+
+# This is a test version of ecr-publish.yml that skips ECR operations
+# Use this to test Docker builds without needing ECR repositories
+
+on:
+  workflow_dispatch: {}
+  # Uncomment the line below to trigger on push for testing
+  # push:
+  #   branches: [ test-docker-builds ]
+
+env:
+  AWS_REGION: us-east-1
+  ECR_ACCOUNT_ID: ${{ secrets.AWS_ACCOUNT_ID }}
+  IMAGE_PREFIX: microservices-trading-bot
+  TEST_MODE: true  # Set to skip ECR operations
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    strategy:
+      matrix:
+        service: [trading-engine, backtesting, strategy-executor, market-data, order-management, api-gateway]
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    # Skip AWS configuration in test mode
+    - name: Configure AWS credentials (OIDC) - SKIPPED IN TEST MODE
+      if: env.TEST_MODE != 'true'
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        role-to-assume: ${{ secrets.AWS_GITHUB_ACTIONS_ROLE_ARN }}
+        aws-region: ${{ env.AWS_REGION }}
+
+    - name: Login to Amazon ECR - SKIPPED IN TEST MODE
+      if: env.TEST_MODE != 'true'
+      id: ecr-login
+      uses: aws-actions/amazon-ecr-login@v2
+
+    - name: Set image vars
+      id: vars
+      run: |
+        REPO=${{ matrix.service }}
+        ECR_REGISTRY="${{ env.ECR_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com"
+        echo "repo=${REPO}" >> $GITHUB_OUTPUT
+        echo "image=${ECR_REGISTRY}/${REPO}" >> $GITHUB_OUTPUT
+
+    - name: Ensure ECR repo exists - SKIPPED IN TEST MODE
+      if: env.TEST_MODE != 'true'
+      run: |
+        aws ecr describe-repositories --repository-names "${{ steps.vars.outputs.repo }}" >/dev/null 2>&1 || \
+        aws ecr create-repository --repository-name "${{ steps.vars.outputs.repo }}" >/dev/null
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: Build and push (TEST MODE - no push)
+      uses: docker/build-push-action@v5
+      env:
+        DOCKER_BUILDKIT: 1
+      with:
+        context: .
+        file: ./services/${{ matrix.service }}/Dockerfile
+        push: false  # Don't push in test mode
+        tags: |
+          test-${{ matrix.service }}:${{ github.sha }}
+          test-${{ matrix.service }}:latest
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+        load: true  # Load image into local Docker daemon
+
+    - name: Verify build success
+      run: |
+        echo "✓ Successfully built ${{ matrix.service }}"
+        docker images | grep "test-${{ matrix.service }}" || echo "Note: Image loaded but may not be visible in this runner"
+

@@ -1,0 +1,47 @@
+name: Test Docker Builds (No Push)
+
+on:
+  workflow_dispatch: {}
+  pull_request:
+    branches: [ main, staging ]
+    paths:
+      - 'services/**/Dockerfile'
+      - '.github/workflows/**'
+      - 'shared/**'
+
+env:
+  AWS_REGION: us-east-1
+
+jobs:
+  test-builds:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    strategy:
+      matrix:
+        service: [trading-engine, backtesting, strategy-executor, market-data, order-management, api-gateway]
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: Build (test only - no push)
+      uses: docker/build-push-action@v5
+      env:
+        DOCKER_BUILDKIT: 1
+      with:
+        context: .
+        file: ./services/${{ matrix.service }}/Dockerfile
+        push: false
+        tags: test-${{ matrix.service }}:latest
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+        load: true  # Load into local Docker daemon for testing
+
+    - name: Verify image was built
+      run: |
+        docker images | grep "test-${{ matrix.service }}"
+        echo "✓ Successfully built ${{ matrix.service }}"
+

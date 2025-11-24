@@ -181,7 +181,7 @@ func (p *TickerProcessor) ProcessTicker(ticker *bitso.Ticker) error {
 	select {
 	case p.tickersOutput <- ticker:
 		p.logger.Printf("Processed ticker: %s Price=%.2f Volume=%.8f High=%.2f Low=%.2f",
-			ticker.Book.String(), ticker.Last, ticker.Volume, ticker.High, ticker.Low)
+			ticker.Book.String(), ticker.Last.Float64(), ticker.Volume.Float64(), ticker.High.Float64(), ticker.Low.Float64())
 
 	case <-time.After(1 * time.Second):
 		p.logger.Println("Warning: Ticker output channel full, dropping ticker")
@@ -214,32 +214,39 @@ func (p *TickerProcessor) GetStatistics() *TickerProcessorStatistics {
 
 // validateTicker validates a ticker
 func (p *TickerProcessor) validateTicker(ticker *bitso.Ticker) error {
-	if ticker.Book == nil {
-		return fmt.Errorf("ticker book is nil")
+	// Book is a struct, not a pointer, so check if it's empty
+	if ticker.Book.String() == "" {
+		return fmt.Errorf("ticker book is empty")
 	}
 
-	if ticker.Last <= 0 {
-		return fmt.Errorf("ticker last price is invalid: %f", ticker.Last)
+	// Monetary is a string type, convert to float64 for comparison
+	if ticker.Last.Float64() <= 0 {
+		return fmt.Errorf("ticker last price is invalid: %f", ticker.Last.Float64())
 	}
 
-	if ticker.Volume < 0 {
-		return fmt.Errorf("ticker volume is negative: %f", ticker.Volume)
+	// Monetary is a string type, convert to float64 for comparison
+	if ticker.Volume.Float64() < 0 {
+		return fmt.Errorf("ticker volume is negative: %f", ticker.Volume.Float64())
 	}
 
-	if ticker.High <= 0 {
-		return fmt.Errorf("ticker high price is invalid: %f", ticker.High)
+	if ticker.High.Float64() <= 0 {
+		return fmt.Errorf("ticker high price is invalid: %f", ticker.High.Float64())
 	}
 
-	if ticker.Low <= 0 {
-		return fmt.Errorf("ticker low price is invalid: %f", ticker.Low)
+	if ticker.Low.Float64() <= 0 {
+		return fmt.Errorf("ticker low price is invalid: %f", ticker.Low.Float64())
 	}
 
-	if ticker.Low > ticker.High {
-		return fmt.Errorf("ticker low price (%f) is greater than high price (%f)", ticker.Low, ticker.High)
+	lowVal := ticker.Low.Float64()
+	highVal := ticker.High.Float64()
+	lastVal := ticker.Last.Float64()
+
+	if lowVal > highVal {
+		return fmt.Errorf("ticker low price (%f) is greater than high price (%f)", lowVal, highVal)
 	}
 
-	if ticker.Last < ticker.Low || ticker.Last > ticker.High {
-		return fmt.Errorf("ticker last price (%f) is outside high/low range (%f-%f)", ticker.Last, ticker.Low, ticker.High)
+	if lastVal < lowVal || lastVal > highVal {
+		return fmt.Errorf("ticker last price (%f) is outside high/low range (%f-%f)", lastVal, lowVal, highVal)
 	}
 
 	return nil
@@ -258,31 +265,33 @@ func (p *TickerProcessor) updateStats(ticker *bitso.Ticker) {
 	bookStats, exists := p.stats.BookStats[bookStr]
 	if !exists {
 		bookStats = &TickerBookStatistics{
-			LastPrice: ticker.Last,
-			LastHigh:  ticker.High,
-			LastLow:   ticker.Low,
+			LastPrice: ticker.Last.Float64(),
+			LastHigh:  ticker.High.Float64(),
+			LastLow:   ticker.Low.Float64(),
 		}
 		p.stats.BookStats[bookStr] = bookStats
 	}
 
 	bookStats.TickersCount++
-	bookStats.LastVolume = ticker.Volume
+	bookStats.LastVolume = ticker.Volume.Float64()
 	bookStats.LastUpdateTime = time.Now()
 
 	// Calculate price change
+	lastPrice := ticker.Last.Float64()
 	if bookStats.LastPrice > 0 {
-		bookStats.PriceChange = ticker.Last - bookStats.LastPrice
+		bookStats.PriceChange = lastPrice - bookStats.LastPrice
 		bookStats.PriceChangePercent = (bookStats.PriceChange / bookStats.LastPrice) * 100
 	}
 
 	// Update price levels
-	bookStats.LastPrice = ticker.Last
-	bookStats.LastHigh = ticker.High
-	bookStats.LastLow = ticker.Low
+	bookStats.LastPrice = lastPrice
+	bookStats.LastHigh = ticker.High.Float64()
+	bookStats.LastLow = ticker.Low.Float64()
 
 	// Calculate VWAP (simplified)
-	if ticker.Volume > 0 {
-		bookStats.LastVWAP = (ticker.Last * ticker.Volume) / ticker.Volume
+	volume := ticker.Volume.Float64()
+	if volume > 0 {
+		bookStats.LastVWAP = (lastPrice * volume) / volume
 	}
 }
 

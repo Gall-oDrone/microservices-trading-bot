@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"strconv"
 	"syscall"
 	"time"
 
@@ -76,12 +77,15 @@ func NewApplication() (*Application, error) {
 	}
 	appLogger.Info("Configuration loaded successfully")
 
+	// Convert logger to *log.Logger for compatibility
+	stdLogger := logger.ToStdLogger(appLogger)
+
 	// Initialize metrics collector
-	metricsCollector := metrics.NewMetricsCollector(appLogger)
+	metricsCollector := metrics.NewMetricsCollector(stdLogger)
 	appLogger.Info("Metrics collector initialized")
 
 	// Initialize health manager
-	healthManager := health.NewHealthManager(appLogger)
+	healthManager := health.NewHealthManager(stdLogger)
 	appLogger.Info("Health manager initialized")
 
 	// Initialize cache layer
@@ -91,7 +95,7 @@ func NewApplication() (*Application, error) {
 	cacheConfig.RedisPassword = cfg.RedisPassword
 	cacheConfig.RedisDB = cfg.RedisDB
 
-	cacheLayer, err := cache.NewRedisCache(cacheConfig, appLogger)
+	cacheLayer, err := cache.NewRedisCache(cacheConfig, stdLogger)
 	if err != nil {
 		cancel()
 		return nil, fmt.Errorf("failed to create cache layer: %w", err)
@@ -103,7 +107,7 @@ func NewApplication() (*Application, error) {
 	storageConfig.BackendType = "redis"
 	storageConfig.RetentionDays = 30
 
-	storage, err := historical.NewRedisStorage(storageConfig, appLogger)
+	storage, err := historical.NewRedisStorage(storageConfig, stdLogger)
 	if err != nil {
 		cancel()
 		return nil, fmt.Errorf("failed to create storage: %w", err)
@@ -137,14 +141,14 @@ func NewApplication() (*Application, error) {
 		ReconnectAttempts: cfg.WSReconnectAttempts,
 		ReconnectInterval: cfg.WSReconnectInterval,
 		ReconnectMaxDelay: cfg.WSReconnectMaxDelay,
-		Logger:            appLogger,
+		Logger:            stdLogger, // websocket.ManagerConfig uses *log.Logger
 	}
 	wsManager := websocket.NewManager(wsManagerConfig)
 	appLogger.Info("WebSocket manager created")
 
 	// Initialize Trade Processor
 	processorConfig := &processor.ProcessorConfig{
-		Logger:       appLogger,
+		Logger:       stdLogger, // processor uses *log.Logger
 		TradesInput:  wsManager.GetTradesStream(),
 		OutputBuffer: 100,
 	}
@@ -155,7 +159,7 @@ func NewApplication() (*Application, error) {
 	var tradePublisher publisher.TradePublisher
 	if cfg.EnableKafka && kafkaProducer != nil {
 		publisherConfig := &publisher.PublisherConfig{
-			Logger:      appLogger,
+			Logger:      stdLogger, // publisher uses *log.Logger
 			Producer:    kafkaProducer,
 			Topic:       cfg.KafkaTopicTrades,
 			TradesInput: tradeProcessor.GetProcessedTradesStream(),
@@ -165,19 +169,26 @@ func NewApplication() (*Application, error) {
 	}
 
 	// Initialize API handler
-	apiHandler := api.NewHandler(cacheLayer, storage, appLogger)
+	apiHandler := api.NewHandler(cacheLayer, storage, stdLogger)
 	appLogger.Info("API handler created")
 
 	// Initialize HTTP server
-	httpServer := server.NewHTTPServer(cfg.ServicePort, apiHandler, appLogger)
+	httpServer := server.NewHTTPServer(cfg.ServicePort, apiHandler, stdLogger)
 	appLogger.Info("HTTP server created")
 
 	// Initialize service manager
+	// Convert ServicePort from string to int
+	servicePortInt := 8083 // default
+	if portStr := cfg.ServicePort; portStr != "" {
+		if port, err := strconv.Atoi(portStr); err == nil {
+			servicePortInt = port
+		}
+	}
 	serviceConfig := &service.ServiceConfig{
 		Name:        appName,
 		Version:     appVersion,
 		Host:        "localhost",
-		Port:        cfg.ServicePort,
+		Port:        servicePortInt,
 		HealthCheck: "/health",
 		Metadata: map[string]string{
 			"service": "market-data",
@@ -185,7 +196,7 @@ func NewApplication() (*Application, error) {
 		},
 		Tags: []string{"market-data", "trading", "websocket"},
 	}
-	serviceManager := service.NewService(serviceConfig, nil, appLogger) // No registry for now
+	serviceManager := service.NewService(serviceConfig, nil, stdLogger) // No registry for now
 	appLogger.Info("Service manager created")
 
 	return &Application{

@@ -9,85 +9,47 @@ import (
 	"strings"
 	"time"
 
+	"bitso-trading-platform/market-data/internal/cache"
+	"bitso-trading-platform/market-data/internal/historical"
 	"bitso-trading-platform/shared/pkg/bitso"
 	"bitso-trading-platform/shared/pkg/models"
 )
 
 // Cache defines the interface for cache operations
+// Note: Uses cache.TradeStats to match actual implementation
 type Cache interface {
 	GetRecentTrades(ctx context.Context, book string, limit int) ([]*models.TradeEvent, error)
 	GetTrade(ctx context.Context, book string, tradeID uint64) (*models.TradeEvent, error)
-	GetTradeStats(ctx context.Context, book string) (*TradeStats, error)
+	GetTradeStats(ctx context.Context, book string) (*cache.TradeStats, error)
 	GetOrderBook(ctx context.Context, book string) (*bitso.OrderBook, error)
 	GetTicker(ctx context.Context, book string) (*bitso.Ticker, error)
+	Exists(ctx context.Context, key string) (bool, error)
 }
 
 // Storage defines the interface for storage operations
+// Note: Uses historical types to match actual implementation
 type Storage interface {
-	GetOrderBookHistory(ctx context.Context, book string, start, end time.Time) ([]*OrderBookSnapshot, error)
+	GetOrderBookHistory(ctx context.Context, book string, start, end time.Time) ([]*historical.OrderBookSnapshot, error)
 	GetTickerHistory(ctx context.Context, book string, start, end time.Time) ([]*bitso.Ticker, error)
-	GetTradeStatistics(ctx context.Context, book string, start, end time.Time) (*TradeStatistics, error)
-	GetVolumeStatistics(ctx context.Context, book string, start, end time.Time) (*VolumeStatistics, error)
+	GetTradeStatistics(ctx context.Context, book string, start, end time.Time) (*historical.TradeStatistics, error)
+	GetStorageStats(ctx context.Context) (*historical.StorageStats, error)
+	GetVolumeStatistics(ctx context.Context, book string, start, end time.Time) (*historical.VolumeStatistics, error)
 }
 
-// TradeStats represents trade statistics
-type TradeStats struct {
-	Book               string    `json:"book"`
-	TotalTrades        int64     `json:"total_trades"`
-	TotalVolume        float64   `json:"total_volume"`
-	TotalValue         float64   `json:"total_value"`
-	LastPrice          float64   `json:"last_price"`
-	HighPrice          float64   `json:"high_price"`
-	LowPrice           float64   `json:"low_price"`
-	VWAP               float64   `json:"vwap"`
-	PriceChange        float64   `json:"price_change"`
-	PriceChangePercent float64   `json:"price_change_percent"`
-	UpdatedAt          time.Time `json:"updated_at"`
-}
+// TradeStats is an alias for cache.TradeStats to maintain API compatibility
+type TradeStats = cache.TradeStats
 
-// OrderBookSnapshot represents an order book snapshot
-type OrderBookSnapshot struct {
-	Book      string                 `json:"book"`
-	Bids      []bitso.OrderBookLevel `json:"bids"`
-	Asks      []bitso.OrderBookLevel `json:"asks"`
-	Timestamp time.Time              `json:"timestamp"`
-	Source    string                 `json:"source"`
-}
+// OrderBookSnapshot is an alias for historical.OrderBookSnapshot to maintain API compatibility
+type OrderBookSnapshot = historical.OrderBookSnapshot
 
-// TradeStatistics represents trade statistics
-type TradeStatistics struct {
-	Book               string    `json:"book"`
-	StartTime          time.Time `json:"start_time"`
-	EndTime            time.Time `json:"end_time"`
-	TotalTrades        int64     `json:"total_trades"`
-	TotalVolume        float64   `json:"total_volume"`
-	TotalValue         float64   `json:"total_value"`
-	AveragePrice       float64   `json:"average_price"`
-	VWAP               float64   `json:"vwap"`
-	HighPrice          float64   `json:"high_price"`
-	LowPrice           float64   `json:"low_price"`
-	PriceChange        float64   `json:"price_change"`
-	PriceChangePercent float64   `json:"price_change_percent"`
-	Volatility         float64   `json:"volatility"`
-}
+// TradeStatistics is an alias for historical.TradeStatistics to maintain API compatibility
+type TradeStatistics = historical.TradeStatistics
 
-// VolumeStatistics represents volume statistics
-type VolumeStatistics struct {
-	Book          string        `json:"book"`
-	StartTime     time.Time     `json:"start_time"`
-	EndTime       time.Time     `json:"end_time"`
-	TotalVolume   float64       `json:"total_volume"`
-	AverageVolume float64       `json:"average_volume"`
-	MaxVolume     float64       `json:"max_volume"`
-	MinVolume     float64       `json:"min_volume"`
-	VolumeProfile []VolumeLevel `json:"volume_profile"`
-}
+// VolumeStatistics is an alias for historical.VolumeStatistics to maintain API compatibility
+type VolumeStatistics = historical.VolumeStatistics
 
-// VolumeLevel represents a volume level
-type VolumeLevel struct {
-	Price  float64 `json:"price"`
-	Volume float64 `json:"volume"`
-}
+// VolumeLevel is an alias for historical.VolumeLevel to maintain API compatibility
+type VolumeLevel = historical.VolumeLevel
 
 // Handler handles HTTP API requests
 type Handler struct {
@@ -191,7 +153,7 @@ func (h *Handler) ReadinessCheck(w http.ResponseWriter, r *http.Request) {
 		ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 		defer cancel()
 
-		if _, err := h.cache.Exists(ctx, "health_check"); err != nil {
+		if exists, err := h.cache.Exists(ctx, "health_check"); err != nil || !exists {
 			checks["cache"] = "not ready"
 			ready = false
 		} else {

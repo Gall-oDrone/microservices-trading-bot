@@ -228,8 +228,15 @@ func (p *OrderBookProcessor) ProcessOrderBook(orderBook *bitso.OrderBook) error 
 	// Send to output channel (non-blocking)
 	select {
 	case p.orderBooksOutput <- orderBook:
+		// Get book from first order if available
+		bookStr := "unknown"
+		if len(orderBook.Bids) > 0 {
+			bookStr = orderBook.Bids[0].Book.String()
+		} else if len(orderBook.Asks) > 0 {
+			bookStr = orderBook.Asks[0].Book.String()
+		}
 		p.logger.Printf("Processed order book: %s Bids=%d Asks=%d",
-			orderBook.Book.String(), len(orderBook.Bids), len(orderBook.Asks))
+			bookStr, len(orderBook.Bids), len(orderBook.Asks))
 
 	case <-time.After(1 * time.Second):
 		p.logger.Println("Warning: Order book output channel full, dropping order book")
@@ -284,24 +291,20 @@ func (p *OrderBookProcessor) GetStatistics() *OrderBookProcessorStatistics {
 
 // validateOrderBook validates an order book
 func (p *OrderBookProcessor) validateOrderBook(orderBook *bitso.OrderBook) error {
-	if orderBook.Book == nil {
-		return fmt.Errorf("order book book is nil")
-	}
-
 	if len(orderBook.Bids) == 0 && len(orderBook.Asks) == 0 {
 		return fmt.Errorf("order book has no bids or asks")
 	}
 
 	// Validate bid prices (should be in descending order)
 	for i := 1; i < len(orderBook.Bids); i++ {
-		if orderBook.Bids[i-1].Price < orderBook.Bids[i].Price {
+		if orderBook.Bids[i-1].Price.Float64() < orderBook.Bids[i].Price.Float64() {
 			return fmt.Errorf("bid prices not in descending order")
 		}
 	}
 
 	// Validate ask prices (should be in ascending order)
 	for i := 1; i < len(orderBook.Asks); i++ {
-		if orderBook.Asks[i-1].Price > orderBook.Asks[i].Price {
+		if orderBook.Asks[i-1].Price.Float64() > orderBook.Asks[i].Price.Float64() {
 			return fmt.Errorf("ask prices not in ascending order")
 		}
 	}
@@ -311,8 +314,9 @@ func (p *OrderBookProcessor) validateOrderBook(orderBook *bitso.OrderBook) error
 
 // validateDiffOrder validates a diff order
 func (p *OrderBookProcessor) validateDiffOrder(diffOrder *bitso.WebSocketDiffOrder) error {
-	if diffOrder.Book == nil {
-		return fmt.Errorf("diff order book is nil")
+	// Book is a struct, not a pointer, so check if it's empty
+	if diffOrder.Book.String() == "" {
+		return fmt.Errorf("diff order book is empty")
 	}
 
 	if len(diffOrder.Payload) == 0 {
@@ -343,7 +347,13 @@ func (p *OrderBookProcessor) updateStats(orderBook *bitso.OrderBook, diffOrder *
 		p.stats.LastOrderBookTime = time.Now()
 
 		// Update book-specific statistics
-		bookStr := orderBook.Book.String()
+		// Get book from first order if available
+		bookStr := "unknown"
+		if len(orderBook.Bids) > 0 {
+			bookStr = orderBook.Bids[0].Book.String()
+		} else if len(orderBook.Asks) > 0 {
+			bookStr = orderBook.Asks[0].Book.String()
+		}
 		bookStats, exists := p.stats.BookStats[bookStr]
 		if !exists {
 			bookStats = &OrderBookBookStatistics{}
@@ -354,13 +364,13 @@ func (p *OrderBookProcessor) updateStats(orderBook *bitso.OrderBook, diffOrder *
 
 		// Update bid/ask information
 		if len(orderBook.Bids) > 0 {
-			bookStats.LastBidPrice = orderBook.Bids[0].Price
-			bookStats.LastBidSize = orderBook.Bids[0].Amount
+			bookStats.LastBidPrice = orderBook.Bids[0].Price.Float64()
+			bookStats.LastBidSize = orderBook.Bids[0].Amount.Float64()
 		}
 
 		if len(orderBook.Asks) > 0 {
-			bookStats.LastAskPrice = orderBook.Asks[0].Price
-			bookStats.LastAskSize = orderBook.Asks[0].Amount
+			bookStats.LastAskPrice = orderBook.Asks[0].Price.Float64()
+			bookStats.LastAskSize = orderBook.Asks[0].Amount.Float64()
 		}
 
 		// Calculate spread
