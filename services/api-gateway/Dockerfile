@@ -1,11 +1,14 @@
-FROM golang:1.21-alpine AS builder
+FROM golang:1.24-alpine AS builder
 
 WORKDIR /app
-# Copy service-specific go.mod and go.sum
-COPY services/api-gateway/go.mod services/api-gateway/go.sum ./
+# Copy service-specific go.mod and go.sum (go.sum may not exist)
+COPY services/api-gateway/go.mod ./
 # Copy shared directory to match replace directive (../../shared from go.mod location)
 # Since go.mod is at /app/go.mod, ../../shared means /shared
 COPY shared /shared
+# Conditionally copy go.sum if it exists (mount build context to access source files)
+RUN --mount=type=bind,source=.,target=/context \
+    test -f /context/services/api-gateway/go.sum && cp /context/services/api-gateway/go.sum ./go.sum || true
 RUN go mod download
 
 # Copy service source code

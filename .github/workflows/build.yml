@@ -80,6 +80,9 @@ jobs:
     needs: [test, security-scan]
     runs-on: ubuntu-latest
     if: github.event_name == 'push'
+    strategy:
+      matrix:
+        service: [trading-engine, backtesting, strategy-executor, market-data, order-management, api-gateway]
     
     steps:
     - name: Checkout code
@@ -99,7 +102,7 @@ jobs:
       id: meta
       uses: docker/metadata-action@v5
       with:
-        images: ${{ env.DOCKER_REGISTRY }}/${{ github.repository }}/${{ env.IMAGE_NAME }}
+        images: ${{ env.DOCKER_REGISTRY }}/${{ github.repository }}/${{ env.IMAGE_NAME }}-${{ matrix.service }}
         tags: |
           type=ref,event=branch
           type=ref,event=pr
@@ -108,9 +111,11 @@ jobs:
 
     - name: Build and push Docker images
       uses: docker/build-push-action@v5
+      env:
+        DOCKER_BUILDKIT: 1
       with:
         context: .
-        file: ./services/trading-engine/Dockerfile
+        file: ./services/${{ matrix.service }}/Dockerfile
         push: true
         tags: ${{ steps.meta.outputs.tags }}
         labels: ${{ steps.meta.outputs.labels }}
