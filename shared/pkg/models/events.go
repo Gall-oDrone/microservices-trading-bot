@@ -1,5 +1,19 @@
 package models
 
+import "time"
+
+// TradeEvent represents a trade event
+type TradeEvent struct {
+	ID        uint64    `json:"id"`
+	Book      string    `json:"book"`
+	Price     float64   `json:"price"`
+	Amount    float64   `json:"amount"`
+	Value     float64   `json:"value"`
+	Side      string    `json:"side"` // buy or sell
+	Timestamp time.Time `json:"timestamp"`
+	MakerSide string    `json:"maker_side,omitempty"`
+}
+
 type TradeSignalEvent struct {
 	EventID   string                 `json:"event_id"`
 	Timestamp int64                  `json:"timestamp"`
