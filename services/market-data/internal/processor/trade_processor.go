@@ -6,8 +6,8 @@ import (
 	"sync"
 	"time"
 
-	"bitso-trading-platform/market-data/internal/models"
 	"bitso-trading-platform/shared/pkg/bitso"
+	"bitso-trading-platform/shared/pkg/models"
 )
 
 // TradeProcessor processes incoming trade messages

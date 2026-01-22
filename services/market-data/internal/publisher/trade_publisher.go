@@ -8,8 +8,8 @@ import (
 	"sync"
 	"time"
 
-	"bitso-trading-platform/market-data/internal/models"
 	"bitso-trading-platform/shared/pkg/kafka"
+	"bitso-trading-platform/shared/pkg/models"
 )
 
 // TradePublisher publishes trade events to Kafka
