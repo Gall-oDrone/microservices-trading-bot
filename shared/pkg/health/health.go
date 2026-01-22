@@ -3,6 +3,7 @@ package health
 import (
 	"context"
 	"encoding/json"
+	"log"
 	"net/http"
 	"sync"
 	"time"
@@ -45,10 +46,21 @@ type HealthManager struct {
 	mu       sync.RWMutex
 	ready    bool
 	readyMu  sync.RWMutex
+	logger   *log.Logger
 }
 
 // NewHealthManager creates a new health manager
-func NewHealthManager(service, version string) *HealthManager {
+// logger parameter is optional (can be nil)
+func NewHealthManager(logger *log.Logger) *HealthManager {
+	return &HealthManager{
+		checks: make(map[string]Check),
+		ready:  false,
+		logger: logger,
+	}
+}
+
+// NewHealthManagerWithConfig creates a new health manager with service info
+func NewHealthManagerWithConfig(service, version string) *HealthManager {
 	return &HealthManager{
 		service: service,
 		version: version,
