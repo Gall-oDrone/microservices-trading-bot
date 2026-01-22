@@ -175,3 +175,49 @@ func (h *HealthManager) ReadinessHandler() http.HandlerFunc {
 		}
 	}
 }
+
+// Check runs all registered health checks and returns the results
+func (h *HealthManager) Check(ctx context.Context) map[string]CheckResult {
+	h.mu.RLock()
+	checks := make(map[string]Check)
+	for name, check := range h.checks {
+		checks[name] = check
+	}
+	h.mu.RUnlock()
+
+	results := make(map[string]CheckResult)
+
+	for name, check := range checks {
+		result := CheckResult{
+			Name:      name,
+			Timestamp: time.Now(),
+		}
+
+		if err := check(ctx); err != nil {
+			result.Status = StatusUnhealthy
+			result.Message = err.Error()
+		} else {
+			result.Status = StatusHealthy
+		}
+
+		results[name] = result
+	}
+
+	return results
+}
+
+// GetOverallStatus returns the overall health status based on all checks
+func (h *HealthManager) GetOverallStatus(ctx context.Context) Status {
+	checks := h.Check(ctx)
+
+	for _, result := range checks {
+		if result.Status == StatusUnhealthy {
+			return StatusUnhealthy
+		}
+		if result.Status == StatusDegraded {
+			return StatusDegraded
+		}
+	}
+
+	return StatusHealthy
+}
