@@ -14,174 +14,252 @@ import (
 type Status string
 
 const (
-	// StatusHealthy represents a healthy status
-	StatusHealthy Status = "healthy"
-	// StatusUnhealthy represents an unhealthy status
+	StatusHealthy   Status = "healthy"
 	StatusUnhealthy Status = "unhealthy"
-	// StatusDegraded represents a degraded status
-	StatusDegraded Status = "degraded"
+	StatusDegraded  Status = "degraded"
 )
 
-// Check represents a health check
-type Check struct {
-	Name        string                 `json:"name"`
-	Status      Status                 `json:"status"`
-	Message     string                 `json:"message,omitempty"`
-	Duration    time.Duration          `json:"duration,omitempty"`
-	LastChecked time.Time              `json:"last_checked"`
-	Metadata    map[string]interface{} `json:"metadata,omitempty"`
-}
+// Check represents a health check function
+type Check func(ctx context.Context) error
 
-// HealthChecker defines the interface for health checks
+// HealthChecker is an interface for health checkers
 type HealthChecker interface {
 	Name() string
-	Check(ctx context.Context) *Check
+	Check(ctx context.Context) error
+}
+
+// CheckResult represents the result of a health check
+type CheckResult struct {
+	Name      string    `json:"name"`
+	Status    Status    `json:"status"`
+	Message   string    `json:"message,omitempty"`
+	Timestamp time.Time `json:"timestamp"`
+}
+
+// HealthResponse represents the health check response
+type HealthResponse struct {
+	Status    Status                 `json:"status"`
+	Timestamp time.Time              `json:"timestamp"`
+	Service   string                 `json:"service,omitempty"`
+	Version   string                 `json:"version,omitempty"`
+	Checks    map[string]CheckResult `json:"checks,omitempty"`
 }
 
 // HealthManager manages health checks
 type HealthManager struct {
+	service  string
+	version  string
+	checks   map[string]Check
 	checkers []HealthChecker
-	logger   *log.Logger
 	mu       sync.RWMutex
+	ready    bool
+	readyMu  sync.RWMutex
+	logger   *log.Logger
 }
 
 // NewHealthManager creates a new health manager
+// logger parameter is optional (can be nil)
 func NewHealthManager(logger *log.Logger) *HealthManager {
-	if logger == nil {
-		logger = log.New(log.Writer(), "[HEALTH] ", log.LstdFlags|log.Lshortfile)
-	}
-
 	return &HealthManager{
+		checks:   make(map[string]Check),
 		checkers: make([]HealthChecker, 0),
+		ready:    true, // Default to ready
 		logger:   logger,
 	}
 }
 
+// NewHealthManagerWithConfig creates a new health manager with service info
+func NewHealthManagerWithConfig(service, version string) *HealthManager {
+	return &HealthManager{
+		service:  service,
+		version:  version,
+		checks:   make(map[string]Check),
+		checkers: make([]HealthChecker, 0),
+		ready:    true,
+	}
+}
+
+// RegisterCheck registers a health check function
+func (h *HealthManager) RegisterCheck(name string, check Check) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.checks[name] = check
+}
+
 // AddChecker adds a health checker
-func (hm *HealthManager) AddChecker(checker HealthChecker) {
-	hm.mu.Lock()
-	defer hm.mu.Unlock()
-	hm.checkers = append(hm.checkers, checker)
+func (h *HealthManager) AddChecker(checker HealthChecker) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.checkers = append(h.checkers, checker)
 }
 
-// Check performs all health checks
-func (hm *HealthManager) Check(ctx context.Context) map[string]*Check {
-	hm.mu.RLock()
-	checkers := make([]HealthChecker, len(hm.checkers))
-	copy(checkers, hm.checkers)
-	hm.mu.RUnlock()
+// SetReady sets the ready status
+func (h *HealthManager) SetReady(ready bool) {
+	h.readyMu.Lock()
+	defer h.readyMu.Unlock()
+	h.ready = ready
+}
 
-	results := make(map[string]*Check)
+// IsReady returns the ready status
+func (h *HealthManager) IsReady() bool {
+	h.readyMu.RLock()
+	defer h.readyMu.RUnlock()
+	return h.ready
+}
 
-	for _, checker := range checkers {
-		start := time.Now()
-		check := checker.Check(ctx)
-		check.Duration = time.Since(start)
-		check.LastChecked = time.Now()
-		results[checker.Name()] = check
+// GetHealth returns the current health status
+func (h *HealthManager) GetHealth(ctx context.Context) *HealthResponse {
+	h.mu.RLock()
+	checks := make(map[string]Check)
+	for name, check := range h.checks {
+		checks[name] = check
 	}
+	h.mu.RUnlock()
 
-	return results
-}
+	results := make(map[string]CheckResult)
+	overallStatus := StatusHealthy
 
-// GetOverallStatus returns the overall health status
-func (hm *HealthManager) GetOverallStatus(ctx context.Context) Status {
-	checks := hm.Check(ctx)
-
-	hasUnhealthy := false
-	hasDegraded := false
-
-	for _, check := range checks {
-		switch check.Status {
-		case StatusUnhealthy:
-			hasUnhealthy = true
-		case StatusDegraded:
-			hasDegraded = true
+	for name, check := range checks {
+		result := CheckResult{
+			Name:      name,
+			Timestamp: time.Now(),
 		}
+
+		if err := check(ctx); err != nil {
+			result.Status = StatusUnhealthy
+			result.Message = err.Error()
+			overallStatus = StatusUnhealthy
+		} else {
+			result.Status = StatusHealthy
+		}
+
+		results[name] = result
 	}
 
-	if hasUnhealthy {
-		return StatusUnhealthy
+	return &HealthResponse{
+		Status:    overallStatus,
+		Timestamp: time.Now(),
+		Service:   h.service,
+		Version:   h.version,
+		Checks:    results,
 	}
-
-	if hasDegraded {
-		return StatusDegraded
-	}
-
-	return StatusHealthy
 }
 
-// HTTPHandler returns an HTTP handler for health checks
-func (hm *HealthManager) HTTPHandler() http.HandlerFunc {
+// HTTPHandler returns an http.HandlerFunc for the health endpoint
+func (h *HealthManager) HTTPHandler() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
-		defer cancel()
-
-		checks := hm.Check(ctx)
-		overallStatus := hm.GetOverallStatus(ctx)
-
-		response := map[string]interface{}{
-			"status":    overallStatus,
-			"timestamp": time.Now().UTC(),
-			"checks":    checks,
-		}
+		ctx := r.Context()
+		health := h.GetHealth(ctx)
 
 		w.Header().Set("Content-Type", "application/json")
 
-		// Set HTTP status code based on overall status
-		switch overallStatus {
-		case StatusHealthy:
-			w.WriteHeader(http.StatusOK)
-		case StatusDegraded:
-			w.WriteHeader(http.StatusOK)
-		case StatusUnhealthy:
-			w.WriteHeader(http.StatusServiceUnavailable)
-		}
-
-		json.NewEncoder(w).Encode(response)
-	}
-}
-
-// LivenessHandler returns an HTTP handler for liveness checks
-func (hm *HealthManager) LivenessHandler() http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		response := map[string]interface{}{
-			"status":    StatusHealthy,
-			"timestamp": time.Now().UTC(),
-		}
-
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusOK)
-		json.NewEncoder(w).Encode(response)
-	}
-}
-
-// ReadinessHandler returns an HTTP handler for readiness checks
-func (hm *HealthManager) ReadinessHandler() http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
-		defer cancel()
-
-		overallStatus := hm.GetOverallStatus(ctx)
-
-		response := map[string]interface{}{
-			"status":    overallStatus,
-			"timestamp": time.Now().UTC(),
-		}
-
-		w.Header().Set("Content-Type", "application/json")
-
-		if overallStatus == StatusHealthy {
+		if health.Status == StatusHealthy {
 			w.WriteHeader(http.StatusOK)
 		} else {
 			w.WriteHeader(http.StatusServiceUnavailable)
 		}
 
-		json.NewEncoder(w).Encode(response)
+		json.NewEncoder(w).Encode(health)
 	}
 }
 
-// SimpleHealthChecker implements a simple health checker
+// LivenessHandler returns an http.HandlerFunc for the liveness probe
+func (h *HealthManager) LivenessHandler() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		json.NewEncoder(w).Encode(map[string]string{
+			"status": "alive",
+		})
+	}
+}
+
+// ReadinessHandler returns an http.HandlerFunc for the readiness probe
+func (h *HealthManager) ReadinessHandler() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+
+		if h.IsReady() {
+			w.WriteHeader(http.StatusOK)
+			json.NewEncoder(w).Encode(map[string]string{
+				"status": "ready",
+			})
+		} else {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			json.NewEncoder(w).Encode(map[string]string{
+				"status": "not ready",
+			})
+		}
+	}
+}
+
+// Check runs all registered health checks and returns the results
+func (h *HealthManager) Check(ctx context.Context) map[string]CheckResult {
+	h.mu.RLock()
+	checks := make(map[string]Check)
+	for name, check := range h.checks {
+		checks[name] = check
+	}
+	checkers := make([]HealthChecker, len(h.checkers))
+	copy(checkers, h.checkers)
+	h.mu.RUnlock()
+
+	results := make(map[string]CheckResult)
+
+	// Run function-based checks
+	for name, check := range checks {
+		result := CheckResult{
+			Name:      name,
+			Timestamp: time.Now(),
+		}
+
+		if err := check(ctx); err != nil {
+			result.Status = StatusUnhealthy
+			result.Message = err.Error()
+		} else {
+			result.Status = StatusHealthy
+		}
+
+		results[name] = result
+	}
+
+	// Run interface-based checkers
+	for _, checker := range checkers {
+		result := CheckResult{
+			Name:      checker.Name(),
+			Timestamp: time.Now(),
+		}
+
+		if err := checker.Check(ctx); err != nil {
+			result.Status = StatusUnhealthy
+			result.Message = err.Error()
+		} else {
+			result.Status = StatusHealthy
+		}
+
+		results[checker.Name()] = result
+	}
+
+	return results
+}
+
+// GetOverallStatus returns the overall health status based on all checks
+func (h *HealthManager) GetOverallStatus(ctx context.Context) Status {
+	checks := h.Check(ctx)
+
+	for _, result := range checks {
+		if result.Status == StatusUnhealthy {
+			return StatusUnhealthy
+		}
+		if result.Status == StatusDegraded {
+			return StatusDegraded
+		}
+	}
+
+	return StatusHealthy
+}
+
+// SimpleHealthChecker is a simple health checker implementation
 type SimpleHealthChecker struct {
 	name    string
 	checkFn func(ctx context.Context) error
@@ -196,83 +274,21 @@ func NewSimpleHealthChecker(name string, checkFn func(ctx context.Context) error
 }
 
 // Name returns the checker name
-func (shc *SimpleHealthChecker) Name() string {
-	return shc.name
+func (c *SimpleHealthChecker) Name() string {
+	return c.name
 }
 
 // Check performs the health check
-func (shc *SimpleHealthChecker) Check(ctx context.Context) *Check {
-	err := shc.checkFn(ctx)
-
-	if err != nil {
-		return &Check{
-			Name:    shc.name,
-			Status:  StatusUnhealthy,
-			Message: err.Error(),
-		}
-	}
-
-	return &Check{
-		Name:   shc.name,
-		Status: StatusHealthy,
-	}
+func (c *SimpleHealthChecker) Check(ctx context.Context) error {
+	return c.checkFn(ctx)
 }
 
-// DatabaseHealthChecker implements a database health checker
-type DatabaseHealthChecker struct {
-	name    string
-	pingFn  func(ctx context.Context) error
-	queryFn func(ctx context.Context) error
-}
-
-// NewDatabaseHealthChecker creates a new database health checker
-func NewDatabaseHealthChecker(name string, pingFn func(ctx context.Context) error, queryFn func(ctx context.Context) error) *DatabaseHealthChecker {
-	return &DatabaseHealthChecker{
-		name:    name,
-		pingFn:  pingFn,
-		queryFn: queryFn,
-	}
-}
-
-// Name returns the checker name
-func (dhc *DatabaseHealthChecker) Name() string {
-	return dhc.name
-}
-
-// Check performs the database health check
-func (dhc *DatabaseHealthChecker) Check(ctx context.Context) *Check {
-	// First, try to ping the database
-	if err := dhc.pingFn(ctx); err != nil {
-		return &Check{
-			Name:    dhc.name,
-			Status:  StatusUnhealthy,
-			Message: fmt.Sprintf("ping failed: %v", err),
-		}
-	}
-
-	// Then, try to execute a simple query
-	if dhc.queryFn != nil {
-		if err := dhc.queryFn(ctx); err != nil {
-			return &Check{
-				Name:    dhc.name,
-				Status:  StatusDegraded,
-				Message: fmt.Sprintf("query failed: %v", err),
-			}
-		}
-	}
-
-	return &Check{
-		Name:   dhc.name,
-		Status: StatusHealthy,
-	}
-}
-
-// HTTPHealthChecker implements an HTTP health checker
+// HTTPHealthChecker checks health via HTTP endpoint
 type HTTPHealthChecker struct {
 	name    string
 	url     string
-	client  *http.Client
 	timeout time.Duration
+	client  *http.Client
 }
 
 // NewHTTPHealthChecker creates a new HTTP health checker
@@ -280,47 +296,34 @@ func NewHTTPHealthChecker(name, url string, timeout time.Duration) *HTTPHealthCh
 	return &HTTPHealthChecker{
 		name:    name,
 		url:     url,
-		client:  &http.Client{Timeout: timeout},
 		timeout: timeout,
+		client: &http.Client{
+			Timeout: timeout,
+		},
 	}
 }
 
 // Name returns the checker name
-func (hhc *HTTPHealthChecker) Name() string {
-	return hhc.name
+func (c *HTTPHealthChecker) Name() string {
+	return c.name
 }
 
 // Check performs the HTTP health check
-func (hhc *HTTPHealthChecker) Check(ctx context.Context) *Check {
-	req, err := http.NewRequestWithContext(ctx, "GET", hhc.url, nil)
+func (c *HTTPHealthChecker) Check(ctx context.Context) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.url, nil)
 	if err != nil {
-		return &Check{
-			Name:    hhc.name,
-			Status:  StatusUnhealthy,
-			Message: fmt.Sprintf("failed to create request: %v", err),
-		}
+		return fmt.Errorf("failed to create request: %w", err)
 	}
 
-	resp, err := hhc.client.Do(req)
+	resp, err := c.client.Do(req)
 	if err != nil {
-		return &Check{
-			Name:    hhc.name,
-			Status:  StatusUnhealthy,
-			Message: fmt.Sprintf("request failed: %v", err),
-		}
+		return fmt.Errorf("health check failed: %w", err)
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
-		return &Check{
-			Name:   hhc.name,
-			Status: StatusHealthy,
-		}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return fmt.Errorf("unhealthy status code: %d", resp.StatusCode)
 	}
 
-	return &Check{
-		Name:    hhc.name,
-		Status:  StatusUnhealthy,
-		Message: fmt.Sprintf("HTTP %d", resp.StatusCode),
-	}
+	return nil
 }
