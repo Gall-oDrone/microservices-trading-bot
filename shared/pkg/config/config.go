@@ -22,8 +22,9 @@ type Config struct {
 	RedisDB       int
 
 	// Kafka configuration (for microservices)
-	KafkaBrokers string
-	KafkaGroupID string
+	KafkaBrokers       string
+	KafkaGroupID       string
+	KafkaTopicSignals  string
 
 	// Service configuration
 	ServiceName string
@@ -61,8 +62,9 @@ func LoadConfig() (*Config, error) {
 		RedisDB:       0, // Default to DB 0
 
 		// Kafka configuration
-		KafkaBrokers: os.Getenv("KAFKA_BROKERS"),
-		KafkaGroupID: os.Getenv("KAFKA_GROUP_ID"),
+		KafkaBrokers:      os.Getenv("KAFKA_BROKERS"),
+		KafkaGroupID:      os.Getenv("KAFKA_GROUP_ID"),
+		KafkaTopicSignals: os.Getenv("KAFKA_TOPIC_SIGNALS"),
 
 		// Service configuration
 		ServiceName: os.Getenv("SERVICE_NAME"),
@@ -78,6 +80,9 @@ func LoadConfig() (*Config, error) {
 	}
 	if config.KafkaBrokers == "" {
 		config.KafkaBrokers = "localhost:9092"
+	}
+	if config.KafkaTopicSignals == "" {
+		config.KafkaTopicSignals = "trading.signals"
 	}
 	if config.ServicePort == "" {
 		config.ServicePort = "8080"

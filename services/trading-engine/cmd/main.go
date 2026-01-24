@@ -152,9 +152,15 @@ func initializeRedisClient(cfg *config.Config, logger *log.Logger) (*database.Re
 
 // initializeKafkaConsumer creates a Kafka consumer for trade signals
 func initializeKafkaConsumer(cfg *config.Config, logger *log.Logger) (*kafka.Consumer, error) {
+	// Get topic from config or use default
+	topic := cfg.KafkaTopicSignals
+	if topic == "" {
+		topic = "trading.signals"
+	}
+	
 	consumerConfig := &kafka.ConsumerConfig{
 		Brokers:         []string{cfg.KafkaBrokers},
-		Topic:           "trade-signals",
+		Topic:           topic,
 		GroupID:         "trading-engine-group",
 		AutoOffsetReset: "latest",
 	}

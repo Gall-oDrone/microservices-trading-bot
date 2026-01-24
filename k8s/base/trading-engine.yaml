@@ -51,6 +51,11 @@ spec:
             configMapKeyRef:
               name: trading-config
               key: kafka-brokers
+        - name: KAFKA_TOPIC_SIGNALS
+          valueFrom:
+            configMapKeyRef:
+              name: trading-config
+              key: kafka-topic-signals
         - name: STAGE_BITSO_API_KEY
           valueFrom:
             secretKeyRef:
