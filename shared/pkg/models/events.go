@@ -37,10 +37,12 @@ func FromBitsoWebSocketTrade(wsTrade *bitso.WebSocketTrade) *TradeEvent {
 	// Get the first trade from the payload
 	payload := wsTrade.Payload[0]
 
-	// Determine side from maker side
+	// Determine side from maker side (0 = buy, 1 = sell)
 	side := "buy"
-	if payload.MakerSide == "sell" {
+	makerSide := "buy"
+	if payload.MakerSide == 1 {
 		side = "sell"
+		makerSide = "sell"
 	}
 
 	return &TradeEvent{
@@ -50,7 +52,7 @@ func FromBitsoWebSocketTrade(wsTrade *bitso.WebSocketTrade) *TradeEvent {
 		Amount:          payload.Amount.Float64(),
 		Value:           payload.Value.Float64(),
 		Side:            side,
-		MakerSide:       payload.MakerSide,
+		MakerSide:       makerSide,
 		Timestamp:       time.UnixMilli(int64(payload.CreationTimestamp)),
 		ReceivedAt:      time.Now(),
 		CreatedAtMillis: int64(payload.CreationTimestamp),

@@ -457,9 +457,9 @@ func (v *MarketDataValidator) validateWebSocketTradePayload(payload bitso.WebSoc
 		return fmt.Errorf("value cannot be negative: %f", payload.Value.Value)
 	}
 
-	// Validate maker side
-	if payload.MakerSide != "0" && payload.MakerSide != "1" {
-		return fmt.Errorf("invalid maker side: %s", payload.MakerSide)
+	// Validate maker side (0 = buy, 1 = sell)
+	if payload.MakerSide != 0 && payload.MakerSide != 1 {
+		return fmt.Errorf("invalid maker side: %d", payload.MakerSide)
 	}
 
 	// Validate order IDs

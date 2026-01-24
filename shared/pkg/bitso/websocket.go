@@ -26,7 +26,7 @@ type WebSocketTrade struct {
 		Amount            Monetary `json:"a"`
 		Price             Monetary `json:"r"`
 		Value             Monetary `json:"v"`
-		MakerSide         string   `json:"t"`
+		MakerSide         int      `json:"t"` // 0 = buy, 1 = sell (Bitso sends as number)
 		CreationTimestamp uint64   `json:"x"`
 		MakerOrderID      string   `json:"mo"`
 		TakerOrderID      string   `json:"to"`

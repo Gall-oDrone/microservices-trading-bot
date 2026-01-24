@@ -42,10 +42,12 @@ func FromBitsoWebSocketTrade(wsTrade *bitso.WebSocketTrade) *TradeEvent {
 	payload := wsTrade.Payload[0]
 
 	// Determine taker side (opposite of maker side)
+	// MakerSide: 0 = buy, 1 = sell
 	takerSide := "sell"
-	if payload.MakerSide == "0" { // Maker was buyer
+	if payload.MakerSide == 0 { // Maker was buyer
 		takerSide = "buy"
 	}
+	_ = takerSide // unused but kept for reference
 
 	return &TradeEvent{
 		ID:           payload.TID,
@@ -55,7 +57,7 @@ func FromBitsoWebSocketTrade(wsTrade *bitso.WebSocketTrade) *TradeEvent {
 		Value:        payload.Value.Float64(),
 		MakerOrderID: payload.MakerOrderID,
 		TakerOrderID: payload.TakerOrderID,
-		MakerSide:    getMakerSideString(payload.MakerSide),
+		MakerSide:    getMakerSideFromInt(payload.MakerSide),
 		Timestamp:    time.Now(),
 		CreatedAt:    payload.CreationTimestamp,
 		ReceivedAt:   time.Now(),
@@ -66,12 +68,13 @@ func FromBitsoWebSocketTrade(wsTrade *bitso.WebSocketTrade) *TradeEvent {
 	}
 }
 
-// getMakerSideString converts maker side code to string
-func getMakerSideString(side string) string {
+// getMakerSideFromInt converts maker side code (int) to string
+// MakerSide: 0 = buy, 1 = sell
+func getMakerSideFromInt(side int) string {
 	switch side {
-	case "0":
+	case 0:
 		return "buy"
-	case "1":
+	case 1:
 		return "sell"
 	default:
 		return "unknown"
