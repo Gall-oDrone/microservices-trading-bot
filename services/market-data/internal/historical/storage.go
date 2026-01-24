@@ -101,6 +101,12 @@ type StorageConfig struct {
 	// Storage backend configuration
 	BackendType string `json:"backend_type"` // "redis", "postgres", "influxdb"
 
+	// Redis configuration
+	RedisHost     string `json:"redis_host"`
+	RedisPort     string `json:"redis_port"`
+	RedisPassword string `json:"redis_password"`
+	RedisDB       int    `json:"redis_db"`
+
 	// Data retention
 	RetentionDays int `json:"retention_days"`
 
@@ -122,6 +128,10 @@ type StorageConfig struct {
 func DefaultStorageConfig() *StorageConfig {
 	return &StorageConfig{
 		BackendType:       "redis",
+		RedisHost:         "localhost",
+		RedisPort:         "6379",
+		RedisPassword:     "",
+		RedisDB:           1, // Use different DB for historical data
 		RetentionDays:     30,
 		BatchSize:         100,
 		BatchTimeout:      1 * time.Second,
@@ -148,10 +158,14 @@ func NewRedisStorage(config *StorageConfig, logger *log.Logger) (*RedisStorage, 
 		logger = log.New(log.Writer(), "[HISTORICAL-STORAGE] ", log.LstdFlags|log.Lshortfile)
 	}
 
-	// Create Redis client (this would be injected in a real implementation)
+	// Build Redis address from config
+	redisAddr := fmt.Sprintf("%s:%s", config.RedisHost, config.RedisPort)
+
+	// Create Redis client using configuration
 	client := redis.NewClient(&redis.Options{
-		Addr: "localhost:6379",
-		DB:   1, // Use different DB for historical data
+		Addr:     redisAddr,
+		Password: config.RedisPassword,
+		DB:       config.RedisDB,
 	})
 
 	// Test connection
