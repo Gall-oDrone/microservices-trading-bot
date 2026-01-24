@@ -7,6 +7,8 @@ resources:
   - external-secret.yaml
   # Note: secret.yaml is kept as fallback but external-secret.yaml is preferred
   # Remove secret.yaml from git and use External Secrets Operator for production
+  - kafka.yaml
+  - redis.yaml
   - trading-engine.yaml
   - backtesting.yaml
   - strategy-executor.yaml

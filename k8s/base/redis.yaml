@@ -1,0 +1,61 @@
+# Redis deployment for caching and state management
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redis
+  labels:
+    app: bitso-trading-platform
+    service: redis
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: bitso-trading-platform
+      service: redis
+  template:
+    metadata:
+      labels:
+        app: bitso-trading-platform
+        service: redis
+    spec:
+      containers:
+      - name: redis
+        image: redis:7-alpine
+        ports:
+        - containerPort: 6379
+          name: redis
+        resources:
+          requests:
+            memory: "64Mi"
+            cpu: "50m"
+          limits:
+            memory: "256Mi"
+            cpu: "200m"
+        readinessProbe:
+          tcpSocket:
+            port: 6379
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        livenessProbe:
+          tcpSocket:
+            port: 6379
+          initialDelaySeconds: 15
+          periodSeconds: 20
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis
+  labels:
+    app: bitso-trading-platform
+    service: redis
+spec:
+  type: ClusterIP
+  selector:
+    app: bitso-trading-platform
+    service: redis
+  ports:
+  - port: 6379
+    targetPort: 6379
+    protocol: TCP
+    name: redis
