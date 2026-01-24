@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"runtime"
+	"strings"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -41,11 +42,15 @@ type MetricsCollector struct {
 
 // NewMetricsCollector creates a new metrics collector
 func NewMetricsCollector(serviceName string) *MetricsCollector {
+	// Sanitize service name for Prometheus (replace hyphens with underscores)
+	// Prometheus metric names must match [a-zA-Z_:][a-zA-Z0-9_:]*
+	sanitizedName := strings.ReplaceAll(serviceName, "-", "_")
+
 	mc := &MetricsCollector{
 		// HTTP metrics
 		httpRequestsTotal: prometheus.NewCounterVec(
 			prometheus.CounterOpts{
-				Namespace: serviceName,
+				Namespace: sanitizedName,
 				Name:      "http_requests_total",
 				Help:      "Total number of HTTP requests",
 			},
@@ -53,7 +58,7 @@ func NewMetricsCollector(serviceName string) *MetricsCollector {
 		),
 		httpRequestDuration: prometheus.NewHistogramVec(
 			prometheus.HistogramOpts{
-				Namespace: serviceName,
+				Namespace: sanitizedName,
 				Name:      "http_request_duration_seconds",
 				Help:      "HTTP request duration in seconds",
 				Buckets:   prometheus.DefBuckets,
@@ -62,7 +67,7 @@ func NewMetricsCollector(serviceName string) *MetricsCollector {
 		),
 		httpRequestsInFlight: prometheus.NewGaugeVec(
 			prometheus.GaugeOpts{
-				Namespace: serviceName,
+				Namespace: sanitizedName,
 				Name:      "http_requests_in_flight",
 				Help:      "Number of HTTP requests currently being served",
 			},
@@ -70,7 +75,7 @@ func NewMetricsCollector(serviceName string) *MetricsCollector {
 		),
 		httpRequestSize: prometheus.NewHistogramVec(
 			prometheus.HistogramOpts{
-				Namespace: serviceName,
+				Namespace: sanitizedName,
 				Name:      "http_request_size_bytes",
 				Help:      "HTTP request size in bytes",
 				Buckets:   prometheus.ExponentialBuckets(100, 10, 8),
@@ -79,7 +84,7 @@ func NewMetricsCollector(serviceName string) *MetricsCollector {
 		),
 		httpResponseSize: prometheus.NewHistogramVec(
 			prometheus.HistogramOpts{
-				Namespace: serviceName,
+				Namespace: sanitizedName,
 				Name:      "http_response_size_bytes",
 				Help:      "HTTP response size in bytes",
 				Buckets:   prometheus.ExponentialBuckets(100, 10, 8),
@@ -90,7 +95,7 @@ func NewMetricsCollector(serviceName string) *MetricsCollector {
 		// Backend client metrics
 		backendCallsTotal: prometheus.NewCounterVec(
 			prometheus.CounterOpts{
-				Namespace: serviceName,
+				Namespace: sanitizedName,
 				Name:      "backend_calls_total",
 				Help:      "Total number of backend service calls",
 			},
@@ -98,7 +103,7 @@ func NewMetricsCollector(serviceName string) *MetricsCollector {
 		),
 		backendCallDuration: prometheus.NewHistogramVec(
 			prometheus.HistogramOpts{
-				Namespace: serviceName,
+				Namespace: sanitizedName,
 				Name:      "backend_call_duration_seconds",
 				Help:      "Backend service call duration in seconds",
 				Buckets:   prometheus.DefBuckets,
@@ -107,7 +112,7 @@ func NewMetricsCollector(serviceName string) *MetricsCollector {
 		),
 		backendErrorsTotal: prometheus.NewCounterVec(
 			prometheus.CounterOpts{
-				Namespace: serviceName,
+				Namespace: sanitizedName,
 				Name:      "backend_errors_total",
 				Help:      "Total number of backend service errors",
 			},
@@ -117,7 +122,7 @@ func NewMetricsCollector(serviceName string) *MetricsCollector {
 		// Circuit breaker metrics
 		circuitBreakerState: prometheus.NewGaugeVec(
 			prometheus.GaugeOpts{
-				Namespace: serviceName,
+				Namespace: sanitizedName,
 				Name:      "circuit_breaker_state",
 				Help:      "Circuit breaker state (0=closed, 1=open, 2=half-open)",
 			},
@@ -125,7 +130,7 @@ func NewMetricsCollector(serviceName string) *MetricsCollector {
 		),
 		circuitBreakerOps: prometheus.NewCounterVec(
 			prometheus.CounterOpts{
-				Namespace: serviceName,
+				Namespace: sanitizedName,
 				Name:      "circuit_breaker_operations_total",
 				Help:      "Total number of circuit breaker operations",
 			},
@@ -135,7 +140,7 @@ func NewMetricsCollector(serviceName string) *MetricsCollector {
 		// Rate limiter metrics
 		rateLimitHitsTotal: prometheus.NewCounterVec(
 			prometheus.CounterOpts{
-				Namespace: serviceName,
+				Namespace: sanitizedName,
 				Name:      "rate_limit_hits_total",
 				Help:      "Total number of rate limit hits",
 			},
@@ -143,7 +148,7 @@ func NewMetricsCollector(serviceName string) *MetricsCollector {
 		),
 		rateLimitAllowsTotal: prometheus.NewCounterVec(
 			prometheus.CounterOpts{
-				Namespace: serviceName,
+				Namespace: sanitizedName,
 				Name:      "rate_limit_allows_total",
 				Help:      "Total number of allowed requests after rate limiting",
 			},
@@ -153,14 +158,14 @@ func NewMetricsCollector(serviceName string) *MetricsCollector {
 		// System metrics
 		serviceUptime: prometheus.NewGauge(
 			prometheus.GaugeOpts{
-				Namespace: serviceName,
+				Namespace: sanitizedName,
 				Name:      "service_uptime_seconds",
 				Help:      "Service uptime in seconds",
 			},
 		),
 		serviceHealth: prometheus.NewGaugeVec(
 			prometheus.GaugeOpts{
-				Namespace: serviceName,
+				Namespace: sanitizedName,
 				Name:      "service_health",
 				Help:      "Service health status (1=healthy, 0=unhealthy)",
 			},
@@ -168,14 +173,14 @@ func NewMetricsCollector(serviceName string) *MetricsCollector {
 		),
 		goroutines: prometheus.NewGauge(
 			prometheus.GaugeOpts{
-				Namespace: serviceName,
+				Namespace: sanitizedName,
 				Name:      "goroutines",
 				Help:      "Number of goroutines",
 			},
 		),
 		memoryUsage: prometheus.NewGauge(
 			prometheus.GaugeOpts{
-				Namespace: serviceName,
+				Namespace: sanitizedName,
 				Name:      "memory_usage_bytes",
 				Help:      "Memory usage in bytes",
 			},
