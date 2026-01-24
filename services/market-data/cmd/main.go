@@ -105,6 +105,10 @@ func NewApplication() (*Application, error) {
 	// Initialize historical storage
 	storageConfig := historical.DefaultStorageConfig()
 	storageConfig.BackendType = "redis"
+	storageConfig.RedisHost = cfg.RedisHost
+	storageConfig.RedisPort = cfg.RedisPort
+	storageConfig.RedisPassword = cfg.RedisPassword
+	storageConfig.RedisDB = cfg.RedisDB + 1 // Use different DB for historical data
 	storageConfig.RetentionDays = 30
 
 	storage, err := historical.NewRedisStorage(storageConfig, stdLogger)
