@@ -1,0 +1,61 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: trading-alerts
+  namespace: monitoring
+  labels:
+    release: kube-prometheus-stack
+    app: kube-prometheus-stack
+spec:
+  groups:
+    - name: trading-alerts
+      rules:
+        # Service down
+        - alert: TradingServiceDown
+          expr: up{namespace="bitso-trading-dev"} == 0
+          for: 1m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Service {{ $labels.service }} is down"
+            description: "Service {{ $labels.service }} has been down for more than 1 minute"
+
+        # High error rate
+        - alert: TradingServiceHighErrorRate
+          expr: rate(api_gateway_http_requests_total{status=~"5.."}[5m]) > 0.1
+          for: 2m
+          labels:
+            severity: critical
+          annotations:
+            summary: "High error rate on {{ $labels.service }}"
+            description: "Error rate is {{ $value }} errors per second"
+
+        # High latency
+        - alert: TradingServiceHighLatency
+          expr: histogram_quantile(0.95, rate(api_gateway_http_request_duration_seconds_bucket[5m])) > 2
+          for: 3m
+          labels:
+            severity: warning
+          annotations:
+            summary: "High latency on API Gateway"
+            description: "95th percentile latency is {{ $value }}s"
+
+        # Pod restart
+        - alert: TradingPodRestarting
+          expr: increase(kube_pod_container_status_restarts_total{namespace="bitso-trading-dev"}[1h]) > 3
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Pod {{ $labels.pod }} is restarting frequently"
+            description: "Pod {{ $labels.pod }} has restarted {{ $value }} times in the last hour"
+
+        # High memory usage
+        - alert: TradingServiceHighMemory
+          expr: container_memory_usage_bytes{namespace="bitso-trading-dev"} / container_spec_memory_limit_bytes > 0.9
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "High memory usage on {{ $labels.container }}"
+            description: "Memory usage is at {{ $value | humanizePercentage }}"
