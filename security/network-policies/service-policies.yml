@@ -1,12 +1,12 @@
+# Trading Engine Network Policy
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
   name: trading-engine-policy
-  namespace: bitso-trading-platform
 spec:
   podSelector:
     matchLabels:
-      app: trading-engine
+      service: trading-engine
   policyTypes:
   - Ingress
   - Egress
@@ -14,7 +14,7 @@ spec:
   - from:
     - podSelector:
         matchLabels:
-          app: api-gateway
+          service: api-gateway
     ports:
     - protocol: TCP
       port: 8080
@@ -22,36 +22,36 @@ spec:
   - to:
     - podSelector:
         matchLabels:
-          app: kafka
+          service: kafka
     ports:
     - protocol: TCP
       port: 9092
   - to:
     - podSelector:
         matchLabels:
-          app: redis
+          service: redis
     ports:
     - protocol: TCP
       port: 6379
   - to: []
     ports:
     - protocol: TCP
-      port: 443  # HTTPS for external APIs
+      port: 443  # HTTPS for external APIs (Bitso)
 ---
+# API Gateway Network Policy
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
   name: api-gateway-policy
-  namespace: bitso-trading-platform
 spec:
   podSelector:
     matchLabels:
-      app: api-gateway
+      service: api-gateway
   policyTypes:
   - Ingress
   - Egress
   ingress:
-  - from: []
+  - from: []  # Allow from anywhere (external traffic)
     ports:
     - protocol: TCP
       port: 8085
@@ -59,35 +59,242 @@ spec:
   - to:
     - podSelector:
         matchLabels:
-          app: trading-engine
+          service: trading-engine
     ports:
     - protocol: TCP
       port: 8080
   - to:
     - podSelector:
         matchLabels:
-          app: backtesting
+          service: backtesting
+    ports:
+    - protocol: TCP
+      port: 8084
+  - to:
+    - podSelector:
+        matchLabels:
+          service: strategy-executor
     ports:
     - protocol: TCP
       port: 8081
   - to:
     - podSelector:
         matchLabels:
-          app: strategy-executor
-    ports:
-    - protocol: TCP
-      port: 8082
-  - to:
-    - podSelector:
-        matchLabels:
-          app: market-data
+          service: market-data
     ports:
     - protocol: TCP
       port: 8083
   - to:
     - podSelector:
         matchLabels:
-          app: order-management
+          service: order-management
+    ports:
+    - protocol: TCP
+      port: 8082
+---
+# Market Data Network Policy
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: market-data-policy
+spec:
+  podSelector:
+    matchLabels:
+      service: market-data
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          service: api-gateway
+    ports:
+    - protocol: TCP
+      port: 8083
+  egress:
+  - to:
+    - podSelector:
+        matchLabels:
+          service: kafka
+    ports:
+    - protocol: TCP
+      port: 9092
+  - to:
+    - podSelector:
+        matchLabels:
+          service: redis
+    ports:
+    - protocol: TCP
+      port: 6379
+  - to: []
+    ports:
+    - protocol: TCP
+      port: 443  # HTTPS for Bitso WebSocket
+---
+# Strategy Executor Network Policy
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: strategy-executor-policy
+spec:
+  podSelector:
+    matchLabels:
+      service: strategy-executor
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          service: api-gateway
+    ports:
+    - protocol: TCP
+      port: 8081
+  egress:
+  - to:
+    - podSelector:
+        matchLabels:
+          service: kafka
+    ports:
+    - protocol: TCP
+      port: 9092
+  - to:
+    - podSelector:
+        matchLabels:
+          service: redis
+    ports:
+    - protocol: TCP
+      port: 6379
+---
+# Order Management Network Policy
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: order-management-policy
+spec:
+  podSelector:
+    matchLabels:
+      service: order-management
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          service: api-gateway
+    ports:
+    - protocol: TCP
+      port: 8082
+  - from:
+    - podSelector:
+        matchLabels:
+          service: trading-engine
+    ports:
+    - protocol: TCP
+      port: 8082
+  egress:
+  - to:
+    - podSelector:
+        matchLabels:
+          service: kafka
+    ports:
+    - protocol: TCP
+      port: 9092
+  - to:
+    - podSelector:
+        matchLabels:
+          service: redis
+    ports:
+    - protocol: TCP
+      port: 6379
+  - to: []
+    ports:
+    - protocol: TCP
+      port: 443  # HTTPS for Bitso API
+---
+# Backtesting Network Policy
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: backtesting-policy
+spec:
+  podSelector:
+    matchLabels:
+      service: backtesting
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          service: api-gateway
     ports:
     - protocol: TCP
       port: 8084
+  egress:
+  - to:
+    - podSelector:
+        matchLabels:
+          service: redis
+    ports:
+    - protocol: TCP
+      port: 6379
+  - to: []
+    ports:
+    - protocol: TCP
+      port: 443  # HTTPS for historical data
+---
+# Kafka Network Policy
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: kafka-policy
+spec:
+  podSelector:
+    matchLabels:
+      service: kafka
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          app: bitso-trading-platform
+    ports:
+    - protocol: TCP
+      port: 9092
+    - protocol: TCP
+      port: 9093
+  egress:
+  - to:
+    - podSelector:
+        matchLabels:
+          app: bitso-trading-platform
+    ports:
+    - protocol: TCP
+      port: 9092
+---
+# Redis Network Policy
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: redis-policy
+spec:
+  podSelector:
+    matchLabels:
+      service: redis
+  policyTypes:
+  - Ingress
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          app: bitso-trading-platform
+    ports:
+    - protocol: TCP
+      port: 6379
