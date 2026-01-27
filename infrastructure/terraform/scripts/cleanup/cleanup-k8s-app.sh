@@ -293,6 +293,49 @@ cleanup_statefulsets() {
     fi
 }
 
+# Delete Ingresses (must be done early to allow ALB cleanup by AWS Load Balancer Controller)
+cleanup_ingresses() {
+    local namespace=$1
+    
+    print_info "Cleaning up Ingresses in namespace: $namespace"
+    
+    local ingresses=$(kubectl get ingress -n "$namespace" -o jsonpath='{.items[*].metadata.name}' 2>/dev/null || echo "")
+    
+    if [ -n "$ingresses" ]; then
+        for ing in $ingresses; do
+            print_info "Deleting Ingress: $ing"
+            # Remove finalizers first to prevent stuck deletion
+            remove_finalizers "ingress" "$ing" "$namespace"
+            kubectl delete ingress "$ing" -n "$namespace" --grace-period=0 2>/dev/null || true
+        done
+        # Wait for ALB to be deleted by AWS Load Balancer Controller
+        print_info "Waiting 30 seconds for AWS ALB cleanup..."
+        sleep 30
+        print_success "Ingresses deleted"
+    else
+        print_info "No Ingresses found"
+    fi
+}
+
+# Delete Network Policies
+cleanup_network_policies() {
+    local namespace=$1
+    
+    print_info "Cleaning up Network Policies in namespace: $namespace"
+    
+    local netpols=$(kubectl get networkpolicy -n "$namespace" -o jsonpath='{.items[*].metadata.name}' 2>/dev/null || echo "")
+    
+    if [ -n "$netpols" ]; then
+        for np in $netpols; do
+            print_info "Deleting NetworkPolicy: $np"
+            kubectl delete networkpolicy "$np" -n "$namespace" --grace-period=0 2>/dev/null || true
+        done
+        print_success "Network Policies deleted"
+    else
+        print_info "No Network Policies found"
+    fi
+}
+
 # Delete the namespace
 cleanup_namespace() {
     local namespace=$1
@@ -351,7 +394,10 @@ cleanup_application() {
     echo ""
     
     # Cleanup in order (dependencies first)
+    # Ingresses must be deleted first to allow ALB cleanup
+    cleanup_ingresses "$namespace"
     cleanup_external_secrets "$namespace"
+    cleanup_network_policies "$namespace"
     cleanup_deployments "$namespace"
     cleanup_statefulsets "$namespace"
     cleanup_services "$namespace"
@@ -411,7 +457,7 @@ main() {
     
     # Confirm deletion
     print_warning "⚠️  WARNING: This will delete ALL resources in namespace: $APP_NAMESPACE"
-    print_warning "This includes: Deployments, Services, ConfigMaps, Secrets, ExternalSecrets, and the namespace itself"
+    print_warning "This includes: Ingresses, Network Policies, Deployments, Services, ConfigMaps, Secrets, ExternalSecrets, and the namespace itself"
     echo ""
     read -p "Are you sure you want to continue? Type 'yes' to proceed: " -r response
     
