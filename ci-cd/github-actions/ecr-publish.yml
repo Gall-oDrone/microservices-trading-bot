@@ -2,7 +2,7 @@ name: Build and Push to ECR
 
 on:
   push:
-    branches: [ main, staging, feat/eks-infrastructure-baseline ]
+    branches: [ main, staging, feat/eks-infrastructure-baseline, feat/k8s-deployment-manifests ]
   workflow_dispatch: {}
 
 env:
