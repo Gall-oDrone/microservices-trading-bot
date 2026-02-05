@@ -63,6 +63,9 @@ func NewApplication() (*Application, error) {
 
 	// Initialize metrics collector
 	metricsCollector := metrics.NewMetricsCollector(appName)
+	// Intraday P&L aggregator: when OrderManager is created (e.g. for Kafka or API),
+	// use metrics.NewIntradayAggregator(metricsCollector, nil) and pass as PnLRecorder
+	// so filled orders update trading_daily_realized_pnl_currency, trading_trades_today_total, etc.
 	appLogger.Info("Metrics collector initialized", nil)
 
 	// Initialize health manager

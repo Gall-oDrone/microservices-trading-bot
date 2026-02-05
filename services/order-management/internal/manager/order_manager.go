@@ -6,6 +6,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/shopspring/decimal"
+
 	"bitso-trading-platform/order-management/internal/config"
 	"bitso-trading-platform/order-management/internal/logger"
 	"bitso-trading-platform/order-management/internal/metrics"
@@ -13,6 +15,7 @@ import (
 	"bitso-trading-platform/order-management/internal/repository"
 	"bitso-trading-platform/order-management/internal/risk"
 	"bitso-trading-platform/order-management/internal/validator"
+	sharedMetrics "bitso-trading-platform/shared/pkg/metrics"
 	sharedModels "bitso-trading-platform/shared/pkg/models"
 )
 
@@ -37,6 +40,7 @@ type Manager struct {
 	repository   repository.OrderRepository
 	stateMachine *StateMachine
 	metrics      *metrics.MetricsCollector
+	pnlRecorder  sharedMetrics.PnLRecorder // optional; nil disables intraday P&L recording
 
 	// Internal state
 	stopChan chan struct{}
@@ -44,7 +48,7 @@ type Manager struct {
 	mu       sync.RWMutex
 }
 
-// NewOrderManager creates a new order manager
+// NewOrderManager creates a new order manager. pnlRecorder is optional (nil disables intraday P&L metrics).
 func NewOrderManager(
 	config *config.Config,
 	logger *logger.Logger,
@@ -52,6 +56,7 @@ func NewOrderManager(
 	riskManager risk.RiskManager,
 	repository repository.OrderRepository,
 	metrics *metrics.MetricsCollector,
+	pnlRecorder sharedMetrics.PnLRecorder,
 ) *Manager {
 	return &Manager{
 		logger:       logger,
@@ -61,6 +66,7 @@ func NewOrderManager(
 		repository:   repository,
 		stateMachine: NewStateMachine(logger),
 		metrics:      metrics,
+		pnlRecorder:  pnlRecorder,
 		stopChan:     make(chan struct{}),
 	}
 }
@@ -256,6 +262,7 @@ func (m *Manager) UpdateOrderStatus(ctx context.Context, orderID string, status 
 	switch status {
 	case models.OrderStatusFilled:
 		m.metrics.RecordOrderFilled(order.Book, order.Strategy)
+		m.recordTradeClosedForIntraday(order, metadata)
 	case models.OrderStatusCancelled:
 		m.metrics.RecordOrderCancelled(order.Book, order.Strategy, "manual")
 	case models.OrderStatusRejected:
@@ -334,6 +341,50 @@ func (m *Manager) monitorOrders(ctx context.Context) {
 			m.updateActiveOrderMetrics(ctx)
 		}
 	}
+}
+
+// recordTradeClosedForIntraday records a closed trade to the P&L recorder when present.
+// Realized PnL is read from metadata["realized_pnl"] (float64) when provided by position/fill sync; else 0.
+func (m *Manager) recordTradeClosedForIntraday(order *models.Order, metadata map[string]interface{}) {
+	if m.pnlRecorder == nil {
+		return
+	}
+	currency := quoteCurrencyFromBook(order.Book)
+	var realizedPnL decimal.Decimal
+	if metadata != nil {
+		if v, ok := metadata["realized_pnl"]; ok {
+			switch t := v.(type) {
+			case float64:
+				realizedPnL = decimal.NewFromFloat(t)
+			case float32:
+				realizedPnL = decimal.NewFromFloat(float64(t))
+			case int:
+				realizedPnL = decimal.NewFromInt(int64(t))
+			case int64:
+				realizedPnL = decimal.NewFromInt(t)
+			}
+		}
+	}
+	outcome := sharedMetrics.TradeOutcome{
+		Book:        order.Book,
+		Strategy:    order.Strategy,
+		Currency:    currency,
+		RealizedPnL: sharedMetrics.NewMonetaryAmount(realizedPnL, currency),
+		IsWin:       realizedPnL.GreaterThan(decimal.Zero),
+	}
+	m.pnlRecorder.RecordTradeClosed(outcome)
+}
+
+// quoteCurrencyFromBook returns the quote currency for metrics (e.g. btc_mxn -> MXN).
+func quoteCurrencyFromBook(book string) string {
+	// Bitso books are like btc_mxn, eth_mxn, xrp_mxn; default to MXN
+	if len(book) >= 4 && book[len(book)-3:] == "mxn" {
+		return "MXN"
+	}
+	if len(book) >= 4 && book[len(book)-3:] == "usd" {
+		return "USD"
+	}
+	return "MXN"
 }
 
 // updateActiveOrderMetrics updates metrics for active orders

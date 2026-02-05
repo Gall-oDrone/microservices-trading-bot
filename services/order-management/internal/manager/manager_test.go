@@ -349,7 +349,7 @@ func setupManager() *Manager {
 		testManagerMetrics,
 	)
 
-	// Create manager
+	// Create manager (nil PnL recorder for unit tests)
 	return NewOrderManager(
 		testManagerConfig,
 		testManagerLogger,
@@ -357,5 +357,6 @@ func setupManager() *Manager {
 		rm,
 		orderRepo,
 		testManagerMetrics,
+		nil,
 	)
 }

@@ -5,6 +5,8 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
+
+	sharedMetrics "bitso-trading-platform/shared/pkg/metrics"
 )
 
 // MetricsCollector collects and exposes Prometheus metrics
@@ -46,6 +48,17 @@ type MetricsCollector struct {
 	// System metrics
 	serviceUptime prometheus.Gauge
 	serviceHealth *prometheus.GaugeVec
+
+	// Intraday / P&L metrics (financial production standard)
+	dailyRealizedPnL   *prometheus.GaugeVec
+	dailyUnrealizedPnL *prometheus.GaugeVec
+	drawdownPercent    *prometheus.GaugeVec
+	drawdownAbsolute   *prometheus.GaugeVec
+	peakEquity         *prometheus.GaugeVec
+	currentEquity      *prometheus.GaugeVec
+	tradesToday        *prometheus.GaugeVec
+	winsToday          *prometheus.GaugeVec
+	lossesToday        *prometheus.GaugeVec
 }
 
 // NewMetricsCollector creates a new metrics collector
@@ -223,6 +236,71 @@ func NewMetricsCollector(serviceName string) *MetricsCollector {
 			},
 			[]string{"status"},
 		),
+
+		// Intraday / P&L metrics — currency units (e.g. MXN); use decimal in aggregator, float for export
+		dailyRealizedPnL: promauto.NewGaugeVec(
+			prometheus.GaugeOpts{
+				Name: sharedMetrics.NameDailyRealizedPnL,
+				Help: "Cumulative realized P&L for the current session (currency units)",
+			},
+			[]string{sharedMetrics.LabelCurrency},
+		),
+		dailyUnrealizedPnL: promauto.NewGaugeVec(
+			prometheus.GaugeOpts{
+				Name: sharedMetrics.NameDailyUnrealizedPnL,
+				Help: "Current unrealized P&L for the session (currency units)",
+			},
+			[]string{sharedMetrics.LabelCurrency},
+		),
+		drawdownPercent: promauto.NewGaugeVec(
+			prometheus.GaugeOpts{
+				Name: sharedMetrics.NameDrawdownPercent,
+				Help: "Current drawdown as percentage of peak equity (0-100)",
+			},
+			[]string{sharedMetrics.LabelCurrency},
+		),
+		drawdownAbsolute: promauto.NewGaugeVec(
+			prometheus.GaugeOpts{
+				Name: sharedMetrics.NameDrawdownAbsolute,
+				Help: "Current drawdown in currency units (peak - current equity)",
+			},
+			[]string{sharedMetrics.LabelCurrency},
+		),
+		peakEquity: promauto.NewGaugeVec(
+			prometheus.GaugeOpts{
+				Name: sharedMetrics.NamePeakEquity,
+				Help: "Peak equity observed in the session (currency units)",
+			},
+			[]string{sharedMetrics.LabelCurrency},
+		),
+		currentEquity: promauto.NewGaugeVec(
+			prometheus.GaugeOpts{
+				Name: sharedMetrics.NameCurrentEquity,
+				Help: "Current equity (currency units)",
+			},
+			[]string{sharedMetrics.LabelCurrency},
+		),
+		tradesToday: promauto.NewGaugeVec(
+			prometheus.GaugeOpts{
+				Name: sharedMetrics.NameTradesToday,
+				Help: "Total trades closed in the current session (gauge; resets at session boundary)",
+			},
+			[]string{sharedMetrics.LabelBook, sharedMetrics.LabelStrategy},
+		),
+		winsToday: promauto.NewGaugeVec(
+			prometheus.GaugeOpts{
+				Name: sharedMetrics.NameWinsToday,
+				Help: "Winning trades closed in the current session (realized P&L > 0)",
+			},
+			[]string{sharedMetrics.LabelBook, sharedMetrics.LabelStrategy},
+		),
+		lossesToday: promauto.NewGaugeVec(
+			prometheus.GaugeOpts{
+				Name: sharedMetrics.NameLossesToday,
+				Help: "Losing trades closed in the current session (realized P&L <= 0)",
+			},
+			[]string{sharedMetrics.LabelBook, sharedMetrics.LabelStrategy},
+		),
 	}
 
 	return mc
@@ -337,4 +415,57 @@ func (mc *MetricsCollector) RecordServiceHealth(healthy bool) {
 		mc.serviceHealth.WithLabelValues("healthy").Set(0)
 		mc.serviceHealth.WithLabelValues("unhealthy").Set(1)
 	}
+}
+
+// IntradayMetricsWriter writes intraday/P&L gauges and counters (used by IntradayAggregator).
+// Implemented by MetricsCollector for production; mock for tests.
+type IntradayMetricsWriter interface {
+	SetDailyRealizedPnL(currency string, value float64)
+	SetDailyUnrealizedPnL(currency string, value float64)
+	SetDrawdownPercent(currency string, percent float64)
+	SetDrawdownAbsolute(currency string, value float64)
+	SetPeakEquity(currency string, value float64)
+	SetCurrentEquity(currency string, value float64)
+	SetTradesToday(book, strategy string, count float64)
+	SetWinsToday(book, strategy string, count float64)
+	SetLossesToday(book, strategy string, count float64)
+}
+
+// Ensure MetricsCollector implements IntradayMetricsWriter.
+var _ IntradayMetricsWriter = (*MetricsCollector)(nil)
+
+func (mc *MetricsCollector) SetDailyRealizedPnL(currency string, value float64) {
+	mc.dailyRealizedPnL.WithLabelValues(currency).Set(value)
+}
+
+func (mc *MetricsCollector) SetDailyUnrealizedPnL(currency string, value float64) {
+	mc.dailyUnrealizedPnL.WithLabelValues(currency).Set(value)
+}
+
+func (mc *MetricsCollector) SetDrawdownPercent(currency string, percent float64) {
+	mc.drawdownPercent.WithLabelValues(currency).Set(percent)
+}
+
+func (mc *MetricsCollector) SetDrawdownAbsolute(currency string, value float64) {
+	mc.drawdownAbsolute.WithLabelValues(currency).Set(value)
+}
+
+func (mc *MetricsCollector) SetPeakEquity(currency string, value float64) {
+	mc.peakEquity.WithLabelValues(currency).Set(value)
+}
+
+func (mc *MetricsCollector) SetCurrentEquity(currency string, value float64) {
+	mc.currentEquity.WithLabelValues(currency).Set(value)
+}
+
+func (mc *MetricsCollector) SetTradesToday(book, strategy string, count float64) {
+	mc.tradesToday.WithLabelValues(book, strategy).Set(count)
+}
+
+func (mc *MetricsCollector) SetWinsToday(book, strategy string, count float64) {
+	mc.winsToday.WithLabelValues(book, strategy).Set(count)
+}
+
+func (mc *MetricsCollector) SetLossesToday(book, strategy string, count float64) {
+	mc.lossesToday.WithLabelValues(book, strategy).Set(count)
 }
