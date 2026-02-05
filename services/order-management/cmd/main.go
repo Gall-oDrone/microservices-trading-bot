@@ -9,10 +9,16 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/shopspring/decimal"
+
 	"bitso-trading-platform/order-management/internal/config"
 	"bitso-trading-platform/order-management/internal/logger"
+	"bitso-trading-platform/order-management/internal/manager"
 	"bitso-trading-platform/order-management/internal/metrics"
+	"bitso-trading-platform/order-management/internal/repository"
+	"bitso-trading-platform/order-management/internal/risk"
 	"bitso-trading-platform/order-management/internal/server"
+	"bitso-trading-platform/order-management/internal/validator"
 	"bitso-trading-platform/shared/pkg/health"
 )
 
@@ -32,6 +38,8 @@ type Application struct {
 	healthManager    *health.HealthManager
 	metricsCollector *metrics.MetricsCollector
 	httpServer       *server.HTTPServer
+	orderManager     *manager.Manager
+	pnlRecorder      *metrics.IntradayAggregator
 
 	// Context
 	ctx    context.Context
@@ -63,10 +71,32 @@ func NewApplication() (*Application, error) {
 
 	// Initialize metrics collector
 	metricsCollector := metrics.NewMetricsCollector(appName)
-	// Intraday P&L aggregator: when OrderManager is created (e.g. for Kafka or API),
-	// use metrics.NewIntradayAggregator(metricsCollector, nil) and pass as PnLRecorder
-	// so filled orders update trading_daily_realized_pnl_currency, trading_trades_today_total, etc.
 	appLogger.Info("Metrics collector initialized", nil)
+
+	// Intraday P&L aggregator (writes to Prometheus)
+	pnlRecorder := metrics.NewIntradayAggregator(metricsCollector, nil)
+	appLogger.Info("Intraday P&L aggregator initialized", nil)
+
+	// Repositories (in-memory; replace with Redis/persistent when needed)
+	orderRepo := repository.NewInMemoryOrderRepository(appLogger, metricsCollector)
+	positionRepo := repository.NewInMemoryPositionRepository(appLogger, metricsCollector)
+
+	// Validator and risk manager
+	orderValidator := validator.NewOrderValidator(&cfg.Risk, appLogger, orderRepo, metricsCollector)
+	riskManager := risk.NewRiskManager(&cfg.Risk, appLogger, orderRepo, positionRepo, metricsCollector)
+
+	// Order manager with PnL recorder so filled orders update intraday metrics
+	orderManager := manager.NewOrderManager(
+		cfg,
+		appLogger,
+		orderValidator,
+		riskManager,
+		orderRepo,
+		positionRepo,
+		metricsCollector,
+		pnlRecorder,
+	)
+	appLogger.Info("Order manager initialized", nil)
 
 	// Initialize health manager
 	healthManager := health.NewHealthManager(log.New(os.Stdout, "[HEALTH] ", log.LstdFlags))
@@ -98,6 +128,8 @@ func NewApplication() (*Application, error) {
 		healthManager:    healthManager,
 		metricsCollector: metricsCollector,
 		httpServer:       httpServer,
+		orderManager:     orderManager,
+		pnlRecorder:      pnlRecorder,
 		ctx:              ctx,
 		cancel:           cancel,
 	}, nil
@@ -106,6 +138,15 @@ func NewApplication() (*Application, error) {
 // Start initializes and starts all components
 func (app *Application) Start() error {
 	app.logger.Info("Starting application components...", nil)
+
+	// Start order manager (background tasks)
+	if err := app.orderManager.Start(app.ctx); err != nil {
+		return fmt.Errorf("order manager start: %w", err)
+	}
+	app.logger.Info("Order manager started", nil)
+
+	// Feed equity and unrealized P&L into intraday aggregator periodically
+	go app.feedIntradayMetrics()
 
 	// Start metrics collection
 	go app.startMetricsCollection()
@@ -129,6 +170,33 @@ func (app *Application) Start() error {
 	})
 
 	return nil
+}
+
+// feedIntradayMetrics periodically pushes position summary (equity, unrealized P&L) to the aggregator.
+func (app *Application) feedIntradayMetrics() {
+	ticker := time.NewTicker(60 * time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-app.ctx.Done():
+			return
+		case <-ticker.C:
+			ctx, cancel := context.WithTimeout(app.ctx, 10*time.Second)
+			summary, err := app.orderManager.GetPositionSummary(ctx)
+			cancel()
+			if err != nil {
+				app.logger.Debug("Position summary for intraday metrics failed (may be empty)", map[string]interface{}{"error": err.Error()})
+				continue
+			}
+			if summary == nil {
+				continue
+			}
+			// Feed unrealized P&L and session equity (TotalPnL as proxy for drawdown)
+			currency := "MXN"
+			app.pnlRecorder.RecordDailyUnrealizedPnL(currency, decimal.NewFromFloat(summary.TotalUnrealizedPnL))
+			app.pnlRecorder.RecordEquityUpdate(currency, decimal.NewFromFloat(summary.TotalPnL))
+		}
+	}
 }
 
 // startMetricsCollection starts periodic metrics collection
@@ -161,6 +229,13 @@ func (app *Application) Stop() error {
 
 	go func() {
 		var lastErr error
+
+		// Stop order manager
+		app.logger.Info("Stopping order manager...", nil)
+		if err := app.orderManager.Stop(); err != nil {
+			app.logger.Error("Error stopping order manager", map[string]interface{}{"error": err})
+			lastErr = err
+		}
 
 		// Stop HTTP server
 		app.logger.Info("Stopping HTTP server...", nil)

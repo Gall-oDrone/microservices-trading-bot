@@ -29,6 +29,7 @@ type OrderManager interface {
 	CancelOrder(ctx context.Context, orderID string) error
 	GetOrder(ctx context.Context, orderID string) (*models.Order, error)
 	ListOrders(ctx context.Context, filters *models.OrderFilters) ([]*models.Order, error)
+	GetPositionSummary(ctx context.Context) (*models.PositionSummary, error)
 }
 
 // Manager implements OrderManager
@@ -38,6 +39,7 @@ type Manager struct {
 	validator    validator.OrderValidator
 	riskManager  risk.RiskManager
 	repository   repository.OrderRepository
+	positionRepo repository.PositionRepository
 	stateMachine *StateMachine
 	metrics      *metrics.MetricsCollector
 	pnlRecorder  sharedMetrics.PnLRecorder // optional; nil disables intraday P&L recording
@@ -55,6 +57,7 @@ func NewOrderManager(
 	validator validator.OrderValidator,
 	riskManager risk.RiskManager,
 	repository repository.OrderRepository,
+	positionRepo repository.PositionRepository,
 	metrics *metrics.MetricsCollector,
 	pnlRecorder sharedMetrics.PnLRecorder,
 ) *Manager {
@@ -64,6 +67,7 @@ func NewOrderManager(
 		validator:    validator,
 		riskManager:  riskManager,
 		repository:   repository,
+		positionRepo: positionRepo,
 		stateMachine: NewStateMachine(logger),
 		metrics:      metrics,
 		pnlRecorder:  pnlRecorder,
@@ -320,6 +324,11 @@ func (m *Manager) GetOrder(ctx context.Context, orderID string) (*models.Order, 
 // ListOrders lists orders with optional filters
 func (m *Manager) ListOrders(ctx context.Context, filters *models.OrderFilters) ([]*models.Order, error) {
 	return m.repository.List(ctx, filters)
+}
+
+// GetPositionSummary returns a summary of all positions (for intraday metrics and API).
+func (m *Manager) GetPositionSummary(ctx context.Context) (*models.PositionSummary, error) {
+	return m.positionRepo.GetSummary(ctx)
 }
 
 // monitorOrders monitors active orders (background task)
