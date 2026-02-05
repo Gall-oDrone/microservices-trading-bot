@@ -5,7 +5,7 @@ go 1.21
 replace bitso-trading-platform/shared => ./shared
 
 require (
-	bitso-trading-platform/shared v0.0.0-00010101000000-000000000000
+	bitso-trading-platform/shared v0.0.0
 	github.com/stretchr/testify v1.11.1
 )
 

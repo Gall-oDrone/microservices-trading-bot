@@ -1,4 +1,4 @@
-package metrics
+package metricstest
 
 import (
 	"sync"
@@ -7,10 +7,11 @@ import (
 
 	"github.com/shopspring/decimal"
 
+	"bitso-trading-platform/order-management/internal/metrics"
 	sharedMetrics "bitso-trading-platform/shared/pkg/metrics"
 )
 
-// mockIntradayWriter records calls for testing
+// mockIntradayWriter records calls for testing and implements metrics.IntradayMetricsWriter.
 type mockIntradayWriter struct {
 	mu sync.Mutex
 
@@ -85,7 +86,7 @@ func (m *mockIntradayWriter) SetLossesToday(book, strategy string, count float64
 	m.LossesToday[book+"|"+strategy] = count
 }
 
-// fixedSessionProvider returns a fixed date for deterministic tests
+// fixedSessionProvider returns a fixed date for deterministic tests (implements sharedMetrics.SessionProvider).
 type fixedSessionProvider struct {
 	date time.Time
 }
@@ -97,7 +98,7 @@ func (f fixedSessionProvider) SessionDate() time.Time {
 func TestIntradayAggregator_RecordTradeClosed(t *testing.T) {
 	writer := newMockWriter()
 	session := fixedSessionProvider{date: time.Date(2025, 2, 5, 12, 0, 0, 0, time.UTC)}
-	agg := NewIntradayAggregator(writer, session)
+	agg := metrics.NewIntradayAggregator(writer, session)
 
 	outcome := sharedMetrics.TradeOutcome{
 		Book:        "btc_mxn",
@@ -127,7 +128,7 @@ func TestIntradayAggregator_RecordTradeClosed(t *testing.T) {
 func TestIntradayAggregator_RecordEquityUpdate_Drawdown(t *testing.T) {
 	writer := newMockWriter()
 	session := fixedSessionProvider{date: time.Date(2025, 2, 5, 12, 0, 0, 0, time.UTC)}
-	agg := NewIntradayAggregator(writer, session)
+	agg := metrics.NewIntradayAggregator(writer, session)
 
 	agg.RecordEquityUpdate("MXN", decimal.NewFromFloat(10000))
 	agg.RecordEquityUpdate("MXN", decimal.NewFromFloat(9500)) // 5% drawdown
@@ -151,7 +152,7 @@ func TestIntradayAggregator_RecordEquityUpdate_Drawdown(t *testing.T) {
 func TestIntradayAggregator_RecordDailyRealizedPnL_Accumulates(t *testing.T) {
 	writer := newMockWriter()
 	session := fixedSessionProvider{date: time.Date(2025, 2, 5, 12, 0, 0, 0, time.UTC)}
-	agg := NewIntradayAggregator(writer, session)
+	agg := metrics.NewIntradayAggregator(writer, session)
 
 	agg.RecordDailyRealizedPnL("MXN", decimal.NewFromFloat(10.10))
 	agg.RecordDailyRealizedPnL("MXN", decimal.NewFromFloat(20.20))

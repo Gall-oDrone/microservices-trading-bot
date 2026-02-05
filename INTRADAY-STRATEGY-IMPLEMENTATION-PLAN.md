@@ -112,6 +112,24 @@ This document outlines the recommended steps to safely implement trading strateg
 
 **Files to touch:** `services/strategy-executor/internal/metrics/`, `services/order-management/internal/metrics/`, `monitoring/` or Grafana JSON.
 
+#### Phase 5 Implementation Status
+
+| Item | Status | Location |
+|------|--------|----------|
+| Shared types & interfaces (MonetaryAmount, PnLRecorder, etc.) | Done | `shared/pkg/metrics/` |
+| Prometheus gauges/counters for intraday | Done | `services/order-management/internal/metrics/prometheus.go` |
+| IntradayAggregator (calculation logic) | Done | `services/order-management/internal/metrics/intraday_aggregator.go` |
+| Manager records trade closed on fill | Done | `services/order-management/internal/manager/order_manager.go` |
+| Wire aggregator in app | Done | Aggregator created in `cmd/main.go`, OrderManager constructed with it; manager started on app start |
+| Feed equity & unrealized P&amp;L | Done | `feedIntradayMetrics()` goroutine every 60s calls `GetPositionSummary`, then `RecordDailyUnrealizedPnL` and `RecordEquityUpdate` |
+| Unit tests (aggregator, manager) | Done | `services/order-management/internal/testing/`, `internal/testing/metrics/` |
+| Integration tests | Done | `services/order-management/integration/` (see `testing/integration/order-management/README.md`) |
+| Grafana dashboards | Missing | `monitoring/` or Grafana JSON |
+
+#### Remaining Phase 5 Tasks
+
+1. **Grafana dashboards** – Add or update panels for daily realized/unrealized P&amp;L, drawdown, trades today, win rate (see Phase 5 tasks above).
+
 ---
 
 ### Phase 6: Backtesting (last)
@@ -130,14 +148,14 @@ This document outlines the recommended steps to safely implement trading strateg
 
 ## Summary Table
 
-| Phase | Description                    | Outcome                                      |
-|-------|--------------------------------|----------------------------------------------|
-| 1     | Bitso env-driven URL           | Switch stage/production via config           |
-| 2     | Paper trading / dry-run        | Test strategies without placing orders      |
-| 3     | Order & fill sync              | Accurate positions and P&amp;L for intraday  |
-| 4     | Daily loss & drawdown limits   | Automatic risk halt                         |
-| 5     | Intraday metrics               | Observability for live intraday trading      |
-| 6     | Backtesting                    | Historical validation of strategies         |
+| Phase | Description                    | Outcome                                      | Status        |
+|-------|--------------------------------|----------------------------------------------|---------------|
+| 1     | Bitso env-driven URL           | Switch stage/production via config           | Not started   |
+| 2     | Paper trading / dry-run        | Test strategies without placing orders      | Not started   |
+| 3     | Order & fill sync              | Accurate positions and P&amp;L for intraday  | Not started   |
+| 4     | Daily loss & drawdown limits   | Automatic risk halt                         | Not started   |
+| 5     | Intraday metrics               | Observability for live intraday trading      | Implemented (except Grafana dashboards) |
+| 6     | Backtesting                    | Historical validation of strategies         | Not started   |
 
 ---
 
@@ -150,5 +168,5 @@ This document outlines the recommended steps to safely implement trading strateg
 
 ---
 
-**Document version:** 1.0  
-**Status:** Planning
+**Document version:** 1.1  
+**Status:** Phase 5 implemented (metrics, wiring, unit and integration tests); Grafana dashboards and Phases 1–4, 6 pending.
