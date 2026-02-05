@@ -1,0 +1,69 @@
+# Deploy application to development EKS (bitso-trading-dev).
+# Prerequisites:
+#   - ECR images published (run ECR publish workflow first)
+#   - AWS Secrets Manager has trading-bot/* secrets (run infrastructure/terraform/scripts/secrets/setup-secrets.sh)
+#   - GitHub Environment "development" with secrets:
+#       AWS_GITHUB_ACTIONS_ROLE_ARN  - IAM role ARN for OIDC (from Terraform: ci_role_arn)
+#       EKS_CLUSTER_NAME_DEVELOPMENT - EKS cluster name (e.g. mtb-development)
+name: Deploy (Development)
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ develop, feat/k8s-deployment-manifests ]
+
+env:
+  AWS_REGION: us-east-1
+  NAMESPACE: bitso-trading-dev
+
+jobs:
+  deploy-development:
+    runs-on: ubuntu-latest
+    environment: development
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_GITHUB_ACTIONS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Update kubeconfig
+        run: |
+          aws eks update-kubeconfig --region ${{ env.AWS_REGION }} --name ${{ secrets.EKS_CLUSTER_NAME_DEVELOPMENT }}
+
+      - name: Deploy with Kustomize
+        run: |
+          kubectl apply -k k8s/overlays/development
+
+      - name: Wait for External Secrets sync
+        run: |
+          echo "Waiting for trading-secrets to be synced from AWS Secrets Manager..."
+          for i in $(seq 1 36); do
+            if kubectl get secret trading-secrets -n ${{ env.NAMESPACE }} &>/dev/null; then
+              echo "trading-secrets synced."
+              break
+            fi
+            if [ $i -eq 36 ]; then
+              echo "::warning::trading-secrets not synced in 3m (check SecretStore/ExternalSecret and AWS Secrets Manager)."
+              kubectl get externalsecret,secretstore -n ${{ env.NAMESPACE }} || true
+              exit 1
+            fi
+            sleep 5
+          done
+
+      - name: Wait for deployments
+        run: |
+          kubectl rollout status deployment/trading-engine -n ${{ env.NAMESPACE }} --timeout=300s
+          kubectl rollout status deployment/api-gateway -n ${{ env.NAMESPACE }} --timeout=300s
+          kubectl rollout status deployment/market-data -n ${{ env.NAMESPACE }} --timeout=300s
+
+      - name: Show status
+        run: |
+          kubectl get pods,externalsecret,secretstore -n ${{ env.NAMESPACE }}

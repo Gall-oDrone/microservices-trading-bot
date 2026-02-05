@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: bitso-trading-prod
+  labels:
+    app: bitso-trading-platform
+    env: production

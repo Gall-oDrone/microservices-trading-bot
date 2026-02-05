@@ -1,10 +1,9 @@
 # Development environment patches
 # This file is used by kustomize to apply environment-specific configurations
-
-# Patch the ServiceAccount with the actual IAM role ARN for development
+# IRSA role ARN: from Terraform output external_secrets_role_arn (mtb-development-external-secrets)
 apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: external-secrets
   annotations:
-    eks.amazonaws.com/role-arn: "ROLE_ARN_PLACEHOLDER"
+    eks.amazonaws.com/role-arn: "arn:aws:iam::326105557351:role/mtb-development-external-secrets"
