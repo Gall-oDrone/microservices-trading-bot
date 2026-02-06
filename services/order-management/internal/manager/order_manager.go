@@ -25,11 +25,17 @@ type OrderManager interface {
 	Stop() error
 	ProcessSignal(ctx context.Context, signal *sharedModels.TradeSignalEvent) (*models.Order, error)
 	CreateOrder(signal *sharedModels.TradeSignalEvent) (*models.Order, error)
+	// SyncOrderFromBitso updates an order from Bitso (used by Bitso sync job).
+	SyncOrderFromBitso(ctx context.Context, bitsoOrderID string, filledAmount, avgPrice float64, status models.OrderStatus) error
+	// RecordOrderPlaced records an order placed by the trading-engine (from Kafka trading.orders.placed). Idempotent.
+	RecordOrderPlaced(ctx context.Context, bitsoOrderID, book, side string, amount, price float64, strategy string) (*models.Order, error)
 	UpdateOrderStatus(ctx context.Context, orderID string, status models.OrderStatus, metadata map[string]interface{}) error
 	CancelOrder(ctx context.Context, orderID string) error
 	GetOrder(ctx context.Context, orderID string) (*models.Order, error)
 	ListOrders(ctx context.Context, filters *models.OrderFilters) ([]*models.Order, error)
 	GetPositionSummary(ctx context.Context) (*models.PositionSummary, error)
+	// ListActiveBitsoOrderIDs returns Bitso order IDs for active orders (for sync job)
+	ListActiveBitsoOrderIDs(ctx context.Context) ([]string, error)
 }
 
 // Manager implements OrderManager
@@ -183,6 +189,97 @@ func (m *Manager) ProcessSignal(ctx context.Context, signal *sharedModels.TradeS
 	})
 
 	return order, nil
+}
+
+// RecordOrderPlaced records an order placed by the trading-engine (consumed from Kafka trading.orders.placed).
+// Idempotent: if an order with this bitso_order_id already exists, returns it without error.
+func (m *Manager) RecordOrderPlaced(ctx context.Context, bitsoOrderID, book, side string, amount, price float64, strategy string) (*models.Order, error) {
+	existing, err := m.repository.GetByBitsoOrderID(ctx, bitsoOrderID)
+	if err == nil && existing != nil {
+		m.logger.Debug("Order already recorded for bitso_order_id", map[string]interface{}{"bitso_order_id": bitsoOrderID})
+		return existing, nil
+	}
+	order := models.NewOrder(
+		bitsoOrderID, // use as signal ID for reference
+		book,
+		side,
+		"limit",
+		strategy,
+		price,
+		amount,
+	)
+	order.Metadata["bitso_order_id"] = bitsoOrderID
+	order.UpdateStatus(models.OrderStatusSubmitted)
+	if err := m.repository.Create(ctx, order); err != nil {
+		return nil, fmt.Errorf("create order for placed: %w", err)
+	}
+	m.metrics.RecordOrderCreated(book, strategy)
+	m.logger.Info("Recorded order placed", map[string]interface{}{
+		"order_id":       order.ID,
+		"bitso_order_id": bitsoOrderID,
+		"book":           book,
+		"side":           side,
+	})
+	return order, nil
+}
+
+// SyncOrderFromBitso updates an order from Bitso exchange state (filled amount, status). Used by the Bitso sync job.
+func (m *Manager) SyncOrderFromBitso(ctx context.Context, bitsoOrderID string, filledAmount, avgPrice float64, status models.OrderStatus) error {
+	order, err := m.repository.GetByBitsoOrderID(ctx, bitsoOrderID)
+	if err != nil {
+		return err
+	}
+	if order.IsClosed() {
+		return nil // already final
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	// Reload for mutex
+	order, err = m.repository.Get(ctx, order.ID)
+	if err != nil {
+		return err
+	}
+	if order.IsClosed() {
+		return nil
+	}
+	// Update fill if we have new fill data
+	if filledAmount > order.FilledAmount && (status == models.OrderStatusPartiallyFilled || status == models.OrderStatusFilled) {
+		order.RecordFill(filledAmount-order.FilledAmount, avgPrice)
+	}
+	if status != order.Status {
+		if err := m.stateMachine.Transition(order, status); err != nil {
+			return err
+		}
+	}
+	if err := m.repository.Update(ctx, order); err != nil {
+		return err
+	}
+	switch status {
+	case models.OrderStatusFilled:
+		m.metrics.RecordOrderFilled(order.Book, order.Strategy)
+		m.recordTradeClosedForIntraday(order, nil)
+	case models.OrderStatusCancelled:
+		m.metrics.RecordOrderCancelled(order.Book, order.Strategy, "exchange")
+	}
+	m.logger.Debug("Synced order from Bitso", map[string]interface{}{
+		"order_id": order.ID, "bitso_order_id": bitsoOrderID, "status": status,
+	})
+	return nil
+}
+
+// ListActiveBitsoOrderIDs returns Bitso order IDs for all active orders that have one (for sync job)
+func (m *Manager) ListActiveBitsoOrderIDs(ctx context.Context) ([]string, error) {
+	orders, err := m.repository.GetActiveOrders(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var ids []string
+	for _, o := range orders {
+		if id, ok := o.Metadata["bitso_order_id"].(string); ok && id != "" {
+			ids = append(ids, id)
+		}
+	}
+	return ids, nil
 }
 
 // CreateOrder creates an order from a trading signal

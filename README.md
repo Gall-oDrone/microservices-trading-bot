@@ -20,7 +20,7 @@ The bot supports Bitso’s **testing (stage) environment** so you can develop an
 - **Stage API base URL:** `https://stage.bitso.com/api`
 - **Production API base URL:** `https://bitso.com/api`
 
-The trading-engine is configured to use the stage URL and stage API credentials (`STAGE_BITSO_API_KEY`, `STAGE_BITSO_APISECRET`). The Bitso client in `shared/pkg/bitso/client.go` allows setting the base URL via `SetAPIBaseURL()`.
+The trading-engine uses **stage by default**. Set `BITSO_API_BASE_URL` to switch without code changes (see `shared/pkg/config`). Use stage credentials (`STAGE_BITSO_API_KEY`, `STAGE_BITSO_APISECRET`) with the stage URL and production keys only with the production URL.
 
 ## Planning: Intraday Strategies & Metrics
 

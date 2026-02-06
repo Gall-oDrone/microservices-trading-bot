@@ -21,6 +21,9 @@ type Config struct {
 	// Trading Engine configuration
 	TradingEngine TradingEngineConfig `json:"trading_engine"`
 
+	// Bitso API (optional: for sync job to poll order status)
+	Bitso BitsoConfig `json:"bitso"`
+
 	// Risk management configuration
 	Risk RiskConfig `json:"risk"`
 
@@ -45,12 +48,13 @@ type KafkaConfig struct {
 	Brokers []string `json:"brokers"`
 
 	// Consumer configuration
-	ConsumerGroup string `json:"consumer_group"`
-	TopicSignals  string `json:"topic_signals"` // Input: strategy-executor.signals
+	ConsumerGroup     string `json:"consumer_group"`
+	TopicSignals      string `json:"topic_signals"`      // Input: strategy-executor.signals
+	TopicOrdersPlaced string `json:"topic_orders_placed"` // Input: trading-engine publishes placed orders (trading.orders.placed)
 
 	// Producer configuration
 	TopicOrders string `json:"topic_orders"` // Output: order-management.orders
-	TopicEvents string `json:"topic_events"` // Output: order-management.events
+	TopicEvents string `json:"topic_events"`  // Output: order-management.events
 
 	// Consumer settings
 	AutoOffsetReset string        `json:"auto_offset_reset"`
@@ -79,6 +83,13 @@ type TradingEngineConfig struct {
 	Timeout    time.Duration `json:"timeout"`
 	RetryCount int           `json:"retry_count"`
 	RetryDelay time.Duration `json:"retry_delay"`
+}
+
+// BitsoConfig holds Bitso API config for the sync job (optional)
+type BitsoConfig struct {
+	APIBaseURL string `json:"api_base_url"`
+	APIKey     string `json:"api_key"`
+	APISecret  string `json:"api_secret"`
 }
 
 // RiskConfig holds risk management configuration
@@ -118,9 +129,10 @@ func Load() (*Config, error) {
 		Kafka: KafkaConfig{
 			Brokers:          getEnvAsSlice("KAFKA_BROKERS", []string{"localhost:9092"}),
 			ConsumerGroup:    getEnv("KAFKA_CONSUMER_GROUP", "order-management-group"),
-			TopicSignals:     getEnv("KAFKA_TOPIC_SIGNALS", "strategy-executor.signals"),
-			TopicOrders:      getEnv("KAFKA_TOPIC_ORDERS", "order-management.orders"),
-			TopicEvents:      getEnv("KAFKA_TOPIC_EVENTS", "order-management.events"),
+			TopicSignals:      getEnv("KAFKA_TOPIC_SIGNALS", "strategy-executor.signals"),
+			TopicOrdersPlaced: getEnv("KAFKA_TOPIC_ORDERS_PLACED", "trading.orders.placed"),
+			TopicOrders:       getEnv("KAFKA_TOPIC_ORDERS", "order-management.orders"),
+			TopicEvents:       getEnv("KAFKA_TOPIC_EVENTS", "order-management.events"),
 			AutoOffsetReset:  getEnv("KAFKA_AUTO_OFFSET_RESET", "latest"),
 			CommitInterval:   getEnvAsDuration("KAFKA_COMMIT_INTERVAL", 1*time.Second),
 			MaxWait:          getEnvAsDuration("KAFKA_MAX_WAIT", 500*time.Millisecond),
@@ -141,6 +153,11 @@ func Load() (*Config, error) {
 			Timeout:    getEnvAsDuration("TRADING_ENGINE_TIMEOUT", 30*time.Second),
 			RetryCount: getEnvAsInt("TRADING_ENGINE_RETRY_COUNT", 3),
 			RetryDelay: getEnvAsDuration("TRADING_ENGINE_RETRY_DELAY", 1*time.Second),
+		},
+		Bitso: BitsoConfig{
+			APIBaseURL: getEnv("BITSO_API_BASE_URL", "https://stage.bitso.com/api"),
+			APIKey:     getEnv("STAGE_BITSO_API_KEY", ""),
+			APISecret:  getEnv("STAGE_BITSO_APISECRET", ""),
 		},
 		Risk: RiskConfig{
 			MaxOpenOrders:        getEnvAsInt("MAX_OPEN_ORDERS", 10),

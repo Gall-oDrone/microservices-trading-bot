@@ -17,6 +17,16 @@ import (
 	"bitso-trading-platform/trading-engine/internal/execution"
 )
 
+// orderPlacedEvent is published to Kafka for order-management sync
+type orderPlacedEvent struct {
+	OrderID  string  `json:"order_id"`
+	Book     string  `json:"book"`
+	Side     string  `json:"side"`
+	Amount   float64 `json:"amount"`
+	Price    float64 `json:"price"`
+	Strategy string  `json:"strategy,omitempty"`
+}
+
 // EngineState represents the current state of the trading engine
 type EngineState int
 
@@ -40,13 +50,15 @@ type TradingEngine struct {
 	appConfig *config.Config
 
 	// External clients
-	bitsoClient   *bitso.Client
-	dbClient      *database.RedisClient
-	kafkaConsumer *kafka.Consumer
+	bitsoClient         *bitso.Client
+	dbClient            *database.RedisClient
+	kafkaConsumer       *kafka.Consumer
+	orderPlacedProducer *kafka.Producer // optional: publish to trading.orders.placed for order-management
 
 	// Internal components
-	executor execution.Executor
-	book     *bitso.Book
+	executor            execution.Executor
+	sessionRiskProvider execution.SessionRiskProvider // optional: for daily loss / drawdown limits
+	book                *bitso.Book
 
 	// State management
 	state      EngineState
@@ -83,13 +95,17 @@ type EngineStatistics struct {
 	LastError        string
 }
 
-// NewTradingEngine creates a new trading engine instance
+// NewTradingEngine creates a new trading engine instance.
+// sessionRiskProvider is optional; if set, used to enforce MaxDailyLoss/MaxDrawdownPct before placing orders.
+// orderPlacedProducer is optional; if set, placed orders are published to Kafka for order-management sync.
 func NewTradingEngine(
 	tradingConfig *models.TradingConfig,
 	appConfig *config.Config,
 	bitsoClient *bitso.Client,
 	dbClient *database.RedisClient,
 	kafkaConsumer *kafka.Consumer,
+	sessionRiskProvider execution.SessionRiskProvider,
+	orderPlacedProducer *kafka.Producer,
 ) (*TradingEngine, error) {
 	// Validate inputs
 	if tradingConfig == nil {
@@ -111,8 +127,8 @@ func NewTradingEngine(
 	// Initialize logger
 	logger := log.New(log.Writer(), "[ENGINE] ", log.LstdFlags|log.Lshortfile)
 
-	// Create executor
-	executor := execution.NewBasicExecutor(bitsoClient)
+	// Create executor (trading config for session limits; dry-run from app config)
+	executor := execution.NewBasicExecutor(bitsoClient, tradingConfig, appConfig.DryRun)
 
 	engine := &TradingEngine{
 		config:        tradingConfig,
@@ -120,9 +136,11 @@ func NewTradingEngine(
 		bitsoClient:   bitsoClient,
 		dbClient:      dbClient,
 		kafkaConsumer: kafkaConsumer,
-		executor:      executor,
-		book:          tradingConfig.Book,
-		state:         StateInitializing,
+		executor:              executor,
+		sessionRiskProvider:   sessionRiskProvider,
+		orderPlacedProducer:   orderPlacedProducer,
+		book:                  tradingConfig.Book,
+		state:                 StateInitializing,
 		ctx:           ctx,
 		cancel:        cancel,
 		signalChan:    make(chan *models.TradeSignalEvent, 100),
@@ -376,6 +394,19 @@ func (te *TradingEngine) processTradeSignal(signal *models.TradeSignalEvent) err
 		return fmt.Errorf("signal validation failed: %w", err)
 	}
 
+	// Session risk check (daily loss / drawdown limits)
+	var dailyPnL, drawdownPct float64
+	if te.sessionRiskProvider != nil {
+		var err error
+		dailyPnL, drawdownPct, err = te.sessionRiskProvider.GetSessionRisk(te.ctx)
+		if err != nil {
+			return fmt.Errorf("session risk check: %w", err)
+		}
+	}
+	if err := te.executor.CheckSessionLimits(dailyPnL, drawdownPct); err != nil {
+		return err
+	}
+
 	// Create trading signal for executor
 	tradeSignal := execution.TradingSignal{
 		Book:      book,
@@ -386,11 +417,12 @@ func (te *TradingEngine) processTradeSignal(signal *models.TradeSignalEvent) err
 	}
 
 	// Execute based on signal type
+	var orderID string
 	var execErr error
 	switch signal.Signal {
 	case "BUY":
 		tradeSignal.Type = execution.SignalBuy
-		execErr = te.executor.ExecuteBuySignal(tradeSignal)
+		orderID, execErr = te.executor.ExecuteBuySignal(tradeSignal)
 		if execErr == nil {
 			te.incrementOrdersPlaced()
 		} else {
@@ -399,7 +431,7 @@ func (te *TradingEngine) processTradeSignal(signal *models.TradeSignalEvent) err
 
 	case "SELL":
 		tradeSignal.Type = execution.SignalSell
-		execErr = te.executor.ExecuteSellSignal(tradeSignal)
+		orderID, execErr = te.executor.ExecuteSellSignal(tradeSignal)
 		if execErr == nil {
 			te.incrementOrdersPlaced()
 		} else {
@@ -410,7 +442,35 @@ func (te *TradingEngine) processTradeSignal(signal *models.TradeSignalEvent) err
 		return fmt.Errorf("unknown signal type: %s", signal.Signal)
 	}
 
-	return execErr
+	if execErr != nil {
+		return execErr
+	}
+	// Publish order-placed event for order-management sync (Phase 3)
+	if orderID != "" && orderID != "dry-run" && te.orderPlacedProducer != nil {
+		te.publishOrderPlaced(orderID, signal, book, signal.Signal)
+	}
+	return nil
+}
+
+func (te *TradingEngine) publishOrderPlaced(orderID string, signal *models.TradeSignalEvent, book *bitso.Book, side string) {
+	evt := orderPlacedEvent{
+		OrderID:  orderID,
+		Book:     book.String(),
+		Side:     side,
+		Amount:   signal.Amount,
+		Price:    signal.Price,
+		Strategy: te.config.StrategyType,
+	}
+	payload, err := json.Marshal(evt)
+	if err != nil {
+		te.logger.Printf("Failed to marshal order-placed event: %v", err)
+		return
+	}
+	ctx, cancel := context.WithTimeout(te.ctx, 5*time.Second)
+	defer cancel()
+	if err := te.orderPlacedProducer.Produce(ctx, []byte(orderID), payload); err != nil {
+		te.logger.Printf("Failed to publish order-placed event: %v", err)
+	}
 }
 
 // healthMonitor periodically checks engine health

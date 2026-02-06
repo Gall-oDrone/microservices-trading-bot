@@ -12,7 +12,10 @@ import (
 	"github.com/shopspring/decimal"
 
 	"bitso-trading-platform/order-management/internal/config"
+	"bitso-trading-platform/order-management/internal/consumer"
 	"bitso-trading-platform/order-management/internal/logger"
+	"bitso-trading-platform/order-management/internal/sync"
+	"bitso-trading-platform/shared/pkg/bitso"
 	"bitso-trading-platform/order-management/internal/manager"
 	"bitso-trading-platform/order-management/internal/metrics"
 	"bitso-trading-platform/order-management/internal/repository"
@@ -35,11 +38,13 @@ type Application struct {
 	config *config.Config
 
 	// Core components
-	healthManager    *health.HealthManager
-	metricsCollector *metrics.MetricsCollector
-	httpServer       *server.HTTPServer
-	orderManager     *manager.Manager
-	pnlRecorder      *metrics.IntradayAggregator
+	healthManager       *health.HealthManager
+	metricsCollector   *metrics.MetricsCollector
+	httpServer         *server.HTTPServer
+	orderManager       *manager.Manager
+	pnlRecorder          *metrics.IntradayAggregator
+	ordersPlacedConsumer *consumer.OrdersPlacedConsumer
+	bitsoSyncJob         *sync.BitsoSyncJob
 
 	// Context
 	ctx    context.Context
@@ -98,6 +103,29 @@ func NewApplication() (*Application, error) {
 	)
 	appLogger.Info("Order manager initialized", nil)
 
+	// Optional: consumer for trading.orders.placed (from trading-engine)
+	ordersPlacedConsumer, _ := consumer.NewOrdersPlacedConsumer(
+		cfg.Kafka.Brokers,
+		cfg.Kafka.TopicOrdersPlaced,
+		cfg.Kafka.ConsumerGroup+"-orders-placed",
+		orderManager,
+		appLogger,
+	)
+	if ordersPlacedConsumer != nil {
+		appLogger.Info("Orders-placed consumer configured", map[string]interface{}{"topic": cfg.Kafka.TopicOrdersPlaced})
+	}
+
+	// Optional: Bitso sync job (poll order status when Bitso credentials set)
+	var bitsoSyncJob *sync.BitsoSyncJob
+	if cfg.Bitso.APIKey != "" && cfg.Bitso.APISecret != "" {
+		bitsoClient := bitso.NewClient()
+		bitsoClient.SetLogLevel(bitso.LogLevelInfo)
+		bitsoClient.SetAuth(cfg.Bitso.APIKey, cfg.Bitso.APISecret)
+		bitsoClient.SetAPIBaseURL(cfg.Bitso.APIBaseURL)
+		bitsoSyncJob = sync.NewBitsoSyncJob(bitsoClient, orderManager, appLogger, 60*time.Second)
+		appLogger.Info("Bitso sync job configured", nil)
+	}
+
 	// Initialize health manager
 	healthManager := health.NewHealthManager(log.New(os.Stdout, "[HEALTH] ", log.LstdFlags))
 	appLogger.Info("Health manager initialized", nil)
@@ -114,6 +142,7 @@ func NewApplication() (*Application, error) {
 		healthManager,
 		metricsCollector,
 		appLogger,
+		pnlRecorder,
 	)
 	appLogger.Info("HTTP server initialized", nil)
 
@@ -123,15 +152,17 @@ func NewApplication() (*Application, error) {
 	})
 
 	return &Application{
-		logger:           appLogger,
-		config:           cfg,
-		healthManager:    healthManager,
-		metricsCollector: metricsCollector,
-		httpServer:       httpServer,
-		orderManager:     orderManager,
-		pnlRecorder:      pnlRecorder,
-		ctx:              ctx,
-		cancel:           cancel,
+		logger:               appLogger,
+		config:               cfg,
+		healthManager:        healthManager,
+		metricsCollector:     metricsCollector,
+		httpServer:           httpServer,
+		orderManager:         orderManager,
+		pnlRecorder:          pnlRecorder,
+		ordersPlacedConsumer: ordersPlacedConsumer,
+		bitsoSyncJob:         bitsoSyncJob,
+		ctx:                  ctx,
+		cancel:               cancel,
 	}, nil
 }
 
@@ -147,6 +178,13 @@ func (app *Application) Start() error {
 
 	// Feed equity and unrealized P&L into intraday aggregator periodically
 	go app.feedIntradayMetrics()
+
+	if app.ordersPlacedConsumer != nil {
+		go app.ordersPlacedConsumer.Run(app.ctx)
+	}
+	if app.bitsoSyncJob != nil {
+		go app.bitsoSyncJob.Run(app.ctx)
+	}
 
 	// Start metrics collection
 	go app.startMetricsCollection()
@@ -235,6 +273,14 @@ func (app *Application) Stop() error {
 		if err := app.orderManager.Stop(); err != nil {
 			app.logger.Error("Error stopping order manager", map[string]interface{}{"error": err})
 			lastErr = err
+		}
+
+		if app.ordersPlacedConsumer != nil {
+			app.logger.Info("Closing orders-placed consumer...", nil)
+			if err := app.ordersPlacedConsumer.Close(); err != nil {
+				app.logger.Error("Error closing orders-placed consumer", map[string]interface{}{"error": err})
+				lastErr = err
+			}
 		}
 
 		// Stop HTTP server

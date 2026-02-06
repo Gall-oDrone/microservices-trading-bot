@@ -17,42 +17,42 @@ This document outlines the recommended steps to safely implement trading strateg
 
 ## Implementation Phases (in order)
 
-### Phase 1: Bitso Environment Configuration (env-driven)
+### Phase 1: Bitso Environment Configuration (env-driven) ✅
 
 **Goal:** Make the Bitso API base URL configurable via environment so you can switch between stage and production without code changes.
 
 **Tasks:**
 
-1. Add `BITSO_API_BASE_URL` to shared config (and optionally to trading-engine config).
-   - Default: `https://stage.bitso.com/api` for safety.
-   - Production: `https://bitso.com/api`.
-2. In `services/trading-engine/cmd/main.go`, replace the hardcoded `SetAPIBaseURL("https://stage.bitso.com/api")` with the value from config/env.
+1. ~~Add `BITSO_API_BASE_URL` to shared config (and optionally to trading-engine config).~~ **Done.** `shared/pkg/config/config.go`: `BitsoAPIBaseURL` loaded from `BITSO_API_BASE_URL`; default `https://stage.bitso.com/api`.
+2. ~~In `services/trading-engine/cmd/main.go`, replace the hardcoded `SetAPIBaseURL(...)` with the value from config/env.~~ **Done.** Uses `cfg.BitsoAPIBaseURL`.
 3. Document in README / CONFIG:
-   - Use `BITSO_API_BASE_URL=https://stage.bitso.com/api` and stage API keys for testing.
-   - Use production URL and production API keys only when intentionally going live.
-4. If market-data or other services call Bitso REST, ensure they respect the same base URL where applicable.
+   - Use `BITSO_API_BASE_URL=https://stage.bitso.com/api` and stage API keys (`STAGE_BITSO_API_KEY`, `STAGE_BITSO_API_SECRET`) for testing.
+   - Use `BITSO_API_BASE_URL=https://bitso.com/api` and production API keys only when intentionally going live.
+4. Market-data does not call Bitso REST (WebSocket only); no change needed there.
 
-**Files to touch:** `shared/pkg/config/config.go`, `services/trading-engine/cmd/main.go`, README or CONFIG docs.
+**Files touched:** `shared/pkg/config/config.go`, `services/trading-engine/cmd/main.go`, this plan.
 
 ---
 
-### Phase 2: Paper Trading / Dry-Run Mode
+### Phase 2: Paper Trading / Dry-Run Mode ✅
 
-**Goal:** Allow the trading engine to simulate orders without calling Bitso’s `PlaceOrder`, so new intraday strategies can be tested end-to-end without sending orders to stage (or production).
+**Goal:** Test intraday strategies end-to-end without real funds. This is achieved by using **Bitso’s testing environment**, not by adding a local dry-run flag.
 
-**Tasks:**
+**Bitso testing environment:** [Set up your testing environment](https://docs.bitso.com/bitso-api/docs/set-up-your-testing-environment) — use a separate account and API credentials on **stage** (`https://stage.bitso.com`). Orders sent to the stage API are executed in the test environment only; no production funds are used.
 
-1. Add a **dry-run** (paper trading) flag to the trading engine, e.g.:
-   - Env: `DRY_RUN=true` or config: `DryRun bool`.
-2. In the executor (`services/trading-engine/internal/execution/executor.go`):
-   - If dry-run: log the intended order (book, side, amount, price, reason) and return success without calling `bitsoClient.PlaceOrder()`.
-   - If not dry-run: keep current behavior (call Bitso).
-3. Optionally:
-   - Maintain a simple in-memory or Redis “simulated” order log for dry-run so downstream metrics/tests can see “would have placed” orders.
-4. Document:
-   - How to run in dry-run for local and K8s (e.g. set `DRY_RUN=true` in deployment or env).
+**How this project does it:**
 
-**Files to touch:** `services/trading-engine/internal/execution/executor.go`, `services/trading-engine/internal/config` (if exists) or main config, deployment manifests (env example), README.
+- The shared Bitso client (`shared/pkg/bitso/`) and trading-engine use the **configurable API base URL** (Phase 1).
+- Default is **`https://stage.bitso.com/api`**; set `BITSO_API_BASE_URL` only when switching to production.
+- Use **stage API keys** (`STAGE_BITSO_API_KEY`, `STAGE_BITSO_APISECRET`) with the stage URL. The trading-engine is already wired to stage credentials and stage URL (see `services/trading-engine/cmd/main.go` and `shared/pkg/config`).
+
+**Conclusion:** Paper trading = point the app at Bitso’s testing environment (stage URL + stage keys). No additional dry-run flag or “simulate without calling Bitso” mode is required for this phase.
+
+**Optional enhancement — local dry-run (no Bitso API calls):** For CI, local runs, or an extra safety layer where you never hit Bitso at all, you can add a **dry-run mode** that skips calling `PlaceOrder`:
+
+- Env: `DRY_RUN=true` or config: `DryRun bool`.
+- In the executor: if dry-run is set, log the intended order (book, side, amount, price, reason) and return success without calling `bitsoClient.PlaceOrder()`. Optionally persist “would have placed” orders to Redis or a log for downstream metrics/tests.
+- Use case: automated tests, or running the engine without a Bitso account. Not required for Phase 2; implement when needed.
 
 ---
 
@@ -62,36 +62,29 @@ This document outlines the recommended steps to safely implement trading strateg
 
 **Tasks:**
 
-1. **When orders are placed:** Ensure every order placed by the trading-engine is also sent to order-management (e.g. via Kafka or HTTP) with Bitso order ID, so order-management has a record of “our” orders.
+1. **When orders are placed:** ~~Ensure every order placed by the trading-engine is also sent to order-management (e.g. via Kafka or HTTP) with Bitso order ID.~~ **Done.** Trading-engine publishes to Kafka topic `trading.orders.placed` (config: `KAFKA_TOPIC_ORDERS_PLACED`) after each successful `PlaceOrder`. Payload: `order_id`, `book`, `side`, `amount`, `price`, `strategy`. Order-management can consume this topic to create order records (consumer implementation pending).
 2. **Sync order status and fills from Bitso:**
-   - Option A: **Polling** – A small job or loop in trading-engine or order-management that periodically calls Bitso’s `LookupOrder` / `LookupOrders` (and possibly `OrderTrades`) for open/recent orders and updates order-management (status, filled amount, fill price).
+   - Option A: **Polling** – A small job or loop in trading-engine or order-management that periodically calls Bitso’s `LookupOrder` / `LookupOrders` (and possibly `OrderTrades`) for open/recent orders and updates order-management (status, filled amount, fill price). **Not yet implemented.**
    - Option B: **Webhooks** – If Bitso supports order/fill webhooks, subscribe and push updates to order-management.
-3. **Update positions:** When an order moves to filled (or partial fill), order-management should:
-   - Update the order’s status and fill info.
-   - Call position logic (e.g. `UpdateFromFill`) so that positions and P&amp;L are updated in real time.
-4. **Persistence:** Ensure order-management uses a persistent store (e.g. Redis) for positions/orders if it currently uses only in-memory, so sync state survives restarts.
+3. **Update positions:** When an order moves to filled (or partial fill), order-management should update order status and call position logic (e.g. `UpdateFromFill`). Depends on (2).
+4. **Persistence:** Order-management currently uses in-memory repositories; switch to Redis when needed for production.
 
-**Files to touch:** `services/trading-engine` (publish placed orders to order-management), `services/order-management` (reconciliation/sync job or webhook handler, position update on fill), shared Bitso client usage for `LookupOrder(s)` and `OrderTrades`.
+**Files touched:** `shared/pkg/config` (`KafkaTopicOrdersPlaced`), `services/trading-engine` (Kafka producer, publish after PlaceOrder), executor returns order ID; **order-management** consumer for `trading.orders.placed` (`internal/consumer/orders_placed.go`), Bitso sync job (`internal/sync/bitso_sync.go`, polls LookupOrders and updates orders via `SyncOrderFromBitso`). Set `STAGE_BITSO_API_KEY` and `STAGE_BITSO_APISECRET` (and optionally `BITSO_API_BASE_URL`) in order-management to enable the sync job.
 
 ---
 
-### Phase 4: Daily Loss Limit & Max Drawdown (Live Risk)
+### Phase 4: Daily Loss Limit & Max Drawdown (Live Risk) ✅
 
 **Goal:** Add intraday risk controls so that if daily loss or drawdown exceeds limits, the system stops or pauses trading automatically.
 
 **Tasks:**
 
-1. **Daily loss limit:**
-   - Define a configurable max daily loss (e.g. in MXN or % of starting equity).
-   - At strategy-executor or trading-engine level, before executing a new signal, compute "realized P&L today" (from positions/orders closed today) and optionally unrealized.
-   - If daily loss >= limit, reject new trades and optionally emit an alert.
-2. **Max drawdown:**
-   - Track peak equity (or peak balance) over a rolling window (e.g. daily or since start of session).
-   - If current equity drops below `peak - max_drawdown_pct` (or absolute amount), pause trading and optionally alert.
-3. **Configuration:** Add these to `TradingConfig` or risk config (e.g. `MaxDailyLoss`, `MaxDrawdownPct`), and wire them in the risk manager used at execution time.
-4. **Metrics:** Expose Prometheus gauges for “daily P&amp;L” and “current drawdown” so monitoring and dashboards can show risk state.
+1. **Daily loss limit:** **Done.** `TradingConfig.MaxDailyLoss` (currency units; 0 = disabled). Before placing an order, trading-engine calls `SessionRiskProvider.GetSessionRisk()` (e.g. order-management `GET /api/v1/risk/session`) and `Executor.CheckSessionLimits(dailyRealizedPnL, drawdownPct)`; if daily realized P&L ≤ -MaxDailyLoss, execution is rejected.
+2. **Max drawdown:** **Done.** `TradingConfig.MaxDrawdownPct` (0–100; 0 = disabled). Same check: if drawdown % ≥ MaxDrawdownPct, execution is rejected.
+3. **Configuration:** **Done.** `shared/pkg/models/trading_config.go`: `MaxDailyLoss`, `MaxDrawdownPct`. Trading-engine executor uses them when `CheckSessionLimits` is called.
+4. **Metrics:** Already in place (Phase 5): order-management exposes daily P&L and drawdown to Prometheus and Grafana. Order-management also exposes **GET /api/v1/risk/session** returning `daily_realized_pnl` and `drawdown_percent` for the trading-engine to use when a `SessionRiskProvider` is wired (e.g. HTTP client to order-management).
 
-**Files to touch:** `shared/pkg/models/trading_config.go`, `services/strategy-executor/internal/risk/manager.go`, and optionally `services/order-management/internal/risk/risk_manager.go`; metrics in strategy-executor or order-management.
+**Files touched:** `shared/pkg/models/trading_config.go`, `services/trading-engine/internal/execution` (CheckSessionLimits, SessionRiskProvider), `services/trading-engine/internal/engine` (call provider + CheckSessionLimits before execute), `services/order-management/internal/metrics` (SessionSnapshot), `services/order-management/internal/server` (GET /api/v1/risk/session). To enable limits: set MaxDailyLoss/MaxDrawdownPct in config and wire a SessionRiskProvider in trading-engine (e.g. HTTP client to order-management).
 
 ---
 
@@ -124,11 +117,11 @@ This document outlines the recommended steps to safely implement trading strateg
 | Feed equity & unrealized P&amp;L | Done | `feedIntradayMetrics()` goroutine every 60s calls `GetPositionSummary`, then `RecordDailyUnrealizedPnL` and `RecordEquityUpdate` |
 | Unit tests (aggregator, manager) | Done | `services/order-management/internal/testing/`, `internal/testing/metrics/` |
 | Integration tests | Done | `services/order-management/integration/` (see `testing/integration/order-management/README.md`) |
-| Grafana dashboards | Missing | `monitoring/` or Grafana JSON |
+| Grafana dashboards | Done | `monitoring/grafana/dashboards/trading-metrics.json` (Intraday / P&amp;L row: daily realized/unrealized P&amp;L, drawdown, equity, trades today, wins/losses, win rate %) |
 
 #### Remaining Phase 5 Tasks
 
-1. **Grafana dashboards** – Add or update panels for daily realized/unrealized P&amp;L, drawdown, trades today, win rate (see Phase 5 tasks above).
+- None. Dashboard includes stat and time-series panels for all intraday metrics (see `monitoring/grafana/dashboards/trading-metrics.json`).
 
 ---
 
@@ -138,11 +131,21 @@ This document outlines the recommended steps to safely implement trading strateg
 
 **Tasks:**
 
-1. Run backtests for any new intraday strategy (e.g. session-based, time-of-day, or existing basic/trend/arbitrage with intraday parameters).
-2. Compare backtest metrics (e.g. max drawdown, Sharpe, win rate) with what you observe in stage/paper.
-3. Document how to run backtests and how results map to the live metrics added in Phase 5.
+1. **Run backtests** for any new intraday strategy (e.g. session-based, time-of-day, or existing basic/trend/arbitrage with intraday parameters). Use `services/backtesting/`: run with market-data API (`MarketDataProvider`) or file-based data (`FileProvider`). See `services/backtesting/README.md` and `scripts/run_tests.sh` for tests and coverage.
+2. **Compare** backtest metrics (max drawdown, Sharpe, win rate) with what you observe in stage/paper (Grafana intraday panels and order-management metrics).
+3. **Document** how to run backtests and how results map to live metrics:
+   - **Run backtests:** Start the backtesting service (and market-data if using HTTP provider); POST `/api/v1/backtests` with config (book, strategy, date range, data source). Get results via GET `/api/v1/backtests/{id}/results` and GET `/api/v1/backtests/{id}/report?format=text|json|html`.
+   - **Map to live:** Phase 5 metrics (daily realized P&L, drawdown %, trades today, win rate) in Grafana correspond to backtest report fields (Total Return, Max Drawdown, Win Rate, Total Trades). Compare session-level backtest runs with same strategy parameters to stage/paper runs.
 
-**Files to touch:** `services/backtesting/`, documentation (this file or README).
+**Files to touch:** `services/backtesting/` (existing), this plan, optional: short “Backtesting for intraday” section in `services/backtesting/README.md` or `GETTING_STARTED.md`.
+
+**Phase 6 workflow — run one backtest and compare to Grafana**
+
+1. Start dependencies: market-data (if using HTTP provider), Redis, backtesting service.
+2. Create backtest: `POST /api/v1/backtests` (book, strategy, start_date, end_date, initial_balance). Note `id`.
+3. Poll `GET /api/v1/backtests/{id}` until status is `completed`.
+4. Get results: `GET /api/v1/backtests/{id}/results` or `GET /api/v1/backtests/{id}/report?format=text`.
+5. Compare to Grafana: Trading Platform Metrics dashboard — backtest Total Return / Max Drawdown / Win Rate / Total Trades vs Intraday row (Daily Realized P&L, Drawdown %, Trades Today, Win Rate Today %).
 
 ---
 
@@ -150,12 +153,12 @@ This document outlines the recommended steps to safely implement trading strateg
 
 | Phase | Description                    | Outcome                                      | Status        |
 |-------|--------------------------------|----------------------------------------------|---------------|
-| 1     | Bitso env-driven URL           | Switch stage/production via config           | Not started   |
-| 2     | Paper trading / dry-run        | Test strategies without placing orders      | Not started   |
-| 3     | Order & fill sync              | Accurate positions and P&amp;L for intraday  | Not started   |
-| 4     | Daily loss & drawdown limits   | Automatic risk halt                         | Not started   |
-| 5     | Intraday metrics               | Observability for live intraday trading      | Implemented (except Grafana dashboards) |
-| 6     | Backtesting                    | Historical validation of strategies         | Not started   |
+| 1     | Bitso env-driven URL           | Switch stage/production via config           | Done          |
+| 2     | Paper trading / dry-run        | Use Bitso testing env (stage URL + keys)     | Done (stage)  |
+| 3     | Order & fill sync              | Publish + consumer + Bitso sync job         | Done          |
+| 4     | Daily loss & drawdown limits   | Config + check before execute; OM session API | Done          |
+| 5     | Intraday metrics               | Observability for live intraday trading      | Done (incl. Grafana dashboards) |
+| 6     | Backtesting                    | Historical validation; doc in plan           | Documented    |
 
 ---
 
@@ -168,5 +171,5 @@ This document outlines the recommended steps to safely implement trading strateg
 
 ---
 
-**Document version:** 1.1  
-**Status:** Phase 5 implemented (metrics, wiring, unit and integration tests); Grafana dashboards and Phases 1–4, 6 pending.
+**Document version:** 1.5  
+**Status:** Phases 1–6 complete. Phase 3: order-placed consumer + Bitso sync job done. SessionRiskProvider (ORDER_MANAGEMENT_URL) and Phase 6 workflow (run backtest, compare to Grafana) documented and implemented.

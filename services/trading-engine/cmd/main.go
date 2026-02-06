@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/signal"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -16,6 +17,7 @@ import (
 	"bitso-trading-platform/shared/pkg/kafka"
 	"bitso-trading-platform/shared/pkg/models"
 	"bitso-trading-platform/trading-engine/internal/engine"
+	"bitso-trading-platform/trading-engine/internal/execution"
 )
 
 const (
@@ -29,14 +31,15 @@ const (
 
 // Application encapsulates all application components
 type Application struct {
-	logger        *log.Logger
-	config        *config.Config
-	bitsoClient   *bitso.Client
-	redisClient   *database.RedisClient
-	kafkaConsumer *kafka.Consumer
-	engine        *engine.TradingEngine
-	ctx           context.Context
-	cancel        context.CancelFunc
+	logger               *log.Logger
+	config               *config.Config
+	bitsoClient          *bitso.Client
+	redisClient          *database.RedisClient
+	kafkaConsumer        *kafka.Consumer
+	orderPlacedProducer   *kafka.Producer
+	engine               *engine.TradingEngine
+	ctx                  context.Context
+	cancel               context.CancelFunc
 }
 
 // NewApplication creates and initializes a new application instance
@@ -82,6 +85,19 @@ func NewApplication() (*Application, error) {
 	logger.Printf("✓ Trading configuration: Book=%s, Strategy=%s",
 		tradingConfig.Book.String(), tradingConfig.StrategyType)
 
+	// Optional: Kafka producer for order-placed events (order-management sync)
+	orderPlacedProducer, _ := initializeOrderPlacedProducer(cfg, logger)
+	if orderPlacedProducer != nil {
+		logger.Println("✓ Order-placed producer initialized (topic: " + cfg.KafkaTopicOrdersPlaced + ")")
+	}
+
+	// Optional: SessionRiskProvider for daily loss / drawdown limits (call order-management GET /api/v1/risk/session)
+	var sessionRiskProvider execution.SessionRiskProvider
+	if orderMgmtURL := os.Getenv("ORDER_MANAGEMENT_URL"); orderMgmtURL != "" {
+		sessionRiskProvider = execution.NewOrderManagementRiskProvider(orderMgmtURL)
+		logger.Println("✓ Session risk provider configured (ORDER_MANAGEMENT_URL)")
+	}
+
 	// Initialize trading engine
 	tradingEngine, err := engine.NewTradingEngine(
 		tradingConfig,
@@ -89,24 +105,30 @@ func NewApplication() (*Application, error) {
 		bitsoClient,
 		redisClient,
 		kafkaConsumer,
+		sessionRiskProvider,
+		orderPlacedProducer,
 	)
 	if err != nil {
 		cancel()
 		redisClient.Close()
 		kafkaConsumer.Close()
+		if orderPlacedProducer != nil {
+			_ = orderPlacedProducer.Close()
+		}
 		return nil, fmt.Errorf("failed to create trading engine: %w", err)
 	}
 	logger.Println("✓ Trading engine created")
 
 	return &Application{
-		logger:        logger,
-		config:        cfg,
-		bitsoClient:   bitsoClient,
-		redisClient:   redisClient,
-		kafkaConsumer: kafkaConsumer,
-		engine:        tradingEngine,
-		ctx:           ctx,
-		cancel:        cancel,
+		logger:             logger,
+		config:             cfg,
+		bitsoClient:        bitsoClient,
+		redisClient:        redisClient,
+		kafkaConsumer:      kafkaConsumer,
+		orderPlacedProducer: orderPlacedProducer,
+		engine:             tradingEngine,
+		ctx:                ctx,
+		cancel:             cancel,
 	}, nil
 }
 
@@ -115,7 +137,7 @@ func initializeBitsoClient(cfg *config.Config, logger *log.Logger) *bitso.Client
 	client := bitso.NewClient()
 	client.SetLogLevel(bitso.LogLevelInfo)
 	client.SetAuth(cfg.StageBitsoAPIKey, cfg.StageBitsoAPISecret)
-	client.SetAPIBaseURL("https://stage.bitso.com/api")
+	client.SetAPIBaseURL(cfg.BitsoAPIBaseURL)
 
 	// Set rate limiting for API protection
 	client.SetBurstRate(100 * time.Millisecond)
@@ -171,6 +193,26 @@ func initializeKafkaConsumer(cfg *config.Config, logger *log.Logger) (*kafka.Con
 	}
 
 	return consumer, nil
+}
+
+// initializeOrderPlacedProducer creates a Kafka producer for order-placed events (optional; returns nil on failure).
+func initializeOrderPlacedProducer(cfg *config.Config, logger *log.Logger) (*kafka.Producer, error) {
+	if cfg.KafkaBrokers == "" || cfg.KafkaTopicOrdersPlaced == "" {
+		return nil, nil
+	}
+	producerConfig := &kafka.ProducerConfig{
+		Brokers: strings.Split(cfg.KafkaBrokers, ","),
+		Topic:   cfg.KafkaTopicOrdersPlaced,
+	}
+	for i := range producerConfig.Brokers {
+		producerConfig.Brokers[i] = strings.TrimSpace(producerConfig.Brokers[i])
+	}
+	producer, err := kafka.NewProducer(producerConfig)
+	if err != nil {
+		logger.Printf("Order-placed producer not started (optional): %v", err)
+		return nil, nil
+	}
+	return producer, nil
 }
 
 // createTradingConfig creates the trading configuration
@@ -237,6 +279,14 @@ func (app *Application) Stop() error {
 		if err := app.kafkaConsumer.Close(); err != nil {
 			app.logger.Printf("Error closing Kafka consumer: %v", err)
 			lastErr = err
+		}
+
+		if app.orderPlacedProducer != nil {
+			app.logger.Println("Closing order-placed producer...")
+			if err := app.orderPlacedProducer.Close(); err != nil {
+				app.logger.Printf("Error closing order-placed producer: %v", err)
+				lastErr = err
+			}
 		}
 
 		// Close Redis connection

@@ -37,6 +37,9 @@ func (sm *StateMachine) initializeTransitions() {
 		},
 		models.OrderStatusSubmitted: {
 			models.OrderStatusAccepted,
+			models.OrderStatusPartiallyFilled, // sync from Bitso
+			models.OrderStatusFilled,          // sync from Bitso
+			models.OrderStatusCancelled,       // sync from Bitso
 			models.OrderStatusRejected,
 		},
 		models.OrderStatusAccepted: {

@@ -746,6 +746,10 @@ strategy := strategies.NewBasicStrategy(params)
 - Trend Following Strategy
 - Arbitrage Strategy
 
+### Backtesting for intraday strategies
+
+For intraday strategies validated in stage/paper first, see **INTRADAY-STRATEGY-IMPLEMENTATION-PLAN.md** (Phase 6). Short workflow: (1) Start backtesting + market-data/Redis, (2) `POST /api/v1/backtests` with your config, (3) Poll `GET /api/v1/backtests/{id}` until completed, (4) `GET /api/v1/backtests/{id}/report?format=text` for the report, (5) Compare backtest metrics (return, drawdown, win rate, trades) to Grafana intraday panels (Daily Realized P&L, Drawdown %, Trades Today, Win Rate Today %).
+
 ### Integration with Order-Management
 
 Order validation logic can be reused for realistic backtesting:

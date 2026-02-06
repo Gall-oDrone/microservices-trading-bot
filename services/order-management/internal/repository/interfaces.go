@@ -26,6 +26,9 @@ type OrderRepository interface {
 	// GetBySignalID retrieves an order by signal ID
 	GetBySignalID(ctx context.Context, signalID string) (*models.Order, error)
 
+	// GetByBitsoOrderID retrieves an order by Bitso exchange order ID (stored in Metadata["bitso_order_id"])
+	GetByBitsoOrderID(ctx context.Context, bitsoOrderID string) (*models.Order, error)
+
 	// GetActiveOrders retrieves all active orders
 	GetActiveOrders(ctx context.Context) ([]*models.Order, error)
 

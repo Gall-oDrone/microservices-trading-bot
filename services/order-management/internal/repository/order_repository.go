@@ -187,6 +187,19 @@ func (r *InMemoryOrderRepository) GetBySignalID(ctx context.Context, signalID st
 	return order.Clone(), nil
 }
 
+// GetByBitsoOrderID retrieves an order by Bitso exchange order ID (Metadata["bitso_order_id"])
+func (r *InMemoryOrderRepository) GetByBitsoOrderID(ctx context.Context, bitsoOrderID string) (*models.Order, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	for _, order := range r.orders {
+		if id, ok := order.Metadata["bitso_order_id"].(string); ok && id == bitsoOrderID {
+			return order.Clone(), nil
+		}
+	}
+	return nil, fmt.Errorf("order not found for bitso_order_id: %s", bitsoOrderID)
+}
+
 // GetActiveOrders retrieves all active orders
 func (r *InMemoryOrderRepository) GetActiveOrders(ctx context.Context) ([]*models.Order, error) {
 	r.mu.RLock()

@@ -27,6 +27,10 @@ type TradingConfig struct {
 	StopLossPercent   float64 // Stop loss percentage
 	TakeProfitPercent float64 // Take profit percentage
 
+	// Intraday risk limits (0 = disabled)
+	MaxDailyLoss    float64 // Max realized loss per session (currency units); reject new trades if exceeded
+	MaxDrawdownPct  float64 // Max drawdown % from peak equity (0-100); reject new trades if exceeded
+
 	// Trading strategy parameters
 	StrategyType string                 // Type of strategy to use
 	Parameters   map[string]interface{} // Strategy-specific parameters
@@ -55,6 +59,10 @@ func NewTradingConfig() *TradingConfig {
 		// Default strategy
 		StrategyType: "basic",
 		Parameters:   make(map[string]interface{}),
+
+		// Intraday risk limits (0 = disabled)
+		MaxDailyLoss:   0,
+		MaxDrawdownPct: 0,
 	}
 }
 

@@ -200,3 +200,33 @@ func (a *IntradayAggregator) LossesToday(book, strategy string) int64 {
 	defer a.mu.RUnlock()
 	return a.lossesToday[key(book, strategy)]
 }
+
+// SessionSnapshot returns current session risk metrics for use by trading-engine (daily loss / drawdown limits).
+// Sums realized P&L across currencies; returns max drawdown % across currencies.
+func (a *IntradayAggregator) SessionSnapshot() (dailyRealizedPnL, drawdownPct float64) {
+	a.maybeResetSession()
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	var totalRealized decimal.Decimal
+	for _, v := range a.dailyRealizedPnL {
+		totalRealized = totalRealized.Add(v)
+	}
+	maxDrawdownPct := float64(0)
+	for c := range a.currentEquity {
+		peak := a.peakEquity[c]
+		cur := a.currentEquity[c]
+		if peak.IsZero() || !peak.GreaterThan(decimal.Zero) {
+			continue
+		}
+		diff := peak.Sub(cur)
+		if diff.GreaterThan(decimal.Zero) {
+			pct := diff.Div(peak).Mul(decimal.NewFromInt(100))
+			p, _ := pct.Float64()
+			if p > maxDrawdownPct {
+				maxDrawdownPct = p
+			}
+		}
+	}
+	r, _ := totalRealized.Float64()
+	return r, maxDrawdownPct
+}

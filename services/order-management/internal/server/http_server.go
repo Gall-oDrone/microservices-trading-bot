@@ -17,29 +17,32 @@ import (
 
 // HTTPServer handles HTTP requests
 type HTTPServer struct {
-	logger        *logger.Logger
-	config        *config.ServiceConfig
-	healthManager *health.HealthManager
-	metrics       *metrics.MetricsCollector
-	server        *http.Server
-	router        *http.ServeMux
+	logger           *logger.Logger
+	config           *config.ServiceConfig
+	healthManager    *health.HealthManager
+	metrics          *metrics.MetricsCollector
+	sessionAggregator *metrics.IntradayAggregator // optional: for GET /api/v1/risk/session
+	server           *http.Server
+	router           *http.ServeMux
 }
 
-// NewHTTPServer creates a new HTTP server
+// NewHTTPServer creates a new HTTP server. sessionAggregator can be nil; if set, GET /api/v1/risk/session is enabled.
 func NewHTTPServer(
 	config *config.ServiceConfig,
 	healthManager *health.HealthManager,
 	metrics *metrics.MetricsCollector,
 	logger *logger.Logger,
+	sessionAggregator *metrics.IntradayAggregator,
 ) *HTTPServer {
 	router := http.NewServeMux()
 
 	server := &HTTPServer{
-		logger:        logger,
-		config:        config,
-		healthManager: healthManager,
-		metrics:       metrics,
-		router:        router,
+		logger:            logger,
+		config:            config,
+		healthManager:     healthManager,
+		metrics:           metrics,
+		sessionAggregator:  sessionAggregator,
+		router:             router,
 		server: &http.Server{
 			Addr:         fmt.Sprintf("%s:%d", config.Host, config.Port),
 			Handler:      router,
@@ -87,7 +90,25 @@ func (s *HTTPServer) setupRoutes() {
 	// Status endpoint
 	s.router.HandleFunc("/api/v1/status", s.withMetrics(s.statusHandler))
 
+	// Session risk (for trading-engine daily loss / drawdown limits)
+	if s.sessionAggregator != nil {
+		s.router.HandleFunc("/api/v1/risk/session", s.withMetrics(s.riskSessionHandler))
+	}
+
 	s.logger.Info("HTTP routes configured", nil)
+}
+
+func (s *HTTPServer) riskSessionHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		s.respondError(w, http.StatusMethodNotAllowed, "Method not allowed")
+		return
+	}
+	dailyRealizedPnL, drawdownPct := s.sessionAggregator.SessionSnapshot()
+	response := map[string]interface{}{
+		"daily_realized_pnl": dailyRealizedPnL,
+		"drawdown_percent":   drawdownPct,
+	}
+	s.respondJSON(w, http.StatusOK, response)
 }
 
 // Health check handlers
