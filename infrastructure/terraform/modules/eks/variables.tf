@@ -23,3 +23,8 @@ variable "max_size" {
   type    = number
   default = 4
 }
+variable "access_entries" {
+  type        = any
+  default     = {}
+  description = "Map of EKS access entries (e.g. for GitHub Actions CI role)."
+}

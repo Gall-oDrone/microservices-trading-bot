@@ -46,6 +46,8 @@ module "eks" {
     vpc-cni    = { most_recent = true }
     # EBS CSI driver addon is created separately below to avoid circular dependency
   }
+
+  access_entries = var.access_entries
 }
 
 # IAM role for EBS CSI driver service account
