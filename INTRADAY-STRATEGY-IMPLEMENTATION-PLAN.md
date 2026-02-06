@@ -147,6 +147,8 @@ This document outlines the recommended steps to safely implement trading strateg
 4. Get results: `GET /api/v1/backtests/{id}/results` or `GET /api/v1/backtests/{id}/report?format=text`.
 5. Compare to Grafana: Trading Platform Metrics dashboard — backtest Total Return / Max Drawdown / Win Rate / Total Trades vs Intraday row (Daily Realized P&L, Drawdown %, Trades Today, Win Rate Today %).
 
+**Script:** `scripts/run-one-backtest.sh [BASE_URL]` — creates a backtest, polls until completed, then prints the text report (default BASE_URL=http://localhost:8084).
+
 ---
 
 ## Summary Table

@@ -35,6 +35,8 @@ Before running new intraday strategies live, follow the steps in:
 | [DEVELOPMENT-ROADMAP.md](./DEVELOPMENT-ROADMAP.md) | Strategy enhancements, paper trading, position management, risk controls. |
 | [REMAINING-PHASES-CHECKLIST.md](./REMAINING-PHASES-CHECKLIST.md) | Deployment phases (1–10) and verification. |
 | [POST-DEPLOYMENT-CHECKLIST.md](./POST-DEPLOYMENT-CHECKLIST.md) | Post-deploy verification and hardening. |
+| [docs/ORDER-FLOW-AND-BITSO-TESTING.md](./docs/ORDER-FLOW-AND-BITSO-TESTING.md) | When orders go to Bitso testing, how to validate the flow, and relevant env vars. |
+| [docs/OPERATIONS-ENV-VARS.md](./docs/OPERATIONS-ENV-VARS.md) | Env vars for trading-engine, order-management, and session risk. |
 
 ## Quick Start
 
