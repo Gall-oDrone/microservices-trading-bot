@@ -18,10 +18,13 @@ data "aws_iam_policy_document" "gh_oidc_trust" {
     condition {
       test     = "StringLike"
       variable = "token.actions.githubusercontent.com:sub"
-      values   = [
-        "repo:${var.repo}:ref:refs/heads/*",
-        "repo:${var.repo}:pull_request"
-      ]
+      values   = concat(
+        [
+          "repo:${var.repo}:ref:refs/heads/*",
+          "repo:${var.repo}:pull_request"
+        ],
+        [for e in var.allowed_environments : "repo:${var.repo}:environment:${e}"]
+      )
     }
   }
 }

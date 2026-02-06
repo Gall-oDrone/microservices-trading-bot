@@ -263,9 +263,10 @@ resource "helm_release" "external_secrets" {
 module "ci_github_oidc" {
   source = "../../modules/github-oidc"
 
-  region     = var.aws_region
-  repo       = var.github_repo
-  role_name  = "${local.name}-github-actions"
+  region               = var.aws_region
+  repo                 = var.github_repo
+  role_name            = "${local.name}-github-actions"
+  allowed_environments  = ["development"]
   permissions = [
     "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryPowerUser",
     "arn:aws:iam::aws:policy/AmazonEKSClusterPolicy"
