@@ -28,13 +28,13 @@ module "eks" {
   min_size            = 1
   max_size            = 3
 
-  # Allow GitHub Actions CI role to deploy (kubectl apply) to the cluster
+  # Allow GitHub Actions CI role to deploy (kubectl apply) to the cluster, including creating namespaces
   access_entries = {
     github_actions = {
       principal_arn = module.ci_github_oidc.role_arn
       policy_associations = {
         deploy = {
-          policy_arn   = "arn:aws:eks::aws:cluster-access-policy/AmazonEKSEditPolicy"
+          policy_arn   = "arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy"
           access_scope = { type = "cluster" }
         }
       }
