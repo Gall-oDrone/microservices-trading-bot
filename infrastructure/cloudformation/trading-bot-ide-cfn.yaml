@@ -50,6 +50,10 @@ Parameters:
     Type: String
     Description: AWS Region for the IDE
     Default: "us-east-1"
+  GitHubTokenSecretName:
+    Type: String
+    Description: Optional. Name or ARN of Secrets Manager secret containing GitHub token (plain text or {"token":"..."}) for push access. Instance profile must have secretsmanager:GetSecretValue.
+    Default: ""
 Conditions:
   IsKnownRegion: !Not
     - !Equals
@@ -533,6 +537,24 @@ Resources:
                       done
                   fi
 
+                  # Install GitHub CLI
+                  echo "Installing GitHub CLI..."
+                  max_attempts=3
+                  attempt=1
+                  while [ $attempt -le $max_attempts ]; do
+                      if dnf install -y dnf-plugins-core && \
+                         dnf config-manager --add-repo https://cli.github.com/packages/rpm/gh-cli.repo && \
+                         dnf install -y gh; then
+                          if gh --version; then
+                              echo "GitHub CLI installed successfully"
+                              break
+                          fi
+                      fi
+                      echo "GitHub CLI installation attempt $attempt failed, retrying..."
+                      sleep 5
+                      attempt=$((attempt + 1))
+                  done
+
                   # Install AWS Course CLI
                   echo "Installing AWS Course CLI..."
                   max_attempts=3
@@ -752,6 +774,7 @@ Resources:
                   export REPOSITORY_REF="${RepositoryRef}"
                   export RESOURCES_PRECREATED="${ResourcesPrecreated}"
                   export ANALYTICS_ENDPOINT="${AnalyticsEndpoint}"
+                  export GITHUB_TOKEN_SECRET_NAME="${GitHubTokenSecretName}"
 
                   # Setup user environment
                   echo "Setting up user environment..."
@@ -846,6 +869,32 @@ Resources:
                   if [ ! -d "${RepositoryName}" ]; then
                       git clone https://github.com/${RepositoryOwner}/${RepositoryName}.git || error_exit $LINENO
                       echo "Repository cloned successfully!"
+                  fi
+
+                  # Authenticate GitHub CLI and enable push when token secret is provided
+                  if [ -n "${GitHubTokenSecretName}" ]; then
+                      echo "Configuring GitHub CLI for push access..."
+                      GITHUB_TOKEN_RAW=$(aws secretsmanager get-secret-value --secret-id "${GitHubTokenSecretName}" --query 'SecretString' --output text 2>/dev/null) || true
+                      if [ -n "$GITHUB_TOKEN_RAW" ]; then
+                          if echo "$GITHUB_TOKEN_RAW" | jq -e .token >/dev/null 2>&1; then
+                              GITHUB_TOKEN=$(echo "$GITHUB_TOKEN_RAW" | jq -r .token)
+                          else
+                              GITHUB_TOKEN="$GITHUB_TOKEN_RAW"
+                          fi
+                          echo "$GITHUB_TOKEN" | gh auth login --with-token
+                          gh auth setup-git
+                          echo "GitHub CLI authenticated."
+                          cd ~/environment/${RepositoryName}
+                          BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "main")
+                          if git push -u origin "$BRANCH" 2>/dev/null; then
+                              echo "Pushed to origin/$BRANCH successfully."
+                          else
+                              echo "Push skipped or failed (repo may already be in sync). You can push from the IDE."
+                          fi
+                          cd ~/environment
+                      else
+                          echo "Could not retrieve GitHub token from ${GitHubTokenSecretName}; push will require manual gh auth login."
+                      fi
                   fi
                   
                   EOT
