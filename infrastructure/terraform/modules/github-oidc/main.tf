@@ -46,4 +46,25 @@ resource "aws_iam_role_policy_attachment" "attach" {
   policy_arn = each.value
 }
 
+# Allow GitHub Actions to run aws eks update-kubeconfig and kubectl (DescribeCluster required)
+data "aws_iam_policy_document" "eks_describe" {
+  statement {
+    sid    = "EKSDescribeCluster"
+    effect = "Allow"
+    actions = [
+      "eks:DescribeCluster",
+      "eks:ListClusters"
+    ]
+    resources = [
+      "arn:aws:eks:${var.region}:${data.aws_caller_identity.current.account_id}:cluster/*"
+    ]
+  }
+}
+
+resource "aws_iam_role_policy" "eks_describe" {
+  name   = "${var.role_name}-eks-describe"
+  role   = aws_iam_role.ci.id
+  policy = data.aws_iam_policy_document.eks_describe.json
+}
+
 output "role_arn" { value = aws_iam_role.ci.arn }
