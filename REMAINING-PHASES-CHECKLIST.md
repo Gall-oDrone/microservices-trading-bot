@@ -19,6 +19,78 @@ This document covers the remaining deployment phases after the initial setup. Ph
 
 ---
 
+## Centralized Logging and Observability
+
+**Goal:** Aggregate logs from all trading services into a central store and provide observability (logs + metrics + optional tracing) so operators can debug and monitor the platform from one place.
+
+### Log aggregation
+
+- **Structured logs:** All services (market-data, strategy-executor, trading-engine, order-management, api-gateway, backtesting) emit structured JSON logs (e.g. zerolog) to stdout so the cluster can collect them.
+- **Collector:** Deploy a log collector in the cluster (e.g. Fluent Bit, Fluentd, or CloudWatch Logs agent) that tails container logs and forwards them to a central sink.
+- **Central sink options:**
+  - **Loki** (with Grafana): Query logs in Grafana and correlate with Prometheus metrics; good fit when Prometheus/Grafana are already in use.
+  - **Amazon CloudWatch Logs:** Use Fluent Bit or the CloudWatch agent to send logs to log groups; optional integration with Grafana via CloudWatch data source.
+  - **Elasticsearch + Kibana:** Full-text search and dashboards; more operational overhead.
+- **Verification:**
+  - Trigger activity in each service (e.g. health checks, a backtest, an order flow).
+  - In the central system, confirm logs from each service appear with correct labels (namespace, pod, app).
+  - Optionally add a Grafana dashboard that shows recent logs by service and level.
+
+### Observability (metrics + logs + optional tracing)
+
+- **Metrics:** Already covered by Phase 4 (Prometheus + Grafana). Ensure all services expose `/metrics` and are scraped; use the existing trading dashboards for intraday P&L, drawdown, and health.
+- **Logs:** Use the centralized log sink above; link from Grafana (e.g. “Logs for this pod” or “Logs for this time range”).
+- **Optional distributed tracing:** If you add OpenTelemetry (or similar), instrument HTTP and Kafka calls with trace IDs so a single request can be followed across market-data → strategy-executor → trading-engine → order-management. Not required for the initial “missing step” but recommended for production.
+
+### Checklist
+
+- [ ] All services emit structured JSON logs to stdout
+- [ ] Log collector deployed and forwarding to central sink (Loki / CloudWatch / Elasticsearch)
+- [ ] Logs from every trading service visible in the central system with correct labels
+- [ ] Grafana (or equivalent) can query logs and correlate with metrics
+- [ ] Optional: distributed tracing configured and trace IDs present in logs
+
+---
+
+## Redis Deployment and Verification
+
+**Goal:** Redis is required by **order-management** (orders and positions storage) and **backtesting** (cache and job storage). Ensure Redis is deployed in the cluster, reachable by these services, and optionally persisted/backed up.
+
+### Deployment
+
+- **Deploy Redis** in the trading namespace (e.g. `bitso-trading-dev`): use a StatefulSet or a Helm chart (e.g. `bitnami/redis`) with a headless Service so pods resolve `redis` or `redis.bitso-trading-dev.svc.cluster.local`.
+- **Persistence (recommended for order-management):** Enable AOF or RDB so orders and positions survive Redis restarts. For backtesting, cache can be ephemeral if acceptable.
+- **Security:** Use a password (`requirepass`) in production and store it in AWS Secrets Manager; inject via External Secrets or env (e.g. `REDIS_PASSWORD`). Network policies should allow only order-management and backtesting to reach Redis.
+
+### Service configuration
+
+- **order-management:** Set `REDIS_HOST` (and `REDIS_PORT`, `REDIS_PASSWORD`, `REDIS_DB` if used). Health check should include Redis connectivity (e.g. `GET /health` returns unhealthy if Redis is down).
+- **backtesting:** Set `REDIS_HOST` (and same options). Backtesting service uses Redis for cache and optionally as `STORAGE_TYPE=redis` for job state. Ensure `REDIS_HOST` points at the cluster Redis service name.
+
+### Verification
+
+```bash
+# Redis is running
+kubectl get pods -n bitso-trading-dev -l app=redis
+
+# From a pod that uses Redis, test connectivity (adjust redis host if different)
+kubectl exec -it deployment/order-management -n bitso-trading-dev -- \
+  sh -c 'command -v redis-cli >/dev/null && redis-cli -h $REDIS_HOST ping || wget -qO- http://localhost:8082/health' | grep -E "PONG|redis|healthy"
+
+# Backtesting health includes Redis when STORAGE_TYPE=redis
+kubectl exec -it deployment/backtesting -n bitso-trading-dev -- wget -qO- http://localhost:8084/health | jq .
+```
+
+### Checklist
+
+- [ ] Redis deployed in cluster (StatefulSet or Helm) and Service created
+- [ ] order-management has REDIS_HOST (and REDIS_PORT / REDIS_PASSWORD if used) and connects successfully
+- [ ] backtesting has REDIS_HOST and connects when using Redis for cache/storage
+- [ ] Health checks for order-management and backtesting reflect Redis status
+- [ ] Optional: AOF or RDB enabled; backup/restore procedure documented
+
+---
+
 ## Phase 5: Security Policies
 
 **Goal:** Apply network policies and RBAC for security hardening.
