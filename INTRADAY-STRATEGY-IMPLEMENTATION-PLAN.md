@@ -44,7 +44,7 @@ This document outlines the recommended steps to safely implement trading strateg
 
 - The shared Bitso client (`shared/pkg/bitso/`) and trading-engine use the **configurable API base URL** (Phase 1).
 - Default is **`https://stage.bitso.com/api`**; set `BITSO_API_BASE_URL` only when switching to production.
-- Use **stage API keys** (`STAGE_BITSO_API_KEY`, `STAGE_BITSO_APISECRET`) with the stage URL. The trading-engine is already wired to stage credentials and stage URL (see `services/trading-engine/cmd/main.go` and `shared/pkg/config`).
+- Use **stage API keys** with the stage URL. Trading-engine reads `STAGE_BITSO_API_KEY` and `STAGE_BITSO_API_SECRET` (shared config); order-management uses `STAGE_BITSO_API_KEY` and `STAGE_BITSO_APISECRET` for the Bitso sync job. The trading-engine is already wired to stage credentials and stage URL (see `services/trading-engine/cmd/main.go` and `shared/pkg/config`).
 
 **Conclusion:** Paper trading = point the app at Bitso’s testing environment (stage URL + stage keys). No additional dry-run flag or “simulate without calling Bitso” mode is required for this phase.
 
@@ -62,14 +62,14 @@ This document outlines the recommended steps to safely implement trading strateg
 
 **Tasks:**
 
-1. **When orders are placed:** ~~Ensure every order placed by the trading-engine is also sent to order-management (e.g. via Kafka or HTTP) with Bitso order ID.~~ **Done.** Trading-engine publishes to Kafka topic `trading.orders.placed` (config: `KAFKA_TOPIC_ORDERS_PLACED`) after each successful `PlaceOrder`. Payload: `order_id`, `book`, `side`, `amount`, `price`, `strategy`. Order-management can consume this topic to create order records (consumer implementation pending).
+1. **When orders are placed:** ~~Ensure every order placed by the trading-engine is also sent to order-management (e.g. via Kafka or HTTP) with Bitso order ID.~~ **Done.** Trading-engine publishes to Kafka topic `trading.orders.placed` (config: `KAFKA_TOPIC_ORDERS_PLACED`) after each successful `PlaceOrder`. Payload: `order_id`, `book`, `side`, `amount`, `price`, `strategy`. Order-management consumes this topic via `OrdersPlacedConsumer` and creates/updates order records.
 2. **Sync order status and fills from Bitso:**
-   - Option A: **Polling** – A small job or loop in trading-engine or order-management that periodically calls Bitso’s `LookupOrder` / `LookupOrders` (and possibly `OrderTrades`) for open/recent orders and updates order-management (status, filled amount, fill price). **Not yet implemented.**
+   - Option A: **Polling** – **Done.** A sync job in order-management (`internal/sync/bitso_sync.go`) polls Bitso’s `LookupOrders` for active order IDs, then updates order status and filled amount/price via `SyncOrderFromBitso`. The job runs when Bitso credentials are set in order-management config.
    - Option B: **Webhooks** – If Bitso supports order/fill webhooks, subscribe and push updates to order-management.
 3. **Update positions:** When an order moves to filled (or partial fill), order-management should update order status and call position logic (e.g. `UpdateFromFill`). Depends on (2).
 4. **Persistence:** Order-management currently uses in-memory repositories; switch to Redis when needed for production.
 
-**Files touched:** `shared/pkg/config` (`KafkaTopicOrdersPlaced`), `services/trading-engine` (Kafka producer, publish after PlaceOrder), executor returns order ID; **order-management** consumer for `trading.orders.placed` (`internal/consumer/orders_placed.go`), Bitso sync job (`internal/sync/bitso_sync.go`, polls LookupOrders and updates orders via `SyncOrderFromBitso`). Set `STAGE_BITSO_API_KEY` and `STAGE_BITSO_APISECRET` (and optionally `BITSO_API_BASE_URL`) in order-management to enable the sync job.
+**Files touched:** `shared/pkg/config` (`KafkaTopicOrdersPlaced`), `services/trading-engine` (Kafka producer, publish after PlaceOrder), executor returns order ID; **order-management** consumer for `trading.orders.placed` (`internal/consumer/orders_placed.go`), Bitso sync job (`internal/sync/bitso_sync.go`, polls LookupOrders and updates orders via `SyncOrderFromBitso`). **Env vars:** Trading-engine uses `STAGE_BITSO_API_KEY` and `STAGE_BITSO_API_SECRET` (shared config); order-management uses `STAGE_BITSO_API_KEY` and `STAGE_BITSO_APISECRET` (and optionally `BITSO_API_BASE_URL`) to enable the sync job.
 
 ---
 
@@ -95,8 +95,8 @@ This document outlines the recommended steps to safely implement trading strateg
 **Tasks:**
 
 1. **Metrics to add (examples):**
-   - Daily realized P&amp;L (gauge or counter).
-   - Daily unrealized P&amp;L (gauge).
+   - Daily realized P&L (gauge or counter).
+   - Daily unrealized P&L (gauge).
    - Current drawdown (absolute and/or %).
    - Number of trades today (per book, per strategy).
    - Win rate today (if you have trade outcome data).
@@ -114,10 +114,10 @@ This document outlines the recommended steps to safely implement trading strateg
 | IntradayAggregator (calculation logic) | Done | `services/order-management/internal/metrics/intraday_aggregator.go` |
 | Manager records trade closed on fill | Done | `services/order-management/internal/manager/order_manager.go` |
 | Wire aggregator in app | Done | Aggregator created in `cmd/main.go`, OrderManager constructed with it; manager started on app start |
-| Feed equity & unrealized P&amp;L | Done | `feedIntradayMetrics()` goroutine every 60s calls `GetPositionSummary`, then `RecordDailyUnrealizedPnL` and `RecordEquityUpdate` |
+| Feed equity & unrealized P&L | Done | `feedIntradayMetrics()` goroutine every 60s calls `GetPositionSummary`, then `RecordDailyUnrealizedPnL` and `RecordEquityUpdate` |
 | Unit tests (aggregator, manager) | Done | `services/order-management/internal/testing/`, `internal/testing/metrics/` |
 | Integration tests | Done | `services/order-management/integration/` (see `testing/integration/order-management/README.md`) |
-| Grafana dashboards | Done | `monitoring/grafana/dashboards/trading-metrics.json` (Intraday / P&amp;L row: daily realized/unrealized P&amp;L, drawdown, equity, trades today, wins/losses, win rate %) |
+| Grafana dashboards | Done | `monitoring/grafana/dashboards/trading-metrics.json` (Intraday / P&L row: daily realized/unrealized P&L, drawdown, equity, trades today, wins/losses, win rate %) |
 
 #### Remaining Phase 5 Tasks
 
@@ -173,5 +173,5 @@ This document outlines the recommended steps to safely implement trading strateg
 
 ---
 
-**Document version:** 1.5  
-**Status:** Phases 1–6 complete. Phase 3: order-placed consumer + Bitso sync job done. SessionRiskProvider (ORDER_MANAGEMENT_URL) and Phase 6 workflow (run backtest, compare to Grafana) documented and implemented.
+**Document version:** 1.6  
+**Status:** Phases 1–6 complete. Phase 3: order-placed consumer + Bitso sync job done and documented. SessionRiskProvider (ORDER_MANAGEMENT_URL) and Phase 6 workflow (run backtest, compare to Grafana) documented and implemented. Env var spelling clarified (STAGE_BITSO_API_SECRET vs STAGE_BITSO_APISECRET per service).
