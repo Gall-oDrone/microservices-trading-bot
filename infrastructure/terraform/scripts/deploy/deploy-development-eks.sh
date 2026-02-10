@@ -360,6 +360,34 @@ echo "  - Check Helm releases: helm list --all-namespaces"
 echo "  - View Prometheus: kubectl port-forward -n monitoring svc/kube-prometheus-stack-prometheus 9090:9090"
 echo "  - View Grafana: kubectl port-forward -n monitoring svc/kube-prometheus-stack-grafana 3000:80"
 echo ""
+print_info "📊 Grafana dashboard (ALB – hosts file required):"
+if command -v kubectl &>/dev/null; then
+  GRAFANA_ALB_HOST=$(kubectl get ingress -n monitoring kube-prometheus-stack-grafana -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || true)
+  if [ -n "$GRAFANA_ALB_HOST" ]; then
+    GRAFANA_ALB_IP=$(getent hosts "$GRAFANA_ALB_HOST" 2>/dev/null | head -1 | awk '{print $1}')
+    if [ -z "$GRAFANA_ALB_IP" ]; then
+      GRAFANA_ALB_IP=$(nslookup "$GRAFANA_ALB_HOST" 2>/dev/null | grep -A1 "Name:" | tail -1 | awk '{print $2}')
+    fi
+    if [ -n "$GRAFANA_ALB_IP" ]; then
+      echo "  To access Grafana at http://grafana.local, add this line to your hosts file:"
+      echo "    $GRAFANA_ALB_IP   grafana.local"
+      echo "  - Mac/Linux: sudo nano /etc/hosts"
+      echo "  - Windows:  C:\\Windows\\System32\\drivers\\etc\\hosts (edit as Administrator)"
+      echo "  Note: This IP may change after future EKS or ingress changes; re-run this script to get the current IP."
+    else
+      echo "  ALB hostname: $GRAFANA_ALB_HOST"
+      echo "  Resolve it to an IP (e.g. nslookup $GRAFANA_ALB_HOST), then add '<IP>   grafana.local' to your hosts file."
+      echo "  - Mac/Linux: /etc/hosts   |   Windows: C:\\Windows\\System32\\drivers\\etc\\hosts"
+    fi
+  else
+    echo "  Grafana ingress not yet ready. When ready, run: kubectl get ingress -n monitoring kube-prometheus-stack-grafana"
+    echo "  Resolve the ADDRESS hostname to an IP, then add '<IP>   grafana.local' to your hosts file."
+    echo "  - Mac/Linux: /etc/hosts   |   Windows: C:\\Windows\\System32\\drivers\\etc\\hosts"
+  fi
+else
+  echo "  kubectl not available. After deployment, get the Grafana ingress ADDRESS, resolve to IP, add '<IP>   grafana.local' to hosts."
+fi
+echo ""
 print_info "📝 Terraform commands:"
 echo "  - View outputs: terraform output"
 echo "  - Destroy infrastructure: terraform destroy"
