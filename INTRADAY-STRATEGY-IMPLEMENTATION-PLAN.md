@@ -164,6 +164,73 @@ This document outlines the recommended steps to safely implement trading strateg
 
 ---
 
+## Next Steps: Operational Validation, Backtest Comparison, Production
+
+After Phases 1–6 are implemented, follow these priorities to validate and harden the intraday pipeline.
+
+### Priority 1: Operational Validation in Stage
+
+**Goal:** Run and validate the full stage pipeline; confirm orders flow and sync, and risk limits are applied.
+
+**Checklist:**
+
+1. **Environment:** All services use stage Bitso: `BITSO_API_BASE_URL=https://stage.bitso.com/api` (or unset to use default). Trading-engine and order-management use stage API keys (`STAGE_BITSO_API_KEY`, `STAGE_BITSO_API_SECRET` / `STAGE_BITSO_APISECRET`).
+2. **Orders flow:** Trading-engine publishes to Kafka topic `trading.orders.placed` after each `PlaceOrder`. Order-management consumes that topic (verify logs: "Orders-placed consumer configured" and consumer group active).
+3. **Bitso sync:** Order-management Bitso sync job runs when stage keys are set (verify logs: "Bitso sync job configured"). It polls `LookupOrders` and updates orders via `SyncOrderFromBitso`.
+4. **Risk limits:** Trading-engine has `ORDER_MANAGEMENT_URL` set so it can call `GET /api/v1/risk/session`. Configure `MaxDailyLoss` and `MaxDrawdownPct` in trading config (non-zero to enable). Before each order, engine calls session risk and `CheckSessionLimits`; if limits are exceeded, execution is rejected.
+
+**Script:** `scripts/intraday-validate-stage-pipeline.sh` — checks order-management health and `GET /api/v1/risk/session` (and optional Kubernetes mode). Run after deployment to confirm the pipeline and risk endpoint.
+
+**See:** Phase 3 (order/fill sync), Phase 4 (daily loss & drawdown limits).
+
+---
+
+### Priority 2: Backtest vs Live Comparison
+
+**Goal:** Run one backtest and compare its metrics to the Grafana intraday panels so backtest and live stay aligned.
+
+**Steps:**
+
+1. Start dependencies: market-data (if using HTTP provider), Redis, backtesting service (and order-management/trading-engine if validating live in parallel).
+2. Run backtest: `scripts/run-one-backtest.sh [BASE_URL]` (default `http://localhost:8084`). Note the reported **Total Return**, **Max Drawdown**, **Win Rate**, **Total Trades**.
+3. In Grafana, open the **Trading Platform Metrics** dashboard (Intraday / P&L row). Compare:
+   - Backtest **Total Return** ↔ **Daily Realized P&L** (over a matching period).
+   - Backtest **Max Drawdown** ↔ **Drawdown %**.
+   - Backtest **Win Rate** ↔ **Win Rate Today %**.
+   - Backtest **Total Trades** ↔ **Trades Today**.
+
+**Script:** `scripts/intraday-backtest-and-compare.sh [BACKTEST_BASE_URL]` — runs `run-one-backtest.sh`, then prints the comparison checklist and metric mapping so you can fill in Grafana values side-by-side.
+
+**See:** Phase 6 workflow (backtest and compare to Grafana).
+
+---
+
+### Priority 3: Production Config and Secrets
+
+**Goal:** When moving to real funds, use production Bitso URL and keys only, with limits and secret management.
+
+**Checklist:**
+
+- Set `BITSO_API_BASE_URL=https://bitso.com/api` and use **production** Bitso API keys. Never use production keys with the stage URL.
+- Set `MaxDailyLoss` and `MaxDrawdownPct` in trading config; keep `SessionRiskProvider` wired (`ORDER_MANAGEMENT_URL`).
+- Store production Bitso keys (and Redis password if used) in AWS Secrets Manager (or your secret store). Inject via External Secrets or env; do not commit.
+- Monitor Grafana intraday panels and alerts before and after going live.
+
+---
+
+### Priority 4: Production Persistence (Redis for Order-Management)
+
+**Goal:** When ready for production resilience, persist orders and positions in Redis so they survive restarts.
+
+**Checklist:**
+
+- Implement Redis-backed order and position repositories in order-management (plan: "switch to Redis when needed for production" in Phase 3).
+- Deploy Redis in the cluster (e.g. StatefulSet or Helm). Use a password and inject via External Secrets (e.g. `REDIS_PASSWORD`).
+- Set order-management env: `REDIS_HOST`, `REDIS_PORT`, `REDIS_PASSWORD`, `REDIS_DB` as needed. Health check should reflect Redis connectivity.
+- See **REMAINING-PHASES-CHECKLIST.md** (Redis deployment and verification).
+
+---
+
 ## References
 
 - [Bitso: Set Up Your Testing Environment](https://docs.bitso.com/bitso-api/docs/set-up-your-testing-environment)
@@ -173,5 +240,5 @@ This document outlines the recommended steps to safely implement trading strateg
 
 ---
 
-**Document version:** 1.6  
-**Status:** Phases 1–6 complete. Phase 3: order-placed consumer + Bitso sync job done and documented. SessionRiskProvider (ORDER_MANAGEMENT_URL) and Phase 6 workflow (run backtest, compare to Grafana) documented and implemented. Env var spelling clarified (STAGE_BITSO_API_SECRET vs STAGE_BITSO_APISECRET per service).
+**Document version:** 1.7  
+**Status:** Phases 1–6 complete. Next steps added: Operational validation in stage (Priority 1), Backtest vs live comparison (Priority 2), Production config and persistence (Priorities 3–4). Scripts: `scripts/intraday-validate-stage-pipeline.sh`, `scripts/intraday-backtest-and-compare.sh`.
