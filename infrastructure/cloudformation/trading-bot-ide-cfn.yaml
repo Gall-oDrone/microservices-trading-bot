@@ -664,7 +664,12 @@ Resources:
                   echo "Configuring Caddy..."
                   tee /etc/caddy/Caddyfile <<EOF
                   http://${TradingBotIdeCloudFrontDistribution.DomainName} {
-                    reverse_proxy 127.0.0.1:8889
+                    handle /proxy/3000* {
+                      reverse_proxy 127.0.0.1:3000
+                    }
+                    handle {
+                      reverse_proxy 127.0.0.1:8889
+                    }
                   }
                   EOF
 

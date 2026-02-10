@@ -306,11 +306,19 @@ kubectl apply -f k8s/monitoring/service-monitors.yaml
 ### 4.3 Import Grafana Dashboards
 
 ```bash
-# Port-forward to Grafana
-kubectl port-forward svc/prometheus-grafana 3000:80 -n monitoring
+# Port-forward to Grafana (kube-prometheus-stack)
+kubectl port-forward svc/kube-prometheus-stack-grafana 3000:80 -n monitoring
+
+# Or use the helper script (keeps forwarding in foreground)
+./scripts/grafana-port-forward.sh
 
 # Access Grafana at http://localhost:3000
-# Default credentials: admin / prom-operator
+# Default credentials: admin / admin
+
+# When using the IDE behind CloudFront (e.g. https://ddeyf7tq41v1l.cloudfront.net/proxy/3000):
+# 1) Caddy must route /proxy/3000 to 127.0.0.1:3000 (this is in the IDE CloudFormation; existing IDEs
+#    can apply it by hand: edit /etc/caddy/Caddyfile, add the handle /proxy/3000* block, then sudo systemctl restart caddy).
+# 2) Run the port-forward on the IDE so Grafana is reachable: ./scripts/grafana-port-forward.sh (in a terminal).
 
 # Import dashboard from monitoring/grafana/dashboards/trading-metrics.json
 ```
