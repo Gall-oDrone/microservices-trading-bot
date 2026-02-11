@@ -1,4 +1,4 @@
-FROM golang:1.21-alpine AS builder
+FROM golang:1.23-alpine AS builder
 
 WORKDIR /app
 # Copy service-specific go.mod and go.sum (go.sum exists for this service)
@@ -12,7 +12,7 @@ RUN go mod download
 
 # Copy service source code
 COPY services/trading-engine .
-RUN go build -o trading-engine ./cmd/main.go
+RUN go mod tidy && go build -o trading-engine ./cmd/main.go
 
 FROM alpine:latest
 RUN apk --no-cache add ca-certificates
