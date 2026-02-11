@@ -7,6 +7,11 @@ variable "cluster_version" {
   type    = string
   default = "1.30"
 }
+variable "endpoint_public_access" {
+  type        = bool
+  default     = true
+  description = "Enable public API server endpoint (keep true to avoid Terraform changing live cluster)."
+}
 variable "node_instance_types" { 
   type    = list(string)
   default = ["m6i.large"]

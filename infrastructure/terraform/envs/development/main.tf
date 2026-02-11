@@ -18,7 +18,7 @@ module "eks" {
 
   region             = var.aws_region
   cluster_name       = local.name
-  cluster_version    = "1.30"
+  cluster_version    = "1.33" # match live cluster to avoid downgrade
   vpc_id             = module.vpc.vpc_id
   private_subnet_ids = module.vpc.private_subnet_ids
   public_subnet_ids  = module.vpc.public_subnet_ids
@@ -252,18 +252,22 @@ resource "helm_release" "kube_prometheus_stack" {
         service       = { type = "ClusterIP" }
         # Provision Trading Platform Metrics dashboard (Intraday / P&L row)
         dashboardProviders = {
-          "trading-provider.yaml" = <<-EOT
-            apiVersion: 1
-            providers:
-              - name: 'trading'
-                orgId: 1
-                folder: 'Trading'
-                type: file
-                disableDeletion: false
-                editable: false
-                options:
-                  path: /var/lib/grafana/dashboards/trading
-          EOT
+          "trading-provider.yaml" = {
+            apiVersion = 1
+            providers = [
+              {
+                name             = "trading"
+                orgId            = 1
+                folder           = "Trading"
+                type             = "file"
+                disableDeletion  = false
+                editable         = false
+                options = {
+                  path = "/var/lib/grafana/dashboards/trading"
+                }
+              }
+            ]
+          }
         }
         dashboards = {
           trading = {

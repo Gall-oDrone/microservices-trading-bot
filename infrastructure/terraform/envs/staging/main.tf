@@ -148,18 +148,22 @@ resource "helm_release" "kube_prometheus_stack" {
     yamlencode({
       grafana = {
         dashboardProviders = {
-          "trading-provider.yaml" = <<-EOT
-            apiVersion: 1
-            providers:
-              - name: 'trading'
-                orgId: 1
-                folder: 'Trading'
-                type: file
-                disableDeletion: false
-                editable: false
-                options:
-                  path: /var/lib/grafana/dashboards/trading
-          EOT
+          "trading-provider.yaml" = {
+            apiVersion = 1
+            providers = [
+              {
+                name            = "trading"
+                orgId           = 1
+                folder          = "Trading"
+                type            = "file"
+                disableDeletion = false
+                editable        = false
+                options = {
+                  path = "/var/lib/grafana/dashboards/trading"
+                }
+              }
+            ]
+          }
         }
         dashboards = {
           trading = {

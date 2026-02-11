@@ -17,10 +17,10 @@ module "eks" {
   subnet_ids               = var.private_subnet_ids
   control_plane_subnet_ids = var.private_subnet_ids
 
+  cluster_endpoint_public_access = coalesce(var.endpoint_public_access, true)
   enable_irsa = true
-  
-  # Disable cluster creator admin permissions to avoid IAM session context lookup
-  enable_cluster_creator_admin_permissions = false
+  # Enable so Terraform (and IDE role) can access the cluster; required after access entries were removed
+  enable_cluster_creator_admin_permissions = true
 
   eks_managed_node_groups = {
     default = {
