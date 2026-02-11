@@ -535,25 +535,38 @@ clean_terraform_state() {
     print_success "Enhanced Terraform state cleaning completed"
 }
 
-# Function to handle Terraform state lock
+# Function to handle Terraform state lock (local backend often leaves stale .terraform.tfstate.lock.info)
 handle_state_lock() {
     print_info "Checking for Terraform state lock..."
     
     cd "$TERRAFORM_DIR"
     
-    # Try to get lock info
+    # For local backend: remove stale lock file so Terraform can proceed (e.g. after a crashed run)
+    if [ -f ".terraform.tfstate.lock.info" ]; then
+        print_warning "Local state lock file found. Attempting force-unlock..."
+        local lock_id=""
+        lock_id=$(grep -oP '"ID"\s*:\s*"\K[0-9a-f-]+' .terraform.tfstate.lock.info 2>/dev/null || true)
+        if [ -n "$lock_id" ]; then
+            terraform force-unlock -force "$lock_id" 2>/dev/null || true
+        fi
+        if [ -f ".terraform.tfstate.lock.info" ]; then
+            print_warning "Removing stale lock file so destroy can proceed..."
+            rm -f .terraform.tfstate.lock.info
+        fi
+    fi
+    
+    # If plan still fails with lock error, try to extract ID from error and force-unlock
     local lock_info=$(terraform plan -destroy -no-color 2>&1 | grep -A 10 "Error acquiring the state lock" || echo "")
     
     if [ -n "$lock_info" ]; then
         print_warning "State lock detected. Attempting to force unlock..."
-        
-        # Extract lock ID from error message
         local lock_id=$(echo "$lock_info" | grep -oP 'ID:\s+\K[0-9a-f-]+' || echo "")
         
         if [ -n "$lock_id" ]; then
             print_info "Force unlocking state with ID: $lock_id"
             terraform force-unlock -force "$lock_id" 2>&1 || {
-                print_warning "Force unlock failed or lock already cleared"
+                print_warning "Force unlock failed; removing lock file if present..."
+                rm -f .terraform.tfstate.lock.info
             }
         fi
     fi
@@ -577,23 +590,29 @@ terraform_destroy() {
     
     # Create destroy plan
     print_info "Creating destroy plan..."
-    if ! terraform plan -destroy -out=destroy-plan 2>&1; then
+    local plan_output
+    plan_output=$(terraform plan -destroy -out=destroy-plan 2>&1) || true
+    if ! echo "$plan_output" | grep -q "Plan:"; then
         print_error "Failed to create destroy plan"
-        print_warning "This might be due to backend configuration or state lock issues"
+        print_warning "This might be due to backend configuration, state lock, or cluster already gone"
+        # If EKS cluster is already deleted, data.aws_eks_cluster.this can't be refreshed - use -refresh=false
+        if echo "$plan_output" | grep -q "couldn't find resource\|reading EKS Cluster"; then
+            print_info "Cluster already gone; attempting destroy with -refresh=false (use cached state)..."
+            if timeout 1800 terraform destroy -auto-approve -refresh=false -lock=false; then
+                cd - >/dev/null
+                print_success "Terraform destroy completed (with -refresh=false)"
+                return 0
+            fi
+        fi
         print_info "Attempting direct destroy without plan..."
-        
-        # Try direct destroy as fallback
-        print_info "Attempting direct terraform destroy (timeout: 30 minutes)..."
-        timeout 1800 terraform destroy -auto-approve || {
-            print_error "Terraform destroy timed out or failed"
-            print_warning "Don't worry - running cleanup again should handle remaining resources"
+        if timeout 1800 terraform destroy -auto-approve -lock=false; then
             cd - >/dev/null
-            return 1
-        }
-        
+            print_success "Terraform destroy completed (direct method)"
+            return 0
+        fi
+        print_error "Terraform destroy timed out or failed"
         cd - >/dev/null
-        print_success "Terraform destroy completed (direct method)"
-        return 0
+        return 1
     fi
     
     # Apply destroy with timeout

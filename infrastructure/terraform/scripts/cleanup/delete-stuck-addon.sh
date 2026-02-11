@@ -46,9 +46,10 @@ get_cluster_name() {
         cd - >/dev/null 2>&1
     fi
     
-    if [ -z "$cluster_name" ] || [ "$cluster_name" = "" ]; then
+    # Use fallback if empty or if Terraform printed a warning (e.g. no outputs in state)
+    if [ -z "$cluster_name" ] || [ "$cluster_name" = "" ] || [[ "$cluster_name" == *"Warning"* ]] || [[ "$cluster_name" == *"output"* ]]; then
         cluster_name="mtb-${ENVIRONMENT}"
-        print_warning "Could not retrieve cluster name from Terraform, using fallback: $cluster_name"
+        print_warning "Could not retrieve cluster name from Terraform, using fallback: $cluster_name" >&2
     fi
     
     echo "$cluster_name"
