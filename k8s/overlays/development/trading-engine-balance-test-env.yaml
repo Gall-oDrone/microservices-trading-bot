@@ -1,0 +1,13 @@
+# Add BALANCE_TEST_MXN so trading-engine stays up for Prometheus /metrics when init fails (Grafana Available Balance).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: trading-engine
+spec:
+  template:
+    spec:
+      containers:
+      - name: trading-engine
+        env:
+        - name: BALANCE_TEST_MXN
+          value: "50000"
