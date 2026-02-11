@@ -312,8 +312,7 @@ resource "helm_release" "kube_prometheus_stack" {
             "alb.ingress.kubernetes.io/target-type" = "ip"
             "alb.ingress.kubernetes.io/listen-ports" = "[{\"HTTP\": 80}]"
           }
-It          # Placeholder FQDN so ALB accepts host condition (single label "grafana" is invalid)
-          hosts = ["grafana.local"]
+          hosts = ["grafana.local"] # Placeholder FQDN so ALB accepts host condition (single label "grafana" is invalid)
           path  = "/"
           pathType = "Prefix"
         }
