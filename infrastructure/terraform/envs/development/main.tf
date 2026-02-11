@@ -250,6 +250,17 @@ resource "helm_release" "kube_prometheus_stack" {
       grafana = {
         adminPassword = "admin"
         service       = { type = "ClusterIP" }
+        # Explicitly enable Ingress so Helm does not remove it (chart default is disabled)
+        ingress = {
+          enabled        = true
+          ingressClassName = "alb"
+          hosts          = ["grafana.local"]
+          annotations = {
+            "alb.ingress.kubernetes.io/scheme"       = "internet-facing"
+            "alb.ingress.kubernetes.io/target-type" = "ip"
+            "alb.ingress.kubernetes.io/listen-ports" = "[{\"HTTP\": 80}]"
+          }
+        }
         # Provision Trading Platform Metrics dashboard (Intraday / P&L row)
         dashboardProviders = {
           "trading-provider.yaml" = {
@@ -272,7 +283,8 @@ resource "helm_release" "kube_prometheus_stack" {
         dashboards = {
           trading = {
             "trading-metrics" = {
-              json = file("${path.module}/../../../../monitoring/grafana/dashboards/trading-metrics.json")
+              # File provisioning expects the dashboard object only (title at top level), not the API wrapper
+              json = jsonencode(jsondecode(file("${path.module}/../../../../monitoring/grafana/dashboards/trading-metrics.json")).dashboard)
             }
           }
         }

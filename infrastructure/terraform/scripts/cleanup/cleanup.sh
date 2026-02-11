@@ -209,7 +209,8 @@ nuke_all_ingresses() {
             
             print_info "🔥 Nuking ingress: $namespace/$ingress"
             
-            # Force delete immediately
+            # Remove finalizers first (ALB Ingress uses ingress.k8s.aws/resources - needs JSON patch)
+            kubectl patch ingress "$ingress" -n "$namespace" --type='json' -p='[{"op": "remove", "path": "/metadata/finalizers"}]' 2>/dev/null || true
             kubectl patch ingress "$ingress" -n "$namespace" --type='merge' -p='{"metadata":{"finalizers":[]}}' 2>/dev/null || true
             kubectl delete ingress "$ingress" -n "$namespace" --grace-period=0 --force 2>/dev/null || true
             

@@ -31,8 +31,9 @@ data "aws_iam_policy_document" "irsa" {
       type        = "Federated"
       identifiers = [var.oidc_provider_arn]
     }
+    # StringLike required so "system:serviceaccount:*:*" matches e.g. system:serviceaccount:kube-system:aws-load-balancer-controller
     condition {
-      test     = "StringEquals"
+      test     = "StringLike"
       variable = "${var.oidc_provider}:sub"
       values   = [
         "system:serviceaccount:*:*"

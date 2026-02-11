@@ -147,6 +147,16 @@ resource "helm_release" "kube_prometheus_stack" {
   values = [
     yamlencode({
       grafana = {
+        ingress = {
+          enabled           = true
+          ingressClassName  = "alb"
+          hosts             = ["grafana.local"]
+          annotations = {
+            "alb.ingress.kubernetes.io/scheme"        = "internet-facing"
+            "alb.ingress.kubernetes.io/target-type"  = "ip"
+            "alb.ingress.kubernetes.io/listen-ports" = "[{\"HTTP\": 80}]"
+          }
+        }
         dashboardProviders = {
           "trading-provider.yaml" = {
             apiVersion = 1
@@ -168,7 +178,7 @@ resource "helm_release" "kube_prometheus_stack" {
         dashboards = {
           trading = {
             "trading-metrics" = {
-              json = file("${path.module}/../../../../monitoring/grafana/dashboards/trading-metrics.json")
+              json = jsonencode(jsondecode(file("${path.module}/../../../../monitoring/grafana/dashboards/trading-metrics.json")).dashboard)
             }
           }
         }

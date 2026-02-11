@@ -145,6 +145,11 @@ helm list --all-namespaces
 # 2. Uninstall Prometheus Stack
 if namespace_exists "monitoring"; then
     print_info "Cleaning up Prometheus Stack..."
+    # Remove ALB finalizer from Grafana Ingress so it doesn't get stuck in Terminating
+    if kubectl get ingress kube-prometheus-stack-grafana -n monitoring &>/dev/null; then
+        print_info "Removing finalizers from Grafana Ingress (avoids stuck Terminating with ALB)..."
+        kubectl patch ingress kube-prometheus-stack-grafana -n monitoring --type='json' -p='[{"op": "remove", "path": "/metadata/finalizers"}]' 2>/dev/null || true
+    fi
     uninstall_helm_release "kube-prometheus-stack" "monitoring"
     cleanup_stuck_resources "monitoring"
     
