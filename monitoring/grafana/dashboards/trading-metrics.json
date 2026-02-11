@@ -1,4 +1,5 @@
 {
+  "overwrite": true,
   "dashboard": {
     "id": null,
     "title": "Trading Platform Metrics",

@@ -143,6 +143,34 @@ resource "helm_release" "kube_prometheus_stack" {
   version    = "58.3.2"
 
   create_namespace = true
+
+  values = [
+    yamlencode({
+      grafana = {
+        dashboardProviders = {
+          "trading-provider.yaml" = <<-EOT
+            apiVersion: 1
+            providers:
+              - name: 'trading'
+                orgId: 1
+                folder: 'Trading'
+                type: file
+                disableDeletion: false
+                editable: false
+                options:
+                  path: /var/lib/grafana/dashboards/trading
+          EOT
+        }
+        dashboards = {
+          trading = {
+            "trading-metrics" = {
+              json = file("${path.module}/../../../../monitoring/grafana/dashboards/trading-metrics.json")
+            }
+          }
+        }
+      }
+    })
+  ]
 }
 
 module "msk" {

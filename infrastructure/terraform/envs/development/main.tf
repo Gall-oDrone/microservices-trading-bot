@@ -249,7 +249,29 @@ resource "helm_release" "kube_prometheus_stack" {
     yamlencode({
       grafana = {
         adminPassword = "admin"
-        service = { type = "ClusterIP" }
+        service       = { type = "ClusterIP" }
+        # Provision Trading Platform Metrics dashboard (Intraday / P&L row)
+        dashboardProviders = {
+          "trading-provider.yaml" = <<-EOT
+            apiVersion: 1
+            providers:
+              - name: 'trading'
+                orgId: 1
+                folder: 'Trading'
+                type: file
+                disableDeletion: false
+                editable: false
+                options:
+                  path: /var/lib/grafana/dashboards/trading
+          EOT
+        }
+        dashboards = {
+          trading = {
+            "trading-metrics" = {
+              json = file("${path.module}/../../../../monitoring/grafana/dashboards/trading-metrics.json")
+            }
+          }
+        }
       }
       prometheus = {
         service = { type = "ClusterIP" }
