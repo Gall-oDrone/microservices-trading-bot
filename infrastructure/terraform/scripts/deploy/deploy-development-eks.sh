@@ -2,8 +2,8 @@
 # Complete deployment script for development EKS environment
 set -e
 
-# Overall run timeout: 30 minutes (re-exec under timeout so the whole run is limited)
-OVERALL_TIMEOUT_SECONDS=1800
+# Overall run timeout: 45 minutes (re-exec under timeout so the whole run is limited)
+OVERALL_TIMEOUT_SECONDS=2700
 if [ -z "${DEPLOY_SCRIPT_UNDER_TIMEOUT:-}" ]; then
     export DEPLOY_SCRIPT_UNDER_TIMEOUT=1
     exec timeout "$OVERALL_TIMEOUT_SECONDS" "$0" "$@"
