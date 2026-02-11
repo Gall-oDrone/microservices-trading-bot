@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"net/http"
 	"os"
 	"os/signal"
 	"strconv"
@@ -18,6 +19,7 @@ import (
 	"bitso-trading-platform/shared/pkg/models"
 	"bitso-trading-platform/trading-engine/internal/engine"
 	"bitso-trading-platform/trading-engine/internal/execution"
+	"bitso-trading-platform/trading-engine/internal/metrics"
 )
 
 const (
@@ -31,15 +33,16 @@ const (
 
 // Application encapsulates all application components
 type Application struct {
-	logger               *log.Logger
-	config               *config.Config
-	bitsoClient          *bitso.Client
-	redisClient          *database.RedisClient
-	kafkaConsumer        *kafka.Consumer
-	orderPlacedProducer   *kafka.Producer
-	engine               *engine.TradingEngine
-	ctx                  context.Context
-	cancel               context.CancelFunc
+	logger              *log.Logger
+	config              *config.Config
+	bitsoClient         *bitso.Client
+	redisClient         *database.RedisClient
+	kafkaConsumer       *kafka.Consumer
+	orderPlacedProducer *kafka.Producer
+	engine              *engine.TradingEngine
+	metricsCollector    *metrics.Collector
+	ctx                 context.Context
+	cancel              context.CancelFunc
 }
 
 // NewApplication creates and initializes a new application instance
@@ -98,6 +101,9 @@ func NewApplication() (*Application, error) {
 		logger.Println("✓ Session risk provider configured (ORDER_MANAGEMENT_URL)")
 	}
 
+	// Metrics collector for Prometheus (/metrics and balance/order gauges)
+	metricsCollector := metrics.NewCollector()
+
 	// Initialize trading engine
 	tradingEngine, err := engine.NewTradingEngine(
 		tradingConfig,
@@ -107,6 +113,7 @@ func NewApplication() (*Application, error) {
 		kafkaConsumer,
 		sessionRiskProvider,
 		orderPlacedProducer,
+		metricsCollector,
 	)
 	if err != nil {
 		cancel()
@@ -120,15 +127,16 @@ func NewApplication() (*Application, error) {
 	logger.Println("✓ Trading engine created")
 
 	return &Application{
-		logger:             logger,
-		config:             cfg,
-		bitsoClient:        bitsoClient,
-		redisClient:        redisClient,
-		kafkaConsumer:      kafkaConsumer,
+		logger:              logger,
+		config:              cfg,
+		bitsoClient:         bitsoClient,
+		redisClient:         redisClient,
+		kafkaConsumer:       kafkaConsumer,
 		orderPlacedProducer: orderPlacedProducer,
-		engine:             tradingEngine,
-		ctx:                ctx,
-		cancel:             cancel,
+		engine:              tradingEngine,
+		metricsCollector:    metricsCollector,
+		ctx:                 ctx,
+		cancel:              cancel,
 	}, nil
 }
 
@@ -233,9 +241,26 @@ func createTradingConfig() *models.TradingConfig {
 	}
 }
 
+// startMetricsServer starts the HTTP server for /metrics and /health (Prometheus scraping).
+func (app *Application) startMetricsServer(metricsHandler http.Handler) {
+	mux := http.NewServeMux()
+	mux.Handle("/metrics", metricsHandler)
+	mux.HandleFunc("/health", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
+	server := &http.Server{Addr: ":8080", Handler: mux}
+	go func() {
+		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			app.logger.Printf("Metrics server error: %v", err)
+		}
+	}()
+	app.logger.Println("✓ Metrics server listening on :8080 (/metrics, /health)")
+}
+
 // Start initializes and starts the application
 func (app *Application) Start() error {
 	app.logger.Println("Starting application components...")
+
+	// Start metrics server first so /metrics is available before engine runs
+	app.startMetricsServer(app.metricsCollector.Handler())
 
 	// Initialize trading engine
 	if err := app.engine.Initialize(); err != nil {

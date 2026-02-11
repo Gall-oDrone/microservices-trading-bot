@@ -25,21 +25,21 @@
         "title": "Order Execution Rate",
         "type": "timeseries",
         "gridPos": { "h": 4, "w": 6, "x": 6, "y": 0 },
-        "targets": [{ "expr": "rate(orders_executed_total[5m])", "refId": "A" }]
+        "targets": [{ "expr": "sum(rate(orders_executed_total[5m])) or vector(0)", "refId": "A", "legendFormat": "orders/s" }]
       },
       {
         "id": 3,
         "title": "API Response Time (p95)",
         "type": "timeseries",
         "gridPos": { "h": 4, "w": 6, "x": 12, "y": 0 },
-        "targets": [{ "expr": "histogram_quantile(0.95, rate(http_request_duration_seconds_bucket[5m]))", "refId": "A" }]
+        "targets": [{ "expr": "histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket{job=~\"order-management|api-gateway\"}[5m])) by (le, job))", "refId": "A", "legendFormat": "{{job}}" }]
       },
       {
         "id": 4,
         "title": "Available Balance",
         "type": "timeseries",
         "gridPos": { "h": 4, "w": 6, "x": 18, "y": 0 },
-        "targets": [{ "expr": "bitso_available_balance", "refId": "A" }]
+        "targets": [{ "expr": "bitso_available_balance", "refId": "A", "legendFormat": "{{currency}}" }]
       },
       {
         "id": 5,

@@ -17,6 +17,13 @@ import (
 	"bitso-trading-platform/trading-engine/internal/execution"
 )
 
+// MetricsRecorder is an optional interface for recording Prometheus metrics.
+// Implementations can record order executions and balance updates.
+type MetricsRecorder interface {
+	RecordOrderExecuted(book, strategy string)
+	RecordBalances(currencyToAvailable map[string]float64)
+}
+
 // orderPlacedEvent is published to Kafka for order-management sync
 type orderPlacedEvent struct {
 	OrderID  string  `json:"order_id"`
@@ -58,6 +65,7 @@ type TradingEngine struct {
 	// Internal components
 	executor            execution.Executor
 	sessionRiskProvider execution.SessionRiskProvider // optional: for daily loss / drawdown limits
+	metricsRecorder     MetricsRecorder              // optional: for Prometheus metrics
 	book                *bitso.Book
 
 	// State management
@@ -98,6 +106,7 @@ type EngineStatistics struct {
 // NewTradingEngine creates a new trading engine instance.
 // sessionRiskProvider is optional; if set, used to enforce MaxDailyLoss/MaxDrawdownPct before placing orders.
 // orderPlacedProducer is optional; if set, placed orders are published to Kafka for order-management sync.
+// metricsRecorder is optional; if set, order executions and balance updates are recorded for Prometheus.
 func NewTradingEngine(
 	tradingConfig *models.TradingConfig,
 	appConfig *config.Config,
@@ -106,6 +115,7 @@ func NewTradingEngine(
 	kafkaConsumer *kafka.Consumer,
 	sessionRiskProvider execution.SessionRiskProvider,
 	orderPlacedProducer *kafka.Producer,
+	metricsRecorder MetricsRecorder,
 ) (*TradingEngine, error) {
 	// Validate inputs
 	if tradingConfig == nil {
@@ -139,6 +149,7 @@ func NewTradingEngine(
 		executor:              executor,
 		sessionRiskProvider:   sessionRiskProvider,
 		orderPlacedProducer:   orderPlacedProducer,
+		metricsRecorder:       metricsRecorder,
 		book:                  tradingConfig.Book,
 		state:                 StateInitializing,
 		ctx:           ctx,
@@ -425,6 +436,9 @@ func (te *TradingEngine) processTradeSignal(signal *models.TradeSignalEvent) err
 		orderID, execErr = te.executor.ExecuteBuySignal(tradeSignal)
 		if execErr == nil {
 			te.incrementOrdersPlaced()
+			if te.metricsRecorder != nil {
+				te.metricsRecorder.RecordOrderExecuted(book.String(), te.config.StrategyType)
+			}
 		} else {
 			te.incrementOrdersFailed()
 		}
@@ -434,6 +448,9 @@ func (te *TradingEngine) processTradeSignal(signal *models.TradeSignalEvent) err
 		orderID, execErr = te.executor.ExecuteSellSignal(tradeSignal)
 		if execErr == nil {
 			te.incrementOrdersPlaced()
+			if te.metricsRecorder != nil {
+				te.metricsRecorder.RecordOrderExecuted(book.String(), te.config.StrategyType)
+			}
 		} else {
 			te.incrementOrdersFailed()
 		}
@@ -529,12 +546,17 @@ func (te *TradingEngine) fetchAndCacheBalances() error {
 
 	te.logger.Printf("Retrieved %d currency balances", len(balances))
 
-	// Cache balances in Redis
+	// Cache balances in Redis and record for Prometheus
+	currencyToAvailable := make(map[string]float64)
 	for _, balance := range balances {
 		if err := te.dbClient.SaveUserBalance(&balance); err != nil {
 			te.logger.Printf("Warning: Failed to cache balance for %s: %v",
 				balance.Currency.String(), err)
 		}
+		currencyToAvailable[balance.Currency.String()] = balance.Available.Float64()
+	}
+	if te.metricsRecorder != nil {
+		te.metricsRecorder.RecordBalances(currencyToAvailable)
 	}
 
 	return nil
