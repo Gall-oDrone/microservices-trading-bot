@@ -115,8 +115,8 @@ func (r *BacktestRunner) handleSignal(signal *strategy.Signal, result *models.Ba
 		return nil // Don't fail backtest, just skip this trade
 	}
 
-	// Update portfolio with execution
-	if err := r.updatePortfolio(execution, result); err != nil {
+	// Update portfolio with execution (pass side so trade is created correctly)
+	if err := r.updatePortfolio(order.Side, execution, result); err != nil {
 		return fmt.Errorf("portfolio update error: %w", err)
 	}
 
@@ -127,10 +127,10 @@ func (r *BacktestRunner) handleSignal(signal *strategy.Signal, result *models.Ba
 }
 
 // updatePortfolio updates the portfolio with an order execution
-func (r *BacktestRunner) updatePortfolio(execution *simulator.OrderExecution, result *models.BacktestResult) error {
-	// Create trade for portfolio
+func (r *BacktestRunner) updatePortfolio(side string, execution *simulator.OrderExecution, result *models.BacktestResult) error {
+	// Create trade for portfolio (side must be "buy" or "sell" for portfolio.ExecuteTrade)
 	trade := models.NewTrade(
-		execution.OrderID[len("order-"):], // Extract simple ID
+		side,
 		r.config.Book,
 		execution.ExecutedPrice,
 		execution.ExecutedAmount,

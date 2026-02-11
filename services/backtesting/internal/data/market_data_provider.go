@@ -56,8 +56,15 @@ func (p *MarketDataProvider) LoadHistoricalData(ctx context.Context, req *DataRe
 		"event_types": req.EventTypes,
 	})
 
-	// Check cache first
-	if p.cache != nil {
+	// Check cache first (skip for trades: we want fresh time-range/synthetic data and cache round-trip loses type)
+	useCache := p.cache != nil
+	for _, et := range req.EventTypes {
+		if et == models.EventTypeTrade {
+			useCache = false
+			break
+		}
+	}
+	if useCache {
 		cacheKey := p.cache.generateKey(req.Book, req.StartDate, req.EndDate, string(req.EventTypes[0]))
 		if events, err := p.cache.Get(ctx, cacheKey); err == nil {
 			p.logger.Debug("Cache hit for historical data", map[string]interface{}{
@@ -78,8 +85,11 @@ func (p *MarketDataProvider) LoadHistoricalData(ctx context.Context, req *DataRe
 			if err != nil {
 				return nil, fmt.Errorf("failed to fetch trades: %w", err)
 			}
-			for _, trade := range trades {
-				events = append(events, *models.NewTradeEvent(&trade))
+			for i := range trades {
+				// Heap-allocate each trade so event.Data remains valid after we return
+				t := new(bitso.Trade)
+				*t = trades[i]
+				events = append(events, *models.NewTradeEvent(t))
 			}
 
 		case models.EventTypeTicker:
@@ -87,8 +97,10 @@ func (p *MarketDataProvider) LoadHistoricalData(ctx context.Context, req *DataRe
 			if err != nil {
 				return nil, fmt.Errorf("failed to fetch tickers: %w", err)
 			}
-			for _, ticker := range tickers {
-				events = append(events, *models.NewTickerEvent(&ticker))
+			for i := range tickers {
+				tick := new(bitso.Ticker)
+				*tick = tickers[i]
+				events = append(events, *models.NewTickerEvent(tick))
 			}
 		}
 	}
@@ -96,13 +108,9 @@ func (p *MarketDataProvider) LoadHistoricalData(ctx context.Context, req *DataRe
 	// Sort events by timestamp
 	p.sortEventsByTimestamp(events)
 
-	// Cache the results
-	if p.cache != nil {
-		cacheKey := p.cache.generateKey(req.Book, req.StartDate, req.EndDate, string(req.EventTypes[0]))
-		if err := p.cache.Set(ctx, cacheKey, events); err != nil {
-			p.logger.Warn("Failed to cache data", map[string]interface{}{"error": err})
-		}
-	}
+	// Skip caching trade data: cache round-trip stores Data as map so GetTrade() would need
+	// conversion; and we want fresh time-range data (e.g. synthetic wave) for backtests.
+	// Ticker/other types could be cached here if needed.
 
 	p.logger.Info("Historical data loaded", map[string]interface{}{
 		"count": len(events),

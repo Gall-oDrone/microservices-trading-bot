@@ -164,7 +164,7 @@ func TestGenerateTextReport(t *testing.T) {
 		TotalTrades:        10,
 	})
 
-	report := generateTextReport(result)
+	report := GenerateTextReport(result)
 
 	if report == "" {
 		t.Error("Expected non-empty report")

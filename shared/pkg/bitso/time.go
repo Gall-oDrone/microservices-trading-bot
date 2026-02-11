@@ -15,6 +15,7 @@ var timeFormats = []string{
 	iso8601Time,
 	"2006-01-02T15:04:05-07:00",
 	"2006-01-02T15:04:05.000-07:00",
+	time.RFC3339, // "2006-01-02T15:04:05Z07:00" (accepts Z for UTC)
 }
 
 func (t *Time) Time() time.Time {

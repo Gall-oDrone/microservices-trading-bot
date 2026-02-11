@@ -176,8 +176,8 @@ func NewApplication() (*Application, error) {
 	apiHandler := api.NewHandler(cacheLayer, storage, stdLogger)
 	appLogger.Info("API handler created")
 
-	// Initialize HTTP server
-	httpServer := server.NewHTTPServer(cfg.ServicePort, apiHandler, stdLogger)
+	// Initialize HTTP server (with /metrics for Prometheus)
+	httpServer := server.NewHTTPServer(cfg.ServicePort, apiHandler, stdLogger, metricsCollector.GetPrometheusHandler())
 	appLogger.Info("HTTP server created")
 
 	// Initialize service manager

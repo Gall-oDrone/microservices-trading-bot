@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+
+	"bitso-trading-platform/backtesting/internal/analyzer"
 )
 
 // GetBacktestResults retrieves complete backtest results
@@ -102,15 +104,14 @@ func (h *Handler) DownloadBacktestReport(w http.ResponseWriter, r *http.Request,
 		SendJSON(w, http.StatusOK, result)
 
 	case "text":
-		// TODO: Generate text report
 		w.Header().Set("Content-Type", "text/plain")
 		w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=backtest-%s.txt", backtestID))
-		w.Write([]byte("Text report coming soon"))
+		w.Write([]byte(analyzer.GenerateTextReport(result)))
 
 	case "html":
-		// TODO: Generate HTML report
 		w.Header().Set("Content-Type", "text/html")
-		w.Write([]byte("<html><body>HTML report coming soon</body></html>"))
+		w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=backtest-%s.html", backtestID))
+		w.Write([]byte(analyzer.GenerateHTMLReport(result)))
 
 	default:
 		SendError(w, http.StatusBadRequest, "INVALID_FORMAT", "Invalid format (use: json, text, html)")

@@ -16,13 +16,16 @@ type HTTPServer struct {
 	logger *log.Logger
 }
 
-// NewHTTPServer creates a new HTTP server
-func NewHTTPServer(port string, handler *api.Handler, logger *log.Logger) *HTTPServer {
+// NewHTTPServer creates a new HTTP server. If metricsHandler is non-nil, /metrics is registered for Prometheus scraping.
+func NewHTTPServer(port string, handler *api.Handler, logger *log.Logger, metricsHandler http.Handler) *HTTPServer {
 	if logger == nil {
 		logger = log.New(log.Writer(), "[HTTP-SERVER] ", log.LstdFlags|log.Lshortfile)
 	}
 
 	mux := http.NewServeMux()
+	if metricsHandler != nil {
+		mux.Handle("/metrics", metricsHandler)
+	}
 	handler.RegisterRoutes(mux)
 
 	// Add middleware

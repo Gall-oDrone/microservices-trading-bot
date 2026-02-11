@@ -21,6 +21,9 @@ spec:
       - name: market-data
         image: market-data:latest
         imagePullPolicy: Always
+        ports:
+        - containerPort: 8083
+          name: http
         env:
         - name: SERVICE_NAME
           value: "market-data"

@@ -1,6 +1,7 @@
 package models
 
 import (
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -54,18 +55,30 @@ func NewOrderBookEvent(book string, timestamp time.Time, data interface{}) *Mark
 	}
 }
 
-// GetTrade returns the trade data if this is a trade event
+// GetTrade returns the trade data if this is a trade event.
+// Handles Data as *bitso.Trade (in-memory) or map from JSON cache (round-trip via json).
 func (e *MarketEvent) GetTrade() (*bitso.Trade, error) {
 	if e.EventType != EventTypeTrade {
 		return nil, fmt.Errorf("event is not a trade event")
 	}
 
-	trade, ok := e.Data.(*bitso.Trade)
-	if !ok {
-		return nil, fmt.Errorf("failed to cast event data to Trade")
+	if trade, ok := e.Data.(*bitso.Trade); ok {
+		return trade, nil
+	}
+	// Cache round-trip: JSON unmarshals Data as map[string]interface{}
+	if m, ok := e.Data.(map[string]interface{}); ok {
+		js, err := json.Marshal(m)
+		if err != nil {
+			return nil, fmt.Errorf("failed to marshal cached trade: %w", err)
+		}
+		var t bitso.Trade
+		if err := json.Unmarshal(js, &t); err != nil {
+			return nil, fmt.Errorf("failed to unmarshal cached trade: %w", err)
+		}
+		return &t, nil
 	}
 
-	return trade, nil
+	return nil, fmt.Errorf("failed to cast event data to Trade")
 }
 
 // GetTicker returns the ticker data if this is a ticker event

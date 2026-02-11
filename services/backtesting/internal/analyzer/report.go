@@ -8,8 +8,8 @@ import (
 	"bitso-trading-platform/backtesting/internal/models"
 )
 
-// generateTextReport generates a human-readable text report
-func generateTextReport(result *models.BacktestResult) string {
+// GenerateTextReport generates a human-readable text report (exported for API use).
+func GenerateTextReport(result *models.BacktestResult) string {
 	var sb strings.Builder
 
 	sb.WriteString("=" + strings.Repeat("=", 70) + "\n")
@@ -74,8 +74,8 @@ func generateJSONReport(result *models.BacktestResult) ([]byte, error) {
 	return json.MarshalIndent(result, "", "  ")
 }
 
-// generateHTMLReport generates an HTML report
-func generateHTMLReport(result *models.BacktestResult) string {
+// GenerateHTMLReport generates an HTML report (exported for API use).
+func GenerateHTMLReport(result *models.BacktestResult) string {
 	var sb strings.Builder
 
 	sb.WriteString("<!DOCTYPE html>\n")

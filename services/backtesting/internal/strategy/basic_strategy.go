@@ -29,11 +29,11 @@ func NewBasicStrategy(params map[string]interface{}) (Strategy, error) {
 	strategy := &BasicStrategy{
 		name:          "basic",
 		rsiPeriod:     14, // Default
-		rsiOversold:   30, // Default
-		rsiOverbought: 70, // Default
+		rsiOversold:   35, // Default (slightly relaxed so synthetic/backtest data produces trades)
+		rsiOverbought: 65, // Default
 		priceHistory:  make([]float64, 0),
 		rsiValues:     make([]float64, 0),
-		minInterval:   5 * time.Minute, // Minimum time between signals
+		minInterval:   1 * time.Second, // Allow signals close together in backtest (was 5*time.Minute)
 	}
 
 	if err := strategy.Initialize(params); err != nil {

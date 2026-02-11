@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -541,6 +543,14 @@ func (te *TradingEngine) fetchAndCacheBalances() error {
 
 	balances, err := te.bitsoClient.Balances(nil)
 	if err != nil {
+		// For testing: if BALANCE_TEST_* env vars are set, record them so Grafana shows data without Bitso
+		if testBalances := getTestBalancesFromEnv(); len(testBalances) > 0 {
+			te.logger.Printf("Bitso fetch failed (%v); using test balances from env for metrics: %v", err, testBalances)
+			if te.metricsRecorder != nil {
+				te.metricsRecorder.RecordBalances(testBalances)
+			}
+			return nil
+		}
 		return fmt.Errorf("failed to fetch balances: %w", err)
 	}
 
@@ -560,6 +570,21 @@ func (te *TradingEngine) fetchAndCacheBalances() error {
 	}
 
 	return nil
+}
+
+// getTestBalancesFromEnv returns BALANCE_TEST_* env vars for testing (e.g. BALANCE_TEST_MXN=50000).
+func getTestBalancesFromEnv() map[string]float64 {
+	currencies := []string{"MXN", "USD", "BTC", "ETH"}
+	out := make(map[string]float64)
+	for _, c := range currencies {
+		key := "BALANCE_TEST_" + c
+		if v := os.Getenv(key); v != "" {
+			if f, err := strconv.ParseFloat(v, 64); err == nil && f >= 0 {
+				out[c] = f
+			}
+		}
+	}
+	return out
 }
 
 func (te *TradingEngine) verifyBitsoConnection() error {

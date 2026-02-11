@@ -8,11 +8,19 @@
     "refresh": "5s",
     "panels": [
       {
+        "id": 0,
+        "title": "Targets (scrape status)",
+        "type": "timeseries",
+        "description": "If this panel is empty, Prometheus is not scraping any targets. Check datasource URL (e.g. http://kube-prometheus-stack-prometheus:9090) and that ServiceMonitors are applied.",
+        "gridPos": { "h": 3, "w": 24, "x": 0, "y": 0 },
+        "targets": [{ "expr": "up", "refId": "A", "legendFormat": "{{job}}" }]
+      },
+      {
         "id": 1,
         "title": "Trading Engine Health",
         "type": "stat",
-        "gridPos": { "h": 4, "w": 6, "x": 0, "y": 0 },
-        "targets": [{ "expr": "up{job=\"trading-engine\"}", "refId": "A" }],
+        "gridPos": { "h": 4, "w": 6, "x": 0, "y": 3 },
+        "targets": [{ "expr": "max(up{job=~\"trading-engine|.*trading-engine.*\"}) or vector(0)", "refId": "A" }],
         "fieldConfig": {
           "defaults": {
             "color": { "mode": "thresholds" },
@@ -24,34 +32,34 @@
         "id": 2,
         "title": "Order Execution Rate",
         "type": "timeseries",
-        "gridPos": { "h": 4, "w": 6, "x": 6, "y": 0 },
+        "gridPos": { "h": 4, "w": 6, "x": 6, "y": 3 },
         "targets": [{ "expr": "sum(rate(orders_executed_total[5m])) or vector(0)", "refId": "A", "legendFormat": "orders/s" }]
       },
       {
         "id": 3,
         "title": "API Response Time (p95)",
         "type": "timeseries",
-        "gridPos": { "h": 4, "w": 6, "x": 12, "y": 0 },
-        "targets": [{ "expr": "histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket{job=~\"order-management|api-gateway\"}[5m])) by (le, job))", "refId": "A", "legendFormat": "{{job}}" }]
+        "gridPos": { "h": 4, "w": 6, "x": 12, "y": 3 },
+        "targets": [{ "expr": "histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket{job=~\"order-management|api-gateway|.*order-management.*|.*api-gateway.*\"}[5m])) by (le, job))", "refId": "A", "legendFormat": "{{job}}" }]
       },
       {
         "id": 4,
         "title": "Available Balance",
         "type": "timeseries",
-        "gridPos": { "h": 4, "w": 6, "x": 18, "y": 0 },
+        "gridPos": { "h": 4, "w": 6, "x": 18, "y": 3 },
         "targets": [{ "expr": "bitso_available_balance", "refId": "A", "legendFormat": "{{currency}}" }]
       },
       {
         "id": 5,
         "type": "row",
         "title": "Intraday / P&L",
-        "gridPos": { "h": 1, "w": 24, "x": 0, "y": 4 }
+        "gridPos": { "h": 1, "w": 24, "x": 0, "y": 7 }
       },
       {
         "id": 6,
         "title": "Daily Realized P&L",
         "type": "stat",
-        "gridPos": { "h": 6, "w": 6, "x": 0, "y": 5 },
+        "gridPos": { "h": 6, "w": 6, "x": 0, "y": 8 },
         "targets": [{ "expr": "sum(trading_daily_realized_pnl_currency)", "refId": "A" }],
         "fieldConfig": {
           "defaults": {
@@ -65,7 +73,7 @@
         "id": 7,
         "title": "Daily Unrealized P&L",
         "type": "stat",
-        "gridPos": { "h": 6, "w": 6, "x": 6, "y": 5 },
+        "gridPos": { "h": 6, "w": 6, "x": 6, "y": 8 },
         "targets": [{ "expr": "sum(trading_daily_unrealized_pnl_currency)", "refId": "A" }],
         "fieldConfig": {
           "defaults": {
@@ -79,7 +87,7 @@
         "id": 8,
         "title": "Drawdown %",
         "type": "stat",
-        "gridPos": { "h": 6, "w": 6, "x": 12, "y": 5 },
+        "gridPos": { "h": 6, "w": 6, "x": 12, "y": 8 },
         "targets": [{ "expr": "max(trading_drawdown_percent)", "refId": "A" }],
         "fieldConfig": {
           "defaults": {
@@ -93,7 +101,7 @@
         "id": 9,
         "title": "Drawdown Absolute",
         "type": "stat",
-        "gridPos": { "h": 6, "w": 6, "x": 18, "y": 5 },
+        "gridPos": { "h": 6, "w": 6, "x": 18, "y": 8 },
         "targets": [{ "expr": "sum(trading_drawdown_absolute_currency)", "refId": "A" }],
         "fieldConfig": { "defaults": { "unit": "currencyMXN" } }
       },
@@ -101,7 +109,7 @@
         "id": 10,
         "title": "Current Equity",
         "type": "stat",
-        "gridPos": { "h": 6, "w": 6, "x": 0, "y": 11 },
+        "gridPos": { "h": 6, "w": 6, "x": 0, "y": 14 },
         "targets": [{ "expr": "sum(trading_current_equity_currency)", "refId": "A" }],
         "fieldConfig": { "defaults": { "unit": "currencyMXN" } }
       },
@@ -109,7 +117,7 @@
         "id": 11,
         "title": "Peak Equity",
         "type": "stat",
-        "gridPos": { "h": 6, "w": 6, "x": 6, "y": 11 },
+        "gridPos": { "h": 6, "w": 6, "x": 6, "y": 14 },
         "targets": [{ "expr": "sum(trading_peak_equity_currency)", "refId": "A" }],
         "fieldConfig": { "defaults": { "unit": "currencyMXN" } }
       },
@@ -117,14 +125,14 @@
         "id": 12,
         "title": "Trades Today",
         "type": "stat",
-        "gridPos": { "h": 6, "w": 6, "x": 12, "y": 11 },
+        "gridPos": { "h": 6, "w": 6, "x": 12, "y": 14 },
         "targets": [{ "expr": "sum(trading_trades_today_total)", "refId": "A" }]
       },
       {
         "id": 13,
         "title": "Wins / Losses Today",
         "type": "stat",
-        "gridPos": { "h": 6, "w": 6, "x": 18, "y": 11 },
+        "gridPos": { "h": 6, "w": 6, "x": 18, "y": 14 },
         "targets": [
           { "expr": "sum(trading_wins_today_total)", "refId": "A", "legendFormat": "Wins" },
           { "expr": "sum(trading_losses_today_total)", "refId": "B", "legendFormat": "Losses" }
@@ -135,7 +143,7 @@
         "id": 14,
         "title": "Win Rate Today %",
         "type": "stat",
-        "gridPos": { "h": 6, "w": 6, "x": 0, "y": 17 },
+        "gridPos": { "h": 6, "w": 6, "x": 0, "y": 20 },
         "targets": [{
           "expr": "(sum(trading_wins_today_total) / (sum(trading_wins_today_total) + sum(trading_losses_today_total) + 1e-9)) * 100",
           "refId": "A"
@@ -153,14 +161,14 @@
         "id": 15,
         "title": "Daily Realized P&L (time series)",
         "type": "timeseries",
-        "gridPos": { "h": 6, "w": 12, "x": 6, "y": 17 },
+        "gridPos": { "h": 6, "w": 12, "x": 6, "y": 20 },
         "targets": [{ "expr": "trading_daily_realized_pnl_currency", "refId": "A", "legendFormat": "{{currency}}" }]
       },
       {
         "id": 16,
         "title": "Drawdown % (time series)",
         "type": "timeseries",
-        "gridPos": { "h": 6, "w": 6, "x": 18, "y": 17 },
+        "gridPos": { "h": 6, "w": 6, "x": 18, "y": 20 },
         "targets": [{ "expr": "trading_drawdown_percent", "refId": "A", "legendFormat": "{{currency}}" }],
         "fieldConfig": { "defaults": { "unit": "percent" } }
       }

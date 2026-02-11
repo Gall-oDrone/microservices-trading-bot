@@ -113,7 +113,7 @@ func (a *PerformanceAnalyzer) CalculateMetrics(port *portfolio.VirtualPortfolio)
 
 // GenerateReport generates a text report of the results
 func (a *PerformanceAnalyzer) GenerateReport(result *models.BacktestResult) (string, error) {
-	return generateTextReport(result), nil
+	return GenerateTextReport(result), nil
 }
 
 // Helper functions

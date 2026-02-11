@@ -29,11 +29,12 @@ services:
       context: ./services/backtesting
       dockerfile: Dockerfile
     ports:
-      - "8081:8081"
+      - "8084:8084"
     environment:
       - SERVICE_NAME=backtesting
+      - SERVICE_PORT=8084
       - LOG_LEVEL=info
-      - METRICS_PORT=8081
+      - METRICS_PORT=8084
     depends_on:
       - kafka
       - redis
@@ -80,11 +81,12 @@ services:
       context: ./services/order-management
       dockerfile: Dockerfile
     ports:
-      - "8084:8084"
+      - "8086:8086"
     environment:
       - SERVICE_NAME=order-management
+      - SERVICE_PORT=8086
       - LOG_LEVEL=info
-      - METRICS_PORT=8084
+      - METRICS_PORT=8086
     depends_on:
       - kafka
       - redis

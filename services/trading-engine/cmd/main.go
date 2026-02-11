@@ -262,8 +262,20 @@ func (app *Application) Start() error {
 	// Start metrics server first so /metrics is available before engine runs
 	app.startMetricsServer(app.metricsCollector.Handler())
 
+	// Optional: set Available Balance metric from env for testing (e.g. BALANCE_TEST_MXN=50000)
+	if testBalances := getTestBalancesFromEnv(); len(testBalances) > 0 {
+		app.metricsCollector.RecordBalances(testBalances)
+		app.logger.Printf("✓ Test balances set from env for Grafana: %v", testBalances)
+	}
+
 	// Initialize trading engine
 	if err := app.engine.Initialize(); err != nil {
+		if len(getTestBalancesFromEnv()) > 0 {
+			// Test mode: keep process running so Prometheus can scrape /metrics (e.g. Available Balance)
+			app.logger.Printf("⚠ Trading engine init failed (%v); staying up for metrics only (BALANCE_TEST_* set)", err)
+			app.logger.Printf("🚀 %s running in metrics-only mode; /metrics and /health available", appName)
+			return nil
+		}
 		return fmt.Errorf("failed to initialize trading engine: %w", err)
 	}
 	app.logger.Println("✓ Trading engine initialized")
@@ -341,6 +353,25 @@ func (app *Application) Stop() error {
 		app.logger.Println("⚠ Shutdown timeout exceeded, forcing exit")
 		return fmt.Errorf("shutdown timeout exceeded")
 	}
+}
+
+// getTestBalancesFromEnv returns a map of currency -> amount for testing the Available Balance metric in Grafana.
+// Set env vars like BALANCE_TEST_MXN=50000, BALANCE_TEST_USD=1000. If none set, returns nil.
+func getTestBalancesFromEnv() map[string]float64 {
+	currencies := []string{"MXN", "USD", "BTC", "ETH"}
+	out := make(map[string]float64)
+	for _, c := range currencies {
+		key := "BALANCE_TEST_" + c
+		if v := os.Getenv(key); v != "" {
+			if f, err := strconv.ParseFloat(v, 64); err == nil && f >= 0 {
+				out[c] = f
+			}
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
 // Run executes the application with signal handling

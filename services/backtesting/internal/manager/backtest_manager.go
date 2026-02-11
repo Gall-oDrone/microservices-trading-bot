@@ -125,12 +125,16 @@ func (m *BacktestManager) GetBacktest(backtestID string) (*models.Backtest, erro
 		return nil, fmt.Errorf("backtest not found: %s", backtestID)
 	}
 
-	// Convert result to backtest
-	// (In a real implementation, we'd store the backtest separately)
+	// Convert result to backtest (include progress and times for API response)
 	backtest := &models.Backtest{
-		ID:     backtestID,
-		Status: models.BacktestStatus(result.Status),
-		Result: result,
+		ID:        backtestID,
+		Status:    models.BacktestStatus(result.Status),
+		Progress:  result.Progress,
+		Result:    result,
+		StartedAt: &result.StartedAt,
+	}
+	if result.CompletedAt != nil {
+		backtest.CompletedAt = result.CompletedAt
 	}
 
 	return backtest, nil
