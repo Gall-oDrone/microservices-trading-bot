@@ -22,6 +22,7 @@ type BacktestManager struct {
 
 	maxConcurrent    int
 	runningBacktests map[string]*models.Backtest
+	createdBacktests map[string]*models.Backtest // pending backtests not yet started
 	mu               sync.RWMutex
 
 	ctx    context.Context
@@ -46,6 +47,7 @@ func NewBacktestManager(
 		metricsCollector: metricsCollector,
 		maxConcurrent:    maxConcurrent,
 		runningBacktests: make(map[string]*models.Backtest),
+		createdBacktests: make(map[string]*models.Backtest),
 		ctx:              ctx,
 		cancel:           cancel,
 	}
@@ -60,6 +62,10 @@ func (m *BacktestManager) CreateBacktest(config *models.BacktestConfig) (*models
 
 	// Create backtest
 	backtest := models.NewBacktest(config)
+
+	m.mu.Lock()
+	m.createdBacktests[backtest.ID] = backtest
+	m.mu.Unlock()
 
 	// Record metrics
 	if m.metricsCollector != nil {
@@ -97,8 +103,19 @@ func (m *BacktestManager) StartBacktest(backtestID string) error {
 
 // GetBacktest retrieves a backtest by ID
 func (m *BacktestManager) GetBacktest(backtestID string) (*models.Backtest, error) {
-	// Check running backtests first
+	// Check running backtests first (and refresh progress from engine)
 	if bt, err := m.getTrackedBacktest(backtestID); err == nil {
+		if progress, err := m.engine.GetProgress(backtestID); err == nil {
+			bt.UpdateProgress(progress)
+		}
+		return bt, nil
+	}
+
+	// Check created (pending) backtests
+	m.mu.RLock()
+	bt := m.createdBacktests[backtestID]
+	m.mu.RUnlock()
+	if bt != nil {
 		return bt, nil
 	}
 
@@ -191,18 +208,64 @@ func (m *BacktestManager) Stop() error {
 // Private methods
 
 func (m *BacktestManager) startBacktestNow(backtestID string) error {
-	// Get backtest config from storage or create new one
-	// For now, assume we have it
-	// TODO: Store backtest configs separately
+	m.mu.Lock()
+	backtest, exists := m.createdBacktests[backtestID]
+	if !exists {
+		m.mu.Unlock()
+		return fmt.Errorf("backtest not found: %s", backtestID)
+	}
+	delete(m.createdBacktests, backtestID)
+	m.mu.Unlock()
+
+	config := backtest.Config
+	if config == nil {
+		return fmt.Errorf("backtest has no config: %s", backtestID)
+	}
+	config.ID = backtestID // engine tracks by config.ID
 
 	m.logger.Info("Starting backtest", map[string]interface{}{
 		"backtest_id": backtestID,
 	})
 
-	// This would be implemented to actually start the backtest
-	// For now, it's a placeholder
+	backtest.Start()
+	m.trackBacktest(backtest)
 
+	go m.runBacktest(backtestID, config)
 	return nil
+}
+
+// runBacktest executes the backtest in the engine and updates status on completion
+func (m *BacktestManager) runBacktest(backtestID string, config *models.BacktestConfig) {
+	result, err := m.engine.Run(m.ctx, config)
+	m.mu.Lock()
+	backtest := m.runningBacktests[backtestID]
+	m.mu.Unlock()
+	if backtest == nil {
+		return
+	}
+	if err != nil {
+		backtest.Fail(err)
+		// Persist failed result so GetBacktest can find it (UpdateStatus requires existing record)
+		failedResult := models.NewBacktestResult(backtestID, config.ID)
+		failedResult.Status = "failed"
+		failedResult.Error = err.Error()
+		failedResult.MarkFailed(err)
+		_ = m.storage.Save(m.ctx, failedResult)
+		m.untrackBacktest(backtestID)
+		m.logger.Error("Backtest failed", map[string]interface{}{
+			"backtest_id": backtestID,
+			"error":       err.Error(),
+		})
+		return
+	}
+	backtest.Complete(result)
+	// Engine already saved result; ensure status is updated if storage supports it
+	_ = m.storage.UpdateStatus(m.ctx, backtestID, result.Status, result.Progress)
+	m.untrackBacktest(backtestID)
+	m.logger.Info("Backtest completed", map[string]interface{}{
+		"backtest_id": backtestID,
+		"status":      result.Status,
+	})
 }
 
 func (m *BacktestManager) processQueue() {
