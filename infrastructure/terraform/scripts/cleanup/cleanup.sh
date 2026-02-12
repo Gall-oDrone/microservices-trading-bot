@@ -577,6 +577,7 @@ handle_state_lock() {
 # Function to do the actual Terraform destroy
 terraform_destroy() {
     print_info "💥 Running Terraform destroy..."
+    print_info "⏳ Note: VPC and NAT Gateway deletion can take 10-15 minutes (AWS is asynchronous). Do not interrupt."
     
     if [ ! -d "$TERRAFORM_DIR" ]; then
         print_error "Terraform directory $TERRAFORM_DIR not found"
@@ -631,7 +632,9 @@ terraform_destroy() {
     print_success "Terraform destroy completed"
 }
 
-# Function to manually clean up VPC if Terraform fails
+# Function to manually clean up VPC if Terraform fails.
+# VPC deletion often "gets stuck" because: (1) NAT Gateway takes 5-15 min to delete asynchronously,
+# (2) non-default security groups must be deleted before the VPC. This function waits for NAT and removes SGs.
 cleanup_vpc_manually() {
     print_info "🌐 Attempting manual VPC cleanup..."
     
@@ -677,17 +680,39 @@ cleanup_vpc_manually() {
         done
     fi
     
-    # Get NAT Gateway
-    local nat_gw=$(aws ec2 describe-nat-gateways --filter "Name=vpc-id,Values=$vpc_id" --region $AWS_REGION --query 'NatGateways[?State==`available`].NatGatewayId' --output text 2>/dev/null || echo "")
+    # Get NAT Gateway(s) - NAT Gateway deletion can take 5-15 minutes (AWS is asynchronous)
+    local nat_gw=$(aws ec2 describe-nat-gateways --filter "Name=vpc-id,Values=$vpc_id" --region $AWS_REGION --query 'NatGateways[?State==`available`].NatGatewayId' --output text 2>/dev/null | tr '\t' '\n' | grep -v '^$' || echo "")
     if [ -n "$nat_gw" ] && [ "$nat_gw" != "" ]; then
-        echo "$nat_gw" | tr '\t' '\n' | while read -r nat; do
+        echo "$nat_gw" | while read -r nat; do
             if [ -n "$nat" ]; then
-                print_info "Deleting NAT Gateway: $nat"
+                print_info "Deleting NAT Gateway: $nat (AWS may take 5-15 minutes to finish)"
                 aws ec2 delete-nat-gateway --nat-gateway-id "$nat" --region $AWS_REGION 2>/dev/null || true
             fi
         done
-        print_info "Waiting 30 seconds for NAT Gateway deletion to start..."
-        sleep 30
+        # Wait for NAT Gateway(s) to reach "deleted" state (required before subnets/VPC can be deleted)
+        local nat_wait_max=900  # 15 minutes
+        local nat_wait_elapsed=0
+        local nat_wait_interval=30
+        while [ $nat_wait_elapsed -lt $nat_wait_max ]; do
+            local nat_states=$(aws ec2 describe-nat-gateways --filter "Name=vpc-id,Values=$vpc_id" --region $AWS_REGION --query 'NatGateways[*].State' --output text 2>/dev/null || echo "")
+            local still_deleting=""
+            for s in $nat_states; do
+                if [ "$s" = "available" ] || [ "$s" = "deleting" ] || [ "$s" = "pending" ]; then
+                    still_deleting=1
+                    break
+                fi
+            done
+            if [ -z "$nat_states" ] || [ "$nat_states" = "None" ] || [ -z "$still_deleting" ]; then
+                print_success "NAT Gateway(s) deleted after ${nat_wait_elapsed}s"
+                break
+            fi
+            print_info "Waiting for NAT Gateway deletion... (${nat_wait_elapsed}s / ${nat_wait_max}s)"
+            sleep $nat_wait_interval
+            nat_wait_elapsed=$((nat_wait_elapsed + nat_wait_interval))
+        done
+        if [ $nat_wait_elapsed -ge $nat_wait_max ]; then
+            print_warning "NAT Gateway deletion did not finish within 15 minutes - VPC delete may fail; retry or delete in console"
+        fi
     fi
     
     # Get Internet Gateway
@@ -711,6 +736,29 @@ cleanup_vpc_manually() {
                 aws ec2 delete-subnet --subnet-id "$subnet" --region $AWS_REGION 2>/dev/null || true
             fi
         done
+    fi
+    
+    # Delete non-default security groups (VPC cannot be deleted while non-default SGs exist)
+    local sgs=$(aws ec2 describe-security-groups --filters "Name=vpc-id,Values=$vpc_id" --region $AWS_REGION --query 'SecurityGroups[?GroupName!=`default`].GroupId' --output text 2>/dev/null || echo "")
+    if [ -n "$sgs" ] && [ "$sgs" != "" ]; then
+        print_info "Deleting non-default security groups (required before VPC delete)..."
+        local sg_retries=10
+        while [ $sg_retries -gt 0 ]; do
+            echo "$sgs" | tr '\t' '\n' | while read -r sg; do
+                if [ -n "$sg" ]; then
+                    aws ec2 delete-security-group --group-id "$sg" --region $AWS_REGION 2>/dev/null && print_info "Deleted security group: $sg" || true
+                fi
+            done
+            sgs=$(aws ec2 describe-security-groups --filters "Name=vpc-id,Values=$vpc_id" --region $AWS_REGION --query 'SecurityGroups[?GroupName!=`default`].GroupId' --output text 2>/dev/null || echo "")
+            if [ -z "$sgs" ] || [ "$sgs" = "" ] || [ "$sgs" = "None" ]; then
+                break
+            fi
+            sg_retries=$((sg_retries - 1))
+            sleep 5
+        done
+        if [ -n "$sgs" ] && [ "$sgs" != "" ] && [ "$sgs" != "None" ]; then
+            print_warning "Some security groups could not be deleted (dependencies); VPC delete may fail"
+        fi
     fi
     
     # Finally delete VPC
