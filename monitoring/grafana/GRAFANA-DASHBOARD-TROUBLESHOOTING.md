@@ -1,4 +1,41 @@
-# Trading Platform Metrics Dashboard – No Data
+# Grafana Dashboards – Troubleshooting
+
+## Per-service dashboards
+
+In addition to **Trading Platform Metrics**, the repo includes one dashboard per service so you can verify metrics per service before relying on the consolidated view:
+
+| Dashboard JSON | Service |
+|----------------|--------|
+| `monitoring/grafana/dashboards/trading-engine.json` | Trading Engine |
+| `monitoring/grafana/dashboards/order-management.json` | Order Management |
+| `monitoring/grafana/dashboards/api-gateway.json` | API Gateway |
+| `monitoring/grafana/dashboards/market-data.json` | Market Data |
+
+**Import:** Use the same flow as the main dashboard; point at the JSON file. Example:
+
+```bash
+# Port-forward Grafana, then:
+GRAFANA_URL=http://localhost:3000 ./scripts/grafana-import-trading-dashboard.sh
+# (Change DASHBOARD_JSON in the script to the path of the per-service JSON, or use Grafana UI: Create → Import → Upload JSON.)
+```
+
+**Verify Prometheus is scraping a service** (before or after importing the dashboard):
+
+```bash
+# Port-forward Prometheus first: kubectl port-forward -n monitoring svc/kube-prometheus-stack-prometheus 9090:9090
+PROMETHEUS_URL=http://localhost:9090 ./scripts/verify-prometheus-scrape-service.sh trading-engine
+PROMETHEUS_URL=http://localhost:9090 ./scripts/verify-prometheus-scrape-service.sh order-management
+# ... api-gateway, market-data
+
+# Or run all at once:
+./scripts/verify-prometheus-scrape-all-services.sh
+```
+
+If a service fails, check ServiceMonitors, the service’s `/metrics` endpoint, and Prometheus **Targets**.
+
+---
+
+## Trading Platform Metrics Dashboard – No Data
 
 If the **Trading Platform Metrics** dashboard shows no data, check the following.
 
