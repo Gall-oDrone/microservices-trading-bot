@@ -185,7 +185,10 @@ AWS_REGION=$(terraform output -raw aws_region 2>/dev/null || terraform output -r
 if [ -z "$AWS_REGION" ]; then
     # Try to get region from variables or provider
     AWS_REGION=$(terraform show -json 2>/dev/null | grep -o '"aws_region"[^}]*' | grep -o '"[^"]*"' | head -1 | tr -d '"' || echo "us-east-1")
-    print_warning "Could not get region from outputs, using: $AWS_REGION"
+fi
+if [ -z "$AWS_REGION" ]; then
+    AWS_REGION="us-east-1"
+    print_warning "Could not get region from outputs, using default: $AWS_REGION"
 fi
 
 if [ -z "$CLUSTER_NAME" ]; then

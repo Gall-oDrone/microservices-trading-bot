@@ -129,16 +129,14 @@ resource "helm_release" "aws_load_balancer_controller" {
     value = module.vpc.vpc_id
   }
 
-  # Use IRSA role created above
-  set {
-    name  = "serviceAccount.create"
-    value = true
-  }
-
-  set {
-    name  = "serviceAccount.annotations.eks.amazonaws.com/role-arn"
-    value = module.iam_irsa.irsa_role_arns["alb"]
-  }
+  values = [
+    <<-EOT
+    serviceAccount:
+      create: true
+      annotations:
+        "eks.amazonaws.com/role-arn": "${module.iam_irsa.irsa_role_arns["alb"]}"
+    EOT
+  ]
 }
 
 resource "helm_release" "external_dns" {
@@ -168,15 +166,14 @@ resource "helm_release" "external_dns" {
     value = local.name
   }
 
-  set {
-    name  = "serviceAccount.create"
-    value = true
-  }
-
-  set {
-    name  = "serviceAccount.annotations.eks.amazonaws.com/role-arn"
-    value = module.iam_irsa.irsa_role_arns["external-dns"]
-  }
+  values = [
+    <<-EOT
+    serviceAccount:
+      create: true
+      annotations:
+        "eks.amazonaws.com/role-arn": "${module.iam_irsa.irsa_role_arns["external-dns"]}"
+    EOT
+  ]
 }
 
 resource "helm_release" "cert_manager" {
@@ -187,21 +184,21 @@ resource "helm_release" "cert_manager" {
   version    = "v1.15.1"
 
   create_namespace = true
+  depends_on        = [helm_release.aws_load_balancer_controller]
 
   set {
     name  = "installCRDs"
     value = true
   }
 
-  set {
-    name  = "serviceAccount.create"
-    value = true
-  }
-
-  set {
-    name  = "serviceAccount.annotations.eks.amazonaws.com/role-arn"
-    value = module.iam_irsa.irsa_role_arns["cert-manager"]
-  }
+  values = [
+    <<-EOT
+    serviceAccount:
+      create: true
+      annotations:
+        "eks.amazonaws.com/role-arn": "${module.iam_irsa.irsa_role_arns["cert-manager"]}"
+    EOT
+  ]
 }
 
 resource "helm_release" "external_secrets" {
@@ -212,16 +209,16 @@ resource "helm_release" "external_secrets" {
   version    = "0.9.14"
 
   create_namespace = true
+  depends_on       = [helm_release.aws_load_balancer_controller]
 
-  set {
-    name  = "serviceAccount.create"
-    value = true
-  }
-
-  set {
-    name  = "serviceAccount.annotations.eks.amazonaws.com/role-arn"
-    value = module.iam_irsa.irsa_role_arns["external-secrets"]
-  }
+  values = [
+    <<-EOT
+    serviceAccount:
+      create: true
+      annotations:
+        "eks.amazonaws.com/role-arn": "${module.iam_irsa.irsa_role_arns["external-secrets"]}"
+    EOT
+  ]
 }
 
 module "ci_github_oidc" {
@@ -301,4 +298,5 @@ resource "helm_release" "kube_prometheus_stack" {
 
 output "cluster_name" { value = module.eks.cluster_name }
 output "cluster_endpoint" { value = module.eks.cluster_endpoint }
+output "aws_region" { value = var.aws_region }
 output "ci_role_arn" { value = module.ci_github_oidc.role_arn }
