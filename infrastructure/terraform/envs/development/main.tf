@@ -62,6 +62,14 @@ module "redis" {
   engine_version  = "7.1"
 }
 
+# AWS Load Balancer Controller requires EC2 (e.g. DescribeAvailabilityZones, DescribeSubnets) and ELB actions.
+# ElasticLoadBalancingFullAccess alone does not include EC2; use the official controller IAM policy.
+resource "aws_iam_policy" "alb_controller" {
+  name        = "${local.name}-alb-controller"
+  description = "IAM policy for AWS Load Balancer Controller (EC2 + ELB permissions)"
+  policy      = file("${path.module}/policies/alb-controller.json")
+}
+
 module "iam_irsa" {
   source = "../../modules/iam"
 
@@ -72,7 +80,7 @@ module "iam_irsa" {
 
   irsa_policies = {
     external-dns   = ["arn:aws:iam::aws:policy/AmazonRoute53FullAccess"]
-    alb            = ["arn:aws:iam::aws:policy/ElasticLoadBalancingFullAccess"]
+    alb            = [aws_iam_policy.alb_controller.arn]
     cert-manager   = ["arn:aws:iam::aws:policy/AmazonRoute53FullAccess"]
     external-secrets = [
       "arn:aws:iam::aws:policy/SecretsManagerReadWrite",
