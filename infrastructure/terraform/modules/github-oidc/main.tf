@@ -15,16 +15,11 @@ data "aws_iam_policy_document" "gh_oidc_trust" {
       variable = "token.actions.githubusercontent.com:aud"
       values   = ["sts.amazonaws.com"]
     }
+    # Allow any context from this repo: ref (branches), pull_request, environment (e.g. development)
     condition {
       test     = "StringLike"
       variable = "token.actions.githubusercontent.com:sub"
-      values   = concat(
-        [
-          "repo:${var.repo}:ref:refs/heads/*",
-          "repo:${var.repo}:pull_request"
-        ],
-        [for e in var.allowed_environments : "repo:${var.repo}:environment:${e}"]
-      )
+      values   = ["repo:${var.repo}:*"]
     }
   }
 }
