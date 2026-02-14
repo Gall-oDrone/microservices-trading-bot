@@ -52,9 +52,9 @@ get_cluster_name() {
     
     if [ -z "$cluster_name" ] || [ "$cluster_name" = "" ]; then
         cluster_name="mtb-${ENVIRONMENT}"
-        print_warning "Could not retrieve cluster name from Terraform, using fallback: $cluster_name"
+        print_warning "Could not retrieve cluster name from Terraform, using fallback: $cluster_name" >&2
     else
-        print_success "Retrieved cluster name from Terraform: $cluster_name"
+        print_success "Retrieved cluster name from Terraform: $cluster_name" >&2
     fi
     
     echo "$cluster_name"

@@ -347,43 +347,51 @@ if [ -n "$CI_ROLE_ARN" ]; then
     print_success "✅ CI/CD GitHub OIDC Role ARN: $CI_ROLE_ARN"
 fi
 
-# --- ALB hostname & Grafana (always visible) ---
+# --- ALB hostname & monitoring UIs (Grafana + Prometheus) ---
 echo ""
 echo "==============================================================================="
-print_info "📊 ALB hostname & Grafana access"
+print_info "📊 ALB hostname & monitoring access (Grafana + Prometheus)"
 echo "==============================================================================="
 if command -v kubectl &>/dev/null; then
   GRAFANA_ALB_HOST=$(kubectl get ingress -n monitoring kube-prometheus-stack-grafana -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || true)
-  if [ -n "$GRAFANA_ALB_HOST" ]; then
-    echo "  ALB hostname: $GRAFANA_ALB_HOST"
-    GRAFANA_ALB_IP=$(getent hosts "$GRAFANA_ALB_HOST" 2>/dev/null | head -1 | awk '{print $1}')
-    if [ -z "$GRAFANA_ALB_IP" ]; then
-      GRAFANA_ALB_IP=$(nslookup "$GRAFANA_ALB_HOST" 2>/dev/null | grep -A1 "Name:" | tail -1 | awk '{print $2}')
+  PROMETHEUS_ALB_HOST=$(kubectl get ingress -n monitoring kube-prometheus-stack-prometheus -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || true)
+  # Use Grafana ALB as primary; if Prometheus has a hostname, prefer it for resolution when different (e.g. second ALB)
+  ALB_HOST="${GRAFANA_ALB_HOST:-$PROMETHEUS_ALB_HOST}"
+  if [ -n "$ALB_HOST" ]; then
+    echo "  ALB hostname: $ALB_HOST"
+    ALB_IP=$(getent hosts "$ALB_HOST" 2>/dev/null | head -1 | awk '{print $1}')
+    if [ -z "$ALB_IP" ]; then
+      ALB_IP=$(nslookup "$ALB_HOST" 2>/dev/null | grep -A1 "Name:" | tail -1 | awk '{print $2}')
     fi
-    if [ -n "$GRAFANA_ALB_IP" ]; then
-      echo "  ALB IP:       $GRAFANA_ALB_IP"
+    if [ -n "$ALB_IP" ]; then
+      echo "  ALB IP:       $ALB_IP"
       echo ""
-      echo "  To access Grafana at http://grafana.local, add this line to your hosts file:"
-      echo "    $GRAFANA_ALB_IP   grafana.local"
+      echo "  Add these lines to your hosts file to access Grafana and Prometheus:"
+      echo "    $ALB_IP   grafana.local"
+      echo "    $ALB_IP   prometheus.local"
     else
-      echo "  ALB IP:       (resolve hostname above, e.g. nslookup $GRAFANA_ALB_HOST)"
+      echo "  ALB IP:       (resolve hostname above, e.g. nslookup $ALB_HOST)"
       echo ""
-      echo "  Then add '<IP>   grafana.local' to your hosts file."
+      echo "  Then add these lines to your hosts file (use the resolved IP):"
+      echo "    <IP>   grafana.local"
+      echo "    <IP>   prometheus.local"
     fi
     echo "  - Mac/Linux: /etc/hosts   |   Windows: C:\\Windows\\System32\\drivers\\etc\\hosts"
     echo ""
-    print_success "Grafana URL (after hosts file): http://grafana.local"
+    print_success "Grafana URL (after hosts file):   http://grafana.local"
+    print_success "Prometheus URL (after hosts file): http://prometheus.local"
   else
-    echo "  Grafana ingress not yet ready (ALB still provisioning)."
-    echo "  To get the hostname later, run:"
-    echo "    kubectl get ingress -n monitoring kube-prometheus-stack-grafana -o jsonpath='{.status.loadBalancer.ingress[0].hostname}'"
-    echo "  Or: kubectl get ingress -n monitoring kube-prometheus-stack-grafana"
-    echo "  Then resolve the ADDRESS to an IP and add '<IP>   grafana.local' to your hosts file."
+    echo "  Monitoring ingresses not yet ready (ALB still provisioning)."
+    echo "  To get hostnames later, run:"
+    echo "    kubectl get ingress -n monitoring"
+    echo "  Then resolve each ADDRESS to an IP and add to your hosts file:"
+    echo "    <IP>   grafana.local"
+    echo "    <IP>   prometheus.local"
   fi
 else
-  echo "  kubectl not available. To get Grafana ALB hostname after deployment:"
+  echo "  kubectl not available. To get ALB hostnames after deployment:"
   echo "    aws eks update-kubeconfig --region $AWS_REGION --name $CLUSTER_NAME"
-  echo "    kubectl get ingress -n monitoring kube-prometheus-stack-grafana"
+  echo "    kubectl get ingress -n monitoring"
 fi
 echo "==============================================================================="
 echo ""
@@ -400,7 +408,7 @@ echo "  - Check all pods: kubectl get pods --all-namespaces"
 echo "  - Check Helm releases: helm list --all-namespaces"
 echo "  - View Prometheus: kubectl port-forward -n monitoring svc/kube-prometheus-stack-prometheus 9090:9090"
 echo "  - View Grafana: kubectl port-forward -n monitoring svc/kube-prometheus-stack-grafana 3000:80"
-echo "  - Get Grafana ALB hostname: kubectl get ingress -n monitoring kube-prometheus-stack-grafana -o jsonpath='{.status.loadBalancer.ingress[0].hostname}'"
+echo "  - Get monitoring ALB hostnames: kubectl get ingress -n monitoring"
 echo ""
 print_info "📝 Terraform commands:"
 echo "  - View outputs: terraform output"
