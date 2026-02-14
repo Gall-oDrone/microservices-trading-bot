@@ -65,4 +65,6 @@ When this was last run, targets looked like this:
 - **market-data DOWN (404)** → market-data metrics missing.
   - **Fix applied:** market-data HTTP server now registers `/metrics` (Prometheus handler). Rebuild and redeploy the market-data image so the new binary is used.
 
+**Grafana shows no data even when targets are UP:** If Prometheus is served with `routePrefix: /prometheus/` (e.g. ALB path `/prometheus`), Grafana’s Prometheus datasource URL must include the path: `http://kube-prometheus-stack-prometheus.monitoring:9090/prometheus`. Otherwise Grafana gets 404 on API calls and dashboards are empty. See GRAFANA-DASHBOARD-TROUBLESHOOTING.md.
+
 After rebuilding and redeploying both services, re-run the `jq` command above (or check the Targets page) to confirm targets go **UP**.

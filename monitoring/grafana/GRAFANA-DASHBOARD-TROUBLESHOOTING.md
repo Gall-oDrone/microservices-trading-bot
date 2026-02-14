@@ -1,5 +1,40 @@
 # Grafana Dashboards – Troubleshooting
 
+## Clarification: Prometheus vs Grafana
+
+- **Prometheus** has **Targets** (Status → Targets) and a **query UI**; it does **not** have “panels” or dashboards. You do **not** need a script to “see panels in Prometheus.”
+- **Panels and dashboards** are in **Grafana**. The Trading Engine (and other per-service) dashboards are Grafana dashboards that **query** Prometheus. If a dashboard shows no data, the fix is: ensure Prometheus is scraping the service, and that Grafana’s datasource points to Prometheus.
+
+---
+
+## Trading Engine dashboard shows no data
+
+1. **Apply ServiceMonitors** so Prometheus discovers and scrapes the trading-engine (and other services):
+   ```bash
+   kubectl apply -f k8s/monitoring/servicemonitors.yaml
+   ```
+   Wait ~30–60 seconds for Prometheus to pick up new targets.
+
+2. **Grafana datasource** must point to the **in-cluster** Prometheus (Grafana runs in the cluster and queries Prometheus by service name):
+   - In Grafana: **Connections** → **Data sources** → **Prometheus**.
+   - Set **URL** to: `http://kube-prometheus-stack-prometheus:9090` (or your Prometheus service in the `monitoring` namespace).
+   - **If Prometheus is exposed under a path** (e.g. ALB path `/prometheus` and `routePrefix: /prometheus/`), the URL **must** include that path, e.g. `http://kube-prometheus-stack-prometheus:9090/prometheus`. Otherwise Grafana queries get **404** and dashboards show no data.
+   - **Save & test**.
+
+3. **Verify scraping** (use port-forward; the Prometheus API via the ALB may return HTML due to path routing):
+   ```bash
+   kubectl port-forward -n monitoring svc/kube-prometheus-stack-prometheus 9090:9090
+   # In another terminal:
+   PROMETHEUS_URL=http://localhost:9090 ./scripts/verify-prometheus-scrape-service.sh trading-engine
+   ```
+   Or open Prometheus **Status** → **Targets** and confirm `trading-engine` (or `bitso-trading-dev` / trading-engine) is **UP**.
+
+4. **Time range**: In the dashboard, set the time range to when the service was running (e.g. **Last 1 hour**).
+
+5. **Optional – test balance panel without Bitso**: See section 5 below for `BALANCE_TEST_MXN` and related env vars.
+
+---
+
 ## Per-service dashboards
 
 In addition to **Trading Platform Metrics**, the repo includes one dashboard per service so you can verify metrics per service before relying on the consolidated view:
@@ -46,8 +81,8 @@ This panel shows `up` for all Prometheus targets. If it is empty:
 - **Grafana is not talking to Prometheus**
   - In Grafana: **Connections** → **Data sources** → **Prometheus**.
   - Set **URL** to your Prometheus endpoint, e.g.:
-    - In-cluster (Grafana in same cluster): `http://kube-prometheus-stack-prometheus:9090` (or your Prometheus service name).
-    - Port-forward: `http://localhost:9090` if you ran `kubectl port-forward -n monitoring svc/kube-prometheus-stack-prometheus 9090:9090`.
+    - In-cluster (Grafana in same cluster): `http://kube-prometheus-stack-prometheus:9090` (or your Prometheus service name). If Prometheus uses `routePrefix: /prometheus/`, use `http://kube-prometheus-stack-prometheus:9090/prometheus`.
+    - Port-forward: `http://localhost:9090` if you ran `kubectl port-forward -n monitoring svc/kube-prometheus-stack-prometheus 9090:9090` (port-forward bypasses route prefix).
   - **Save & test**; the test should succeed.
 
 - **Prometheus is not scraping any targets**
@@ -72,6 +107,7 @@ This panel shows `up` for all Prometheus targets. If it is empty:
 If you provision Grafana datasources (e.g. via ConfigMap), use a URL that resolves from inside the cluster. For kube-prometheus-stack the Prometheus service is usually:
 
 - `http://kube-prometheus-stack-prometheus:9090` (same namespace as Grafana).
+- If Prometheus is configured with `routePrefix: /prometheus/` (e.g. when exposed at ALB path `/prometheus`), the datasource URL must be `http://kube-prometheus-stack-prometheus:9090/prometheus`, otherwise Grafana queries return 404 and dashboards show no data.
 
 Example is in `monitoring/grafana/datasources/prometheus.yml`. Adjust the URL if your Helm release or service name differs.
 
