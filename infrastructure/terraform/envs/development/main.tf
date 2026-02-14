@@ -319,6 +319,18 @@ resource "helm_release" "kube_prometheus_stack" {
       }
       prometheus = {
         service = { type = "ClusterIP" }
+        ingress = {
+          enabled          = true
+          ingressClassName = "alb"
+          annotations = {
+            "alb.ingress.kubernetes.io/scheme"       = "internet-facing"
+            "alb.ingress.kubernetes.io/target-type"  = "ip"
+            "alb.ingress.kubernetes.io/listen-ports" = "[{\"HTTP\": 80}]"
+          }
+          hosts    = ["prometheus.local"]
+          paths    = ["/"]
+          pathType = "Prefix"
+        }
       }
       alertmanager = {
         enabled = false
