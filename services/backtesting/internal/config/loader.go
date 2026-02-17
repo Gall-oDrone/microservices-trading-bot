@@ -30,7 +30,7 @@ func loadFromEnv() *Config {
 			Environment: getEnv("ENVIRONMENT", "development"),
 		},
 		MarketData: MarketDataConfig{
-			BaseURL:    getEnv("MARKET_DATA_BASE_URL", "http://localhost:8083"),
+			BaseURL:    getEnv("MARKET_DATA_BASE_URL", getEnv("MARKET_DATA_URL", "http://localhost:8083")),
 			Timeout:    getEnvAsDuration("MARKET_DATA_TIMEOUT", 30*time.Second),
 			RetryCount: getEnvAsInt("MARKET_DATA_RETRY_COUNT", 3),
 			RetryDelay: getEnvAsDuration("MARKET_DATA_RETRY_DELAY", 1*time.Second),

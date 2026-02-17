@@ -62,6 +62,8 @@ spec:
               key: redis-db
         - name: MARKET_DATA_URL
           value: "http://market-data:8083"
+        - name: MARKET_DATA_BASE_URL
+          value: "http://market-data:8083"
         resources:
           requests:
             memory: "512Mi"

@@ -62,8 +62,12 @@ func NewApplication() (*Application, error) {
 	}
 	logger.Println("✓ Configuration loaded successfully")
 
-	// Initialize Bitso API client
+	// Initialize Bitso API client (required: STAGE_BITSO_API_KEY / STAGE_BITSO_API_SECRET from AWS Secrets Manager)
 	bitsoClient := initializeBitsoClient(cfg, logger)
+	if bitsoClient == nil {
+		cancel()
+		return nil, fmt.Errorf("Bitso client is nil: set STAGE_BITSO_API_KEY and STAGE_BITSO_API_SECRET (e.g. from trading-secrets / AWS Secrets Manager)")
+	}
 	logger.Println("✓ Bitso API client initialized")
 
 	// Initialize Redis client
@@ -140,11 +144,19 @@ func NewApplication() (*Application, error) {
 	}, nil
 }
 
-// initializeBitsoClient creates and configures the Bitso API client
+// initializeBitsoClient creates and configures the Bitso API client.
+// Returns nil if stage credentials are not set (e.g. BITSO_API_KEY/BITSO_API_SECRET
+// or STAGE_BITSO_API_KEY/STAGE_BITSO_API_SECRET from AWS Secrets Manager / External Secrets).
 func initializeBitsoClient(cfg *config.Config, logger *log.Logger) *bitso.Client {
+	key := cfg.StageBitsoAPIKey
+	secret := cfg.StageBitsoAPISecret
+	if key == "" || secret == "" {
+		logger.Printf("Bitso stage credentials missing (STAGE_BITSO_API_KEY / STAGE_BITSO_API_SECRET). Ensure trading-secrets (bitso-api-key, bitso-api-secret) are synced from AWS Secrets Manager.")
+		return nil
+	}
 	client := bitso.NewClient()
 	client.SetLogLevel(bitso.LogLevelInfo)
-	client.SetAuth(cfg.StageBitsoAPIKey, cfg.StageBitsoAPISecret)
+	client.SetAuth(key, secret)
 	client.SetAPIBaseURL(cfg.BitsoAPIBaseURL)
 
 	// Set rate limiting for API protection

@@ -66,6 +66,8 @@ spec:
             secretKeyRef:
               name: trading-secrets
               key: bitso-api-secret
+        - name: BITSO_API_BASE_URL
+          value: "https://stage.bitso.com/api"
         resources:
           requests:
             memory: "256Mi"
