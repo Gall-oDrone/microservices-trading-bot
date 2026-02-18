@@ -9,12 +9,20 @@ import (
 	"bitso-trading-platform/shared/pkg/bitso"
 )
 
+// BitsoSyncMetrics is an optional interface for recording Bitso sync metrics (Phase 2).
+type BitsoSyncMetrics interface {
+	RecordBitsoSyncAttempt()
+	RecordBitsoSyncError()
+	SetBitsoSyncLastSuccessTimestamp(ts float64)
+}
+
 // BitsoSyncJob polls Bitso for active orders and updates order-management (status, fills)
 type BitsoSyncJob struct {
 	bitsoClient  *bitso.Client
 	orderManager OrderManagerSync
 	log          *logger.Logger
 	interval     time.Duration
+	metrics      BitsoSyncMetrics // optional: for Prometheus
 }
 
 // OrderManagerSync is the subset of order-manager needed for sync
@@ -23,8 +31,8 @@ type OrderManagerSync interface {
 	SyncOrderFromBitso(ctx context.Context, bitsoOrderID string, filledAmount, avgPrice float64, status models.OrderStatus) error
 }
 
-// NewBitsoSyncJob creates a sync job that polls Bitso every interval
-func NewBitsoSyncJob(bitsoClient *bitso.Client, orderManager OrderManagerSync, log *logger.Logger, interval time.Duration) *BitsoSyncJob {
+// NewBitsoSyncJob creates a sync job that polls Bitso every interval. metrics is optional (Phase 2).
+func NewBitsoSyncJob(bitsoClient *bitso.Client, orderManager OrderManagerSync, log *logger.Logger, interval time.Duration, metrics BitsoSyncMetrics) *BitsoSyncJob {
 	if interval <= 0 {
 		interval = 60 * time.Second
 	}
@@ -33,6 +41,7 @@ func NewBitsoSyncJob(bitsoClient *bitso.Client, orderManager OrderManagerSync, l
 		orderManager: orderManager,
 		log:          log,
 		interval:     interval,
+		metrics:      metrics,
 	}
 }
 
@@ -53,9 +62,15 @@ func (j *BitsoSyncJob) Run(ctx context.Context) {
 }
 
 func (j *BitsoSyncJob) syncOnce(ctx context.Context) {
+	if j.metrics != nil {
+		j.metrics.RecordBitsoSyncAttempt()
+	}
 	oids, err := j.orderManager.ListActiveBitsoOrderIDs(ctx)
 	if err != nil {
 		j.log.Warn("ListActiveBitsoOrderIDs failed", map[string]interface{}{"error": err.Error()})
+		if j.metrics != nil {
+			j.metrics.RecordBitsoSyncError()
+		}
 		return
 	}
 	if len(oids) == 0 {
@@ -65,6 +80,9 @@ func (j *BitsoSyncJob) syncOnce(ctx context.Context) {
 	orders, err := j.bitsoClient.LookupOrders(oids)
 	if err != nil {
 		j.log.Warn("Bitso LookupOrders failed", map[string]interface{}{"error": err.Error()})
+		if j.metrics != nil {
+			j.metrics.RecordBitsoSyncError()
+		}
 		return
 	}
 	for _, uo := range orders {
@@ -85,6 +103,9 @@ func (j *BitsoSyncJob) syncOnce(ctx context.Context) {
 				"error":          err.Error(),
 			})
 		}
+	}
+	if j.metrics != nil {
+		j.metrics.SetBitsoSyncLastSuccessTimestamp(float64(time.Now().Unix()))
 	}
 }
 

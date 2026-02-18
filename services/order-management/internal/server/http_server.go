@@ -99,7 +99,9 @@ func (s *HTTPServer) setupRoutes() {
 }
 
 func (s *HTTPServer) riskSessionHandler(w http.ResponseWriter, r *http.Request) {
+	s.metrics.RecordSessionRiskRequest()
 	if r.Method != http.MethodGet {
+		s.metrics.RecordSessionRiskRequestError()
 		s.respondError(w, http.StatusMethodNotAllowed, "Method not allowed")
 		return
 	}

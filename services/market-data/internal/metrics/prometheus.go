@@ -41,10 +41,16 @@ type Metrics struct {
 	StorageErrors     prometheus.Counter
 
 	// WebSocket metrics
-	WebSocketConnections prometheus.Gauge
-	WebSocketMessages    prometheus.Counter
-	WebSocketErrors      prometheus.Counter
-	WebSocketReconnects  prometheus.Counter
+	WebSocketConnections     prometheus.Gauge
+	WebSocketMessages        prometheus.Counter
+	WebSocketErrors          prometheus.Counter
+	WebSocketReconnects      prometheus.Counter
+	WebSocketSubscribeErrors prometheus.Counter // Phase 2
+
+	// Historical API (Phase 2)
+	HistoricalRequestsTotal     prometheus.Counter
+	HistoricalRequestDuration   prometheus.Histogram
+	HistoricalErrorsTotal       prometheus.Counter
 
 	// API metrics
 	APIRequests     prometheus.Counter
@@ -157,6 +163,26 @@ func NewMetrics() *Metrics {
 		WebSocketReconnects: promauto.NewCounter(prometheus.CounterOpts{
 			Name: "market_data_websocket_reconnects_total",
 			Help: "Total number of WebSocket reconnections",
+		}),
+
+		WebSocketSubscribeErrors: promauto.NewCounter(prometheus.CounterOpts{
+			Name: "market_data_websocket_subscribe_errors_total",
+			Help: "Total number of WebSocket subscribe errors",
+		}),
+
+		// Historical API (Phase 2; for backtesting consumers)
+		HistoricalRequestsTotal: promauto.NewCounter(prometheus.CounterOpts{
+			Name: "market_data_historical_requests_total",
+			Help: "Total number of historical data API requests",
+		}),
+		HistoricalRequestDuration: promauto.NewHistogram(prometheus.HistogramOpts{
+			Name:    "market_data_historical_request_duration_seconds",
+			Help:    "Historical data request duration in seconds",
+			Buckets: prometheus.ExponentialBuckets(0.01, 2, 12),
+		}),
+		HistoricalErrorsTotal: promauto.NewCounter(prometheus.CounterOpts{
+			Name: "market_data_historical_errors_total",
+			Help: "Total number of historical data request errors",
 		}),
 
 		// API metrics
@@ -341,6 +367,11 @@ func (wsm *WebSocketMetrics) RecordWebSocketReconnect() {
 	wsm.metrics.WebSocketReconnects.Inc()
 }
 
+// RecordWebSocketSubscribeError records a WebSocket subscribe error (Phase 2)
+func (wsm *WebSocketMetrics) RecordWebSocketSubscribeError() {
+	wsm.metrics.WebSocketSubscribeErrors.Inc()
+}
+
 // APIMetrics handles API-related metrics
 type APIMetrics struct {
 	metrics *Metrics
@@ -498,4 +529,18 @@ func (mc *MetricsCollector) RecordWebSocketMetrics(connection bool, message bool
 func (mc *MetricsCollector) RecordAPIMetrics(responseTime time.Duration, success bool) {
 	apiMetrics := NewAPIMetrics(mc.metrics)
 	apiMetrics.RecordAPIRequest(responseTime, success)
+}
+
+// RecordWebSocketSubscribeError records a WebSocket subscribe error (Phase 2)
+func (mc *MetricsCollector) RecordWebSocketSubscribeError() {
+	mc.metrics.WebSocketSubscribeErrors.Inc()
+}
+
+// RecordHistoricalRequest records a historical data API request (Phase 2). success false increments errors.
+func (mc *MetricsCollector) RecordHistoricalRequest(duration time.Duration, success bool) {
+	mc.metrics.HistoricalRequestsTotal.Inc()
+	mc.metrics.HistoricalRequestDuration.Observe(duration.Seconds())
+	if !success {
+		mc.metrics.HistoricalErrorsTotal.Inc()
+	}
 }

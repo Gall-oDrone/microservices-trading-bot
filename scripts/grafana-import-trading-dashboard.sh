@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Import the main trading dashboard into Grafana via API.
-# This imports monitoring/grafana/dashboards/trading-metrics.json, which appears
+# This imports monitoring/grafana/dashboards/domain/trading-metrics.json, which appears
 # in Grafana as "Trading Platform Metrics" (intraday P&L, scrape status, etc.).
+# Dashboard layout: dashboards/services/ (per-service) and dashboards/domain/ (platform).
 # For per-service dashboards (Trading Engine, Order Management, etc.) use:
 #   ./scripts/grafana-import-dashboard.sh trading-engine
 #   ./scripts/grafana-import-dashboard.sh order-management
@@ -20,7 +21,7 @@
 set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-DASHBOARD_JSON="$REPO_ROOT/monitoring/grafana/dashboards/trading-metrics.json"
+DASHBOARD_JSON="$REPO_ROOT/monitoring/grafana/dashboards/domain/trading-metrics.json"
 
 # Default to grafana.local when using CloudFront; override with localhost:3000 if using port-forward
 GRAFANA_URL="${GRAFANA_URL:-http://grafana.local}"

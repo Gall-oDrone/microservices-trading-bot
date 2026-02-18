@@ -26,8 +26,9 @@ type StreamManager interface {
 
 // Manager implements StreamManager
 type Manager struct {
-	wsConn *bitso.WebSocketConn
-	logger *log.Logger
+	wsConn                 *bitso.WebSocketConn
+	logger                 *log.Logger
+	subscribeErrorRecorder SubscribeErrorRecorder
 
 	// Reconnection strategy
 	reconnectAttempts int
@@ -51,12 +52,18 @@ type Manager struct {
 	channels []string
 }
 
+// SubscribeErrorRecorder records WebSocket subscribe errors (Phase 2 metrics). Optional.
+type SubscribeErrorRecorder interface {
+	RecordWebSocketSubscribeError()
+}
+
 // ManagerConfig holds configuration for the WebSocket manager
 type ManagerConfig struct {
-	ReconnectAttempts int
-	ReconnectInterval time.Duration
-	ReconnectMaxDelay time.Duration
-	Logger            *log.Logger
+	ReconnectAttempts     int
+	ReconnectInterval    time.Duration
+	ReconnectMaxDelay    time.Duration
+	Logger               *log.Logger
+	SubscribeErrorRecorder SubscribeErrorRecorder // optional: for Prometheus
 }
 
 // NewManager creates a new WebSocket stream manager
@@ -67,14 +74,15 @@ func NewManager(config *ManagerConfig) *Manager {
 	}
 
 	return &Manager{
-		logger:            logger,
-		reconnectAttempts: config.ReconnectAttempts,
-		reconnectInterval: config.ReconnectInterval,
-		reconnectMaxDelay: config.ReconnectMaxDelay,
-		tradesStream:      make(chan *bitso.WebSocketTrade, 100),
-		ordersStream:      make(chan *bitso.WebSocketOrder, 100),
-		diffOrdersStream:  make(chan *bitso.WebSocketDiffOrder, 100),
-		stopChan:          make(chan struct{}),
+		logger:                 logger,
+		subscribeErrorRecorder: config.SubscribeErrorRecorder,
+		reconnectAttempts:      config.ReconnectAttempts,
+		reconnectInterval:      config.ReconnectInterval,
+		reconnectMaxDelay:      config.ReconnectMaxDelay,
+		tradesStream:           make(chan *bitso.WebSocketTrade, 100),
+		ordersStream:           make(chan *bitso.WebSocketOrder, 100),
+		diffOrdersStream:       make(chan *bitso.WebSocketDiffOrder, 100),
+		stopChan:               make(chan struct{}),
 	}
 }
 
@@ -109,6 +117,9 @@ func (m *Manager) Subscribe(books []*bitso.Book, channels []string) error {
 	for _, book := range books {
 		for _, channel := range channels {
 			if err := m.wsConn.Subscribe(book, channel); err != nil {
+				if m.subscribeErrorRecorder != nil {
+					m.subscribeErrorRecorder.RecordWebSocketSubscribeError()
+				}
 				return fmt.Errorf("failed to subscribe to %s for %s: %w", channel, book.String(), err)
 			}
 			m.logger.Printf("✓ Subscribed to %s channel for %s", channel, book.String())

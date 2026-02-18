@@ -121,13 +121,14 @@ func NewApplication() (*Application, error) {
 	cache := data.NewCache(redisClient, time.Hour, appLogger)
 	appLogger.Info("Data cache initialized", nil)
 
-	// Initialize data provider
+	// Initialize data provider (with optional fetch-error metrics for Phase 2)
 	dataProvider := data.NewMarketDataProvider(
 		cfg.MarketData.BaseURL,
 		cache,
 		appLogger,
 		cfg.MarketData.RetryCount,
 		cfg.MarketData.RetryDelay,
+		metricsCollector,
 	)
 	appLogger.Info("Data provider initialized", nil)
 

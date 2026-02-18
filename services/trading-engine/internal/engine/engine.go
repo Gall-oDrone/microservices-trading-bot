@@ -20,10 +20,27 @@ import (
 )
 
 // MetricsRecorder is an optional interface for recording Prometheus metrics.
-// Implementations can record order executions and balance updates.
+// Implementations can record order executions, balance updates, signals, Kafka, and engine state.
 type MetricsRecorder interface {
 	RecordOrderExecuted(book, strategy string)
+	RecordOrderFailed(book, strategy, reason string)
+	ObserveOrderExecutionDuration(book, strategy string, d time.Duration)
 	RecordBalances(currencyToAvailable map[string]float64)
+	RecordSignalReceived()
+	RecordSignalsProcessed(book, strategy, outcome string)
+	RecordSignalsDropped(reason string)
+	ObserveSignalProcessingDuration(d time.Duration)
+	RecordBalanceFetchError()
+	SetBalanceLastSuccessTimestamp(ts float64)
+	RecordSessionRiskCheck(result string)
+	RecordSessionRiskRejection()
+	RecordKafkaMessageConsumed(topic string)
+	RecordKafkaConsumerError()
+	RecordOrderPlacedPublished()
+	RecordOrderPlacedPublishError()
+	SetEngineState(state float64)
+	SetDryRun(dryRun bool)
+	RecordHealthCheckFailure()
 }
 
 // orderPlacedEvent is published to Kafka for order-management sync
@@ -165,7 +182,18 @@ func NewTradingEngine(
 		logger: logger,
 	}
 
+	if metricsRecorder != nil {
+		metricsRecorder.SetEngineState(1) // initializing
+	}
 	return engine, nil
+}
+
+// signalsTopic returns the Kafka signals topic for metrics (default trading.signals).
+func (te *TradingEngine) signalsTopic() string {
+	if te.appConfig != nil && te.appConfig.KafkaTopicSignals != "" {
+		return te.appConfig.KafkaTopicSignals
+	}
+	return "trading.signals"
 }
 
 // Initialize sets up the trading engine
@@ -219,6 +247,9 @@ func (te *TradingEngine) Start() error {
 	}
 	te.state = StateRunning
 	te.stateMutex.Unlock()
+	if te.metricsRecorder != nil {
+		te.metricsRecorder.SetEngineState(2) // running
+	}
 
 	te.logger.Println("Starting trading engine...")
 
@@ -282,6 +313,9 @@ func (te *TradingEngine) Stop() error {
 	te.stateMutex.Lock()
 	te.state = StateStopped
 	te.stateMutex.Unlock()
+	if te.metricsRecorder != nil {
+		te.metricsRecorder.SetEngineState(0) // stopped
+	}
 
 	te.logger.Println("Trading engine stopped")
 	return nil
@@ -315,6 +349,9 @@ func (te *TradingEngine) kafkaConsumerLoop() {
 				}
 				te.logger.Printf("Error consuming message: %v", err)
 				te.recordError(err)
+				if te.metricsRecorder != nil {
+					te.metricsRecorder.RecordKafkaConsumerError()
+				}
 				time.Sleep(1 * time.Second) // Back off on error
 				continue
 			}
@@ -325,6 +362,10 @@ func (te *TradingEngine) kafkaConsumerLoop() {
 				te.logger.Printf("Error parsing trade signal: %v", err)
 				te.recordError(err)
 				continue
+			}
+			if te.metricsRecorder != nil {
+				te.metricsRecorder.RecordSignalReceived()
+				te.metricsRecorder.RecordKafkaMessageConsumed(te.signalsTopic())
 			}
 
 			// Send to signal channel for processing with timeout
@@ -341,6 +382,9 @@ func (te *TradingEngine) kafkaConsumerLoop() {
 			case <-time.After(5 * time.Second):
 				te.logger.Printf("Timeout sending signal to channel, dropping message")
 				te.recordError(fmt.Errorf("timeout sending signal to channel"))
+				if te.metricsRecorder != nil {
+					te.metricsRecorder.RecordSignalsDropped("timeout")
+				}
 			}
 		}
 	}
@@ -363,8 +407,20 @@ func (te *TradingEngine) signalProcessor() {
 				return
 			}
 
-			// Process the signal
-			if err := te.processTradeSignal(signal); err != nil {
+			start := time.Now()
+			bookStr := signal.Book
+			strategy := te.config.StrategyType
+			err := te.processTradeSignal(signal)
+			duration := time.Since(start)
+			if te.metricsRecorder != nil {
+				te.metricsRecorder.ObserveSignalProcessingDuration(duration)
+				if err != nil {
+					te.metricsRecorder.RecordSignalsProcessed(bookStr, strategy, "failed")
+				} else {
+					te.metricsRecorder.RecordSignalsProcessed(bookStr, strategy, "success")
+				}
+			}
+			if err != nil {
 				te.logger.Printf("Error processing signal: %v", err)
 				te.recordError(err)
 				te.updateStats(false)
@@ -382,28 +438,33 @@ func (te *TradingEngine) processTradeSignal(signal *models.TradeSignalEvent) err
 
 	// Check if we're in trading hours
 	if !te.config.IsWithinTradingHours() {
+		te.recordOrderFailedIfMetrics(signal.Book, "validation")
 		return fmt.Errorf("signal received outside trading hours")
 	}
 
 	// Check current state
 	if te.GetState() != StateRunning {
+		te.recordOrderFailedIfMetrics(signal.Book, "validation")
 		return fmt.Errorf("engine not in running state")
 	}
 
 	// Parse book from signal
 	book, err := te.parseBook(signal.Book)
 	if err != nil {
+		te.recordOrderFailedIfMetrics(signal.Book, "validation")
 		return fmt.Errorf("invalid book: %w", err)
 	}
 
 	// Get current ticker for validation
 	ticker, err := te.bitsoClient.Ticker(book)
 	if err != nil {
+		te.recordOrderFailedIfMetrics(signal.Book, "ticker_fetch")
 		return fmt.Errorf("failed to get ticker: %w", err)
 	}
 
 	// Validate signal price is reasonable
 	if err := te.validateSignalPrice(signal, ticker); err != nil {
+		te.recordOrderFailedIfMetrics(signal.Book, "validation")
 		return fmt.Errorf("signal validation failed: %w", err)
 	}
 
@@ -413,11 +474,20 @@ func (te *TradingEngine) processTradeSignal(signal *models.TradeSignalEvent) err
 		var err error
 		dailyPnL, drawdownPct, err = te.sessionRiskProvider.GetSessionRisk(te.ctx)
 		if err != nil {
+			te.recordOrderFailedIfMetrics(signal.Book, "session_risk")
 			return fmt.Errorf("session risk check: %w", err)
 		}
 	}
 	if err := te.executor.CheckSessionLimits(dailyPnL, drawdownPct); err != nil {
+		if te.metricsRecorder != nil {
+			te.metricsRecorder.RecordSessionRiskCheck("rejected")
+			te.metricsRecorder.RecordSessionRiskRejection()
+		}
+		te.recordOrderFailedIfMetrics(signal.Book, "session_risk")
 		return err
+	}
+	if te.metricsRecorder != nil {
+		te.metricsRecorder.RecordSessionRiskCheck("allowed")
 	}
 
 	// Create trading signal for executor
@@ -429,9 +499,13 @@ func (te *TradingEngine) processTradeSignal(signal *models.TradeSignalEvent) err
 		Timestamp: signal.Timestamp,
 	}
 
+	bookStr := book.String()
+	strategy := te.config.StrategyType
+
 	// Execute based on signal type
 	var orderID string
 	var execErr error
+	execStart := time.Now()
 	switch signal.Signal {
 	case "BUY":
 		tradeSignal.Type = execution.SignalBuy
@@ -439,10 +513,14 @@ func (te *TradingEngine) processTradeSignal(signal *models.TradeSignalEvent) err
 		if execErr == nil {
 			te.incrementOrdersPlaced()
 			if te.metricsRecorder != nil {
-				te.metricsRecorder.RecordOrderExecuted(book.String(), te.config.StrategyType)
+				te.metricsRecorder.ObserveOrderExecutionDuration(bookStr, strategy, time.Since(execStart))
+				te.metricsRecorder.RecordOrderExecuted(bookStr, strategy)
 			}
 		} else {
 			te.incrementOrdersFailed()
+			if te.metricsRecorder != nil {
+				te.metricsRecorder.RecordOrderFailed(bookStr, strategy, "bitso_api")
+			}
 		}
 
 	case "SELL":
@@ -451,13 +529,18 @@ func (te *TradingEngine) processTradeSignal(signal *models.TradeSignalEvent) err
 		if execErr == nil {
 			te.incrementOrdersPlaced()
 			if te.metricsRecorder != nil {
-				te.metricsRecorder.RecordOrderExecuted(book.String(), te.config.StrategyType)
+				te.metricsRecorder.ObserveOrderExecutionDuration(bookStr, strategy, time.Since(execStart))
+				te.metricsRecorder.RecordOrderExecuted(bookStr, strategy)
 			}
 		} else {
 			te.incrementOrdersFailed()
+			if te.metricsRecorder != nil {
+				te.metricsRecorder.RecordOrderFailed(bookStr, strategy, "bitso_api")
+			}
 		}
 
 	default:
+		te.recordOrderFailedIfMetrics(signal.Book, "validation")
 		return fmt.Errorf("unknown signal type: %s", signal.Signal)
 	}
 
@@ -469,6 +552,18 @@ func (te *TradingEngine) processTradeSignal(signal *models.TradeSignalEvent) err
 		te.publishOrderPlaced(orderID, signal, book, signal.Signal)
 	}
 	return nil
+}
+
+// recordOrderFailedIfMetrics records orders_failed_total when metricsRecorder is set. bookOrFallback is signal.Book (may be invalid).
+func (te *TradingEngine) recordOrderFailedIfMetrics(bookOrFallback, reason string) {
+	if te.metricsRecorder == nil {
+		return
+	}
+	bookStr := bookOrFallback
+	if bookStr == "" {
+		bookStr = "unknown"
+	}
+	te.metricsRecorder.RecordOrderFailed(bookStr, te.config.StrategyType, reason)
 }
 
 func (te *TradingEngine) publishOrderPlaced(orderID string, signal *models.TradeSignalEvent, book *bitso.Book, side string) {
@@ -483,12 +578,22 @@ func (te *TradingEngine) publishOrderPlaced(orderID string, signal *models.Trade
 	payload, err := json.Marshal(evt)
 	if err != nil {
 		te.logger.Printf("Failed to marshal order-placed event: %v", err)
+		if te.metricsRecorder != nil {
+			te.metricsRecorder.RecordOrderPlacedPublishError()
+		}
 		return
 	}
 	ctx, cancel := context.WithTimeout(te.ctx, 5*time.Second)
 	defer cancel()
 	if err := te.orderPlacedProducer.Produce(ctx, []byte(orderID), payload); err != nil {
 		te.logger.Printf("Failed to publish order-placed event: %v", err)
+		if te.metricsRecorder != nil {
+			te.metricsRecorder.RecordOrderPlacedPublishError()
+		}
+		return
+	}
+	if te.metricsRecorder != nil {
+		te.metricsRecorder.RecordOrderPlacedPublished()
 	}
 }
 
@@ -543,6 +648,9 @@ func (te *TradingEngine) fetchAndCacheBalances() error {
 
 	balances, err := te.bitsoClient.Balances(nil)
 	if err != nil {
+		if te.metricsRecorder != nil {
+			te.metricsRecorder.RecordBalanceFetchError()
+		}
 		// For testing: if BALANCE_TEST_* env vars are set, record them so Grafana shows data without Bitso
 		if testBalances := getTestBalancesFromEnv(); len(testBalances) > 0 {
 			te.logger.Printf("Bitso fetch failed (%v); using test balances from env for metrics: %v", err, testBalances)
@@ -555,6 +663,9 @@ func (te *TradingEngine) fetchAndCacheBalances() error {
 	}
 
 	te.logger.Printf("Retrieved %d currency balances", len(balances))
+	if te.metricsRecorder != nil {
+		te.metricsRecorder.SetBalanceLastSuccessTimestamp(float64(time.Now().Unix()))
+	}
 
 	// Cache balances in Redis and record for Prometheus
 	currencyToAvailable := make(map[string]float64)
@@ -647,11 +758,17 @@ func (te *TradingEngine) validateSignalPrice(signal *models.TradeSignalEvent, ti
 func (te *TradingEngine) performHealthCheck() error {
 	// Check Redis
 	if err := te.dbClient.Ping(te.ctx); err != nil {
+		if te.metricsRecorder != nil {
+			te.metricsRecorder.RecordHealthCheckFailure()
+		}
 		return fmt.Errorf("redis health check failed: %w", err)
 	}
 
 	// Check Bitso API
 	if _, err := te.bitsoClient.Ticker(te.book); err != nil {
+		if te.metricsRecorder != nil {
+			te.metricsRecorder.RecordHealthCheckFailure()
+		}
 		return fmt.Errorf("bitso health check failed: %w", err)
 	}
 

@@ -122,7 +122,7 @@ func NewApplication() (*Application, error) {
 		bitsoClient.SetLogLevel(bitso.LogLevelInfo)
 		bitsoClient.SetAuth(cfg.Bitso.APIKey, cfg.Bitso.APISecret)
 		bitsoClient.SetAPIBaseURL(cfg.Bitso.APIBaseURL)
-		bitsoSyncJob = sync.NewBitsoSyncJob(bitsoClient, orderManager, appLogger, 60*time.Second)
+		bitsoSyncJob = sync.NewBitsoSyncJob(bitsoClient, orderManager, appLogger, 60*time.Second, metricsCollector)
 		appLogger.Info("Bitso sync job configured", nil)
 	}
 

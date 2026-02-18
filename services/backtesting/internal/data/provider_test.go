@@ -137,7 +137,7 @@ func TestFileProviderBasics(t *testing.T) {
 	// Create temp directory for testing
 	tempDir := t.TempDir()
 
-	provider := NewFileProvider(tempDir, nil)
+	provider := NewFileProvider(tempDir, nil, nil)
 	if provider == nil {
 		t.Fatal("NewFileProvider returned nil")
 	}
@@ -153,7 +153,7 @@ func TestFileProviderBasics(t *testing.T) {
 }
 
 func TestFileProviderBuildFileName(t *testing.T) {
-	provider := NewFileProvider("/tmp", nil)
+	provider := NewFileProvider("/tmp", nil, nil)
 
 	startDate := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
 	endDate := time.Date(2024, 12, 31, 0, 0, 0, 0, time.UTC)
@@ -167,7 +167,7 @@ func TestFileProviderBuildFileName(t *testing.T) {
 }
 
 func TestFileProviderParseDateFromFileName(t *testing.T) {
-	provider := NewFileProvider("/tmp", nil)
+	provider := NewFileProvider("/tmp", nil, nil)
 
 	tests := []struct {
 		name     string

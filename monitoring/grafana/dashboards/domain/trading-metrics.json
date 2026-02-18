@@ -47,19 +47,68 @@
         "title": "Available Balance",
         "type": "timeseries",
         "gridPos": { "h": 4, "w": 6, "x": 18, "y": 3 },
-        "targets": [{ "expr": "bitso_available_balance", "refId": "A", "legendFormat": "{{currency}}" }]
+        "targets": [{ "expr": "max by (currency) (bitso_available_balance)", "refId": "A", "legendFormat": "{{currency}}" }]
+      },
+      {
+        "id": 30,
+        "type": "row",
+        "title": "Trading Engine (signals, failures, state)",
+        "gridPos": { "h": 1, "w": 24, "x": 0, "y": 7 }
+      },
+      {
+        "id": 31,
+        "title": "Engine state",
+        "type": "stat",
+        "description": "0=stopped, 1=initializing, 2=running",
+        "gridPos": { "h": 4, "w": 4, "x": 0, "y": 8 },
+        "targets": [{ "expr": "max(engine_state{job=~\"trading-engine.*\"}) or vector(0)", "refId": "A" }],
+        "fieldConfig": {
+          "defaults": {
+            "color": { "mode": "thresholds" },
+            "thresholds": { "steps": [{ "color": "red", "value": null }, { "color": "yellow", "value": 1 }, { "color": "green", "value": 2 }] }
+          }
+        }
+      },
+      {
+        "id": 32,
+        "title": "Dry run",
+        "type": "stat",
+        "description": "1=dry-run, 0=live",
+        "gridPos": { "h": 4, "w": 4, "x": 4, "y": 8 },
+        "targets": [{ "expr": "max(trading_engine_dry_run{job=~\"trading-engine.*\"}) or vector(0)", "refId": "A" }]
+      },
+      {
+        "id": 33,
+        "title": "Signals processed (rate) by job",
+        "type": "timeseries",
+        "gridPos": { "h": 4, "w": 8, "x": 8, "y": 8 },
+        "targets": [{ "expr": "sum(rate(signals_processed_total[5m])) by (job, outcome)", "refId": "A", "legendFormat": "{{job}} {{outcome}}" }]
+      },
+      {
+        "id": 34,
+        "title": "Orders failed (rate) by reason",
+        "type": "timeseries",
+        "gridPos": { "h": 4, "w": 8, "x": 16, "y": 8 },
+        "targets": [{ "expr": "sum(rate(orders_failed_total[5m])) by (job, reason)", "refId": "A", "legendFormat": "{{job}} {{reason}}" }]
+      },
+      {
+        "id": 35,
+        "title": "Session risk rejections (rate)",
+        "type": "timeseries",
+        "gridPos": { "h": 4, "w": 8, "x": 0, "y": 12 },
+        "targets": [{ "expr": "sum(rate(session_risk_rejections_total[5m])) or vector(0)", "refId": "A", "legendFormat": "rejections/s" }]
       },
       {
         "id": 5,
         "type": "row",
         "title": "Intraday / P&L",
-        "gridPos": { "h": 1, "w": 24, "x": 0, "y": 7 }
+        "gridPos": { "h": 1, "w": 24, "x": 0, "y": 16 }
       },
       {
         "id": 6,
         "title": "Daily Realized P&L",
         "type": "stat",
-        "gridPos": { "h": 6, "w": 6, "x": 0, "y": 8 },
+        "gridPos": { "h": 6, "w": 6, "x": 0, "y": 17 },
         "targets": [{ "expr": "sum(trading_daily_realized_pnl_currency)", "refId": "A" }],
         "fieldConfig": {
           "defaults": {
@@ -73,7 +122,7 @@
         "id": 7,
         "title": "Daily Unrealized P&L",
         "type": "stat",
-        "gridPos": { "h": 6, "w": 6, "x": 6, "y": 8 },
+        "gridPos": { "h": 6, "w": 6, "x": 6, "y": 17 },
         "targets": [{ "expr": "sum(trading_daily_unrealized_pnl_currency)", "refId": "A" }],
         "fieldConfig": {
           "defaults": {
@@ -87,7 +136,7 @@
         "id": 8,
         "title": "Drawdown %",
         "type": "stat",
-        "gridPos": { "h": 6, "w": 6, "x": 12, "y": 8 },
+        "gridPos": { "h": 6, "w": 6, "x": 12, "y": 17 },
         "targets": [{ "expr": "max(trading_drawdown_percent)", "refId": "A" }],
         "fieldConfig": {
           "defaults": {
@@ -101,7 +150,7 @@
         "id": 9,
         "title": "Drawdown Absolute",
         "type": "stat",
-        "gridPos": { "h": 6, "w": 6, "x": 18, "y": 8 },
+        "gridPos": { "h": 6, "w": 6, "x": 18, "y": 17 },
         "targets": [{ "expr": "sum(trading_drawdown_absolute_currency)", "refId": "A" }],
         "fieldConfig": { "defaults": { "unit": "currencyMXN" } }
       },
@@ -109,7 +158,7 @@
         "id": 10,
         "title": "Current Equity",
         "type": "stat",
-        "gridPos": { "h": 6, "w": 6, "x": 0, "y": 14 },
+        "gridPos": { "h": 6, "w": 6, "x": 0, "y": 23 },
         "targets": [{ "expr": "sum(trading_current_equity_currency)", "refId": "A" }],
         "fieldConfig": { "defaults": { "unit": "currencyMXN" } }
       },
@@ -117,7 +166,7 @@
         "id": 11,
         "title": "Peak Equity",
         "type": "stat",
-        "gridPos": { "h": 6, "w": 6, "x": 6, "y": 14 },
+        "gridPos": { "h": 6, "w": 6, "x": 6, "y": 23 },
         "targets": [{ "expr": "sum(trading_peak_equity_currency)", "refId": "A" }],
         "fieldConfig": { "defaults": { "unit": "currencyMXN" } }
       },
@@ -125,50 +174,37 @@
         "id": 12,
         "title": "Trades Today",
         "type": "stat",
-        "gridPos": { "h": 6, "w": 6, "x": 12, "y": 14 },
+        "gridPos": { "h": 6, "w": 6, "x": 12, "y": 23 },
         "targets": [{ "expr": "sum(trading_trades_today_total)", "refId": "A" }]
       },
       {
         "id": 13,
         "title": "Wins / Losses Today",
         "type": "stat",
-        "gridPos": { "h": 6, "w": 6, "x": 18, "y": 14 },
-        "targets": [
-          { "expr": "sum(trading_wins_today_total)", "refId": "A", "legendFormat": "Wins" },
-          { "expr": "sum(trading_losses_today_total)", "refId": "B", "legendFormat": "Losses" }
-        ],
+        "gridPos": { "h": 6, "w": 6, "x": 18, "y": 23 },
+        "targets": [{ "expr": "sum(trading_wins_today_total)", "refId": "A", "legendFormat": "Wins" }, { "expr": "sum(trading_losses_today_total)", "refId": "B", "legendFormat": "Losses" }],
         "fieldConfig": { "defaults": { "color": { "mode": "palette_classic" } } }
       },
       {
         "id": 14,
         "title": "Win Rate Today %",
         "type": "stat",
-        "gridPos": { "h": 6, "w": 6, "x": 0, "y": 20 },
-        "targets": [{
-          "expr": "(sum(trading_wins_today_total) / (sum(trading_wins_today_total) + sum(trading_losses_today_total) + 1e-9)) * 100",
-          "refId": "A"
-        }],
-        "fieldConfig": {
-          "defaults": {
-            "unit": "percent",
-            "decimals": 1,
-            "min": 0,
-            "max": 100
-          }
-        }
+        "gridPos": { "h": 6, "w": 6, "x": 0, "y": 29 },
+        "targets": [{ "expr": "(sum(trading_wins_today_total) / (sum(trading_wins_today_total) + sum(trading_losses_today_total) + 1e-9)) * 100", "refId": "A" }],
+        "fieldConfig": { "defaults": { "unit": "percent", "decimals": 1, "min": 0, "max": 100 } }
       },
       {
         "id": 15,
         "title": "Daily Realized P&L (time series)",
         "type": "timeseries",
-        "gridPos": { "h": 6, "w": 12, "x": 6, "y": 20 },
+        "gridPos": { "h": 6, "w": 12, "x": 6, "y": 29 },
         "targets": [{ "expr": "trading_daily_realized_pnl_currency", "refId": "A", "legendFormat": "{{currency}}" }]
       },
       {
         "id": 16,
         "title": "Drawdown % (time series)",
         "type": "timeseries",
-        "gridPos": { "h": 6, "w": 6, "x": 18, "y": 20 },
+        "gridPos": { "h": 6, "w": 6, "x": 18, "y": 29 },
         "targets": [{ "expr": "trading_drawdown_percent", "refId": "A", "legendFormat": "{{currency}}" }],
         "fieldConfig": { "defaults": { "unit": "percent" } }
       }

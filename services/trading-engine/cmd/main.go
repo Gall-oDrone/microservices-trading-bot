@@ -274,6 +274,9 @@ func (app *Application) Start() error {
 	// Start metrics server first so /metrics is available before engine runs
 	app.startMetricsServer(app.metricsCollector.Handler())
 
+	// Set dry-run gauge for Prometheus (1=dry-run, 0=live)
+	app.metricsCollector.SetDryRun(app.config.DryRun)
+
 	// Optional: set Available Balance metric from env for testing (e.g. BALANCE_TEST_MXN=50000)
 	if testBalances := getTestBalancesFromEnv(); len(testBalances) > 0 {
 		app.metricsCollector.RecordBalances(testBalances)

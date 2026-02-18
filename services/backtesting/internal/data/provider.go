@@ -8,6 +8,12 @@ import (
 	"bitso-trading-platform/backtesting/internal/models"
 )
 
+// DataFetchErrorRecorder records data fetch errors for metrics (Phase 2). Optional.
+// source should be "market_data" or "file".
+type DataFetchErrorRecorder interface {
+	RecordDataFetchError(source string)
+}
+
 // DataProvider defines the interface for loading historical market data
 type DataProvider interface {
 	// LoadHistoricalData loads historical data for the given request

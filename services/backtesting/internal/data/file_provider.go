@@ -18,13 +18,15 @@ import (
 type FileProvider struct {
 	basePath string
 	logger   logger.Logger
+	fetchErr DataFetchErrorRecorder // optional: Phase 2 metrics
 }
 
-// NewFileProvider creates a new file-based data provider
-func NewFileProvider(basePath string, log logger.Logger) *FileProvider {
+// NewFileProvider creates a new file-based data provider. fetchErr is optional (Phase 2).
+func NewFileProvider(basePath string, log logger.Logger, fetchErr DataFetchErrorRecorder) *FileProvider {
 	return &FileProvider{
 		basePath: basePath,
 		logger:   log,
+		fetchErr: fetchErr,
 	}
 }
 
@@ -61,6 +63,9 @@ func (p *FileProvider) LoadHistoricalData(ctx context.Context, req *DataRequest)
 		// Read and parse file
 		fileEvents, err := p.readDataFile(filePath, eventType)
 		if err != nil {
+			if p.fetchErr != nil {
+				p.fetchErr.RecordDataFetchError("file")
+			}
 			return nil, fmt.Errorf("failed to read file %s: %w", filePath, err)
 		}
 

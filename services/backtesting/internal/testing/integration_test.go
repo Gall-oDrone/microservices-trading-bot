@@ -55,6 +55,7 @@ func SetupIntegrationTest(t *testing.T) *IntegrationTestSuite {
 		appLogger,
 		3,
 		time.Second,
+		metricsCollector,
 	)
 
 	// Create storage (in-memory for tests)

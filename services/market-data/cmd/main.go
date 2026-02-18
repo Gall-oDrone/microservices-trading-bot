@@ -142,10 +142,11 @@ func NewApplication() (*Application, error) {
 
 	// Initialize WebSocket Manager
 	wsManagerConfig := &websocket.ManagerConfig{
-		ReconnectAttempts: cfg.WSReconnectAttempts,
-		ReconnectInterval: cfg.WSReconnectInterval,
-		ReconnectMaxDelay: cfg.WSReconnectMaxDelay,
-		Logger:            stdLogger, // websocket.ManagerConfig uses *log.Logger
+		ReconnectAttempts:      cfg.WSReconnectAttempts,
+		ReconnectInterval:     cfg.WSReconnectInterval,
+		ReconnectMaxDelay:     cfg.WSReconnectMaxDelay,
+		Logger:                stdLogger, // websocket.ManagerConfig uses *log.Logger
+		SubscribeErrorRecorder: metricsCollector,
 	}
 	wsManager := websocket.NewManager(wsManagerConfig)
 	appLogger.Info("WebSocket manager created")
@@ -172,8 +173,8 @@ func NewApplication() (*Application, error) {
 		appLogger.Info("Trade publisher created")
 	}
 
-	// Initialize API handler
-	apiHandler := api.NewHandler(cacheLayer, storage, stdLogger)
+	// Initialize API handler (with optional historical metrics for Phase 2)
+	apiHandler := api.NewHandler(cacheLayer, storage, stdLogger, metricsCollector)
 	appLogger.Info("API handler created")
 
 	// Initialize HTTP server (with /metrics for Prometheus)

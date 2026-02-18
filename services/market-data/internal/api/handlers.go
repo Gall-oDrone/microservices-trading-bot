@@ -53,23 +53,30 @@ type VolumeStatistics = historical.VolumeStatistics
 // VolumeLevel is an alias for historical.VolumeLevel to maintain API compatibility
 type VolumeLevel = historical.VolumeLevel
 
-// Handler handles HTTP API requests
-type Handler struct {
-	cache   Cache
-	storage Storage
-	logger  *log.Logger
+// HistoricalRecorder records historical API request metrics (Phase 2). Optional.
+type HistoricalRecorder interface {
+	RecordHistoricalRequest(duration time.Duration, success bool)
 }
 
-// NewHandler creates a new API handler
-func NewHandler(cache Cache, storage Storage, logger *log.Logger) *Handler {
+// Handler handles HTTP API requests
+type Handler struct {
+	cache              Cache
+	storage            Storage
+	logger             *log.Logger
+	historicalRecorder HistoricalRecorder // optional: for Prometheus
+}
+
+// NewHandler creates a new API handler. historicalRecorder is optional (Phase 2 metrics).
+func NewHandler(cache Cache, storage Storage, logger *log.Logger, historicalRecorder HistoricalRecorder) *Handler {
 	if logger == nil {
 		logger = log.New(log.Writer(), "[API-HANDLER] ", log.LstdFlags|log.Lshortfile)
 	}
 
 	return &Handler{
-		cache:   cache,
-		storage: storage,
-		logger:  logger,
+		cache:              cache,
+		storage:            storage,
+		logger:             logger,
+		historicalRecorder: historicalRecorder,
 	}
 }
 
@@ -226,9 +233,11 @@ func (h *Handler) GetTrades(w http.ResponseWriter, r *http.Request) {
 
 	// Time-range query (backtesting): from + to present
 	if fromStr != "" && toStr != "" {
+		histStart := time.Now()
 		start, err1 := time.Parse(time.RFC3339, fromStr)
 		end, err2 := time.Parse(time.RFC3339, toStr)
 		if err1 != nil || err2 != nil {
+			h.recordHistoricalRequest(time.Since(histStart), false)
 			http.Error(w, "Invalid from/to: use RFC3339 (e.g. 2024-06-01T00:00:00Z)", http.StatusBadRequest)
 			return
 		}
@@ -241,6 +250,7 @@ func (h *Handler) GetTrades(w http.ResponseWriter, r *http.Request) {
 		if len(trades) == 0 {
 			trades = syntheticTradesForRange(book, start, end, limit)
 		}
+		h.recordHistoricalRequest(time.Since(histStart), true)
 		// Return backtesting-compatible format: { "success": true, "data": [ bitso.Trade-shaped ... ] }
 		data := tradeEventsToBitsoShape(trades)
 		response := map[string]interface{}{
@@ -472,8 +482,16 @@ func (h *Handler) GetOrderBook(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(orderBook)
 }
 
+// recordHistoricalRequest records historical API metrics when recorder is set (Phase 2).
+func (h *Handler) recordHistoricalRequest(duration time.Duration, success bool) {
+	if h.historicalRecorder != nil {
+		h.historicalRecorder.RecordHistoricalRequest(duration, success)
+	}
+}
+
 // GetOrderBookHistory handles order book history requests
 func (h *Handler) GetOrderBookHistory(w http.ResponseWriter, r *http.Request) {
+	histStart := time.Now()
 	if r.Method != http.MethodGet {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -494,6 +512,7 @@ func (h *Handler) GetOrderBookHistory(w http.ResponseWriter, r *http.Request) {
 	if startStr != "" {
 		start, err = time.Parse(time.RFC3339, startStr)
 		if err != nil {
+			h.recordHistoricalRequest(time.Since(histStart), false)
 			http.Error(w, "Invalid start time format", http.StatusBadRequest)
 			return
 		}
@@ -504,6 +523,7 @@ func (h *Handler) GetOrderBookHistory(w http.ResponseWriter, r *http.Request) {
 	if endStr != "" {
 		end, err = time.Parse(time.RFC3339, endStr)
 		if err != nil {
+			h.recordHistoricalRequest(time.Since(histStart), false)
 			http.Error(w, "Invalid end time format", http.StatusBadRequest)
 			return
 		}
@@ -518,10 +538,12 @@ func (h *Handler) GetOrderBookHistory(w http.ResponseWriter, r *http.Request) {
 	history, err := h.storage.GetOrderBookHistory(ctx, book, start, end)
 	if err != nil {
 		h.logger.Printf("Error getting order book history: %v", err)
+		h.recordHistoricalRequest(time.Since(histStart), false)
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
 		return
 	}
 
+	h.recordHistoricalRequest(time.Since(histStart), true)
 	response := map[string]interface{}{
 		"book":      book,
 		"start":     start,
@@ -571,6 +593,7 @@ func (h *Handler) GetTicker(w http.ResponseWriter, r *http.Request) {
 
 // GetTickerHistory handles ticker history requests
 func (h *Handler) GetTickerHistory(w http.ResponseWriter, r *http.Request) {
+	histStart := time.Now()
 	if r.Method != http.MethodGet {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -591,6 +614,7 @@ func (h *Handler) GetTickerHistory(w http.ResponseWriter, r *http.Request) {
 	if startStr != "" {
 		start, err = time.Parse(time.RFC3339, startStr)
 		if err != nil {
+			h.recordHistoricalRequest(time.Since(histStart), false)
 			http.Error(w, "Invalid start time format", http.StatusBadRequest)
 			return
 		}
@@ -601,6 +625,7 @@ func (h *Handler) GetTickerHistory(w http.ResponseWriter, r *http.Request) {
 	if endStr != "" {
 		end, err = time.Parse(time.RFC3339, endStr)
 		if err != nil {
+			h.recordHistoricalRequest(time.Since(histStart), false)
 			http.Error(w, "Invalid end time format", http.StatusBadRequest)
 			return
 		}
@@ -615,10 +640,12 @@ func (h *Handler) GetTickerHistory(w http.ResponseWriter, r *http.Request) {
 	history, err := h.storage.GetTickerHistory(ctx, book, start, end)
 	if err != nil {
 		h.logger.Printf("Error getting ticker history: %v", err)
+		h.recordHistoricalRequest(time.Since(histStart), false)
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
 		return
 	}
 
+	h.recordHistoricalRequest(time.Since(histStart), true)
 	response := map[string]interface{}{
 		"book":      book,
 		"start":     start,
@@ -635,6 +662,7 @@ func (h *Handler) GetTickerHistory(w http.ResponseWriter, r *http.Request) {
 
 // GetTradeStatistics handles trade statistics requests
 func (h *Handler) GetTradeStatistics(w http.ResponseWriter, r *http.Request) {
+	histStart := time.Now()
 	if r.Method != http.MethodGet {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -655,6 +683,7 @@ func (h *Handler) GetTradeStatistics(w http.ResponseWriter, r *http.Request) {
 	if startStr != "" {
 		start, err = time.Parse(time.RFC3339, startStr)
 		if err != nil {
+			h.recordHistoricalRequest(time.Since(histStart), false)
 			http.Error(w, "Invalid start time format", http.StatusBadRequest)
 			return
 		}
@@ -665,6 +694,7 @@ func (h *Handler) GetTradeStatistics(w http.ResponseWriter, r *http.Request) {
 	if endStr != "" {
 		end, err = time.Parse(time.RFC3339, endStr)
 		if err != nil {
+			h.recordHistoricalRequest(time.Since(histStart), false)
 			http.Error(w, "Invalid end time format", http.StatusBadRequest)
 			return
 		}
@@ -679,10 +709,12 @@ func (h *Handler) GetTradeStatistics(w http.ResponseWriter, r *http.Request) {
 	stats, err := h.storage.GetTradeStatistics(ctx, book, start, end)
 	if err != nil {
 		h.logger.Printf("Error getting trade statistics: %v", err)
+		h.recordHistoricalRequest(time.Since(histStart), false)
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
 		return
 	}
 
+	h.recordHistoricalRequest(time.Since(histStart), true)
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(stats)
@@ -690,6 +722,7 @@ func (h *Handler) GetTradeStatistics(w http.ResponseWriter, r *http.Request) {
 
 // GetVolumeStatistics handles volume statistics requests
 func (h *Handler) GetVolumeStatistics(w http.ResponseWriter, r *http.Request) {
+	histStart := time.Now()
 	if r.Method != http.MethodGet {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -710,6 +743,7 @@ func (h *Handler) GetVolumeStatistics(w http.ResponseWriter, r *http.Request) {
 	if startStr != "" {
 		start, err = time.Parse(time.RFC3339, startStr)
 		if err != nil {
+			h.recordHistoricalRequest(time.Since(histStart), false)
 			http.Error(w, "Invalid start time format", http.StatusBadRequest)
 			return
 		}
@@ -720,6 +754,7 @@ func (h *Handler) GetVolumeStatistics(w http.ResponseWriter, r *http.Request) {
 	if endStr != "" {
 		end, err = time.Parse(time.RFC3339, endStr)
 		if err != nil {
+			h.recordHistoricalRequest(time.Since(histStart), false)
 			http.Error(w, "Invalid end time format", http.StatusBadRequest)
 			return
 		}
@@ -734,9 +769,12 @@ func (h *Handler) GetVolumeStatistics(w http.ResponseWriter, r *http.Request) {
 	stats, err := h.storage.GetVolumeStatistics(ctx, book, start, end)
 	if err != nil {
 		h.logger.Printf("Error getting volume statistics: %v", err)
+		h.recordHistoricalRequest(time.Since(histStart), false)
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
 		return
 	}
+
+	h.recordHistoricalRequest(time.Since(histStart), true)
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)

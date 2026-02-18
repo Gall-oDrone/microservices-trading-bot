@@ -16,11 +16,14 @@ type MetricsCollector struct {
 	backtestDuration   *prometheus.HistogramVec
 	activeBacktests    prometheus.Gauge
 
-	// Data processing metrics
-	eventsProcessed  *prometheus.CounterVec
-	dataLoadDuration *prometheus.HistogramVec
+		// Data processing metrics
+		eventsProcessed  *prometheus.CounterVec
+		dataLoadDuration *prometheus.HistogramVec
 
-	// Performance metrics
+		// Data fetch errors (Phase 2): by source (market_data, file)
+		dataFetchErrorsTotal *prometheus.CounterVec
+
+		// Performance metrics
 	metricsCalculationTime *prometheus.HistogramVec
 
 	// System metrics
@@ -70,6 +73,12 @@ func NewMetricsCollector(serviceName string) *MetricsCollector {
 			Name:      "data_load_duration_seconds",
 			Help:      "Data loading duration in seconds",
 			Buckets:   prometheus.ExponentialBuckets(0.1, 2, 10), // 0.1s to ~100s
+		}, []string{"source"}),
+
+		dataFetchErrorsTotal: promauto.NewCounterVec(prometheus.CounterOpts{
+			Namespace: serviceName,
+			Name:      "data_fetch_errors_total",
+			Help:      "Total data fetch errors by source (market_data, file)",
 		}, []string{"source"}),
 
 		// Performance metrics
@@ -127,6 +136,11 @@ func (m *MetricsCollector) RecordEventsProcessed(eventType string, count int) {
 // RecordDataLoadDuration records data loading duration
 func (m *MetricsCollector) RecordDataLoadDuration(source string, duration time.Duration) {
 	m.dataLoadDuration.WithLabelValues(source).Observe(duration.Seconds())
+}
+
+// RecordDataFetchError records a data fetch error (Phase 2). source: market_data, file.
+func (m *MetricsCollector) RecordDataFetchError(source string) {
+	m.dataFetchErrorsTotal.WithLabelValues(source).Inc()
 }
 
 // Performance metrics

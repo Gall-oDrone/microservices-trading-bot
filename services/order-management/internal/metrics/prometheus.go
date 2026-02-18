@@ -49,6 +49,15 @@ type MetricsCollector struct {
 	serviceUptime prometheus.Gauge
 	serviceHealth *prometheus.GaugeVec
 
+	// Bitso sync job (Phase 2)
+	bitsoSyncAttemptsTotal        prometheus.Counter
+	bitsoSyncErrorsTotal          prometheus.Counter
+	bitsoSyncLastSuccessTimestamp prometheus.Gauge
+
+	// Session risk endpoint (Phase 2)
+	sessionRiskRequestsTotal     prometheus.Counter
+	sessionRiskRequestErrorsTotal prometheus.Counter
+
 	// Intraday / P&L metrics (financial production standard)
 	dailyRealizedPnL   *prometheus.GaugeVec
 	dailyUnrealizedPnL *prometheus.GaugeVec
@@ -237,6 +246,30 @@ func NewMetricsCollector(serviceName string) *MetricsCollector {
 			[]string{"status"},
 		),
 
+		// Bitso sync job (Phase 2)
+		bitsoSyncAttemptsTotal: promauto.NewCounter(prometheus.CounterOpts{
+			Name: "bitso_sync_attempts_total",
+			Help: "Total number of Bitso sync job attempts",
+		}),
+		bitsoSyncErrorsTotal: promauto.NewCounter(prometheus.CounterOpts{
+			Name: "bitso_sync_errors_total",
+			Help: "Total number of Bitso sync job errors",
+		}),
+		bitsoSyncLastSuccessTimestamp: promauto.NewGauge(prometheus.GaugeOpts{
+			Name: "bitso_sync_last_success_timestamp_seconds",
+			Help: "Unix timestamp of last successful Bitso sync; alert if stale",
+		}),
+
+		// Session risk endpoint (Phase 2)
+		sessionRiskRequestsTotal: promauto.NewCounter(prometheus.CounterOpts{
+			Name: "session_risk_requests_total",
+			Help: "Total number of GET /api/v1/risk/session requests",
+		}),
+		sessionRiskRequestErrorsTotal: promauto.NewCounter(prometheus.CounterOpts{
+			Name: "session_risk_request_errors_total",
+			Help: "Total number of session risk request errors (4xx/5xx or handler errors)",
+		}),
+
 		// Intraday / P&L metrics — currency units (e.g. MXN); use decimal in aggregator, float for export
 		dailyRealizedPnL: promauto.NewGaugeVec(
 			prometheus.GaugeOpts{
@@ -415,6 +448,30 @@ func (mc *MetricsCollector) RecordServiceHealth(healthy bool) {
 		mc.serviceHealth.WithLabelValues("healthy").Set(0)
 		mc.serviceHealth.WithLabelValues("unhealthy").Set(1)
 	}
+}
+
+// Bitso sync (Phase 2)
+
+func (mc *MetricsCollector) RecordBitsoSyncAttempt() {
+	mc.bitsoSyncAttemptsTotal.Inc()
+}
+
+func (mc *MetricsCollector) RecordBitsoSyncError() {
+	mc.bitsoSyncErrorsTotal.Inc()
+}
+
+func (mc *MetricsCollector) SetBitsoSyncLastSuccessTimestamp(ts float64) {
+	mc.bitsoSyncLastSuccessTimestamp.Set(ts)
+}
+
+// Session risk endpoint (Phase 2)
+
+func (mc *MetricsCollector) RecordSessionRiskRequest() {
+	mc.sessionRiskRequestsTotal.Inc()
+}
+
+func (mc *MetricsCollector) RecordSessionRiskRequestError() {
+	mc.sessionRiskRequestErrorsTotal.Inc()
 }
 
 // IntradayMetricsWriter writes intraday/P&L gauges and counters (used by IntradayAggregator).

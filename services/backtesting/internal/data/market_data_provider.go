@@ -22,10 +22,11 @@ type MarketDataProvider struct {
 	logger     logger.Logger
 	retryCount int
 	retryDelay time.Duration
+	fetchErr   DataFetchErrorRecorder // optional: Phase 2 metrics
 }
 
-// NewMarketDataProvider creates a new market-data service provider
-func NewMarketDataProvider(baseURL string, cache *Cache, log logger.Logger, retryCount int, retryDelay time.Duration) *MarketDataProvider {
+// NewMarketDataProvider creates a new market-data service provider. fetchErr is optional (Phase 2).
+func NewMarketDataProvider(baseURL string, cache *Cache, log logger.Logger, retryCount int, retryDelay time.Duration, fetchErr DataFetchErrorRecorder) *MarketDataProvider {
 	return &MarketDataProvider{
 		baseURL: baseURL,
 		httpClient: &http.Client{
@@ -40,6 +41,7 @@ func NewMarketDataProvider(baseURL string, cache *Cache, log logger.Logger, retr
 		logger:     log,
 		retryCount: retryCount,
 		retryDelay: retryDelay,
+		fetchErr:   fetchErr,
 	}
 }
 
@@ -83,6 +85,9 @@ func (p *MarketDataProvider) LoadHistoricalData(ctx context.Context, req *DataRe
 		case models.EventTypeTrade:
 			trades, err := p.fetchTrades(ctx, req.Book, req.StartDate, req.EndDate, req.Limit)
 			if err != nil {
+				if p.fetchErr != nil {
+					p.fetchErr.RecordDataFetchError("market_data")
+				}
 				return nil, fmt.Errorf("failed to fetch trades: %w", err)
 			}
 			for i := range trades {
@@ -95,6 +100,9 @@ func (p *MarketDataProvider) LoadHistoricalData(ctx context.Context, req *DataRe
 		case models.EventTypeTicker:
 			tickers, err := p.fetchTickers(ctx, req.Book, req.StartDate, req.EndDate)
 			if err != nil {
+				if p.fetchErr != nil {
+					p.fetchErr.RecordDataFetchError("market_data")
+				}
 				return nil, fmt.Errorf("failed to fetch tickers: %w", err)
 			}
 			for i := range tickers {

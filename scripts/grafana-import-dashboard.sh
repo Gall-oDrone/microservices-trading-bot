@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
 # Import a Grafana dashboard by name. Use for per-service dashboards or the main trading-metrics dashboard.
+# Dashboards live under monitoring/grafana/dashboards/ in two folders:
+#   services/  - trading-engine, order-management, api-gateway, market-data
+#   domain/     - trading-metrics (platform dashboard)
 #
 # Prerequisites: Grafana reachable at GRAFANA_URL (default http://grafana.local).
 #
@@ -14,6 +17,8 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 DASHBOARDS_DIR="$REPO_ROOT/monitoring/grafana/dashboards"
+SERVICES_DIR="$DASHBOARDS_DIR/services"
+DOMAIN_DIR="$DASHBOARDS_DIR/domain"
 
 NAME="${1:-trading-metrics}"
 GRAFANA_URL="${GRAFANA_URL:-http://grafana.local}"
@@ -31,11 +36,11 @@ if ! command -v jq &>/dev/null; then
 fi
 
 case "$NAME" in
-  trading-engine)    DASHBOARD_JSON="$DASHBOARDS_DIR/trading-engine.json" ;;
-  order-management)   DASHBOARD_JSON="$DASHBOARDS_DIR/order-management.json" ;;
-  api-gateway)        DASHBOARD_JSON="$DASHBOARDS_DIR/api-gateway.json" ;;
-  market-data)        DASHBOARD_JSON="$DASHBOARDS_DIR/market-data.json" ;;
-  trading-metrics)    DASHBOARD_JSON="$DASHBOARDS_DIR/trading-metrics.json" ;;
+  trading-engine)    DASHBOARD_JSON="$SERVICES_DIR/trading-engine.json" ;;
+  order-management)  DASHBOARD_JSON="$SERVICES_DIR/order-management.json" ;;
+  api-gateway)       DASHBOARD_JSON="$SERVICES_DIR/api-gateway.json" ;;
+  market-data)       DASHBOARD_JSON="$SERVICES_DIR/market-data.json" ;;
+  trading-metrics)   DASHBOARD_JSON="$DOMAIN_DIR/trading-metrics.json" ;;
   *)
     echo "Usage: $0 DASHBOARD_NAME"
     echo "  DASHBOARD_NAME: trading-engine | order-management | api-gateway | market-data | trading-metrics"
