@@ -1,18 +1,78 @@
+# Prometheus alert rules for the trading platform.
+# Phase 4 (METRICS-IMPLEMENTATION-PLAN): critical metrics from Phase 1 trading-engine
+# plus existing service/balance/latency alerts.
+# Ensure Prometheus rule_files include rules/*.yml and alertmanager is configured.
+
 groups:
   - name: trading-alerts
     rules:
-      # High error rate in trading engine
-      - alert: TradingEngineHighErrorRate
-        expr: rate(http_requests_total{job="trading-engine",status=~"5.."}[5m]) > 0.1
+      # --- Service availability ---
+      - alert: ServiceDown
+        expr: up == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Service {{ $labels.job }} is down"
+          description: "Service {{ $labels.job }} has been down for more than 1 minute"
+
+      # --- Phase 4: Balance freshness (Phase 1 metric) ---
+      - alert: BalanceLastSuccessTimestampStale
+        expr: (time() - bitso_balance_last_success_timestamp_seconds{job=~"trading-engine.*"}) > 300
         for: 2m
         labels:
           severity: critical
           service: trading-engine
         annotations:
-          summary: "Trading Engine high error rate"
-          description: "Trading Engine error rate is {{ $value }} errors per second"
+          summary: "Bitso balance last success timestamp is stale"
+          description: "No successful balance fetch for more than 5 minutes (age {{ $value }}s). Check Bitso API and trading-engine balance fetcher."
 
-      # API rate limit exceeded
+      # --- Phase 4: Orders failed rate high (Phase 1 metric) ---
+      - alert: TradingEngineOrdersFailedRateHigh
+        expr: sum(rate(orders_failed_total{job=~"trading-engine.*"}[5m])) > 0.5
+        for: 3m
+        labels:
+          severity: critical
+          service: trading-engine
+        annotations:
+          summary: "Trading Engine order failure rate is high"
+          description: "Order failure rate is {{ $value }}/s over 5m. Check reason labels (validation, bitso_api, session_risk, ticker_fetch) and logs."
+
+      # --- Phase 4: Engine state not running when expected ---
+      # Alert when service is up but engine is not in running state (2) for too long (e.g. stuck initializing or stopped).
+      - alert: TradingEngineNotRunning
+        expr: up{job=~"trading-engine.*"} == 1 and engine_state{job=~"trading-engine.*"} != 2
+        for: 5m
+        labels:
+          severity: warning
+          service: trading-engine
+        annotations:
+          summary: "Trading Engine is up but engine state is not running"
+          description: "Engine state is {{ $value }} (0=stopped, 1=initializing, 2=running). Expected 2 when live. Check startup and health."
+
+      # --- Phase 4: Health check failures increasing ---
+      - alert: TradingEngineHealthCheckFailuresHigh
+        expr: increase(health_check_failures_total{job=~"trading-engine.*"}[15m]) > 5
+        for: 2m
+        labels:
+          severity: warning
+          service: trading-engine
+        annotations:
+          summary: "Trading Engine health check failures are high"
+          description: "{{ $value }} health check failures in the last 15 minutes. Check Bitso/Redis connectivity and health monitor."
+
+      # --- Existing: HTTP error rate (if trading-engine exposes HTTP metrics) ---
+      - alert: TradingEngineHighErrorRate
+        expr: rate(http_requests_total{job=~"trading-engine.*",status=~"5.."}[5m]) > 0.1
+        for: 2m
+        labels:
+          severity: critical
+          service: trading-engine
+        annotations:
+          summary: "Trading Engine high HTTP error rate"
+          description: "Trading Engine HTTP 5xx rate is {{ $value }} errors per second"
+
+      # --- Existing: API rate limit (optional; metric may be from api-gateway or trading-engine) ---
       - alert: APIRateLimitExceeded
         expr: bitso_api_rate_limit_exceeded > 0
         for: 1m
@@ -23,20 +83,20 @@ groups:
           summary: "Bitso API rate limit exceeded"
           description: "API rate limit exceeded for {{ $labels.endpoint }}"
 
-      # High latency in order execution
+      # --- Order execution latency (Phase 1 histogram from trading-engine) ---
       - alert: HighOrderExecutionLatency
-        expr: histogram_quantile(0.95, rate(order_execution_duration_seconds_bucket[5m])) > 5
+        expr: histogram_quantile(0.95, sum(rate(order_execution_duration_seconds_bucket{job=~"trading-engine.*"}[5m])) by (le)) > 5
         for: 3m
         labels:
           severity: warning
-          service: order-management
+          service: trading-engine
         annotations:
           summary: "High order execution latency"
           description: "95th percentile order execution latency is {{ $value }}s"
 
-      # Low available balance
+      # --- Low available balance ---
       - alert: LowAvailableBalance
-        expr: bitso_available_balance < 1000
+        expr: bitso_available_balance{job=~"trading-engine.*"} < 1000
         for: 1m
         labels:
           severity: critical
@@ -44,13 +104,3 @@ groups:
         annotations:
           summary: "Low available balance"
           description: "Available balance is {{ $value }} {{ $labels.currency }}"
-
-      # Service down
-      - alert: ServiceDown
-        expr: up == 0
-        for: 1m
-        labels:
-          severity: critical
-        annotations:
-          summary: "Service {{ $labels.job }} is down"
-          description: "Service {{ $labels.job }} has been down for more than 1 minute"

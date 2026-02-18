@@ -148,6 +148,62 @@ monitoring/grafana/dashboards/
 
 ---
 
+### Phase 4: Prometheus Alert Rules
+
+**Goal:** Define and maintain Prometheus alert rules for critical metrics so operators are notified of balance staleness, high order failure rate, engine not running, and health check failures (as called out in Phase 1 and the plan’s Next Steps).
+
+**Alerts to define**
+
+| Alert name | Expression (concept) | For | Severity | Purpose |
+|------------|----------------------|-----|----------|---------|
+| BalanceLastSuccessTimestampStale | `(time() - bitso_balance_last_success_timestamp_seconds) > 300` | 2m | critical | No successful balance fetch in 5m |
+| TradingEngineOrdersFailedRateHigh | `sum(rate(orders_failed_total[5m])) > 0.5` | 3m | critical | Order failure rate too high |
+| TradingEngineNotRunning | `up == 1 and engine_state != 2` (job=~"trading-engine.*") | 5m | warning | Service up but engine not in running state |
+| TradingEngineHealthCheckFailuresHigh | `increase(health_check_failures_total[15m]) > 5` | 2m | warning | Bitso/Redis health check failures increasing |
+| ServiceDown | `up == 0` | 1m | critical | Target unreachable |
+| HighOrderExecutionLatency | p95 of `order_execution_duration_seconds` > 5s | 3m | warning | Slow order execution |
+| LowAvailableBalance | `bitso_available_balance < 1000` | 1m | critical | Low balance (adjust threshold per env) |
+
+Existing alerts (TradingEngineHighErrorRate, APIRateLimitExceeded) remain; HighOrderExecutionLatency and LowAvailableBalance are scoped to `job=~"trading-engine.*"` where appropriate.
+
+**Tasks**
+
+1. Add or update rule file(s) under `monitoring/prometheus/rules/` (e.g. `trading-alerts.yml`) with the above alerts. Use `job=~"trading-engine.*"` for trading-engine metrics so they work with multiple replicas or job labels.
+2. Ensure `prometheus.yml` has `rule_files: - "rules/*.yml"` and that the Prometheus deployment mounts the rules directory.
+3. Configure Alertmanager (routing, severity, on-call) for the new alert labels (`service`, `severity`).
+4. Document alerts in `monitoring/prometheus/rules/README.md` (name, condition, severity, runbook link if any).
+
+**Files touched:** `monitoring/prometheus/rules/trading-alerts.yml`, `monitoring/prometheus/rules/README.md`, optionally `monitoring/prometheus/prometheus.yml` if rule_files were missing.
+
+---
+
+### Scrape configuration (prerequisite for metrics and alerts)
+
+For metrics and alerts to work, Prometheus must scrape each service’s `/metrics` endpoint. The reference config is `monitoring/prometheus/prometheus.yml`.
+
+**Required scrape jobs (per service):**
+
+| Job name | Target (example) | Metrics path |
+|----------|------------------|--------------|
+| prometheus | localhost:9090 | default |
+| trading-engine | trading-engine:8080 | /metrics |
+| order-management | order-management:8084 | /metrics |
+| market-data | market-data:8083 | /metrics |
+| api-gateway | api-gateway:8085 | /metrics |
+| backtesting | backtesting:8081 | /metrics |
+
+When adding a new service that exposes Prometheus metrics, add a corresponding `scrape_configs` entry and ensure the service’s `job` label matches dashboard and alert queries (e.g. `job=~"trading-engine.*"`).
+
+---
+
+### Post-implementation validation (optional)
+
+- **Metrics exposed:** After deploying a service, verify that its `/metrics` endpoint returns the expected series (e.g. `curl -s http://<service>:<port>/metrics | grep -E '^orders_failed_total|^engine_state'`).
+- **Alerts load:** In Prometheus UI, check Status → Rules and confirm that rule groups load without errors and that alert names appear.
+- **Dashboards:** After importing dashboards, confirm panels show data (or “No data” with a valid query); fix any broken or deprecated metric names.
+
+---
+
 ## Dashboard and Metric Relationship
 
 ```mermaid
@@ -183,15 +239,16 @@ The same Prometheus series are queried in both service and domain dashboards; do
 | 1 | Trading Engine production metrics | Counters/gauges/histograms for execution, signals, balance, Bitso, Kafka, engine state, health | Done |
 | 2 | Other services (OM, market-data, api-gateway, backtesting) | Document current + recommended additions; implement when prioritizing | Done |
 | 3 | Domain/flow metrics and dashboard layout | services/ and domain/ folders; import script paths; domain query/panel spec | Done |
+| 4 | Prometheus alert rules | Alerts for balance stale, orders failed rate, engine state, health check failures, service down, latency, low balance | Done |
 
 ---
 
 ## Next Steps
 
-1. **Phase 1:** Implement Trading Engine metrics and wire them in the engine and main; add panels to the Trading Engine service dashboard (and optionally to the domain dashboard).
-2. **Phase 2:** Prioritize one service at a time and add the recommended metrics from this plan.
-3. **Phase 3:** Perform the dashboard folder move and script updates; then add/update domain panels to use Phase 1 (and later Phase 2) metrics.
-4. **Alerts:** Define Prometheus alert rules for critical metrics (e.g. `bitso_balance_last_success_timestamp_seconds` stale, `orders_failed_total` rate high, `engine_state` not running when expected, `health_check_failures_total` increasing).
+1. **Phase 1–3:** Already implemented; maintain dashboards and metrics as new features are added.
+2. **Phase 4 (Alerts):** Implemented in `monitoring/prometheus/rules/trading-alerts.yml`. Tune thresholds (e.g. order failure rate, balance staleness window, low-balance threshold) per environment; configure Alertmanager routing and runbooks.
+3. **Scrape config:** When adding services, add a matching `scrape_configs` entry in `monitoring/prometheus/prometheus.yml` so metrics and alerts have data.
+4. **Validation:** Optionally run post-deploy checks (curl `/metrics`, Prometheus Rules UI, dashboard panels) to confirm metrics and alerts are active.
 
 ---
 
@@ -200,10 +257,12 @@ The same Prometheus series are queried in both service and domain dashboards; do
 - [Prometheus: Metric and label naming](https://prometheus.io/docs/practices/naming/)
 - Project: `monitoring/PROMETHEUS-TRADING-ENGINE-BALANCE.md` (balance metric and deduplication)
 - Project: `INTRADAY-STRATEGY-IMPLEMENTATION-PLAN.md` (intraday metrics and Grafana)
-- Dashboards: `monitoring/grafana/dashboards/` (current); after Phase 3: `dashboards/services/`, `dashboards/domain/`
+- Dashboards: `monitoring/grafana/dashboards/services/`, `monitoring/grafana/dashboards/domain/`
 - Import scripts: `scripts/grafana-import-trading-dashboard.sh`, `scripts/grafana-import-dashboard.sh`
+- Alert rules: `monitoring/prometheus/rules/trading-alerts.yml`; see `monitoring/prometheus/rules/README.md` for alert list.
+- Scrape config: `monitoring/prometheus/prometheus.yml`
 
 ---
 
-**Document version:** 1.0  
-**Status:** Phase 1, 2, and 3 implemented. Order Management (Bitso sync, session risk), Market Data (WebSocket subscribe, historical API), and Backtesting (data fetch errors) metrics added. API Gateway: no critical additions per plan; optional backend labels can be added later.
+**Document version:** 1.1  
+**Status:** Phases 1–4 implemented. Phase 4 adds Prometheus alert rules for balance staleness, order failure rate, engine state, health check failures, service down, latency, and low balance. Scrape configuration and optional post-implementation validation are documented.
