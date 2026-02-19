@@ -151,18 +151,19 @@ This document outlines the recommended steps to safely implement trading strateg
 
 #### Phase 6 prerequisite: Market-data WebSocket persistence to Redis
 
-**Current state**
+**Current state (post-implementation)**
 
 - Bitso WebSocket channels (Trades, Orders, Diff-orders) are implemented in `shared/pkg/bitso/websocket.go` and used by market-data's `internal/websocket/manager.go` (see [Bitso Trades](https://docs.bitso.com/bitso-api/docs/trades-channel), [Orders](https://docs.bitso.com/bitso-api/docs/orders-channel), [Diff-orders](https://docs.bitso.com/bitso-api/docs/diff-orders-channel)).
-- Market-data receives all three streams; only **trades** are processed (`TradeProcessor` → `TradeEvent`). Processed trades go **only to Kafka** (if enabled); nothing calls `cache.SetTrade` or `storage.StoreTrade`. So `GET /api/v1/trades?from=&to=` reads from Redis and, when empty, returns synthetic data.
+- **Trades → Redis: Done.** A single consumer of the processed trade stream (`RedisTradeWriter` in `services/market-data/internal/writer/redis_trade_writer.go`) calls `cache.SetTrade` and `storage.StoreTrade` for each `*models.TradeEvent`, then forwards the same trade to an output channel. The Kafka publisher reads from the writer's output (not from the processor), so the processor has only one consumer. `GET /api/v1/trades?from=&to=` now returns real Bitso data when market-data has been running and persisting to Redis.
+- Order book and ticker persistence remain as originally scoped (optional / derived).
 
 **Goal**
 
-Persist WebSocket data to Redis continuously so backtests (Phase 6) use **real** Bitso data via market-data's HTTP API instead of synthetic trades.
+Persist WebSocket data to Redis continuously so backtests (Phase 6) use **real** Bitso data via market-data's HTTP API instead of synthetic trades. **Achieved for trades.**
 
 **Tasks**
 
-1. **Trades → Redis (required):** Add a single consumer of the processed trade stream that (a) calls `cache.SetTrade(ctx, trade.Book, trade)` and `storage.StoreTrade(ctx, trade)` for each `*models.TradeEvent`, then (b) forwards the same trade to an output channel. Wire the Kafka publisher to read from this component's output instead of from `tradeProcessor.GetProcessedTradesStream()` so the processor has only one consumer. Implement in a new component (e.g. `services/market-data/internal/writer/redis_trade_writer.go` or similar) and wire it in `services/market-data/cmd/main.go` (between processor and publisher; pass `cacheLayer` and `storage`).
+1. **Trades → Redis (required):** ~~Add a single consumer of the processed trade stream…~~ **Done.** Implemented in `services/market-data/internal/writer/redis_trade_writer.go`; wired in `services/market-data/cmd/main.go` (processor → Redis writer → cache + storage + output channel → Kafka publisher). Unit tests in `internal/writer/redis_trade_writer_test.go`.
 2. **Order book (optional):** To support order-book history for backtests, add a component that consumes `GetOrdersStream()` and `GetDiffOrdersStream()`, maintains book state (and/or uses `cache.UpdateOrderBook`), and periodically calls `cache.SetOrderBook` and `storage.StoreOrderBook`. Defer if backtests only need trades.
 3. **Ticker:** Bitso WebSocket has no ticker channel. Use trades (and optionally derived OHLC) for backtest ticker history; no extra WebSocket persistence for ticker.
 4. **Configuration:** Ensure historical storage `RetentionDays` (and any cleanup) matches the intraday backtest window; Redis persistence (AOF/RDB) so data is not lost before backtests run.
@@ -194,7 +195,7 @@ flowchart LR
   Writer --> Pub
 ```
 
-**Files touched:** `services/market-data/cmd/main.go` (wire new component, publisher reads from writer output), new package under `services/market-data/internal/` for the Redis trade writer (e.g. `writer` or `persistence`). Cache/storage interfaces already exist (`cache.SetTrade`, `storage.StoreTrade`).
+**Files touched (implementation done):** `services/market-data/cmd/main.go` (wire Redis writer; publisher reads from writer output), `services/market-data/internal/writer/redis_trade_writer.go` (new), `services/market-data/internal/writer/redis_trade_writer_test.go` (new). Cache/storage interfaces used: `cache.SetTrade`, `storage.StoreTrade`.
 
 ---
 
@@ -208,7 +209,7 @@ flowchart LR
 | 4     | Daily loss & drawdown limits   | Config + check before execute; OM session API | Done          |
 | 5     | Intraday metrics               | Observability for live intraday trading      | Done (incl. Grafana dashboards) |
 | 6     | Backtesting                    | Historical validation; doc in plan           | Documented    |
-| 6a    | Market-data WebSocket → Redis  | Trades (and optional order book) persisted for backtest data | Pending       |
+| 6a    | Market-data WebSocket → Redis  | Trades persisted for backtest data (writer implemented; optional order book deferred) | Done          |
 
 ---
 
@@ -237,7 +238,7 @@ After Phases 1–6 are implemented, follow these priorities to validate and hard
 
 **Goal:** Run one backtest and compare its metrics to the Grafana intraday panels so backtest and live stay aligned.
 
-- For real (non-synthetic) backtest data, ensure market-data WebSocket persistence to Redis is implemented (Phase 6 prerequisite) and market-data has been running for the desired date range.
+- For real (non-synthetic) backtest data, run market-data (Phase 6a trades persistence is implemented) for the desired date range so Redis has trade history.
 
 **Steps:**
 
@@ -288,9 +289,10 @@ After Phases 1–6 are implemented, follow these priorities to validate and hard
 - [Bitso: Trades channel](https://docs.bitso.com/bitso-api/docs/trades-channel), [Orders channel](https://docs.bitso.com/bitso-api/docs/orders-channel), [Diff-orders channel](https://docs.bitso.com/bitso-api/docs/diff-orders-channel)
 - Project: `DEVELOPMENT-ROADMAP.md`, `REMAINING-PHASES-CHECKLIST.md`
 - Bitso client: `shared/pkg/bitso/client.go` (`SetAPIBaseURL`, `LookupOrder`, `LookupOrders`, `OrderTrades`)
-- Market-data WebSocket: `shared/pkg/bitso/websocket.go` (WebSocketTrade, WebSocketOrder, WebSocketDiffOrder); `services/market-data/internal/websocket/manager.go`, `internal/processor/trade_processor.go`, `internal/cache/redis.go` (SetTrade), `internal/historical/storage.go` (StoreTrade)
+- Market-data WebSocket: `shared/pkg/bitso/websocket.go` (WebSocketTrade, WebSocketOrder, WebSocketDiffOrder); `services/market-data/internal/websocket/manager.go`, `internal/processor/trade_processor.go`, `internal/writer/redis_trade_writer.go`, `internal/cache/redis.go` (SetTrade), `internal/historical/storage.go` (StoreTrade).
+- Market-data build fixes (for plan completeness): `internal/middleware/circuit_breaker.go` (unused variable removed), `internal/validation/validator.go` (aligned with `models.TradeEvent` and `bitso` types: TradeEvent fields, OrderBook/Ticker/WebSocket payload types, Monetary usage).
 
 ---
 
-**Document version:** 1.8  
-**Status:** Phases 1–6 complete. Phase 6 prerequisite (market-data WebSocket persistence to Redis) documented; implementation pending. Next steps: Operational validation in stage (Priority 1), Backtest vs live comparison (Priority 2), Production config and persistence (Priorities 3–4). Scripts: `scripts/intraday-validate-stage-pipeline.sh`, `scripts/intraday-backtest-and-compare.sh`.
+**Document version:** 1.9  
+**Status:** Phases 1–6 and Phase 6a (trades → Redis) complete. Next steps: Operational validation in stage (Priority 1), Backtest vs live comparison (Priority 2), Production config and persistence (Priorities 3–4). Scripts: `scripts/intraday-validate-stage-pipeline.sh`, `scripts/intraday-backtest-and-compare.sh`.

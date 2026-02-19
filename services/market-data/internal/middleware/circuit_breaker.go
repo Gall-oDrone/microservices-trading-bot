@@ -115,8 +115,6 @@ func CircuitBreakerMiddleware(failureThreshold, successThreshold int, timeout ti
 
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			var err error
-
 			// Execute the next handler with circuit breaker protection
 			cbErr := cb.Execute(func() error {
 				// Create a response writer that captures the status code

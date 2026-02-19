@@ -20,6 +20,7 @@ import (
 	"bitso-trading-platform/market-data/internal/publisher"
 	"bitso-trading-platform/market-data/internal/server"
 	"bitso-trading-platform/market-data/internal/websocket"
+	"bitso-trading-platform/market-data/internal/writer"
 	"bitso-trading-platform/shared/pkg/bitso"
 	"bitso-trading-platform/shared/pkg/health"
 	"bitso-trading-platform/shared/pkg/kafka"
@@ -41,6 +42,7 @@ type Application struct {
 	// Core components
 	wsManager      websocket.StreamManager
 	tradeProcessor processor.TradeProcessor
+	redisWriter    *writer.Writer
 	tradePublisher publisher.TradePublisher
 	kafkaProducer  *kafka.Producer
 
@@ -160,14 +162,25 @@ func NewApplication() (*Application, error) {
 	tradeProcessor := processor.NewProcessor(processorConfig)
 	appLogger.Info("Trade processor created")
 
-	// Initialize Trade Publisher
+	// Redis trade writer: single consumer of processor output; writes to cache + storage, forwards to publisher
+	writerConfig := &writer.WriterConfig{
+		Logger:       stdLogger,
+		Cache:        cacheLayer,
+		Storage:      storage,
+		TradesInput:  tradeProcessor.GetProcessedTradesStream(),
+		OutputBuffer: 100,
+	}
+	redisWriter := writer.NewWriter(writerConfig)
+	appLogger.Info("Redis trade writer created")
+
+	// Initialize Trade Publisher (reads from writer output so processor has single consumer)
 	var tradePublisher publisher.TradePublisher
 	if cfg.EnableKafka && kafkaProducer != nil {
 		publisherConfig := &publisher.PublisherConfig{
-			Logger:      stdLogger, // publisher uses *log.Logger
+			Logger:      stdLogger,
 			Producer:    kafkaProducer,
 			Topic:       cfg.KafkaTopicTrades,
-			TradesInput: tradeProcessor.GetProcessedTradesStream(),
+			TradesInput: redisWriter.GetOutputStream(),
 		}
 		tradePublisher = publisher.NewPublisher(publisherConfig)
 		appLogger.Info("Trade publisher created")
@@ -209,6 +222,7 @@ func NewApplication() (*Application, error) {
 		config:           cfg,
 		wsManager:        wsManager,
 		tradeProcessor:   tradeProcessor,
+		redisWriter:      redisWriter,
 		tradePublisher:   tradePublisher,
 		kafkaProducer:    kafkaProducer,
 		cacheLayer:       cacheLayer,
@@ -271,6 +285,12 @@ func (app *Application) Start() error {
 	}
 	app.logger.Info("Trade processor started")
 
+	// Start Redis trade writer (persists to cache + storage, forwards to publisher)
+	if err := app.redisWriter.Start(app.ctx); err != nil {
+		return fmt.Errorf("failed to start Redis trade writer: %w", err)
+	}
+	app.logger.Info("Redis trade writer started")
+
 	// Start trade publisher
 	if app.tradePublisher != nil {
 		if err := app.tradePublisher.Start(app.ctx); err != nil {
@@ -313,6 +333,13 @@ func (app *Application) Stop() error {
 				app.logger.Error("Error stopping trade publisher", map[string]interface{}{"error": err})
 				lastErr = err
 			}
+		}
+
+		// Stop Redis trade writer
+		app.logger.Info("Stopping Redis trade writer...")
+		if err := app.redisWriter.Stop(); err != nil {
+			app.logger.Error("Error stopping Redis trade writer", map[string]interface{}{"error": err})
+			lastErr = err
 		}
 
 		// Stop trade processor
