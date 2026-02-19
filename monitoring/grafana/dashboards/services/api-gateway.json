@@ -1,1 +1,253 @@
-{"dashboard":{"id":null,"title":"API Gateway","tags":["trading","api-gateway","per-service"],"timezone":"browser","time":{"from":"now-1h","to":"now"},"refresh":"10s","panels":[{"id":1,"title":"Scrape status (up)","type":"stat","description":"1 = Prometheus is scraping this service.","gridPos":{"h":4,"w":6,"x":0,"y":0},"targets":[{"expr":"max(up{job=~\"api-gateway.*\"}) or vector(0)","refId":"A"}],"fieldConfig":{"defaults":{"color":{"mode":"thresholds"},"thresholds":{"steps":[{"color":"red","value":null},{"color":"green","value":1}]}}}},{"id":2,"title":"HTTP requests (total)","type":"stat","gridPos":{"h":4,"w":6,"x":6,"y":0},"targets":[{"expr":"sum(api_gateway_http_requests_total) or vector(0)","refId":"A"}]},{"id":3,"title":"Requests in flight","type":"stat","gridPos":{"h":4,"w":6,"x":12,"y":0},"targets":[{"expr":"sum(api_gateway_http_requests_in_flight) or vector(0)","refId":"A"}]},{"id":4,"title":"Service uptime (s)","type":"stat","gridPos":{"h":4,"w":6,"x":18,"y":0},"targets":[{"expr":"max(api_gateway_service_uptime_seconds) or vector(0)","refId":"A"}]},{"id":5,"title":"Request duration (p95)","type":"timeseries","gridPos":{"h":6,"w":12,"x":0,"y":4},"targets":[{"expr":"histogram_quantile(0.95, sum(rate(api_gateway_http_request_duration_seconds_bucket[5m])) by (le, path))","refId":"A","legendFormat":"{{path}}"}]},{"id":6,"title":"Request rate by status","type":"timeseries","gridPos":{"h":6,"w":12,"x":12,"y":4},"targets":[{"expr":"sum(rate(api_gateway_http_requests_total[5m])) by (status)","refId":"A","legendFormat":"{{status}}"}]},{"id":7,"title":"Backend call duration (p95)","type":"timeseries","gridPos":{"h":6,"w":12,"x":0,"y":10},"targets":[{"expr":"histogram_quantile(0.95, sum(rate(api_gateway_backend_call_duration_seconds_bucket[5m])) by (le, service))","refId":"A","legendFormat":"{{service}}"}]},{"id":8,"title":"Backend errors","type":"timeseries","gridPos":{"h":6,"w":12,"x":12,"y":10},"targets":[{"expr":"sum(rate(api_gateway_backend_errors_total[5m])) by (service, endpoint)","refId":"A","legendFormat":"{{service}} {{endpoint}}"}]},{"id":9,"title":"Circuit breaker state","type":"stat","description":"0=closed, 1=open, 2=half-open","gridPos":{"h":4,"w":8,"x":0,"y":16},"targets":[{"expr":"api_gateway_circuit_breaker_state","refId":"A","legendFormat":"{{service}}"}]},{"id":10,"title":"Goroutines","type":"stat","gridPos":{"h":4,"w":4,"x":8,"y":16},"targets":[{"expr":"max(api_gateway_goroutines) or vector(0)","refId":"A"}]},{"id":11,"title":"Memory (bytes)","type":"stat","gridPos":{"h":4,"w":4,"x":12,"y":16},"targets":[{"expr":"max(api_gateway_memory_usage_bytes) or vector(0)","refId":"A"}],"fieldConfig":{"defaults":{"unit":"bytes"}}},{"id":12,"title":"Rate limit hits","type":"timeseries","gridPos":{"h":4,"w":8,"x":16,"y":16},"targets":[{"expr":"sum(rate(api_gateway_rate_limit_hits_total[5m])) by (path)","refId":"A","legendFormat":"{{path}}"}]}]}}
+{
+  "id": null,
+  "title": "API Gateway",
+  "tags": [
+    "trading",
+    "api-gateway",
+    "per-service"
+  ],
+  "timezone": "browser",
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
+  "refresh": "10s",
+  "panels": [
+    {
+      "id": 1,
+      "title": "Scrape status (up)",
+      "type": "stat",
+      "description": "1 = Prometheus is scraping this service.",
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 0,
+        "y": 0
+      },
+      "targets": [
+        {
+          "expr": "max(up{job=~\"api-gateway.*\"}) or vector(0)",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 1
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": 2,
+      "title": "HTTP requests (total)",
+      "type": "stat",
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 6,
+        "y": 0
+      },
+      "targets": [
+        {
+          "expr": "sum(api_gateway_http_requests_total) or vector(0)",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "Requests in flight",
+      "type": "stat",
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 12,
+        "y": 0
+      },
+      "targets": [
+        {
+          "expr": "sum(api_gateway_http_requests_in_flight) or vector(0)",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "Service uptime (s)",
+      "type": "stat",
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 18,
+        "y": 0
+      },
+      "targets": [
+        {
+          "expr": "max(api_gateway_service_uptime_seconds) or vector(0)",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "Request duration (p95)",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 6,
+        "w": 12,
+        "x": 0,
+        "y": 4
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(api_gateway_http_request_duration_seconds_bucket[5m])) by (le, path))",
+          "refId": "A",
+          "legendFormat": "{{path}}"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "title": "Request rate by status",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 6,
+        "w": 12,
+        "x": 12,
+        "y": 4
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(api_gateway_http_requests_total[5m])) by (status)",
+          "refId": "A",
+          "legendFormat": "{{status}}"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "title": "Backend call duration (p95)",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 6,
+        "w": 12,
+        "x": 0,
+        "y": 10
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(api_gateway_backend_call_duration_seconds_bucket[5m])) by (le, service))",
+          "refId": "A",
+          "legendFormat": "{{service}}"
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "title": "Backend errors",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 6,
+        "w": 12,
+        "x": 12,
+        "y": 10
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(api_gateway_backend_errors_total[5m])) by (service, endpoint)",
+          "refId": "A",
+          "legendFormat": "{{service}} {{endpoint}}"
+        }
+      ]
+    },
+    {
+      "id": 9,
+      "title": "Circuit breaker state",
+      "type": "stat",
+      "description": "0=closed, 1=open, 2=half-open",
+      "gridPos": {
+        "h": 4,
+        "w": 8,
+        "x": 0,
+        "y": 16
+      },
+      "targets": [
+        {
+          "expr": "api_gateway_circuit_breaker_state",
+          "refId": "A",
+          "legendFormat": "{{service}}"
+        }
+      ]
+    },
+    {
+      "id": 10,
+      "title": "Goroutines",
+      "type": "stat",
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 8,
+        "y": 16
+      },
+      "targets": [
+        {
+          "expr": "max(api_gateway_goroutines) or vector(0)",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 11,
+      "title": "Memory (bytes)",
+      "type": "stat",
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 12,
+        "y": 16
+      },
+      "targets": [
+        {
+          "expr": "max(api_gateway_memory_usage_bytes) or vector(0)",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes"
+        }
+      }
+    },
+    {
+      "id": 12,
+      "title": "Rate limit hits",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 4,
+        "w": 8,
+        "x": 16,
+        "y": 16
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(api_gateway_rate_limit_hits_total[5m])) by (path)",
+          "refId": "A",
+          "legendFormat": "{{path}}"
+        }
+      ]
+    }
+  ]
+}

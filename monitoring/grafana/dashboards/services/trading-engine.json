@@ -1,481 +1,479 @@
 {
-    "dashboard": {
-        "id": null,
-        "title": "Trading Engine",
-        "tags": [
-            "trading",
-            "trading-engine",
-            "per-service"
-        ],
-        "timezone": "browser",
-        "time": {
-            "from": "now-1h",
-            "to": "now"
-        },
-        "refresh": "10s",
-        "panels": [
-            {
-                "id": 1,
-                "title": "Scrape status (up)",
-                "type": "stat",
-                "description": "1 = Prometheus is scraping this service. If 0 or empty, check ServiceMonitor and /metrics.",
-                "gridPos": {
-                    "h": 4,
-                    "w": 6,
-                    "x": 0,
-                    "y": 0
-                },
-                "targets": [
-                    {
-                        "expr": "max(up{job=~\"trading-engine.*\"}) or vector(0)",
-                        "refId": "A"
-                    }
-                ],
-                "fieldConfig": {
-                    "defaults": {
-                        "color": {
-                            "mode": "thresholds"
-                        },
-                        "thresholds": {
-                            "steps": [
-                                {
-                                    "color": "red",
-                                    "value": null
-                                },
-                                {
-                                    "color": "green",
-                                    "value": 1
-                                }
-                            ]
-                        }
-                    }
-                }
-            },
-            {
-                "id": 2,
-                "title": "Orders executed (total)",
-                "type": "stat",
-                "gridPos": {
-                    "h": 4,
-                    "w": 6,
-                    "x": 6,
-                    "y": 0
-                },
-                "targets": [
-                    {
-                        "expr": "sum(orders_executed_total{job=~\"trading-engine.*\"}) or vector(0)",
-                        "refId": "A"
-                    }
-                ]
-            },
-            {
-                "id": 3,
-                "title": "Order execution rate",
-                "type": "timeseries",
-                "gridPos": {
-                    "h": 4,
-                    "w": 12,
-                    "x": 12,
-                    "y": 0
-                },
-                "targets": [
-                    {
-                        "expr": "sum(rate(orders_executed_total{job=~\"trading-engine.*\"}[5m])) or vector(0)",
-                        "refId": "A",
-                        "legendFormat": "orders/s"
-                    }
-                ]
-            },
-            {
-                "id": 4,
-                "title": "Engine state",
-                "type": "stat",
-                "description": "0=stopped, 1=initializing, 2=running",
-                "gridPos": {
-                    "h": 4,
-                    "w": 6,
-                    "x": 0,
-                    "y": 4
-                },
-                "targets": [
-                    {
-                        "expr": "engine_state{job=~\"trading-engine.*\"} or vector(0)",
-                        "refId": "A"
-                    }
-                ],
-                "fieldConfig": {
-                    "defaults": {
-                        "color": {
-                            "mode": "thresholds"
-                        },
-                        "thresholds": {
-                            "steps": [
-                                {
-                                    "color": "red",
-                                    "value": null
-                                },
-                                {
-                                    "color": "yellow",
-                                    "value": 1
-                                },
-                                {
-                                    "color": "green",
-                                    "value": 2
-                                }
-                            ]
-                        }
-                    }
-                }
-            },
-            {
-                "id": 5,
-                "title": "Dry run",
-                "type": "stat",
-                "description": "1=dry-run, 0=live",
-                "gridPos": {
-                    "h": 4,
-                    "w": 6,
-                    "x": 6,
-                    "y": 4
-                },
-                "targets": [
-                    {
-                        "expr": "trading_engine_dry_run{job=~\"trading-engine.*\"} or vector(0)",
-                        "refId": "A"
-                    }
-                ],
-                "fieldConfig": {
-                    "defaults": {
-                        "color": {
-                            "mode": "thresholds"
-                        },
-                        "thresholds": {
-                            "steps": [
-                                {
-                                    "color": "blue",
-                                    "value": 1
-                                },
-                                {
-                                    "color": "green",
-                                    "value": 0
-                                }
-                            ]
-                        }
-                    }
-                }
-            },
-            {
-                "id": 6,
-                "title": "Orders failed (total)",
-                "type": "stat",
-                "gridPos": {
-                    "h": 4,
-                    "w": 6,
-                    "x": 12,
-                    "y": 4
-                },
-                "targets": [
-                    {
-                        "expr": "sum(orders_failed_total{job=~\"trading-engine.*\"}) or vector(0)",
-                        "refId": "A"
-                    }
-                ]
-            },
-            {
-                "id": 7,
-                "title": "Session risk rejections",
-                "type": "stat",
-                "gridPos": {
-                    "h": 4,
-                    "w": 6,
-                    "x": 18,
-                    "y": 4
-                },
-                "targets": [
-                    {
-                        "expr": "sum(session_risk_rejections_total{job=~\"trading-engine.*\"}) or vector(0)",
-                        "refId": "A"
-                    }
-                ]
-            },
-            {
-                "id": 8,
-                "title": "Available balance",
-                "type": "timeseries",
-                "description": "Bitso available balance per currency (from trading-engine).",
-                "gridPos": {
-                    "h": 6,
-                    "w": 12,
-                    "x": 0,
-                    "y": 8
-                },
-                "targets": [
-                    {
-                        "expr": "max by (currency) (bitso_available_balance{job=~\"trading-engine.*\"})",
-                        "refId": "A",
-                        "legendFormat": "{{currency}}"
-                    }
-                ],
-                "fieldConfig": {
-                    "defaults": {
-                        "unit": "currencyMXN"
-                    }
-                }
-            },
-            {
-                "id": 9,
-                "title": "Orders executed by book / strategy",
-                "type": "timeseries",
-                "gridPos": {
-                    "h": 6,
-                    "w": 12,
-                    "x": 12,
-                    "y": 8
-                },
-                "targets": [
-                    {
-                        "expr": "sum by (book, strategy) (orders_executed_total{job=~\"trading-engine.*\"})",
-                        "refId": "A",
-                        "legendFormat": "{{book}} {{strategy}}"
-                    }
-                ]
-            },
-            {
-                "id": 10,
-                "type": "row",
-                "title": "Signals",
-                "gridPos": {
-                    "h": 1,
-                    "w": 24,
-                    "x": 0,
-                    "y": 14
-                }
-            },
-            {
-                "id": 11,
-                "title": "Signals received (rate)",
-                "type": "timeseries",
-                "gridPos": {
-                    "h": 5,
-                    "w": 8,
-                    "x": 0,
-                    "y": 15
-                },
-                "targets": [
-                    {
-                        "expr": "sum(rate(signals_received_total{job=~\"trading-engine.*\"}[5m])) or vector(0)",
-                        "refId": "A",
-                        "legendFormat": "signals/s"
-                    }
-                ]
-            },
-            {
-                "id": 12,
-                "title": "Signals processed (rate) by outcome",
-                "type": "timeseries",
-                "gridPos": {
-                    "h": 5,
-                    "w": 8,
-                    "x": 8,
-                    "y": 15
-                },
-                "targets": [
-                    {
-                        "expr": "sum(rate(signals_processed_total{job=~\"trading-engine.*\"}[5m])) by (outcome)",
-                        "refId": "A",
-                        "legendFormat": "{{outcome}}"
-                    }
-                ]
-            },
-            {
-                "id": 13,
-                "title": "Signals dropped (rate)",
-                "type": "timeseries",
-                "gridPos": {
-                    "h": 5,
-                    "w": 8,
-                    "x": 16,
-                    "y": 15
-                },
-                "targets": [
-                    {
-                        "expr": "sum(rate(signals_dropped_total{job=~\"trading-engine.*\"}[5m])) by (reason) or vector(0)",
-                        "refId": "A",
-                        "legendFormat": "{{reason}}"
-                    }
-                ]
-            },
-            {
-                "id": 14,
-                "title": "Signal processing duration (p95)",
-                "type": "timeseries",
-                "gridPos": {
-                    "h": 5,
-                    "w": 12,
-                    "x": 0,
-                    "y": 20
-                },
-                "targets": [
-                    {
-                        "expr": "histogram_quantile(0.95, sum(rate(signal_processing_duration_seconds_bucket{job=~\"trading-engine.*\"}[5m])) by (le)) or vector(0)",
-                        "refId": "A",
-                        "legendFormat": "p95"
-                    }
-                ]
-            },
-            {
-                "id": 15,
-                "title": "Order execution duration (p95) by book",
-                "type": "timeseries",
-                "gridPos": {
-                    "h": 5,
-                    "w": 12,
-                    "x": 12,
-                    "y": 20
-                },
-                "targets": [
-                    {
-                        "expr": "histogram_quantile(0.95, sum(rate(order_execution_duration_seconds_bucket{job=~\"trading-engine.*\"}[5m])) by (le, book))",
-                        "refId": "A",
-                        "legendFormat": "{{book}}"
-                    }
-                ]
-            },
-            {
-                "id": 16,
-                "type": "row",
-                "title": "Kafka & Bitso",
-                "gridPos": {
-                    "h": 1,
-                    "w": 24,
-                    "x": 0,
-                    "y": 25
-                }
-            },
-            {
-                "id": 17,
-                "title": "Kafka messages consumed (rate) by topic",
-                "type": "timeseries",
-                "gridPos": {
-                    "h": 5,
-                    "w": 8,
-                    "x": 0,
-                    "y": 26
-                },
-                "targets": [
-                    {
-                        "expr": "sum(rate(kafka_messages_consumed_total{job=~\"trading-engine.*\"}[5m])) by (topic)",
-                        "refId": "A",
-                        "legendFormat": "{{topic}}"
-                    }
-                ]
-            },
-            {
-                "id": 18,
-                "title": "Kafka consumer errors (rate)",
-                "type": "timeseries",
-                "gridPos": {
-                    "h": 5,
-                    "w": 8,
-                    "x": 8,
-                    "y": 26
-                },
-                "targets": [
-                    {
-                        "expr": "sum(rate(kafka_consumer_errors_total{job=~\"trading-engine.*\"}[5m])) or vector(0)",
-                        "refId": "A",
-                        "legendFormat": "errors/s"
-                    }
-                ]
-            },
-            {
-                "id": 19,
-                "title": "Order-placed events published (rate)",
-                "type": "timeseries",
-                "gridPos": {
-                    "h": 5,
-                    "w": 8,
-                    "x": 16,
-                    "y": 26
-                },
-                "targets": [
-                    {
-                        "expr": "sum(rate(order_placed_events_published_total{job=~\"trading-engine.*\"}[5m])) or vector(0)",
-                        "refId": "A",
-                        "legendFormat": "published/s"
-                    }
-                ]
-            },
-            {
-                "id": 20,
-                "title": "Balance last success (Unix ts)",
-                "type": "stat",
-                "description": "Alert if stale (e.g. no update in 5m).",
-                "gridPos": {
-                    "h": 5,
-                    "w": 6,
-                    "x": 0,
-                    "y": 31
-                },
-                "targets": [
-                    {
-                        "expr": "bitso_balance_last_success_timestamp_seconds{job=~\"trading-engine.*\"} or vector(0)",
-                        "refId": "A"
-                    }
-                ]
-            },
-            {
-                "id": 21,
-                "title": "Balance fetch errors (total)",
-                "type": "stat",
-                "gridPos": {
-                    "h": 5,
-                    "w": 6,
-                    "x": 6,
-                    "y": 31
-                },
-                "targets": [
-                    {
-                        "expr": "sum(bitso_balance_fetch_errors_total{job=~\"trading-engine.*\"}) or vector(0)",
-                        "refId": "A"
-                    }
-                ]
-            },
-            {
-                "id": 22,
-                "title": "Health check failures (total)",
-                "type": "stat",
-                "gridPos": {
-                    "h": 5,
-                    "w": 6,
-                    "x": 12,
-                    "y": 31
-                },
-                "targets": [
-                    {
-                        "expr": "sum(health_check_failures_total{job=~\"trading-engine.*\"}) or vector(0)",
-                        "refId": "A"
-                    }
-                ]
-            },
-            {
-                "id": 23,
-                "title": "Orders failed by reason (rate)",
-                "type": "timeseries",
-                "gridPos": {
-                    "h": 5,
-                    "w": 12,
-                    "x": 18,
-                    "y": 31
-                },
-                "targets": [
-                    {
-                        "expr": "sum(rate(orders_failed_total{job=~\"trading-engine.*\"}[5m])) by (reason)",
-                        "refId": "A",
-                        "legendFormat": "{{reason}}"
-                    }
-                ]
-            }
-        ]
+  "id": null,
+  "title": "Trading Engine",
+  "tags": [
+    "trading",
+    "trading-engine",
+    "per-service"
+  ],
+  "timezone": "browser",
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
+  "refresh": "10s",
+  "panels": [
+    {
+      "id": 1,
+      "title": "Scrape status (up)",
+      "type": "stat",
+      "description": "1 = Prometheus is scraping this service. If 0 or empty, check ServiceMonitor and /metrics.",
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 0,
+        "y": 0
+      },
+      "targets": [
+        {
+          "expr": "max(up{job=~\"trading-engine.*\"}) or vector(0)",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 1
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": 2,
+      "title": "Orders executed (total)",
+      "type": "stat",
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 6,
+        "y": 0
+      },
+      "targets": [
+        {
+          "expr": "sum(orders_executed_total{job=~\"trading-engine.*\"}) or vector(0)",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "Order execution rate",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 4,
+        "w": 12,
+        "x": 12,
+        "y": 0
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(orders_executed_total{job=~\"trading-engine.*\"}[5m])) or vector(0)",
+          "refId": "A",
+          "legendFormat": "orders/s"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "Engine state",
+      "type": "stat",
+      "description": "0=stopped, 1=initializing, 2=running",
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 0,
+        "y": 4
+      },
+      "targets": [
+        {
+          "expr": "engine_state{job=~\"trading-engine.*\"} or vector(0)",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 1
+              },
+              {
+                "color": "green",
+                "value": 2
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": 5,
+      "title": "Dry run",
+      "type": "stat",
+      "description": "1=dry-run, 0=live",
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 6,
+        "y": 4
+      },
+      "targets": [
+        {
+          "expr": "trading_engine_dry_run{job=~\"trading-engine.*\"} or vector(0)",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "steps": [
+              {
+                "color": "blue",
+                "value": 1
+              },
+              {
+                "color": "green",
+                "value": 0
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": 6,
+      "title": "Orders failed (total)",
+      "type": "stat",
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 12,
+        "y": 4
+      },
+      "targets": [
+        {
+          "expr": "sum(orders_failed_total{job=~\"trading-engine.*\"}) or vector(0)",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "title": "Session risk rejections",
+      "type": "stat",
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 18,
+        "y": 4
+      },
+      "targets": [
+        {
+          "expr": "sum(session_risk_rejections_total{job=~\"trading-engine.*\"}) or vector(0)",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "title": "Available balance",
+      "type": "timeseries",
+      "description": "Bitso available balance per currency (from trading-engine).",
+      "gridPos": {
+        "h": 6,
+        "w": 12,
+        "x": 0,
+        "y": 8
+      },
+      "targets": [
+        {
+          "expr": "max by (currency) (bitso_available_balance{job=~\"trading-engine.*\"})",
+          "refId": "A",
+          "legendFormat": "{{currency}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyMXN"
+        }
+      }
+    },
+    {
+      "id": 9,
+      "title": "Orders executed by book / strategy",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 6,
+        "w": 12,
+        "x": 12,
+        "y": 8
+      },
+      "targets": [
+        {
+          "expr": "sum by (book, strategy) (orders_executed_total{job=~\"trading-engine.*\"})",
+          "refId": "A",
+          "legendFormat": "{{book}} {{strategy}}"
+        }
+      ]
+    },
+    {
+      "id": 10,
+      "type": "row",
+      "title": "Signals",
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 14
+      }
+    },
+    {
+      "id": 11,
+      "title": "Signals received (rate)",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 5,
+        "w": 8,
+        "x": 0,
+        "y": 15
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(signals_received_total{job=~\"trading-engine.*\"}[5m])) or vector(0)",
+          "refId": "A",
+          "legendFormat": "signals/s"
+        }
+      ]
+    },
+    {
+      "id": 12,
+      "title": "Signals processed (rate) by outcome",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 5,
+        "w": 8,
+        "x": 8,
+        "y": 15
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(signals_processed_total{job=~\"trading-engine.*\"}[5m])) by (outcome)",
+          "refId": "A",
+          "legendFormat": "{{outcome}}"
+        }
+      ]
+    },
+    {
+      "id": 13,
+      "title": "Signals dropped (rate)",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 5,
+        "w": 8,
+        "x": 16,
+        "y": 15
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(signals_dropped_total{job=~\"trading-engine.*\"}[5m])) by (reason) or vector(0)",
+          "refId": "A",
+          "legendFormat": "{{reason}}"
+        }
+      ]
+    },
+    {
+      "id": 14,
+      "title": "Signal processing duration (p95)",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 5,
+        "w": 12,
+        "x": 0,
+        "y": 20
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(signal_processing_duration_seconds_bucket{job=~\"trading-engine.*\"}[5m])) by (le)) or vector(0)",
+          "refId": "A",
+          "legendFormat": "p95"
+        }
+      ]
+    },
+    {
+      "id": 15,
+      "title": "Order execution duration (p95) by book",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 5,
+        "w": 12,
+        "x": 12,
+        "y": 20
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(order_execution_duration_seconds_bucket{job=~\"trading-engine.*\"}[5m])) by (le, book))",
+          "refId": "A",
+          "legendFormat": "{{book}}"
+        }
+      ]
+    },
+    {
+      "id": 16,
+      "type": "row",
+      "title": "Kafka & Bitso",
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 25
+      }
+    },
+    {
+      "id": 17,
+      "title": "Kafka messages consumed (rate) by topic",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 5,
+        "w": 8,
+        "x": 0,
+        "y": 26
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(kafka_messages_consumed_total{job=~\"trading-engine.*\"}[5m])) by (topic)",
+          "refId": "A",
+          "legendFormat": "{{topic}}"
+        }
+      ]
+    },
+    {
+      "id": 18,
+      "title": "Kafka consumer errors (rate)",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 5,
+        "w": 8,
+        "x": 8,
+        "y": 26
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(kafka_consumer_errors_total{job=~\"trading-engine.*\"}[5m])) or vector(0)",
+          "refId": "A",
+          "legendFormat": "errors/s"
+        }
+      ]
+    },
+    {
+      "id": 19,
+      "title": "Order-placed events published (rate)",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 5,
+        "w": 8,
+        "x": 16,
+        "y": 26
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(order_placed_events_published_total{job=~\"trading-engine.*\"}[5m])) or vector(0)",
+          "refId": "A",
+          "legendFormat": "published/s"
+        }
+      ]
+    },
+    {
+      "id": 20,
+      "title": "Balance last success (Unix ts)",
+      "type": "stat",
+      "description": "Alert if stale (e.g. no update in 5m).",
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 0,
+        "y": 31
+      },
+      "targets": [
+        {
+          "expr": "bitso_balance_last_success_timestamp_seconds{job=~\"trading-engine.*\"} or vector(0)",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 21,
+      "title": "Balance fetch errors (total)",
+      "type": "stat",
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 6,
+        "y": 31
+      },
+      "targets": [
+        {
+          "expr": "sum(bitso_balance_fetch_errors_total{job=~\"trading-engine.*\"}) or vector(0)",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 22,
+      "title": "Health check failures (total)",
+      "type": "stat",
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 12,
+        "y": 31
+      },
+      "targets": [
+        {
+          "expr": "sum(health_check_failures_total{job=~\"trading-engine.*\"}) or vector(0)",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 23,
+      "title": "Orders failed by reason (rate)",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 5,
+        "w": 12,
+        "x": 18,
+        "y": 31
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(orders_failed_total{job=~\"trading-engine.*\"}[5m])) by (reason)",
+          "refId": "A",
+          "legendFormat": "{{reason}}"
+        }
+      ]
     }
+  ]
 }

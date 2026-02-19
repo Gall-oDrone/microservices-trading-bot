@@ -25,9 +25,10 @@ services:
       retries: 3
 
   backtesting:
+    image: microservices-trading-bot-backtesting
     build:
-      context: ./services/backtesting
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: services/backtesting/Dockerfile
     ports:
       - "8084:8084"
     environment:
@@ -35,6 +36,9 @@ services:
       - SERVICE_PORT=8084
       - LOG_LEVEL=info
       - METRICS_PORT=8084
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - MARKET_DATA_BASE_URL=http://market-data:8083
     depends_on:
       - kafka
       - redis
@@ -60,9 +64,10 @@ services:
       - trading-network
 
   market-data:
+    image: microservices-trading-bot-market-data
     build:
-      context: ./services/market-data
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: services/market-data/Dockerfile
     ports:
       - "8083:8083"
     environment:

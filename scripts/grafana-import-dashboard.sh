@@ -55,7 +55,8 @@ if [ ! -f "$DASHBOARD_JSON" ]; then
   exit 1
 fi
 
-payload=$(jq '. + {"overwrite": true}' "$DASHBOARD_JSON") || {
+# API expects { "dashboard": {...}, "overwrite": true }. Support both wrapped and raw dashboard JSON.
+payload=$(jq 'if .dashboard then . + {"overwrite": true} else { dashboard: ., overwrite: true } end' "$DASHBOARD_JSON") || {
   echo "Error: Failed to read or parse dashboard JSON: $DASHBOARD_JSON" >&2
   exit 1
 }
@@ -106,7 +107,7 @@ if [ "$http_code" = "200" ]; then
     echo "  Then: GRAFANA_URL=http://localhost:3001 $0 $NAME" >&2
     exit 1
   fi
-  dashboard_title=$(jq -r '.dashboard.title // empty' "$DASHBOARD_JSON" 2>/dev/null)
+  dashboard_title=$(jq -r '.dashboard.title // .title // empty' "$DASHBOARD_JSON" 2>/dev/null)
   echo "Dashboard '$NAME' imported successfully${dashboard_title:+ ($dashboard_title)}."
   path=$(echo "$body" | jq -r '.url // empty' 2>/dev/null)
   [ -n "$path" ] && echo "Open: $GRAFANA_URL$path"

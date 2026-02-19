@@ -1,13 +1,13 @@
 apiVersion: 1
 
 datasources:
-  # URL must match the Prometheus service in your cluster (kube-prometheus-stack default below)
-  # When Prometheus is served under routePrefix /prometheus/ (e.g. ALB path /prometheus), URL must include /prometheus.
+  # For docker-compose: Prometheus service is at http://prometheus:9090 (no path prefix).
+  # For Kubernetes (kube-prometheus-stack): use http://kube-prometheus-stack-prometheus:9090/prometheus and set editable to change in UI.
   - name: Prometheus
     type: prometheus
     uid: prometheus
     access: proxy
-    url: http://kube-prometheus-stack-prometheus:9090/prometheus
+    url: http://prometheus:9090
     isDefault: true
     editable: true
     jsonData:
