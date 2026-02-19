@@ -27,8 +27,9 @@ scrape_configs:
   # Backtesting Service
   - job_name: 'backtesting'
     static_configs:
-      - targets: ['backtesting:8081']
+      - targets: ['backtesting:8084']
     metrics_path: '/metrics'
+    scrape_interval: 5s
 
   # Strategy Executor Service
   - job_name: 'strategy-executor'
