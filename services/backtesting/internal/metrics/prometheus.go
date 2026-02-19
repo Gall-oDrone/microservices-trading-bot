@@ -16,14 +16,14 @@ type MetricsCollector struct {
 	backtestDuration   *prometheus.HistogramVec
 	activeBacktests    prometheus.Gauge
 
-		// Data processing metrics
-		eventsProcessed  *prometheus.CounterVec
-		dataLoadDuration *prometheus.HistogramVec
+	// Data processing metrics
+	eventsProcessed  *prometheus.CounterVec
+	dataLoadDuration *prometheus.HistogramVec
 
-		// Data fetch errors (Phase 2): by source (market_data, file)
-		dataFetchErrorsTotal *prometheus.CounterVec
+	// Data fetch errors (Phase 2): by source (market_data, file)
+	dataFetchErrorsTotal *prometheus.CounterVec
 
-		// Performance metrics
+	// Performance metrics
 	metricsCalculationTime *prometheus.HistogramVec
 
 	// System metrics

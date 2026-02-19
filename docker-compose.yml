@@ -67,8 +67,13 @@ services:
       - "8083:8083"
     environment:
       - SERVICE_NAME=market-data
+      - SERVICE_PORT=8083
       - LOG_LEVEL=info
       - METRICS_PORT=8083
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - BITSO_BOOKS=btc_mxn
+      - BITSO_CHANNELS=trades
     depends_on:
       - kafka
       - redis

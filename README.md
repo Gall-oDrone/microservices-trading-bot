@@ -44,4 +44,6 @@ Before running new intraday strategies live, follow the steps in:
 2. Run dependencies: **Kafka** (market data and signals) and **Redis** (required by order-management and backtesting; set `REDIS_HOST` and optionally `REDIS_PORT` / `REDIS_PASSWORD`). Then run services locally or via `k8s/` and `config/`.
 3. Use the API gateway for health, status, strategies, and backtest endpoints.
 
+**Docker Compose:** If `docker compose build` fails with "compose build requires buildx 0.17.0 or later", build the image with plain Docker instead: `./scripts/docker-build-market-data.sh`, then `docker-compose up -d market-data`.
+
 For full deployment (EKS, monitoring, centralized logging, Redis, and security), see [REMAINING-PHASES-CHECKLIST.md](./REMAINING-PHASES-CHECKLIST.md).
