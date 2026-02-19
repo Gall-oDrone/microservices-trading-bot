@@ -149,6 +149,53 @@ This document outlines the recommended steps to safely implement trading strateg
 
 **Script:** `scripts/run-one-backtest.sh [BASE_URL]` — creates a backtest, polls until completed, then prints the text report (default BASE_URL=http://localhost:8084).
 
+#### Phase 6 prerequisite: Market-data WebSocket persistence to Redis
+
+**Current state**
+
+- Bitso WebSocket channels (Trades, Orders, Diff-orders) are implemented in `shared/pkg/bitso/websocket.go` and used by market-data's `internal/websocket/manager.go` (see [Bitso Trades](https://docs.bitso.com/bitso-api/docs/trades-channel), [Orders](https://docs.bitso.com/bitso-api/docs/orders-channel), [Diff-orders](https://docs.bitso.com/bitso-api/docs/diff-orders-channel)).
+- Market-data receives all three streams; only **trades** are processed (`TradeProcessor` → `TradeEvent`). Processed trades go **only to Kafka** (if enabled); nothing calls `cache.SetTrade` or `storage.StoreTrade`. So `GET /api/v1/trades?from=&to=` reads from Redis and, when empty, returns synthetic data.
+
+**Goal**
+
+Persist WebSocket data to Redis continuously so backtests (Phase 6) use **real** Bitso data via market-data's HTTP API instead of synthetic trades.
+
+**Tasks**
+
+1. **Trades → Redis (required):** Add a single consumer of the processed trade stream that (a) calls `cache.SetTrade(ctx, trade.Book, trade)` and `storage.StoreTrade(ctx, trade)` for each `*models.TradeEvent`, then (b) forwards the same trade to an output channel. Wire the Kafka publisher to read from this component's output instead of from `tradeProcessor.GetProcessedTradesStream()` so the processor has only one consumer. Implement in a new component (e.g. `services/market-data/internal/writer/redis_trade_writer.go` or similar) and wire it in `services/market-data/cmd/main.go` (between processor and publisher; pass `cacheLayer` and `storage`).
+2. **Order book (optional):** To support order-book history for backtests, add a component that consumes `GetOrdersStream()` and `GetDiffOrdersStream()`, maintains book state (and/or uses `cache.UpdateOrderBook`), and periodically calls `cache.SetOrderBook` and `storage.StoreOrderBook`. Defer if backtests only need trades.
+3. **Ticker:** Bitso WebSocket has no ticker channel. Use trades (and optionally derived OHLC) for backtest ticker history; no extra WebSocket persistence for ticker.
+4. **Configuration:** Ensure historical storage `RetentionDays` (and any cleanup) matches the intraday backtest window; Redis persistence (AOF/RDB) so data is not lost before backtests run.
+
+**Data flow**
+
+```mermaid
+flowchart LR
+  subgraph bitso [Bitso WebSocket]
+    T[trades]
+    O[orders]
+    D[diff-orders]
+  end
+  subgraph marketdata [Market-data]
+    Mgr[Manager]
+    Proc[Trade processor]
+    Writer[Redis trade writer]
+    Pub[Kafka publisher]
+    Cache[(cache)]
+    Storage[(storage)]
+  end
+  T --> Mgr
+  O --> Mgr
+  D --> Mgr
+  Mgr --> Proc
+  Proc --> Writer
+  Writer --> Cache
+  Writer --> Storage
+  Writer --> Pub
+```
+
+**Files touched:** `services/market-data/cmd/main.go` (wire new component, publisher reads from writer output), new package under `services/market-data/internal/` for the Redis trade writer (e.g. `writer` or `persistence`). Cache/storage interfaces already exist (`cache.SetTrade`, `storage.StoreTrade`).
+
 ---
 
 ## Summary Table
@@ -161,6 +208,7 @@ This document outlines the recommended steps to safely implement trading strateg
 | 4     | Daily loss & drawdown limits   | Config + check before execute; OM session API | Done          |
 | 5     | Intraday metrics               | Observability for live intraday trading      | Done (incl. Grafana dashboards) |
 | 6     | Backtesting                    | Historical validation; doc in plan           | Documented    |
+| 6a    | Market-data WebSocket → Redis  | Trades (and optional order book) persisted for backtest data | Pending       |
 
 ---
 
@@ -188,6 +236,8 @@ After Phases 1–6 are implemented, follow these priorities to validate and hard
 ### Priority 2: Backtest vs Live Comparison
 
 **Goal:** Run one backtest and compare its metrics to the Grafana intraday panels so backtest and live stay aligned.
+
+- For real (non-synthetic) backtest data, ensure market-data WebSocket persistence to Redis is implemented (Phase 6 prerequisite) and market-data has been running for the desired date range.
 
 **Steps:**
 
@@ -235,10 +285,12 @@ After Phases 1–6 are implemented, follow these priorities to validate and hard
 
 - [Bitso: Set Up Your Testing Environment](https://docs.bitso.com/bitso-api/docs/set-up-your-testing-environment)
 - [Bitso: API Overview](https://docs.bitso.com/bitso-api/docs/api-overview)
+- [Bitso: Trades channel](https://docs.bitso.com/bitso-api/docs/trades-channel), [Orders channel](https://docs.bitso.com/bitso-api/docs/orders-channel), [Diff-orders channel](https://docs.bitso.com/bitso-api/docs/diff-orders-channel)
 - Project: `DEVELOPMENT-ROADMAP.md`, `REMAINING-PHASES-CHECKLIST.md`
 - Bitso client: `shared/pkg/bitso/client.go` (`SetAPIBaseURL`, `LookupOrder`, `LookupOrders`, `OrderTrades`)
+- Market-data WebSocket: `shared/pkg/bitso/websocket.go` (WebSocketTrade, WebSocketOrder, WebSocketDiffOrder); `services/market-data/internal/websocket/manager.go`, `internal/processor/trade_processor.go`, `internal/cache/redis.go` (SetTrade), `internal/historical/storage.go` (StoreTrade)
 
 ---
 
-**Document version:** 1.7  
-**Status:** Phases 1–6 complete. Next steps added: Operational validation in stage (Priority 1), Backtest vs live comparison (Priority 2), Production config and persistence (Priorities 3–4). Scripts: `scripts/intraday-validate-stage-pipeline.sh`, `scripts/intraday-backtest-and-compare.sh`.
+**Document version:** 1.8  
+**Status:** Phases 1–6 complete. Phase 6 prerequisite (market-data WebSocket persistence to Redis) documented; implementation pending. Next steps: Operational validation in stage (Priority 1), Backtest vs live comparison (Priority 2), Production config and persistence (Priorities 3–4). Scripts: `scripts/intraday-validate-stage-pipeline.sh`, `scripts/intraday-backtest-and-compare.sh`.
