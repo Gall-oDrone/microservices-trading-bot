@@ -42,6 +42,11 @@ jobs:
         run: |
           kubectl apply -k k8s/overlays/development
 
+      - name: Apply ServiceMonitors for Prometheus
+        run: |
+          kubectl apply -f k8s/monitoring/servicemonitors.yaml
+        continue-on-error: true
+
       - name: Wait for External Secrets sync
         run: |
           echo "Waiting for trading-secrets to be synced from AWS Secrets Manager..."
