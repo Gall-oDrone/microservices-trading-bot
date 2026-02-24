@@ -241,6 +241,11 @@ func (app *Application) startMetricsCollection() {
 
 	startTime := time.Now()
 
+	// Set initial health and uptime so first Prometheus scrape (e.g. within 5s) sees them
+	app.metricsCollector.RecordServiceUptime(0)
+	app.metricsCollector.RecordServiceHealth(true)
+	app.metricsCollector.RecordComponentHealth("service", true)
+
 	for {
 		select {
 		case <-ticker.C:

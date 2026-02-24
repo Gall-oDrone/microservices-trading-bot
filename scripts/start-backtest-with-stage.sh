@@ -21,8 +21,15 @@ echo "=== Starting stack for backtesting with Bitso STAGE market-data ==="
 echo "  Redis, market-data (BITSO_WS_URL=stage), backtesting, prometheus, grafana"
 echo ""
 
+# Use legacy Docker builder when buildx is older than 0.17.0 (avoids "compose build requires buildx 0.17.0 or later")
+export DOCKER_BUILDKIT=0
 # Start only the services needed for backtest + Grafana (kafka required by backtesting depends_on)
-docker compose up -d redis kafka market-data backtesting prometheus grafana 2>/dev/null || docker-compose up -d redis kafka market-data backtesting prometheus grafana 2>/dev/null
+# Prefer docker-compose when "docker compose" is not available (e.g. older Docker)
+if docker compose up -d redis kafka market-data backtesting prometheus grafana 2>/dev/null; then
+  :
+else
+  docker-compose up -d redis kafka market-data backtesting prometheus grafana
+fi
 
 echo "Waiting for services to be reachable..."
 for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do
