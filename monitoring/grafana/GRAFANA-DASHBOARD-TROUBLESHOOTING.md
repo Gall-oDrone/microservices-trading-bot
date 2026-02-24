@@ -37,8 +37,47 @@
 
 ## Backtesting dashboard: panels show 0 or Uptime shows two values
 
-- **Backtests created, Backtests completed, Events processed, etc. show 0**  
-  Prometheus only has metrics from the backtesting **instance(s) it scrapes** (e.g. the pod(s) in the cluster). Those counters stay 0 until at least one backtest is run **against that same deployment**. Run a backtest via the **deployed** Backtesting API (e.g. K8s service URL or ingress), not only against localhost, so the scraped instance’s counters increment. Example (after port-forward or ingress):
+### Root cause: which Prometheus does Grafana use?
+
+Grafana shows data from **whatever Prometheus its datasource points to**. That Prometheus only has metrics from the **targets it scrapes** (e.g. `backtesting:8084` in Docker, or backtesting pods in Kubernetes).
+
+- **If you run backtests against Docker backtesting** (`http://localhost:8084` with `docker compose`), the **Docker** Prometheus (e.g. `http://prometheus:9090` from the Grafana container) scrapes that same backtesting container, so the Docker Grafana dashboard should show non-zero values.
+- **If you view Grafana in Kubernetes** (e.g. after GitHub Action deployment), that Grafana’s datasource is usually the **in-cluster** Prometheus (e.g. `http://kube-prometheus-stack-prometheus:9090`). That Prometheus only scrapes **Kubernetes** backtesting pods. The backtesting container running in Docker on your machine is **not** scraped by the cluster Prometheus, so cluster Grafana will show **0** for Backtests created/completed and related panels.
+
+**So:** Backtests created/completed (and the rest) show 0 when **the backtesting instance you exercised is not the one being scraped by the Prometheus that your Grafana is querying** (e.g. you exercised Docker backtesting but are looking at Kubernetes Grafana).
+
+### Run recommended actions (verification + backtest + Grafana checks)
+
+To run all recommended steps in one go (verify, run one backtest against the scraped instance if needed, and print Grafana datasource/dashboard checks):
+
+```bash
+# Docker Compose (Grafana at localhost:3000):
+./scripts/backtesting-dashboard-recommended-actions.sh
+
+# Kubernetes (script will port-forward Prometheus and backtesting, then verify and run backtest):
+./scripts/backtesting-dashboard-recommended-actions.sh --k8s
+
+# Or after you have started port-forwards in separate terminals:
+PROMETHEUS_URL=http://localhost:9091 BACKTEST_URL=http://localhost:8085 ./scripts/backtesting-dashboard-recommended-actions.sh
+```
+
+### How to verify only
+
+Run the verification script (uses localhost by default; set `PROMETHEUS_URL` to the Prometheus that Grafana uses, e.g. after port-forward):
+
+```bash
+./scripts/verify-backtesting-prometheus.sh
+# If Grafana is in K8s, port-forward Prometheus then:
+kubectl port-forward -n monitoring svc/kube-prometheus-stack-prometheus 9090:9090
+PROMETHEUS_URL=http://localhost:9090 ./scripts/verify-backtesting-prometheus.sh
+```
+
+The script prints: (1) what the backtesting service exposes, (2) whether Prometheus has a backtesting target and its health, (3) the result of the same query the dashboard uses, (4) a short conclusion and fix hints.
+
+### What to do
+
+- **Backtests created, Backtests completed, etc. show 0**  
+  Prometheus only has metrics from the backtesting **instance(s) it scrapes** (e.g. the pod(s) in the cluster). Those counters stay 0 until at least one backtest is run **against that same deployment**. Run a backtest via the **deployed** Backtesting API (e.g. K8s service URL or ingress), not only against localhost, so the scraped instance that Prometheus uses gets the backtest (see Root cause above). Example (after port-forward or ingress):
   ```bash
   ./scripts/run-one-backtest.sh https://your-backtesting-ingress/api  # or http://backtesting.bitso-trading-dev:8084
   ```

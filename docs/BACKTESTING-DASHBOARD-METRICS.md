@@ -67,7 +67,14 @@ Panels that may stay **0 or empty** until something goes wrong or you use certai
 
 So: after running one or more backtests successfully, you should see non-zero data in **Backtests created**, **Backtests completed**, **Events processed**, **Backtest duration**, **Data load duration**, **Uptime**, and **Health**, and **Scrape status** = 1 if Prometheus is scraping the backtesting target.
 
-### Why do I only see “1” for Scrape and Health?
+### Why do Backtests created / completed (and related) show 0 in Grafana?
+
+**Root cause:** The Grafana you are viewing uses a **different Prometheus** than the one that scrapes the backtesting instance you ran backtests against.
+
+- **Docker:** Grafana at `http://localhost:3000` (Docker) uses Docker Prometheus, which scrapes the Docker backtesting container. Run backtests against `http://localhost:8084`; the dashboard should then show non-zero values.
+- **Kubernetes:** Grafana in the cluster uses **cluster** Prometheus, which only scrapes **cluster** backtesting pods. Run at least one backtest against the cluster backtesting (e.g. `kubectl port-forward -n bitso-trading-dev svc/backtesting 8085:8084` then `./scripts/run-one-backtest.sh http://localhost:8085`). After ~15–30s, cluster Grafana Backtesting dashboard should show non-zero values.
+
+### Why do I only see "1" for Scrape and Health?
 
 - **Scrape status (up)** and **Health** showing **1** is correct: it means Prometheus is scraping the backtesting service and the service reports healthy.
 - If other panels (Backtests created, Events processed, etc.) show 0 or “No data”, run at least one backtest (e.g. `./scripts/run-one-backtest.sh` or `./scripts/start-backtest-with-stage.sh`) so those metrics are emitted.
