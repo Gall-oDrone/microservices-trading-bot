@@ -38,7 +38,7 @@ func TestE2EBacktestFlow(t *testing.T) {
 	backtest, err := suite.manager.CreateBacktest(config)
 	require.NoError(t, err)
 	assert.NotEmpty(t, backtest.ID)
-	assert.Equal(t, "pending", backtest.Status)
+	assert.Equal(t, models.BacktestStatusPending, backtest.Status)
 
 	// Start backtest
 	err = suite.manager.StartBacktest(backtest.ID)
@@ -134,7 +134,10 @@ func TestE2ECancellation(t *testing.T) {
 	opt, err := suite.optimizer.Optimize(ctx, optConfig)
 	require.NoError(t, err)
 
-	// Cancel immediately
+	// Wait briefly for the optimization to start running
+	time.Sleep(50 * time.Millisecond)
+
+	// Cancel
 	err = suite.optimizer.CancelOptimization(opt.ID)
 	require.NoError(t, err)
 

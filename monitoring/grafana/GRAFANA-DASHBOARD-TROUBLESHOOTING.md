@@ -35,16 +35,33 @@
 
 ---
 
+## Backtesting dashboard: panels show 0 or Uptime shows two values
+
+- **Backtests created, Backtests completed, Events processed, etc. show 0**  
+  Prometheus only has metrics from the backtesting **instance(s) it scrapes** (e.g. the pod(s) in the cluster). Those counters stay 0 until at least one backtest is run **against that same deployment**. Run a backtest via the **deployed** Backtesting API (e.g. K8s service URL or ingress), not only against localhost, so the scraped instance’s counters increment. Example (after port-forward or ingress):
+  ```bash
+  ./scripts/run-one-backtest.sh https://your-backtesting-ingress/api  # or http://backtesting.bitso-trading-dev:8084
+  ```
+
+- **Uptime shows "0 secs" and "3.88 hrs" (two values)**  
+  Usually there are two scrape targets (e.g. old and new pod after restart). The dashboard uses `max(backtesting_uptime_seconds)` so a single value is shown (max across instances). Re-import or refresh the dashboard JSON if you still see two values.
+
+- **Scrape and Health show 1**  
+  That is correct: Prometheus is scraping the backtesting target and the service reports healthy.
+
+---
+
 ## Per-service dashboards
 
 In addition to **Trading Platform Metrics**, the repo includes one dashboard per service so you can verify metrics per service before relying on the consolidated view:
 
 | Dashboard JSON | Service |
 |----------------|--------|
-| `monitoring/grafana/dashboards/trading-engine.json` | Trading Engine |
-| `monitoring/grafana/dashboards/order-management.json` | Order Management |
-| `monitoring/grafana/dashboards/api-gateway.json` | API Gateway |
-| `monitoring/grafana/dashboards/market-data.json` | Market Data |
+| `monitoring/grafana/dashboards/services/trading-engine.json` | Trading Engine |
+| `monitoring/grafana/dashboards/services/backtesting.json` | Backtesting |
+| `monitoring/grafana/dashboards/services/order-management.json` | Order Management |
+| `monitoring/grafana/dashboards/services/api-gateway.json` | API Gateway |
+| `monitoring/grafana/dashboards/services/market-data.json` | Market Data |
 
 **Import:** Use the same flow as the main dashboard; point at the JSON file. Example:
 

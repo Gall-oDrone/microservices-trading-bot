@@ -74,8 +74,9 @@ func (e *Engine) Run(ctx context.Context, config *models.BacktestConfig) (*model
 	})
 
 	// Record metrics
+	var backtestTimer func(string)
 	if e.metricsCollector != nil {
-		defer e.metricsCollector.StartBacktestTimer()("completed")
+		backtestTimer = e.metricsCollector.StartBacktestTimer()
 	}
 
 	// Create cancellable context
@@ -87,8 +88,14 @@ func (e *Engine) Run(ctx context.Context, config *models.BacktestConfig) (*model
 	defer e.untrackBacktest(config.ID)
 
 	// Create and run backtest runner
-	runner, err := NewBacktestRunner(config, e.dataProvider, e.logger)
+	runner, err := NewBacktestRunner(config, e.dataProvider, e.logger, e.metricsCollector)
 	if err != nil {
+		if backtestTimer != nil {
+			backtestTimer("failed")
+		}
+		if e.metricsCollector != nil {
+			e.metricsCollector.RecordBacktestFailed("runner_creation")
+		}
 		return nil, fmt.Errorf("failed to create runner: %w", err)
 	}
 
@@ -99,13 +106,30 @@ func (e *Engine) Run(ctx context.Context, config *models.BacktestConfig) (*model
 
 	// Initialize runner
 	if err := runner.Initialize(backtestCtx); err != nil {
+		if backtestTimer != nil {
+			backtestTimer("failed")
+		}
+		if e.metricsCollector != nil {
+			e.metricsCollector.RecordBacktestFailed("initialization")
+		}
 		return nil, fmt.Errorf("failed to initialize runner: %w", err)
 	}
 
 	// Execute backtest
 	result, err := runner.Execute(backtestCtx)
 	if err != nil {
+		if backtestTimer != nil {
+			backtestTimer("failed")
+		}
+		if e.metricsCollector != nil {
+			e.metricsCollector.RecordBacktestFailed("execution")
+		}
 		return nil, fmt.Errorf("backtest execution failed: %w", err)
+	}
+
+	// Record successful completion
+	if backtestTimer != nil {
+		backtestTimer("completed")
 	}
 
 	// Save result

@@ -1,5 +1,6 @@
-version: '3.8'
-
+# If build fails with "compose build requires buildx 0.17.0 or later", run:
+#   export DOCKER_BUILDKIT=0
+# then build/up again. Or use scripts/start-backtest-with-stage.sh which sets this.
 services:
   # Trading Services
   trading-engine:

@@ -58,6 +58,7 @@
       "id": 2,
       "title": "Backtests created (total)",
       "type": "stat",
+      "description": "Run a backtest via the Backtesting API (same env Prometheus scrapes) to see non-zero values.",
       "gridPos": {
         "h": 4,
         "w": 6,
@@ -297,6 +298,7 @@
       "id": 14,
       "title": "Uptime (seconds)",
       "type": "stat",
+      "description": "Max uptime across instances (avoids duplicate 0 vs hours after pod restart).",
       "gridPos": {
         "h": 4,
         "w": 6,
@@ -309,7 +311,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "backtesting_uptime_seconds or vector(0)",
+          "expr": "max(backtesting_uptime_seconds) or vector(0)",
           "refId": "A"
         }
       ],

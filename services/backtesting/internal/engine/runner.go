@@ -8,6 +8,7 @@ import (
 	"bitso-trading-platform/backtesting/internal/analyzer"
 	"bitso-trading-platform/backtesting/internal/data"
 	"bitso-trading-platform/backtesting/internal/logger"
+	"bitso-trading-platform/backtesting/internal/metrics"
 	"bitso-trading-platform/backtesting/internal/models"
 	"bitso-trading-platform/backtesting/internal/portfolio"
 	"bitso-trading-platform/backtesting/internal/simulator"
@@ -23,6 +24,7 @@ type BacktestRunner struct {
 	portfolio        *portfolio.VirtualPortfolio
 	analyzer         *analyzer.PerformanceAnalyzer
 	logger           logger.Logger
+	metricsCollector *metrics.MetricsCollector
 
 	progressCallback func(float64)
 	cancelChan       <-chan struct{}
@@ -33,11 +35,13 @@ func NewBacktestRunner(
 	config *models.BacktestConfig,
 	dataProvider data.DataProvider,
 	log logger.Logger,
+	metricsCollector *metrics.MetricsCollector,
 ) (*BacktestRunner, error) {
 	return &BacktestRunner{
-		config:       config,
-		dataProvider: dataProvider,
-		logger:       log,
+		config:           config,
+		dataProvider:     dataProvider,
+		logger:           log,
+		metricsCollector: metricsCollector,
 	}, nil
 }
 
@@ -94,7 +98,11 @@ func (r *BacktestRunner) Execute(ctx context.Context) (*models.BacktestResult, e
 		WithEventTypes(models.EventTypeTrade).
 		WithGranularity(r.config.DataGranularity)
 
+	dataLoadStart := time.Now()
 	events, err := r.dataProvider.LoadHistoricalData(ctx, request)
+	if r.metricsCollector != nil {
+		r.metricsCollector.RecordDataLoadDuration(r.config.DataSource, time.Since(dataLoadStart))
+	}
 	if err != nil {
 		result.MarkFailed(err)
 		return result, fmt.Errorf("failed to load historical data: %w", err)
@@ -108,6 +116,11 @@ func (r *BacktestRunner) Execute(ctx context.Context) (*models.BacktestResult, e
 	if err := r.runEventLoop(ctx, events, result); err != nil {
 		result.MarkFailed(err)
 		return result, fmt.Errorf("event loop failed: %w", err)
+	}
+
+	// Record events processed
+	if r.metricsCollector != nil {
+		r.metricsCollector.RecordEventsProcessed("trade", len(events))
 	}
 
 	// Analyze performance

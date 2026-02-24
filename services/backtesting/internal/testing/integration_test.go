@@ -9,6 +9,8 @@ import (
 	"testing"
 	"time"
 
+	"sync"
+
 	"bitso-trading-platform/backtesting/internal/api"
 	"bitso-trading-platform/backtesting/internal/data"
 	"bitso-trading-platform/backtesting/internal/engine"
@@ -22,6 +24,11 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+)
+
+var (
+	testMetricsCollector     *metrics.MetricsCollector
+	testMetricsCollectorOnce sync.Once
 )
 
 // IntegrationTestSuite provides integration test utilities
@@ -40,13 +47,16 @@ func SetupIntegrationTest(t *testing.T) *IntegrationTestSuite {
 
 	// Create logger
 	appLogger := logger.New(&logger.Config{
-		ServiceName: "test",
-		Environment: "development",
-		Version:     "1.0.0",
+		Level:  "info",
+		Format: "console",
+		Output: "stdout",
 	})
 
-	// Create metrics
-	metricsCollector := metrics.NewMetricsCollector("test")
+	// Create metrics (once to avoid duplicate Prometheus registration panics)
+	testMetricsCollectorOnce.Do(func() {
+		testMetricsCollector = metrics.NewMetricsCollector("test")
+	})
+	metricsCollector := testMetricsCollector
 
 	// Create mock data provider
 	dataProvider := data.NewMarketDataProvider(
@@ -58,8 +68,8 @@ func SetupIntegrationTest(t *testing.T) *IntegrationTestSuite {
 		metricsCollector,
 	)
 
-	// Create storage (in-memory for tests)
-	resultStorage := storage.NewRedisStorage(nil, appLogger, time.Hour)
+	// Create storage (file-based for tests, no Redis needed)
+	resultStorage := storage.NewFileStorage(t.TempDir(), appLogger)
 
 	// Create engine
 	backtestEngine := engine.NewEngine(dataProvider, resultStorage, appLogger, metricsCollector)
@@ -152,9 +162,13 @@ func TestCreateBacktest(t *testing.T) {
 	assert.True(t, response["success"].(bool))
 	assert.Contains(t, response, "data")
 
-	data := response["data"].(map[string]interface{})
-	assert.Contains(t, data, "id")
-	assert.Equal(t, "pending", data["status"])
+	respData := response["data"].(map[string]interface{})
+	assert.Contains(t, respData, "id")
+	// Handler calls StartBacktest after create, so status may be "pending" or "running"
+	assert.Contains(t, []string{
+		string(models.BacktestStatusPending),
+		string(models.BacktestStatusRunning),
+	}, respData["status"])
 }
 
 // TestGetBacktest tests retrieving a backtest
@@ -190,9 +204,9 @@ func TestGetBacktest(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.True(t, response["success"].(bool))
-	data := response["data"].(map[string]interface{})
-	assert.Equal(t, backtest.ID, data["id"])
-	assert.Equal(t, backtest.Status, data["status"])
+	respData2 := response["data"].(map[string]interface{})
+	assert.Equal(t, backtest.ID, respData2["id"])
+	assert.Equal(t, string(backtest.Status), respData2["status"])
 }
 
 // TestListBacktests tests listing backtests
@@ -228,8 +242,8 @@ func TestListBacktests(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.True(t, response["success"].(bool))
-	data := response["data"].(map[string]interface{})
-	assert.Contains(t, data, "backtests")
+	respData3 := response["data"].(map[string]interface{})
+	assert.Contains(t, respData3, "backtests")
 }
 
 // TestHealthEndpoint tests health endpoint
