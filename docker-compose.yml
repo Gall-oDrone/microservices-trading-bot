@@ -79,6 +79,8 @@ services:
       - REDIS_PORT=6379
       - BITSO_BOOKS=btc_mxn
       - BITSO_CHANNELS=trades
+      # BITSO STAGE API WebSocket (use wss://ws.bitso.com if stage URL not available)
+      - BITSO_WS_URL=wss://ws.stage.bitso.com
     depends_on:
       - kafka
       - redis

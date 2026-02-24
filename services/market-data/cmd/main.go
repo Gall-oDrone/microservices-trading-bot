@@ -142,8 +142,9 @@ func NewApplication() (*Application, error) {
 		appLogger.Info("Kafka producer initialized")
 	}
 
-	// Initialize WebSocket Manager
+	// Initialize WebSocket Manager (BITSO_WS_URL: use wss://ws.stage.bitso.com for stage)
 	wsManagerConfig := &websocket.ManagerConfig{
+		WSURL:                  cfg.BitsoWSURL,
 		ReconnectAttempts:      cfg.WSReconnectAttempts,
 		ReconnectInterval:     cfg.WSReconnectInterval,
 		ReconnectMaxDelay:     cfg.WSReconnectMaxDelay,

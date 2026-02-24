@@ -149,6 +149,12 @@ This document outlines the recommended steps to safely implement trading strateg
 
 **Script:** `scripts/run-one-backtest.sh [BASE_URL]` — creates a backtest, polls until completed, then prints the text report (default BASE_URL=http://localhost:8084).
 
+**Run backtesting with market-data from BITSO STAGE WebSocket (see Grafana Backtesting dashboard):**
+
+- Market-data uses **BITSO_WS_URL** (env) for the WebSocket endpoint. For Bitso stage use `BITSO_WS_URL=wss://ws.stage.bitso.com` (docker-compose sets this by default for market-data).
+- One-command flow: `./scripts/start-backtest-with-stage.sh` — starts Redis, Kafka, market-data (stage WS), backtesting, Prometheus, Grafana; then runs one backtest so the **Backtesting** Grafana dashboard shows activity (backtests created/completed, events processed, duration, etc.).
+- For backtests using **real** trades persisted by market-data (stage WebSocket), run market-data for a few minutes, then: `RECENT=1 ./scripts/run-one-backtest.sh` (uses last 2 hours as date range). Without RECENT=1, the script uses a fixed range; market-data may return synthetic trades if Redis has no data for that range.
+
 #### Phase 6 prerequisite: Market-data WebSocket persistence to Redis
 
 **Current state (post-implementation)**

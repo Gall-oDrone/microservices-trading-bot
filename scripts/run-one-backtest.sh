@@ -2,6 +2,7 @@
 # Run one backtest via the backtesting service API: create, poll until done, fetch report.
 # Usage: ./scripts/run-one-backtest.sh [BASE_URL]
 # Example: ./scripts/run-one-backtest.sh http://localhost:8084
+# With recent date range (for live market-data from Bitso WebSocket): RECENT=1 ./scripts/run-one-backtest.sh
 # Requires: curl, jq (optional, for parsing JSON)
 
 set -e
@@ -14,22 +15,38 @@ MAX_WAIT="${MAX_WAIT:-600}"
 echo "Using backtesting API at: $API"
 echo ""
 
+# Date range: RECENT=1 uses last 2 hours (for backtest with market-data fed by Bitso STAGE WebSocket)
+if [ "${RECENT}" = "1" ]; then
+  END_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u +%Y-%m-%dT%H:%M:%S 2>/dev/null)
+  # GNU date (Linux) vs BSD date (macOS)
+  START_DATE=$(date -u -d '2 hours ago' +%Y-%m-%dT%H:%M:%SZ 2>/dev/null) || true
+  [ -z "$START_DATE" ] && START_DATE=$(date -u -v-2H +%Y-%m-%dT%H:%M:%SZ 2>/dev/null) || true
+  if [ -n "$START_DATE" ] && [ -n "$END_DATE" ]; then
+    echo "Using RECENT=1: start_date=$START_DATE end_date=$END_DATE"
+  else
+    START_DATE="2024-06-01T00:00:00Z"
+    END_DATE="2024-06-02T23:59:59Z"
+  fi
+fi
+START_DATE="${START_DATE:-2024-06-01T00:00:00Z}"
+END_DATE="${END_DATE:-2024-06-02T23:59:59Z}"
+
 # Create backtest (minimal payload; adjust dates/data_source as needed)
 RESP=$(curl -s -w "\n%{http_code}" -X POST "$API" \
   -H "Content-Type: application/json" \
-  -d '{
-    "name": "Phase 6 workflow test",
-    "start_date": "2024-06-01T00:00:00Z",
-    "end_date": "2024-06-02T23:59:59Z",
-    "book": "btc_mxn",
-    "initial_balance": 100000.0,
-    "strategy": "basic",
-    "slippage_model": "percentage",
-    "slippage_value": 0.001,
-    "commission_rate": 0.001,
-    "data_source": "market-data",
-    "data_granularity": "trades"
-  }' 2>&1) || true
+  -d "{
+    \"name\": \"Phase 6 workflow test\",
+    \"start_date\": \"$START_DATE\",
+    \"end_date\": \"$END_DATE\",
+    \"book\": \"btc_mxn\",
+    \"initial_balance\": 100000.0,
+    \"strategy\": \"basic\",
+    \"slippage_model\": \"percentage\",
+    \"slippage_value\": 0.001,
+    \"commission_rate\": 0.001,
+    \"data_source\": \"market-data\",
+    \"data_granularity\": \"trades\"
+  }" 2>&1) || true
 CREATE_HTTP=$(echo "$RESP" | tail -n1)
 RESP_BODY=$(echo "$RESP" | sed '$d')
 

@@ -26,6 +26,7 @@ type StreamManager interface {
 
 // Manager implements StreamManager
 type Manager struct {
+	wsURL                  string
 	wsConn                 *bitso.WebSocketConn
 	logger                 *log.Logger
 	subscribeErrorRecorder SubscribeErrorRecorder
@@ -59,6 +60,7 @@ type SubscribeErrorRecorder interface {
 
 // ManagerConfig holds configuration for the WebSocket manager
 type ManagerConfig struct {
+	WSURL                 string   // Bitso WebSocket URL (e.g. wss://ws.stage.bitso.com for stage)
 	ReconnectAttempts     int
 	ReconnectInterval    time.Duration
 	ReconnectMaxDelay    time.Duration
@@ -74,6 +76,7 @@ func NewManager(config *ManagerConfig) *Manager {
 	}
 
 	return &Manager{
+		wsURL:                  config.WSURL,
 		logger:                 logger,
 		subscribeErrorRecorder: config.SubscribeErrorRecorder,
 		reconnectAttempts:      config.ReconnectAttempts,
@@ -90,7 +93,13 @@ func NewManager(config *ManagerConfig) *Manager {
 func (m *Manager) Connect(ctx context.Context) error {
 	m.logger.Println("Connecting to Bitso WebSocket...")
 
-	conn, err := bitso.NewWebSocketConn()
+	var conn *bitso.WebSocketConn
+	var err error
+	if m.wsURL != "" {
+		conn, err = bitso.NewWebSocketConnWithURL(m.wsURL)
+	} else {
+		conn, err = bitso.NewWebSocketConn()
+	}
 	if err != nil {
 		return fmt.Errorf("failed to connect: %w", err)
 	}
