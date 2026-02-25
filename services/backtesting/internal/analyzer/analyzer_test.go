@@ -198,6 +198,71 @@ func TestGenerateJSONReport(t *testing.T) {
 	}
 }
 
+func TestGenerateTextReportWithConfigAndSuccessCriteria(t *testing.T) {
+	config := models.NewBacktestConfig("Param Test", "btc_mxn",
+		time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
+		time.Date(2024, 6, 30, 0, 0, 0, 0, time.UTC))
+	config.WithStrategy("basic", map[string]interface{}{"rsi_period": 14})
+
+	result := models.NewBacktestResult("bt-123", "cfg-456")
+	result.SetConfigSnapshot(config)
+	result.SetSummary(&models.PerformanceSummary{
+		TotalReturn: 5000.0,
+		SharpeRatio: 1.1,
+		TotalTrades: 10,
+	})
+	result.MetThresholds = true
+
+	report := GenerateTextReport(result)
+
+	if !strings.Contains(report, "STRATEGY & PARAMETERS") {
+		t.Error("Report should contain STRATEGY & PARAMETERS section")
+	}
+	if !strings.Contains(report, "Param Test") {
+		t.Error("Report should contain config name")
+	}
+	if !strings.Contains(report, "basic") {
+		t.Error("Report should contain strategy name")
+	}
+	if !strings.Contains(report, "SUCCESS CRITERIA") {
+		t.Error("Report should contain SUCCESS CRITERIA section when MetThresholds set")
+	}
+	if !strings.Contains(report, "Met Thresholds") {
+		t.Error("Report should contain Met Thresholds")
+	}
+}
+
+func TestGenerateHTMLReportWithConfig(t *testing.T) {
+	config := models.NewBacktestConfig("HTML Config Test", "btc_mxn",
+		time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
+		time.Date(2024, 12, 31, 0, 0, 0, 0, time.UTC))
+	config.WithStrategy("trend", map[string]interface{}{"window": 20})
+
+	result := models.NewBacktestResult("bt-456", "cfg-789")
+	result.SetConfigSnapshot(config)
+	result.SetSummary(&models.PerformanceSummary{TotalReturnPercent: 8.5})
+	result.MetThresholds = false
+	result.FailureReason = "sharpe_ratio 0.80 < min 1.00"
+
+	html := GenerateHTMLReport(result)
+
+	if !strings.Contains(html, "Strategy & Parameters") {
+		t.Error("HTML report should contain Strategy & Parameters section")
+	}
+	if !strings.Contains(html, "HTML Config Test") {
+		t.Error("HTML report should contain config name")
+	}
+	if !strings.Contains(html, "Success Criteria") {
+		t.Error("HTML report should contain Success Criteria section")
+	}
+	if !strings.Contains(html, "Failure Reason") {
+		t.Error("HTML report should contain Failure Reason")
+	}
+	if !strings.Contains(html, "sharpe_ratio") {
+		t.Error("HTML report should contain failure reason text")
+	}
+}
+
 // Helper function to create test trades
 func createTestTrade(side string, entryPrice, exitPrice float64, entryTime time.Time) *models.Trade {
 	trade := models.NewTrade(side, "btc_mxn", entryPrice, 0.01, 0, 0, entryTime)

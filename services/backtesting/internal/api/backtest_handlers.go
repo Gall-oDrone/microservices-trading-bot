@@ -16,19 +16,20 @@ func parseDate(dateStr string) (time.Time, error) {
 
 // CreateBacktestRequest represents a request to create a backtest
 type CreateBacktestRequest struct {
-	Name            string                 `json:"name"`
-	Description     string                 `json:"description"`
-	StartDate       string                 `json:"start_date"`
-	EndDate         string                 `json:"end_date"`
-	Book            string                 `json:"book"`
+	Name            string                  `json:"name"`
+	Description     string                  `json:"description"`
+	StartDate       string                  `json:"start_date"`
+	EndDate         string                  `json:"end_date"`
+	Book            string                  `json:"book"`
 	InitialBalance  float64                `json:"initial_balance"`
-	Strategy        string                 `json:"strategy"`
-	StrategyParams  map[string]interface{} `json:"strategy_params"`
-	SlippageModel   string                 `json:"slippage_model"`
-	SlippageValue   float64                `json:"slippage_value"`
-	CommissionRate  float64                `json:"commission_rate"`
-	DataSource      string                 `json:"data_source"`
-	DataGranularity string                 `json:"data_granularity"`
+	Strategy        string                  `json:"strategy"`
+	StrategyParams  map[string]interface{}  `json:"strategy_params"`
+	SlippageModel   string                  `json:"slippage_model"`
+	SlippageValue   float64                 `json:"slippage_value"`
+	CommissionRate  float64                 `json:"commission_rate"`
+	DataSource      string                  `json:"data_source"`
+	DataGranularity string                  `json:"data_granularity"`
+	SuccessCriteria *models.SuccessCriteria `json:"success_criteria,omitempty"`
 }
 
 // CreateBacktest creates a new backtest
@@ -69,6 +70,9 @@ func (h *Handler) CreateBacktest(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.DataGranularity != "" {
 		config.DataGranularity = req.DataGranularity
+	}
+	if req.SuccessCriteria != nil {
+		config.SuccessCriteria = req.SuccessCriteria
 	}
 
 	// Create backtest

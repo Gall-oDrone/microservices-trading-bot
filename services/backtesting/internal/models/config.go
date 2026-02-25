@@ -35,6 +35,19 @@ type BacktestConfig struct {
 	// Metadata
 	CreatedAt time.Time `json:"created_at"`
 	CreatedBy string    `json:"created_by,omitempty"`
+
+	// Optional success criteria for "strategy worked" evaluation (all zero = not set)
+	SuccessCriteria *SuccessCriteria `json:"success_criteria,omitempty"`
+}
+
+// SuccessCriteria defines optional thresholds to evaluate if a backtest "succeeded"
+// All fields are optional; zero value means "not set" and the check is skipped
+type SuccessCriteria struct {
+	MinSharpeRatio      float64 `json:"min_sharpe_ratio"`      // e.g. 1.0 = require Sharpe >= 1.0
+	MaxDrawdownPercent  float64 `json:"max_drawdown_percent"`  // e.g. 10 = require drawdown >= -10% (stored as positive)
+	MinTotalTrades      int     `json:"min_total_trades"`     // e.g. 10 = require at least 10 trades
+	MinWinRate          float64 `json:"min_win_rate"`          // e.g. 0.5 = require win rate >= 50% (0-1)
+	MinTotalReturnPct   float64 `json:"min_total_return_percent"` // e.g. 5 = require total return >= 5%
 }
 
 // Range represents a parameter range for optimization

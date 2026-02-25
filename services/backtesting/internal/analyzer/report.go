@@ -16,10 +16,36 @@ func GenerateTextReport(result *models.BacktestResult) string {
 	sb.WriteString("  BACKTEST REPORT\n")
 	sb.WriteString("=" + strings.Repeat("=", 70) + "\n\n")
 
-	// Summary
 	sb.WriteString(fmt.Sprintf("Backtest ID: %s\n", result.BacktestID))
 	sb.WriteString(fmt.Sprintf("Status: %s\n", result.Status))
-	sb.WriteString(fmt.Sprintf("Duration: %d seconds\n\n", result.Duration))
+	sb.WriteString(fmt.Sprintf("Duration: %d seconds\n", result.Duration))
+	if result.Config != nil {
+		sb.WriteString("\nSTRATEGY & PARAMETERS\n")
+		sb.WriteString(strings.Repeat("-", 70) + "\n")
+		c := result.Config
+		sb.WriteString(fmt.Sprintf("Name:                  %s\n", c.Name))
+		sb.WriteString(fmt.Sprintf("Book:                  %s\n", c.Book))
+		sb.WriteString(fmt.Sprintf("Strategy:              %s\n", c.Strategy))
+		sb.WriteString(fmt.Sprintf("Start Date:            %s\n", c.StartDate.Format("2006-01-02")))
+		sb.WriteString(fmt.Sprintf("End Date:              %s\n", c.EndDate.Format("2006-01-02")))
+		sb.WriteString(fmt.Sprintf("Initial Balance:       $%.2f\n", c.InitialBalance))
+		sb.WriteString(fmt.Sprintf("Slippage:              %s %.4f\n", c.SlippageModel, c.SlippageValue))
+		sb.WriteString(fmt.Sprintf("Commission Rate:       %.4f\n", c.CommissionRate))
+		if len(c.StrategyParams) > 0 {
+			paramsJSON, _ := json.Marshal(c.StrategyParams)
+			sb.WriteString(fmt.Sprintf("Strategy Params:       %s\n", string(paramsJSON)))
+		}
+		sb.WriteString("\n")
+	}
+	if result.MetThresholds || result.FailureReason != "" {
+		sb.WriteString("SUCCESS CRITERIA\n")
+		sb.WriteString(strings.Repeat("-", 70) + "\n")
+		sb.WriteString(fmt.Sprintf("Met Thresholds:        %v\n", result.MetThresholds))
+		if result.FailureReason != "" {
+			sb.WriteString(fmt.Sprintf("Failure Reason:         %s\n", result.FailureReason))
+		}
+		sb.WriteString("\n")
+	}
 
 	if result.Summary == nil {
 		sb.WriteString("No performance summary available.\n")
@@ -93,6 +119,31 @@ func GenerateHTMLReport(result *models.BacktestResult) string {
 	sb.WriteString("<h1>Backtest Report</h1>\n")
 	sb.WriteString(fmt.Sprintf("<p><strong>Backtest ID:</strong> %s</p>\n", result.BacktestID))
 	sb.WriteString(fmt.Sprintf("<p><strong>Status:</strong> %s</p>\n", result.Status))
+
+	if result.Config != nil {
+		c := result.Config
+		sb.WriteString("<h2>Strategy & Parameters</h2>\n")
+		sb.WriteString("<table>\n")
+		sb.WriteString("<tr><th>Parameter</th><th>Value</th></tr>\n")
+		sb.WriteString(fmt.Sprintf("<tr><td>Name</td><td>%s</td></tr>\n", c.Name))
+		sb.WriteString(fmt.Sprintf("<tr><td>Book</td><td>%s</td></tr>\n", c.Book))
+		sb.WriteString(fmt.Sprintf("<tr><td>Strategy</td><td>%s</td></tr>\n", c.Strategy))
+		sb.WriteString(fmt.Sprintf("<tr><td>Start Date</td><td>%s</td></tr>\n", c.StartDate.Format("2006-01-02")))
+		sb.WriteString(fmt.Sprintf("<tr><td>End Date</td><td>%s</td></tr>\n", c.EndDate.Format("2006-01-02")))
+		sb.WriteString(fmt.Sprintf("<tr><td>Initial Balance</td><td>$%.2f</td></tr>\n", c.InitialBalance))
+		if len(c.StrategyParams) > 0 {
+			paramsJSON, _ := json.Marshal(c.StrategyParams)
+			sb.WriteString(fmt.Sprintf("<tr><td>Strategy Params</td><td><code>%s</code></td></tr>\n", string(paramsJSON)))
+		}
+		sb.WriteString("</table>\n")
+	}
+	if result.MetThresholds || result.FailureReason != "" {
+		sb.WriteString("<h2>Success Criteria</h2>\n")
+		sb.WriteString(fmt.Sprintf("<p><strong>Met Thresholds:</strong> %v</p>\n", result.MetThresholds))
+		if result.FailureReason != "" {
+			sb.WriteString(fmt.Sprintf("<p><strong>Failure Reason:</strong> %s</p>\n", result.FailureReason))
+		}
+	}
 
 	if result.Summary != nil {
 		s := result.Summary

@@ -2,10 +2,13 @@ package manager
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"sync"
+	"time"
 
 	"bitso-trading-platform/backtesting/internal/engine"
+	"bitso-trading-platform/backtesting/internal/export"
 	"bitso-trading-platform/backtesting/internal/logger"
 	"bitso-trading-platform/backtesting/internal/metrics"
 	"bitso-trading-platform/backtesting/internal/models"
@@ -19,6 +22,7 @@ type BacktestManager struct {
 	storage          storage.ResultStorage
 	logger           logger.Logger
 	metricsCollector *metrics.MetricsCollector
+	notifiers        []export.Notifier
 
 	maxConcurrent    int
 	runningBacktests map[string]*models.Backtest
@@ -27,6 +31,11 @@ type BacktestManager struct {
 
 	ctx    context.Context
 	cancel context.CancelFunc
+}
+
+// SetNotifiers sets optional completion notifiers (webhook, Kafka, S3 export)
+func (m *BacktestManager) SetNotifiers(notifiers []export.Notifier) {
+	m.notifiers = notifiers
 }
 
 // NewBacktestManager creates a new backtest manager
@@ -249,27 +258,108 @@ func (m *BacktestManager) runBacktest(backtestID string, config *models.Backtest
 	}
 	if err != nil {
 		backtest.Fail(err)
-		// Persist failed result so GetBacktest can find it (UpdateStatus requires existing record)
+		// Persist failed result so GetBacktest can find it (include config for reports/export)
 		failedResult := models.NewBacktestResult(backtestID, config.ID)
+		failedResult.SetConfigSnapshot(config)
 		failedResult.Status = "failed"
 		failedResult.Error = err.Error()
 		failedResult.MarkFailed(err)
 		_ = m.storage.Save(m.ctx, failedResult)
 		m.untrackBacktest(backtestID)
-		m.logger.Error("Backtest failed", map[string]interface{}{
-			"backtest_id": backtestID,
-			"error":       err.Error(),
-		})
+		m.logBacktestCompletion("failed", backtestID, config, nil, "", false, err.Error())
 		return
 	}
 	backtest.Complete(result)
 	// Engine already saved result; ensure status is updated if storage supports it
 	_ = m.storage.UpdateStatus(m.ctx, backtestID, result.Status, result.Progress)
 	m.untrackBacktest(backtestID)
-	m.logger.Info("Backtest completed", map[string]interface{}{
+	m.logBacktestCompletion("completed", backtestID, config, result, result.FailureReason, result.MetThresholds, "")
+}
+
+// logBacktestCompletion writes one structured log line per completion for export to CloudWatch/S3
+// and triggers optional notifiers (webhook, Kafka, S3 export)
+func (m *BacktestManager) logBacktestCompletion(
+	event string,
+	backtestID string,
+	config *models.BacktestConfig,
+	result *models.BacktestResult,
+	failureReason string,
+	metThresholds bool,
+	errMsg string,
+) {
+	fields := map[string]interface{}{
+		"event":       "backtest_completion",
+		"outcome":     event,
 		"backtest_id": backtestID,
-		"status":      result.Status,
-	})
+		"strategy":    config.Strategy,
+		"book":        config.Book,
+		"start_date":  config.StartDate.Format(time.RFC3339),
+		"end_date":    config.EndDate.Format(time.RFC3339),
+		"name":        config.Name,
+	}
+	var strategyParamsJSON string
+	if config.StrategyParams != nil && len(config.StrategyParams) > 0 {
+		if b, e := json.Marshal(config.StrategyParams); e == nil {
+			fields["strategy_params_json"] = string(b)
+			strategyParamsJSON = string(b)
+		}
+	}
+	if event == "failed" {
+		fields["error"] = errMsg
+		m.logger.Info("backtest_completion", fields)
+	} else {
+		if result != nil && result.Summary != nil {
+			s := result.Summary
+			fields["total_return_percent"] = s.TotalReturnPercent
+			fields["sharpe_ratio"] = s.SharpeRatio
+			fields["max_drawdown_percent"] = s.MaxDrawdownPercent
+			fields["win_rate"] = s.WinRate
+			fields["total_trades"] = s.TotalTrades
+			fields["met_thresholds"] = metThresholds
+			if failureReason != "" {
+				fields["failure_reason"] = failureReason
+			}
+		}
+		m.logger.Info("backtest_completion", fields)
+	}
+
+	// Build and send to notifiers (fire-and-forget with timeout)
+	ev := &export.BacktestCompletionEvent{
+		Event:              "backtest_completion",
+		Outcome:            event,
+		BacktestID:         backtestID,
+		Strategy:           config.Strategy,
+		Book:               config.Book,
+		Name:               config.Name,
+		StartDate:          config.StartDate.Format(time.RFC3339),
+		EndDate:            config.EndDate.Format(time.RFC3339),
+		StrategyParamsJSON: strategyParamsJSON,
+		Error:              errMsg,
+		FailureReason:      failureReason,
+		MetThresholds:      metThresholds,
+	}
+	if event == "completed" && result != nil && result.Summary != nil {
+		s := result.Summary
+		ev.TotalReturnPercent = s.TotalReturnPercent
+		ev.SharpeRatio = s.SharpeRatio
+		ev.MaxDrawdownPercent = s.MaxDrawdownPercent
+		ev.WinRate = s.WinRate
+		ev.TotalTrades = s.TotalTrades
+	}
+	for _, n := range m.notifiers {
+		go m.notifyWithTimeout(n, ev)
+	}
+}
+
+func (m *BacktestManager) notifyWithTimeout(n export.Notifier, ev *export.BacktestCompletionEvent) {
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	if err := n.Notify(ctx, ev); err != nil {
+		m.logger.Warn("Completion notifier failed", map[string]interface{}{
+			"notifier": n.Name(),
+			"error":    err.Error(),
+		})
+	}
 }
 
 func (m *BacktestManager) processQueue() {

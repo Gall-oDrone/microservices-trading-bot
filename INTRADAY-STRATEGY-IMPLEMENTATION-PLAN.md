@@ -157,6 +157,8 @@ This document outlines the recommended steps to safely implement trading strateg
 
 **Files to touch:** `services/backtesting/` (existing), this plan, optional: short “Backtesting for intraday” section in `services/backtesting/README.md` or `GETTING_STARTED.md`.
 
+**Documenting strategy parameters and metrics:** For persisting config with results, optional success criteria, structured completion logging, and export to CloudWatch Logs or S3, see **[BACKTESTING-METRICS-AND-EXPORT.md](BACKTESTING-METRICS-AND-EXPORT.md)**.
+
 **Phase 6 workflow — run one backtest and compare to Grafana**
 
 1. Start dependencies: market-data (if using HTTP provider), Redis, backtesting service.

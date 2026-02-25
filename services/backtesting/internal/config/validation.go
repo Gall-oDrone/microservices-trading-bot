@@ -138,6 +138,11 @@ func validateStorageConfig(cfg *StorageConfig) error {
 		return fmt.Errorf("STORAGE_PATH is required when STORAGE_TYPE is 'file'")
 	}
 
+	// If S3 storage, bucket is required
+	if cfg.Type == "s3" && cfg.S3Bucket == "" {
+		return fmt.Errorf("S3_BUCKET is required when STORAGE_TYPE is 's3'")
+	}
+
 	if cfg.RetentionDays < 0 {
 		return fmt.Errorf("STORAGE_RETENTION_DAYS must be non-negative, got %d", cfg.RetentionDays)
 	}

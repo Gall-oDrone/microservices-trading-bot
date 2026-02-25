@@ -13,6 +13,17 @@ type Config struct {
 	Execution  ExecutionConfig
 	Logging    LoggingConfig
 	Metrics    MetricsConfig
+	Export     ExportConfig
+}
+
+// ExportConfig holds optional completion export/notification settings
+type ExportConfig struct {
+	WebhookURL                 string // HTTP POST URL for completion events (optional)
+	KafkaBrokers               string // Comma-separated brokers for backtest completion topic (optional)
+	KafkaTopicBacktestCompleted string // Topic name (optional)
+	S3ExportBucket             string // Bucket to write completion summary JSON (optional)
+	S3ExportPrefix             string // Key prefix for summary objects (optional)
+	S3ExportRegion             string // AWS region for export bucket (optional)
 }
 
 // ServiceConfig holds service-level configuration
@@ -46,6 +57,10 @@ type StorageConfig struct {
 	Type          string // "redis", "file", "s3"
 	Path          string // Path for file-based storage
 	RetentionDays int    // How long to retain results
+	// S3 (when Type == "s3")
+	S3Bucket string // S3 bucket name
+	S3Prefix string // Optional key prefix (e.g. "backtests/results/")
+	S3Region string // AWS region (empty = default)
 }
 
 // ExecutionConfig holds backtest execution configuration

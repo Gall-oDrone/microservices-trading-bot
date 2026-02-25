@@ -13,6 +13,7 @@ import (
 	"bitso-trading-platform/backtesting/internal/config"
 	"bitso-trading-platform/backtesting/internal/data"
 	"bitso-trading-platform/backtesting/internal/engine"
+	"bitso-trading-platform/backtesting/internal/export"
 	"bitso-trading-platform/backtesting/internal/logger"
 	"bitso-trading-platform/backtesting/internal/manager"
 	"bitso-trading-platform/backtesting/internal/metrics"
@@ -135,9 +136,16 @@ func NewApplication() (*Application, error) {
 	// Initialize result storage
 	ttl := time.Hour * 24 * time.Duration(cfg.Storage.RetentionDays)
 	var resultStorage storage.ResultStorage
-	if cfg.Storage.Type == "redis" {
+	switch cfg.Storage.Type {
+	case "redis":
 		resultStorage = storage.NewRedisStorage(redisClient, appLogger, ttl)
-	} else {
+	case "s3":
+		s3Storage, err := storage.NewS3Storage(context.Background(), cfg.Storage.S3Bucket, cfg.Storage.S3Prefix, cfg.Storage.S3Region, appLogger)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create S3 storage: %w", err)
+		}
+		resultStorage = s3Storage
+	default:
 		resultStorage = storage.NewFileStorage(cfg.Storage.Path, appLogger)
 	}
 	appLogger.Info("Result storage initialized", map[string]interface{}{
@@ -156,6 +164,28 @@ func NewApplication() (*Application, error) {
 		appLogger,
 		metricsCollector,
 	)
+	// Optional completion notifiers (webhook, Kafka, S3 export)
+	var notifiers []export.Notifier
+	if cfg.Export.WebhookURL != "" {
+		notifiers = append(notifiers, export.NewWebhookNotifier(cfg.Export.WebhookURL))
+		appLogger.Info("Webhook completion notifier enabled", map[string]interface{}{"url": cfg.Export.WebhookURL})
+	}
+	if cfg.Export.KafkaBrokers != "" && cfg.Export.KafkaTopicBacktestCompleted != "" {
+		notifiers = append(notifiers, export.NewKafkaNotifier(cfg.Export.KafkaBrokers, cfg.Export.KafkaTopicBacktestCompleted))
+		appLogger.Info("Kafka completion notifier enabled", map[string]interface{}{
+			"brokers": cfg.Export.KafkaBrokers,
+			"topic":   cfg.Export.KafkaTopicBacktestCompleted,
+		})
+	}
+	if cfg.Export.S3ExportBucket != "" {
+		s3Export, err := export.NewS3ExportNotifier(context.Background(), cfg.Export.S3ExportBucket, cfg.Export.S3ExportPrefix, cfg.Export.S3ExportRegion)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create S3 export notifier: %w", err)
+		}
+		notifiers = append(notifiers, s3Export)
+		appLogger.Info("S3 export notifier enabled", map[string]interface{}{"bucket": cfg.Export.S3ExportBucket})
+	}
+	backtestManager.SetNotifiers(notifiers)
 	appLogger.Info("Backtest manager initialized", nil)
 
 	// Initialize optimizer

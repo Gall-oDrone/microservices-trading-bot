@@ -256,6 +256,25 @@ func TestValidateStorageConfig(t *testing.T) {
 			},
 			wantErr: true,
 		},
+		{
+			name: "valid s3 storage",
+			config: StorageConfig{
+				Type:     "s3",
+				S3Bucket: "my-backtest-bucket",
+				S3Prefix: "backtests/",
+				RetentionDays: 90,
+			},
+			wantErr: false,
+		},
+		{
+			name: "s3 storage without bucket",
+			config: StorageConfig{
+				Type:          "s3",
+				S3Bucket:      "",
+				RetentionDays: 90,
+			},
+			wantErr: true,
+		},
 	}
 
 	for _, tt := range tests {

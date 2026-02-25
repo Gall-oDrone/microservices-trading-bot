@@ -90,8 +90,9 @@ func (r *BacktestRunner) Execute(ctx context.Context) (*models.BacktestResult, e
 		"end_date":   r.config.EndDate.Format("2006-01-02"),
 	})
 
-	// Create result
+	// Create result and attach config snapshot for reports and export
 	result := models.NewBacktestResult(r.config.ID, r.config.ID)
+	result.SetConfigSnapshot(r.config)
 
 	// Load historical data
 	request := data.NewDataRequest(r.config.Book, r.config.StartDate, r.config.EndDate).
@@ -129,6 +130,7 @@ func (r *BacktestRunner) Execute(ctx context.Context) (*models.BacktestResult, e
 		r.logger.Error("Failed to analyze performance", map[string]interface{}{"error": err})
 	} else {
 		result.SetSummary(summary)
+		result.EvaluateSuccessCriteria(r.config.SuccessCriteria)
 	}
 
 	// Mark completed

@@ -46,6 +46,9 @@ func loadFromEnv() *Config {
 			Type:          getEnv("STORAGE_TYPE", "redis"),
 			Path:          getEnv("STORAGE_PATH", "/var/lib/backtesting/results"),
 			RetentionDays: getEnvAsInt("STORAGE_RETENTION_DAYS", 90),
+			S3Bucket:      getEnv("S3_BUCKET", ""),
+			S3Prefix:      getEnv("S3_PREFIX", "backtests/results/"),
+			S3Region:      getEnv("AWS_REGION", getEnv("S3_REGION", "")),
 		},
 		Execution: ExecutionConfig{
 			MaxConcurrentBacktests: getEnvAsInt("MAX_CONCURRENT_BACKTESTS", 5),
@@ -65,6 +68,14 @@ func loadFromEnv() *Config {
 			Enabled: getEnvAsBool("METRICS_ENABLED", true),
 			Path:    getEnv("METRICS_PATH", "/metrics"),
 			Port:    getEnvAsInt("METRICS_PORT", 9094),
+		},
+		Export: ExportConfig{
+			WebhookURL:                  getEnv("BACKTEST_WEBHOOK_URL", ""),
+			KafkaBrokers:                getEnv("KAFKA_BROKERS", ""),
+			KafkaTopicBacktestCompleted: getEnv("KAFKA_TOPIC_BACKTEST_COMPLETED", "backtesting.completions"),
+			S3ExportBucket:              getEnv("BACKTEST_EXPORT_S3_BUCKET", ""),
+			S3ExportPrefix:              getEnv("BACKTEST_EXPORT_S3_PREFIX", "backtests/completions/"),
+			S3ExportRegion:              getEnv("AWS_REGION", getEnv("BACKTEST_EXPORT_S3_REGION", "")),
 		},
 	}
 }

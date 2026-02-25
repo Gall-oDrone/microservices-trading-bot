@@ -1,6 +1,7 @@
 package models
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -489,6 +490,85 @@ func TestBacktestResultMethods(t *testing.T) {
 	}
 	if result.CompletedAt == nil {
 		t.Error("Expected CompletedAt to be set")
+	}
+}
+
+// TestSetConfigSnapshot verifies that config snapshot is stored on the result
+func TestSetConfigSnapshot(t *testing.T) {
+	start := time.Now().AddDate(0, -1, 0)
+	end := time.Now()
+	config := NewBacktestConfig("Snapshot Test", "btc_mxn", start, end)
+	config.WithStrategy("basic", map[string]interface{}{"rsi_period": 14, "rsi_oversold": 30})
+	config.WithInitialBalance(50000)
+	config.WithSlippage("percentage", 0.002)
+
+	result := NewBacktestResult("bt-1", config.ID)
+	result.SetConfigSnapshot(config)
+
+	if result.Config == nil {
+		t.Fatal("Expected Config to be set")
+	}
+	if result.Config.Name != "Snapshot Test" {
+		t.Errorf("Expected name Snapshot Test, got %s", result.Config.Name)
+	}
+	if result.Config.Book != "btc_mxn" {
+		t.Errorf("Expected book btc_mxn, got %s", result.Config.Book)
+	}
+	if result.Config.Strategy != "basic" {
+		t.Errorf("Expected strategy basic, got %s", result.Config.Strategy)
+	}
+	if result.Config.InitialBalance != 50000 {
+		t.Errorf("Expected initial_balance 50000, got %f", result.Config.InitialBalance)
+	}
+	if result.Config.SlippageModel != "percentage" || result.Config.SlippageValue != 0.002 {
+		t.Errorf("Expected slippage percentage 0.002, got %s %f", result.Config.SlippageModel, result.Config.SlippageValue)
+	}
+	rsiPeriod := result.Config.StrategyParams["rsi_period"]
+	if rsiPeriod != 14 && rsiPeriod != float64(14) {
+		t.Errorf("Expected rsi_period 14, got %v", rsiPeriod)
+	}
+}
+
+// TestEvaluateSuccessCriteria verifies success criteria evaluation
+func TestEvaluateSuccessCriteria(t *testing.T) {
+	result := NewBacktestResult("bt-1", "cfg-1")
+	result.Status = "completed"
+	result.SetSummary(&PerformanceSummary{
+		SharpeRatio:        1.2,
+		MaxDrawdownPercent: -8.0,
+		TotalTrades:        15,
+		WinRate:            0.55,
+		TotalReturnPercent: 6.0,
+	})
+
+	// Nil criteria: no-op
+	result.EvaluateSuccessCriteria(nil)
+	if result.FailureReason != "" {
+		t.Errorf("Expected empty failure reason when criteria is nil, got %s", result.FailureReason)
+	}
+
+	// Criteria met
+	result.EvaluateSuccessCriteria(&SuccessCriteria{
+		MinSharpeRatio:     1.0,
+		MaxDrawdownPercent: 10,
+		MinTotalTrades:     10,
+		MinWinRate:         0.5,
+		MinTotalReturnPct:  5,
+	})
+	if !result.MetThresholds {
+		t.Errorf("Expected MetThresholds true when all criteria met, got false; reason: %s", result.FailureReason)
+	}
+
+	// Criteria not met (Sharpe too low)
+	result2 := NewBacktestResult("bt-2", "cfg-2")
+	result2.Status = "completed"
+	result2.SetSummary(&PerformanceSummary{SharpeRatio: 0.5, TotalTrades: 20})
+	result2.EvaluateSuccessCriteria(&SuccessCriteria{MinSharpeRatio: 1.0})
+	if result2.MetThresholds {
+		t.Error("Expected MetThresholds false when Sharpe below min")
+	}
+	if result2.FailureReason == "" || !strings.Contains(result2.FailureReason, "sharpe_ratio") {
+		t.Errorf("Expected failure reason to mention sharpe_ratio, got %s", result2.FailureReason)
 	}
 }
 
