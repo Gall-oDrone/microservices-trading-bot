@@ -67,9 +67,27 @@ This document outlines the recommended steps to safely implement trading strateg
    - Option A: **Polling** – **Done.** A sync job in order-management (`internal/sync/bitso_sync.go`) polls Bitso’s `LookupOrders` for active order IDs, then updates order status and filled amount/price via `SyncOrderFromBitso`. The job runs when Bitso credentials are set in order-management config.
    - Option B: **Webhooks** – If Bitso supports order/fill webhooks, subscribe and push updates to order-management.
 3. **Update positions:** When an order moves to filled (or partial fill), order-management should update order status and call position logic (e.g. `UpdateFromFill`). Depends on (2).
-4. **Persistence:** Order-management currently uses in-memory repositories; switch to Redis when needed for production.
+4. **Persistence:** ~~Order-management currently uses in-memory repositories; switch to Redis when needed for production.~~ **Done (optional).** Order-management supports two storage backends selected by **`STORAGE_TYPE`** (env): **`memory`** (default) or **`redis`**. No changes to `shared/pkg/` (no shared Redis client); order-management uses `github.com/redis/go-redis/v9` directly when `STORAGE_TYPE=redis`. Use **memory** for tests and local runs (no Redis required); use **redis** in staging/production so orders and positions survive restarts and intraday metrics stay correct. See **Phase 3b** below.
 
 **Files touched:** `shared/pkg/config` (`KafkaTopicOrdersPlaced`), `services/trading-engine` (Kafka producer, publish after PlaceOrder), executor returns order ID; **order-management** consumer for `trading.orders.placed` (`internal/consumer/orders_placed.go`), Bitso sync job (`internal/sync/bitso_sync.go`, polls LookupOrders and updates orders via `SyncOrderFromBitso`). **Env vars:** Trading-engine uses `STAGE_BITSO_API_KEY` and `STAGE_BITSO_API_SECRET` (shared config); order-management uses `STAGE_BITSO_API_KEY` and `STAGE_BITSO_APISECRET` (and optionally `BITSO_API_BASE_URL`) to enable the sync job.
+
+#### Phase 3b: Order-Management Redis Persistence (optional)
+
+**Goal:** Persist orders and positions in Redis when running in staging/production so state survives restarts and intraday metrics (Phase 5) remain correct. **In-memory remains the default** so tests and local development do not require Redis.
+
+**Design:**
+
+- **Storage selection:** Env **`STORAGE_TYPE`** = `memory` (default) | `redis`. When `memory`, order-management uses existing in-memory repositories. When `redis`, it uses Redis-backed repositories (same interfaces).
+- **No shared/pkg changes:** Order-management uses `github.com/redis/go-redis/v9` directly (same pattern as market-data and backtesting). `shared/pkg/redis` and `shared/pkg/database` are unchanged.
+- **Redis config:** When `STORAGE_TYPE=redis`, order-management requires `REDIS_HOST`, `REDIS_PORT` (optional `REDIS_PASSWORD`, `REDIS_DB`, `REDIS_POOL_SIZE`). When `STORAGE_TYPE=memory`, Redis config is ignored and not validated.
+
+**Tasks:**
+
+1. ~~Add `STORAGE_TYPE` (default `memory`) and validate Redis only when `STORAGE_TYPE=redis`.~~ **Done.** `services/order-management/internal/config/config.go`.
+2. ~~Implement Redis-backed `OrderRepository` and `PositionRepository` (key prefix `om:`, JSON serialization, indexes for GetBySignalID, GetByBitsoOrderID, GetActiveOrders, GetOrdersByBook, etc.).~~ **Done.** `internal/repository/redis_order_repository.go`, `internal/repository/redis_position_repository.go`.
+3. ~~Wire repositories in `cmd/main.go`: if `STORAGE_TYPE=redis`, create Redis client and Redis repos; else use in-memory. Add Redis to health check when Redis storage is enabled.~~ **Done.**
+
+**Files touched:** `services/order-management/internal/config/config.go` (Storage type, conditional Redis validation), `services/order-management/internal/repository/redis_order_repository.go`, `services/order-management/internal/repository/redis_position_repository.go`, `services/order-management/cmd/main.go` (repository wiring, health).
 
 ---
 
@@ -212,6 +230,7 @@ flowchart LR
 | 1     | Bitso env-driven URL           | Switch stage/production via config           | Done          |
 | 2     | Paper trading / dry-run        | Use Bitso testing env (stage URL + keys)     | Done (stage)  |
 | 3     | Order & fill sync              | Publish + consumer + Bitso sync job         | Done          |
+| 3b    | Order-management Redis (opt-in)| STORAGE_TYPE=memory (default) \| redis; no shared/pkg changes | Done          |
 | 4     | Daily loss & drawdown limits   | Config + check before execute; OM session API | Done          |
 | 5     | Intraday metrics               | Observability for live intraday trading      | Done (incl. Grafana dashboards) |
 | 6     | Backtesting                    | Historical validation; doc in plan           | Documented    |
@@ -279,11 +298,13 @@ After Phases 1–6 are implemented, follow these priorities to validate and hard
 
 **Goal:** When ready for production resilience, persist orders and positions in Redis so they survive restarts.
 
+**Status:** Phase 3b implements Redis as an **opt-in** backend. Default remains in-memory for tests.
+
 **Checklist:**
 
-- Implement Redis-backed order and position repositories in order-management (plan: "switch to Redis when needed for production" in Phase 3).
+- ~~Implement Redis-backed order and position repositories in order-management.~~ **Done.** Phase 3b; `STORAGE_TYPE=redis` to enable.
 - Deploy Redis in the cluster (e.g. StatefulSet or Helm). Use a password and inject via External Secrets (e.g. `REDIS_PASSWORD`).
-- Set order-management env: `REDIS_HOST`, `REDIS_PORT`, `REDIS_PASSWORD`, `REDIS_DB` as needed. Health check should reflect Redis connectivity.
+- Set order-management env when using Redis: `STORAGE_TYPE=redis`, `REDIS_HOST`, `REDIS_PORT`, and optionally `REDIS_PASSWORD`, `REDIS_DB`, `REDIS_POOL_SIZE`. Health check reflects Redis connectivity when Redis storage is enabled.
 - See **REMAINING-PHASES-CHECKLIST.md** (Redis deployment and verification).
 
 ---
@@ -300,5 +321,5 @@ After Phases 1–6 are implemented, follow these priorities to validate and hard
 
 ---
 
-**Document version:** 1.9  
-**Status:** Phases 1–6 and Phase 6a (trades → Redis) complete. Next steps: Operational validation in stage (Priority 1), Backtest vs live comparison (Priority 2), Production config and persistence (Priorities 3–4). Scripts: `scripts/intraday-validate-stage-pipeline.sh`, `scripts/intraday-backtest-and-compare.sh`.
+**Document version:** 1.10  
+**Status:** Phases 1–6, 3b (order-management Redis opt-in), and Phase 6a (trades → Redis) complete. In-memory remains default; set `STORAGE_TYPE=redis` for production persistence. No changes to `shared/pkg/`. Next steps: Operational validation in stage (Priority 1), Backtest vs live comparison (Priority 2), Production config and persistence (Priorities 3–4). Scripts: `scripts/intraday-validate-stage-pipeline.sh`, `scripts/intraday-backtest-and-compare.sh`.

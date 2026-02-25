@@ -15,7 +15,10 @@ type Config struct {
 	// Kafka configuration
 	Kafka KafkaConfig `json:"kafka"`
 
-	// Redis configuration
+	// Storage: "memory" (default) or "redis". When "redis", Redis config is used for order/position persistence.
+	Storage StorageConfig `json:"storage"`
+
+	// Redis configuration (required when Storage.Type == "redis")
 	Redis RedisConfig `json:"redis"`
 
 	// Trading Engine configuration
@@ -66,6 +69,11 @@ type KafkaConfig struct {
 	BatchTimeout     time.Duration `json:"batch_timeout"`
 	CompressionCodec string        `json:"compression_codec"`
 	RequiredAcks     int           `json:"required_acks"`
+}
+
+// StorageConfig holds storage backend selection (memory or redis).
+type StorageConfig struct {
+	Type string `json:"type"` // "memory" (default) or "redis"
 }
 
 // RedisConfig holds Redis configuration
@@ -140,6 +148,9 @@ func Load() (*Config, error) {
 			BatchTimeout:     getEnvAsDuration("KAFKA_BATCH_TIMEOUT", 1*time.Second),
 			CompressionCodec: getEnv("KAFKA_COMPRESSION_CODEC", "snappy"),
 			RequiredAcks:     getEnvAsInt("KAFKA_REQUIRED_ACKS", -1),
+		},
+		Storage: StorageConfig{
+			Type: getEnv("STORAGE_TYPE", "memory"),
 		},
 		Redis: RedisConfig{
 			Host:     getEnv("REDIS_HOST", "localhost"),
@@ -217,12 +228,21 @@ func (c *Config) Validate() error {
 		return fmt.Errorf("Kafka events topic is required")
 	}
 
-	if c.Redis.Host == "" {
-		return fmt.Errorf("Redis host is required")
+	// Storage type: memory (default) or redis
+	if c.Storage.Type == "" {
+		c.Storage.Type = "memory"
 	}
-
-	if c.Redis.Port <= 0 || c.Redis.Port > 65535 {
-		return fmt.Errorf("invalid Redis port: %d", c.Redis.Port)
+	if c.Storage.Type != "memory" && c.Storage.Type != "redis" {
+		return fmt.Errorf("invalid STORAGE_TYPE: %q (must be memory or redis)", c.Storage.Type)
+	}
+	// Redis config required only when using Redis storage
+	if c.Storage.Type == "redis" {
+		if c.Redis.Host == "" {
+			return fmt.Errorf("Redis host is required when STORAGE_TYPE=redis")
+		}
+		if c.Redis.Port <= 0 || c.Redis.Port > 65535 {
+			return fmt.Errorf("invalid Redis port: %d", c.Redis.Port)
+		}
 	}
 
 	if c.TradingEngine.BaseURL == "" {

@@ -9,19 +9,20 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/redis/go-redis/v9"
 	"github.com/shopspring/decimal"
 
 	"bitso-trading-platform/order-management/internal/config"
 	"bitso-trading-platform/order-management/internal/consumer"
 	"bitso-trading-platform/order-management/internal/logger"
-	"bitso-trading-platform/order-management/internal/sync"
-	"bitso-trading-platform/shared/pkg/bitso"
 	"bitso-trading-platform/order-management/internal/manager"
 	"bitso-trading-platform/order-management/internal/metrics"
 	"bitso-trading-platform/order-management/internal/repository"
 	"bitso-trading-platform/order-management/internal/risk"
 	"bitso-trading-platform/order-management/internal/server"
+	"bitso-trading-platform/order-management/internal/sync"
 	"bitso-trading-platform/order-management/internal/validator"
+	"bitso-trading-platform/shared/pkg/bitso"
 	"bitso-trading-platform/shared/pkg/health"
 )
 
@@ -38,13 +39,16 @@ type Application struct {
 	config *config.Config
 
 	// Core components
-	healthManager       *health.HealthManager
-	metricsCollector   *metrics.MetricsCollector
-	httpServer         *server.HTTPServer
-	orderManager       *manager.Manager
+	healthManager        *health.HealthManager
+	metricsCollector     *metrics.MetricsCollector
+	httpServer           *server.HTTPServer
+	orderManager         *manager.Manager
 	pnlRecorder          *metrics.IntradayAggregator
 	ordersPlacedConsumer *consumer.OrdersPlacedConsumer
 	bitsoSyncJob         *sync.BitsoSyncJob
+
+	// Redis client (non-nil when STORAGE_TYPE=redis; closed on shutdown)
+	redisClient *redis.Client
 
 	// Context
 	ctx    context.Context
@@ -82,9 +86,33 @@ func NewApplication() (*Application, error) {
 	pnlRecorder := metrics.NewIntradayAggregator(metricsCollector, nil)
 	appLogger.Info("Intraday P&L aggregator initialized", nil)
 
-	// Repositories (in-memory; replace with Redis/persistent when needed)
-	orderRepo := repository.NewInMemoryOrderRepository(appLogger, metricsCollector)
-	positionRepo := repository.NewInMemoryPositionRepository(appLogger, metricsCollector)
+	// Repositories: memory (default) or Redis based on STORAGE_TYPE
+	var orderRepo repository.OrderRepository
+	var positionRepo repository.PositionRepository
+	var redisClient *redis.Client
+
+	if cfg.Storage.Type == "redis" {
+		redisClient = redis.NewClient(&redis.Options{
+			Addr:     fmt.Sprintf("%s:%d", cfg.Redis.Host, cfg.Redis.Port),
+			Password: cfg.Redis.Password,
+			DB:       cfg.Redis.DB,
+			PoolSize: cfg.Redis.PoolSize,
+		})
+		if err := redisClient.Ping(ctx).Err(); err != nil {
+			redisClient.Close()
+			return nil, fmt.Errorf("redis connect: %w", err)
+		}
+		orderRepo = repository.NewRedisOrderRepository(redisClient, appLogger, metricsCollector)
+		positionRepo = repository.NewRedisPositionRepository(redisClient, appLogger, metricsCollector)
+		appLogger.Info("Storage: Redis (orders and positions)", map[string]interface{}{
+			"redis_host": cfg.Redis.Host,
+			"redis_port": cfg.Redis.Port,
+		})
+	} else {
+		orderRepo = repository.NewInMemoryOrderRepository(appLogger, metricsCollector)
+		positionRepo = repository.NewInMemoryPositionRepository(appLogger, metricsCollector)
+		appLogger.Info("Storage: in-memory (orders and positions)", nil)
+	}
 
 	// Validator and risk manager
 	orderValidator := validator.NewOrderValidator(&cfg.Risk, appLogger, orderRepo, metricsCollector)
@@ -132,9 +160,14 @@ func NewApplication() (*Application, error) {
 
 	// Add basic health check
 	healthManager.AddChecker(health.NewSimpleHealthChecker("service", func(ctx context.Context) error {
-		// Basic service health check
 		return nil
 	}))
+	// When using Redis storage, add Redis health check
+	if redisClient != nil {
+		healthManager.AddChecker(health.NewSimpleHealthChecker("redis", func(ctx context.Context) error {
+			return redisClient.Ping(ctx).Err()
+		}))
+	}
 
 	// Initialize HTTP server
 	httpServer := server.NewHTTPServer(
@@ -161,6 +194,7 @@ func NewApplication() (*Application, error) {
 		pnlRecorder:          pnlRecorder,
 		ordersPlacedConsumer: ordersPlacedConsumer,
 		bitsoSyncJob:         bitsoSyncJob,
+		redisClient:          redisClient,
 		ctx:                  ctx,
 		cancel:               cancel,
 	}, nil
@@ -273,6 +307,14 @@ func (app *Application) Stop() error {
 		if err := app.orderManager.Stop(); err != nil {
 			app.logger.Error("Error stopping order manager", map[string]interface{}{"error": err})
 			lastErr = err
+		}
+
+		if app.redisClient != nil {
+			app.logger.Info("Closing Redis client...", nil)
+			if err := app.redisClient.Close(); err != nil {
+				app.logger.Error("Error closing Redis client", map[string]interface{}{"error": err})
+				lastErr = err
+			}
 		}
 
 		if app.ordersPlacedConsumer != nil {

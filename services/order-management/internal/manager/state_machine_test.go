@@ -111,7 +111,7 @@ func TestGetAllowedTransitions(t *testing.T) {
 	}{
 		{"pending", models.OrderStatusPending, 2},                  // validated, rejected
 		{"validated", models.OrderStatusValidated, 2},              // submitted, rejected
-		{"submitted", models.OrderStatusSubmitted, 2},              // accepted, rejected
+		{"submitted", models.OrderStatusSubmitted, 5},              // accepted, partially_filled, filled, cancelled, rejected (Bitso sync)
 		{"accepted", models.OrderStatusAccepted, 3},                // partially_filled, filled, cancelled
 		{"partially_filled", models.OrderStatusPartiallyFilled, 2}, // filled, cancelled
 		{"filled", models.OrderStatusFilled, 0},                    // final state

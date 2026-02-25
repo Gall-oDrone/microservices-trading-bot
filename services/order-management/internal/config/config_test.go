@@ -170,6 +170,7 @@ func TestValidate(t *testing.T) {
 					TopicOrders:   "orders",
 					TopicEvents:   "events",
 				},
+				Storage: StorageConfig{Type: "memory"},
 				Redis: RedisConfig{
 					Host: "localhost",
 					Port: 6379,
@@ -182,6 +183,52 @@ func TestValidate(t *testing.T) {
 					MaxOrderValue:   100000.0,
 					MinOrderSize:    0.001,
 					MaxPositionSize: 1.0,
+				},
+			},
+			wantErr: true,
+		},
+		{
+			name: "invalid STORAGE_TYPE",
+			config: &Config{
+				Service: ServiceConfig{
+					Name: "order-management",
+					Port: 8080,
+				},
+				Kafka: KafkaConfig{
+					Brokers:       []string{"localhost:9092"},
+					ConsumerGroup: "test-group",
+					TopicSignals:  "signals",
+					TopicOrders:   "orders",
+					TopicEvents:   "events",
+				},
+				Storage: StorageConfig{Type: "postgres"},
+				Redis:   RedisConfig{Host: "localhost", Port: 6379},
+				TradingEngine: TradingEngineConfig{BaseURL: "http://localhost:8082"},
+				Risk: RiskConfig{
+					MaxOpenOrders: 10, MaxOrderValue: 100000.0, MinOrderSize: 0.001, MaxPositionSize: 1.0,
+				},
+			},
+			wantErr: true,
+		},
+		{
+			name: "redis storage requires Redis host",
+			config: &Config{
+				Service: ServiceConfig{
+					Name: "order-management",
+					Port: 8080,
+				},
+				Kafka: KafkaConfig{
+					Brokers:       []string{"localhost:9092"},
+					ConsumerGroup: "test-group",
+					TopicSignals:  "signals",
+					TopicOrders:   "orders",
+					TopicEvents:   "events",
+				},
+				Storage: StorageConfig{Type: "redis"},
+				Redis:   RedisConfig{Host: "", Port: 6379},
+				TradingEngine: TradingEngineConfig{BaseURL: "http://localhost:8082"},
+				Risk: RiskConfig{
+					MaxOpenOrders: 10, MaxOrderValue: 100000.0, MinOrderSize: 0.001, MaxPositionSize: 1.0,
 				},
 			},
 			wantErr: true,
