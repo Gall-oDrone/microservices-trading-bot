@@ -1,0 +1,93 @@
+{
+  "id": null,
+  "title": "Kafka (Data Pipeline)",
+  "tags": [
+    "infrastructure",
+    "kafka",
+    "data-pipeline"
+  ],
+  "timezone": "browser",
+  "time": { "from": "now-1h", "to": "now" },
+  "refresh": "10s",
+  "panels": [
+    {
+      "id": 1,
+      "type": "row",
+      "title": "Consume & produce (by service)",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 }
+    },
+    {
+      "id": 2,
+      "title": "Kafka messages consumed (rate) by job and topic",
+      "type": "timeseries",
+      "gridPos": { "h": 6, "w": 12, "x": 0, "y": 1 },
+      "targets": [
+        {
+          "expr": "sum(rate(kafka_messages_consumed_total[5m])) by (job, topic) or vector(0)",
+          "refId": "A",
+          "legendFormat": "{{job}} {{topic}}"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "Kafka consumer errors (rate) by job",
+      "type": "timeseries",
+      "gridPos": { "h": 6, "w": 12, "x": 12, "y": 1 },
+      "targets": [
+        {
+          "expr": "sum(rate(kafka_consumer_errors_total[5m])) by (job) or vector(0)",
+          "refId": "A",
+          "legendFormat": "{{job}}"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "Order-placed events published (rate)",
+      "type": "timeseries",
+      "description": "Trading-engine → order-management sync",
+      "gridPos": { "h": 5, "w": 12, "x": 0, "y": 7 },
+      "targets": [
+        {
+          "expr": "sum(rate(order_placed_events_published_total{job=~\"trading-engine.*\"}[5m])) or vector(0)",
+          "refId": "A",
+          "legendFormat": "published/s"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "Order-placed publish errors (rate)",
+      "type": "timeseries",
+      "gridPos": { "h": 5, "w": 12, "x": 12, "y": 7 },
+      "targets": [
+        {
+          "expr": "sum(rate(order_placed_events_publish_errors_total{job=~\"trading-engine.*\"}[5m])) or vector(0)",
+          "refId": "A",
+          "legendFormat": "errors/s"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "type": "row",
+      "title": "Consumer lag (if kafka-exporter or client exposes it)",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 12 }
+    },
+    {
+      "id": 7,
+      "title": "Kafka consumer lag by group/topic",
+      "type": "timeseries",
+      "description": "Requires kafka_exporter or Prometheus consumer lag metrics. Panel shows no data until exporter is deployed.",
+      "gridPos": { "h": 5, "w": 24, "x": 0, "y": 13 },
+      "targets": [
+        {
+          "expr": "kafka_consumer_group_lag_sum or kafka_consumergroup_lag or vector(0)",
+          "refId": "A",
+          "legendFormat": "{{group}} {{topic}}"
+        }
+      ]
+    }
+  ]
+}

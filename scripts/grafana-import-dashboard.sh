@@ -1,18 +1,19 @@
 #!/usr/bin/env bash
-# Import a Grafana dashboard by name. Use for per-service dashboards or the main trading-metrics dashboard.
-# Dashboards live under monitoring/grafana/dashboards/ in two folders:
-#   services/  - trading-engine, order-management, api-gateway, market-data, backtesting
-#   domain/     - trading-metrics (platform dashboard)
+# Import a Grafana dashboard by name. Use for per-service, domain, or infrastructure dashboards.
+# Dashboards live under monitoring/grafana/dashboards/ in three folders:
+#   services/     - trading-engine, order-management, api-gateway, market-data, backtesting
+#   domain/       - trading-metrics (platform), data-pipeline (cross-service Kafka flow)
+#   infrastructure/ - kafka, redis
 #
 # Prerequisites: Grafana reachable at GRAFANA_URL (default http://grafana.local).
 #
 # Usage:
 #   GRAFANA_URL=http://localhost:3001 ./scripts/grafana-import-dashboard.sh trading-engine
-#   ./scripts/grafana-import-dashboard.sh order-management
-#   ./scripts/grafana-import-dashboard.sh backtesting
-#   ./scripts/grafana-import-dashboard.sh trading-metrics   # main platform dashboard
+#   ./scripts/grafana-import-dashboard.sh data-pipeline
+#   ./scripts/grafana-import-dashboard.sh kafka
+#   ./scripts/grafana-import-dashboard.sh redis
 #
-# Dashboards: trading-engine | order-management | api-gateway | market-data | backtesting | trading-metrics
+# Dashboards: trading-engine | order-management | api-gateway | market-data | backtesting | trading-metrics | data-pipeline | kafka | redis
 
 set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -20,6 +21,7 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 DASHBOARDS_DIR="$REPO_ROOT/monitoring/grafana/dashboards"
 SERVICES_DIR="$DASHBOARDS_DIR/services"
 DOMAIN_DIR="$DASHBOARDS_DIR/domain"
+INFRASTRUCTURE_DIR="$DASHBOARDS_DIR/infrastructure"
 
 NAME="${1:-trading-metrics}"
 GRAFANA_URL="${GRAFANA_URL:-http://grafana.local}"
@@ -43,9 +45,12 @@ case "$NAME" in
   market-data)       DASHBOARD_JSON="$SERVICES_DIR/market-data.json" ;;
   backtesting)      DASHBOARD_JSON="$SERVICES_DIR/backtesting.json" ;;
   trading-metrics)   DASHBOARD_JSON="$DOMAIN_DIR/trading-metrics.json" ;;
+  data-pipeline)    DASHBOARD_JSON="$DOMAIN_DIR/data-pipeline.json" ;;
+  kafka)            DASHBOARD_JSON="$INFRASTRUCTURE_DIR/kafka.json" ;;
+  redis)            DASHBOARD_JSON="$INFRASTRUCTURE_DIR/redis.json" ;;
   *)
     echo "Usage: $0 DASHBOARD_NAME"
-    echo "  DASHBOARD_NAME: trading-engine | order-management | api-gateway | market-data | backtesting | trading-metrics"
+    echo "  DASHBOARD_NAME: trading-engine | order-management | api-gateway | market-data | backtesting | trading-metrics | data-pipeline | kafka | redis"
     exit 2
     ;;
 esac

@@ -1,0 +1,92 @@
+{
+  "id": null,
+  "title": "Data Pipeline (cross-service)",
+  "tags": [
+    "domain",
+    "kafka",
+    "data-pipeline",
+    "throughput"
+  ],
+  "timezone": "browser",
+  "time": { "from": "now-1h", "to": "now" },
+  "refresh": "10s",
+  "panels": [
+    {
+      "id": 1,
+      "type": "row",
+      "title": "Signal flow",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 }
+    },
+    {
+      "id": 2,
+      "title": "Signals received (trading-engine consume rate)",
+      "type": "timeseries",
+      "gridPos": { "h": 5, "w": 12, "x": 0, "y": 1 },
+      "targets": [
+        {
+          "expr": "sum(rate(signals_received_total{job=~\"trading-engine.*\"}[5m])) or vector(0)",
+          "refId": "A",
+          "legendFormat": "signals/s"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "Signals processed (rate) by outcome",
+      "type": "timeseries",
+      "gridPos": { "h": 5, "w": 12, "x": 12, "y": 1 },
+      "targets": [
+        {
+          "expr": "sum(rate(signals_processed_total{job=~\"trading-engine.*\"}[5m])) by (outcome) or vector(0)",
+          "refId": "A",
+          "legendFormat": "{{outcome}}"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "Signals dropped (rate) by reason",
+      "type": "timeseries",
+      "gridPos": { "h": 5, "w": 12, "x": 0, "y": 6 },
+      "targets": [
+        {
+          "expr": "sum(rate(signals_dropped_total{job=~\"trading-engine.*\"}[5m])) by (reason) or vector(0)",
+          "refId": "A",
+          "legendFormat": "{{reason}}"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "Orders executed (rate) by book",
+      "type": "timeseries",
+      "gridPos": { "h": 5, "w": 12, "x": 12, "y": 6 },
+      "targets": [
+        {
+          "expr": "sum(rate(orders_executed_total{job=~\"trading-engine.*\"}[5m])) by (book) or vector(0)",
+          "refId": "A",
+          "legendFormat": "{{book}}"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "type": "row",
+      "title": "Kafka by service",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 11 }
+    },
+    {
+      "id": 7,
+      "title": "Kafka consumed (rate) by job and topic",
+      "type": "timeseries",
+      "gridPos": { "h": 6, "w": 24, "x": 0, "y": 12 },
+      "targets": [
+        {
+          "expr": "sum(rate(kafka_messages_consumed_total[5m])) by (job, topic) or vector(0)",
+          "refId": "A",
+          "legendFormat": "{{job}} {{topic}}"
+        }
+      ]
+    }
+  ]
+}

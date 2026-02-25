@@ -1,0 +1,90 @@
+{
+  "id": null,
+  "title": "Redis",
+  "tags": [
+    "infrastructure",
+    "redis"
+  ],
+  "timezone": "browser",
+  "time": { "from": "now-1h", "to": "now" },
+  "refresh": "15s",
+  "panels": [
+    {
+      "id": 1,
+      "type": "row",
+      "title": "Overview",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 }
+    },
+    {
+      "id": 2,
+      "title": "Connected clients",
+      "type": "stat",
+      "description": "Requires redis_exporter. Scraping redis:6379 directly does not expose Prometheus metrics.",
+      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 1 },
+      "targets": [
+        {
+          "expr": "redis_connected_clients or redis_connected_slaves or vector(0)",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "Memory used (bytes)",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 1 },
+      "targets": [
+        {
+          "expr": "redis_memory_used_bytes or redis_memory_used_rss_bytes or vector(0)",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "Commands processed (rate)",
+      "type": "timeseries",
+      "gridPos": { "h": 5, "w": 12, "x": 12, "y": 1 },
+      "targets": [
+        {
+          "expr": "rate(redis_commands_processed_total[5m]) or rate(redis_commands_total[5m]) or vector(0)",
+          "refId": "A",
+          "legendFormat": "cmd/s"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "type": "row",
+      "title": "Latency",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 6 }
+    },
+    {
+      "id": 6,
+      "title": "Redis command duration (p95)",
+      "type": "timeseries",
+      "description": "redis_exporter metric: redis_commands_duration_seconds_total or similar.",
+      "gridPos": { "h": 5, "w": 12, "x": 0, "y": 7 },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, rate(redis_commands_duration_seconds_bucket[5m])) or vector(0)",
+          "refId": "A",
+          "legendFormat": "p95"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "title": "Memory used over time",
+      "type": "timeseries",
+      "gridPos": { "h": 5, "w": 12, "x": 12, "y": 7 },
+      "targets": [
+        {
+          "expr": "redis_memory_used_bytes or redis_memory_used_rss_bytes or vector(0)",
+          "refId": "A",
+          "legendFormat": "bytes"
+        }
+      ]
+    }
+  ]
+}

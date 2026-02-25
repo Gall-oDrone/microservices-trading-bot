@@ -94,6 +94,28 @@ groups:
           summary: "High order execution latency"
           description: "95th percentile order execution latency is {{ $value }}s"
 
+      # --- Signal processing latency ---
+      - alert: HighSignalProcessingLatency
+        expr: histogram_quantile(0.95, sum(rate(signal_processing_duration_seconds_bucket{job=~"trading-engine.*"}[5m])) by (le)) > 2
+        for: 3m
+        labels:
+          severity: warning
+          service: trading-engine
+        annotations:
+          summary: "High signal processing latency"
+          description: "95th percentile signal processing latency is {{ $value }}s"
+
+      # --- Signals dropped (any sustained drop rate) ---
+      - alert: SignalsDropped
+        expr: sum(rate(signals_dropped_total{job=~"trading-engine.*"}[5m])) > 0
+        for: 2m
+        labels:
+          severity: warning
+          service: trading-engine
+        annotations:
+          summary: "Signals are being dropped"
+          description: "Signal drop rate is {{ $value }}/s over 5m. Check reason labels and trading-engine logs."
+
       # --- Low available balance ---
       - alert: LowAvailableBalance
         expr: bitso_available_balance{job=~"trading-engine.*"} < 1000

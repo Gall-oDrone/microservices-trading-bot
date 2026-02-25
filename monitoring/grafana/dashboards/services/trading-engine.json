@@ -474,6 +474,91 @@
           "legendFormat": "{{reason}}"
         }
       ]
+    },
+    {
+      "id": 24,
+      "type": "row",
+      "title": "Latency percentiles (p50, p99) & session risk",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 36 }
+    },
+    {
+      "id": 25,
+      "title": "Signal processing duration (p50)",
+      "type": "timeseries",
+      "gridPos": { "h": 5, "w": 6, "x": 0, "y": 37 },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.5, sum(rate(signal_processing_duration_seconds_bucket{job=~\"trading-engine.*\"}[5m])) by (le)) or vector(0)",
+          "refId": "A",
+          "legendFormat": "p50"
+        }
+      ]
+    },
+    {
+      "id": 26,
+      "title": "Signal processing duration (p99)",
+      "type": "timeseries",
+      "gridPos": { "h": 5, "w": 6, "x": 6, "y": 37 },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.99, sum(rate(signal_processing_duration_seconds_bucket{job=~\"trading-engine.*\"}[5m])) by (le)) or vector(0)",
+          "refId": "A",
+          "legendFormat": "p99"
+        }
+      ]
+    },
+    {
+      "id": 27,
+      "title": "Order execution duration (p50) by book",
+      "type": "timeseries",
+      "gridPos": { "h": 5, "w": 6, "x": 12, "y": 37 },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.5, sum(rate(order_execution_duration_seconds_bucket{job=~\"trading-engine.*\"}[5m])) by (le, book))",
+          "refId": "A",
+          "legendFormat": "{{book}}"
+        }
+      ]
+    },
+    {
+      "id": 28,
+      "title": "Order execution duration (p99) by book",
+      "type": "timeseries",
+      "gridPos": { "h": 5, "w": 6, "x": 18, "y": 37 },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.99, sum(rate(order_execution_duration_seconds_bucket{job=~\"trading-engine.*\"}[5m])) by (le, book))",
+          "refId": "A",
+          "legendFormat": "{{book}}"
+        }
+      ]
+    },
+    {
+      "id": 29,
+      "title": "Session risk rejections (rate)",
+      "type": "timeseries",
+      "description": "Orders blocked by daily loss or drawdown limits",
+      "gridPos": { "h": 5, "w": 12, "x": 0, "y": 42 },
+      "targets": [
+        {
+          "expr": "sum(rate(session_risk_rejections_total{job=~\"trading-engine.*\"}[5m])) or vector(0)",
+          "refId": "A",
+          "legendFormat": "rejections/s"
+        }
+      ]
+    },
+    {
+      "id": 30,
+      "title": "Session risk checks (rate) by result",
+      "type": "timeseries",
+      "gridPos": { "h": 5, "w": 12, "x": 12, "y": 42 },
+      "targets": [
+        {
+          "expr": "sum(rate(session_risk_checks_total{job=~\"trading-engine.*\"}[5m])) by (result) or vector(0)",
+          "refId": "A",
+          "legendFormat": "{{result}}"
+        }
+      ]
     }
   ]
 }
