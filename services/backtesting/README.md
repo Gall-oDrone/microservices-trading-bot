@@ -367,6 +367,10 @@ Create a new backtest.
 
 **Fees:** By default, backtests use Bitso-style maker/taker fees for **btc_mxn** (maker 0.005, taker 0.0065). See [Bitso List Fees](https://docs.bitso.com/bitso-api/docs/list-fees). Send `maker_fee` and/or `taker_fee` to override; send `commission_rate` to use a single rate for both (legacy).
 
+**Future: Fee profiles** — A `fee_profile` (e.g. `"bitso_btc_mxn"`) could set `maker_fee` and `taker_fee` from an in-code map, avoiding hardcoding in every request without calling any API. Consider adding when you want named presets per book.
+
+**Future: Multi-book fees (Bitso API)** — When scaling to many books and wanting zero-config, a separate fee service (or trading-engine) could call `bitso.Client.Fees()`, cache by book, and expose a small HTTP API; backtesting would call that service, not Bitso directly. Only worth it when scaling to many books and wanting fees always in sync with Bitso. See `shared/pkg/bitso/client.go` (`Fees`) and [Bitso List Fees](https://docs.bitso.com/bitso-api/docs/list-fees).
+
 **Response** (201 Created):
 ```json
 {

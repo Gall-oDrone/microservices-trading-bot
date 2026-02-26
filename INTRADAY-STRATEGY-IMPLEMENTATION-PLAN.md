@@ -244,6 +244,8 @@ flowchart LR
 
 After Phases 1–6 are implemented, follow these priorities to validate and harden the intraday pipeline.
 
+**Future (when scaling to many books):** Fee profile presets (e.g. `fee_profile: "bitso_btc_mxn"`) and/or a fee service that calls Bitso List Fees and exposes fees by book — see **`services/backtesting/README.md`** (Fees section, future enhancements).
+
 ### Priority 1: Operational Validation in Stage
 
 **Goal:** Run and validate the full stage pipeline; confirm orders flow and sync, and risk limits are applied.
@@ -316,7 +318,7 @@ After Phases 1–6 are implemented, follow these priorities to validate and hard
 - [Bitso: Set Up Your Testing Environment](https://docs.bitso.com/bitso-api/docs/set-up-your-testing-environment)
 - [Bitso: API Overview](https://docs.bitso.com/bitso-api/docs/api-overview)
 - [Bitso: Trades channel](https://docs.bitso.com/bitso-api/docs/trades-channel), [Orders channel](https://docs.bitso.com/bitso-api/docs/orders-channel), [Diff-orders channel](https://docs.bitso.com/bitso-api/docs/diff-orders-channel)
-- Project: `DEVELOPMENT-ROADMAP.md`, `REMAINING-PHASES-CHECKLIST.md`, `HIGH-TRADING-FREQUENCY-IMPLEMENTATION-PLAN.md` (higher throughput and lower latency), **`INTRADAY-STRATEGIES.md`** (strategy parameters and intraday presets for optimization)
+- Project: `DEVELOPMENT-ROADMAP.md`, `REMAINING-PHASES-CHECKLIST.md`, `HIGH-TRADING-FREQUENCY-IMPLEMENTATION-PLAN.md` (higher throughput and lower latency), **`INTRADAY-STRATEGIES.md`** (strategy parameters and intraday presets for optimization). Backtesting fees and **future enhancements** (fee profiles, multi-book fee service): **`services/backtesting/README.md`** (Fees section).
 - Bitso client: `shared/pkg/bitso/client.go` (`SetAPIBaseURL`, `LookupOrder`, `LookupOrders`, `OrderTrades`)
 - Market-data WebSocket: `shared/pkg/bitso/websocket.go` (WebSocketTrade, WebSocketOrder, WebSocketDiffOrder); `services/market-data/internal/websocket/manager.go`, `internal/processor/trade_processor.go`, `internal/writer/redis_trade_writer.go`, `internal/cache/redis.go` (SetTrade), `internal/historical/storage.go` (StoreTrade).
 - Market-data build fixes (for plan completeness): `internal/middleware/circuit_breaker.go` (unused variable removed), `internal/validation/validator.go` (aligned with `models.TradeEvent` and `bitso` types: TradeEvent fields, OrderBook/Ticker/WebSocket payload types, Monetary usage).
