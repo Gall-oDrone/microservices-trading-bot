@@ -2,11 +2,13 @@ package strategies
 
 import (
 	"bitso-trading-platform/shared/pkg/bitso"
+	"bitso-trading-platform/shared/pkg/models"
 	"fmt"
 	"time"
 )
 
-// BasicStrategy implements a simple trading strategy
+// BasicStrategy implements a simple trading strategy.
+// Parameters are config-driven for intraday tuning (see INTRADAY-STRATEGIES.md).
 type BasicStrategy struct {
 	*BaseStrategy
 	lastTradeTime time.Time
@@ -16,14 +18,35 @@ type BasicStrategy struct {
 	book          *bitso.Book
 }
 
-// NewBasicStrategy creates a new basic strategy
-func NewBasicStrategy(book *bitso.Book) *BasicStrategy {
+// NewBasicStrategy creates a new basic strategy from a trading config.
+// Reads from config.Parameters: trade_interval_minutes, profit_target_pct, stop_loss_pct.
+// Falls back to config.StopLossPercent/TakeProfitPercent (as decimals) if params not set.
+func NewBasicStrategy(config *models.TradingConfig) *BasicStrategy {
+	if config == nil || config.Book == nil {
+		return &BasicStrategy{
+			BaseStrategy:  NewBaseStrategy("basic"),
+			book:          bitso.NewBook(bitso.BTC, bitso.MXN),
+			tradeInterval: 5 * time.Minute,
+			profitTarget:  0.02,
+			stopLoss:      0.01,
+		}
+	}
+	p := NewParamReader(config.Parameters)
+	tradeInterval := p.DurationMinutes("trade_interval_minutes", 5*time.Minute)
+	profitTarget := p.Float64("profit_target_pct", 0.02)
+	stopLoss := p.Float64("stop_loss_pct", 0.01)
+	if profitTarget <= 0 && config.TakeProfitPercent > 0 {
+		profitTarget = config.TakeProfitPercent / 100
+	}
+	if stopLoss <= 0 && config.StopLossPercent > 0 {
+		stopLoss = config.StopLossPercent / 100
+	}
 	return &BasicStrategy{
 		BaseStrategy:  NewBaseStrategy("basic"),
-		book:          book,
-		tradeInterval: 5 * time.Minute,
-		profitTarget:  0.02, // 2% profit target
-		stopLoss:      0.01, // 1% stop loss
+		book:          config.Book,
+		tradeInterval: tradeInterval,
+		profitTarget:  profitTarget,
+		stopLoss:      stopLoss,
 	}
 }
 

@@ -17,10 +17,12 @@ type ConfigSnapshot struct {
 	StartDate   time.Time              `json:"start_date"`
 	EndDate     time.Time              `json:"end_date"`
 	InitialBalance float64             `json:"initial_balance"`
-	SlippageModel  string              `json:"slippage_model"`
-	SlippageValue  float64             `json:"slippage_value"`
-	CommissionRate float64             `json:"commission_rate"`
-	DataSource    string               `json:"data_source"`
+	SlippageModel   string  `json:"slippage_model"`
+	SlippageValue   float64 `json:"slippage_value"`
+	CommissionRate  float64 `json:"commission_rate"`
+	MakerFee        float64 `json:"maker_fee,omitempty"`
+	TakerFee        float64 `json:"taker_fee,omitempty"`
+	DataSource      string  `json:"data_source"`
 	DataGranularity string             `json:"data_granularity"`
 }
 
@@ -143,18 +145,20 @@ func (r *BacktestResult) SetConfigSnapshot(cfg *BacktestConfig) {
 		}
 	}
 	r.Config = &ConfigSnapshot{
-		Name:            cfg.Name,
-		Book:            cfg.Book,
-		Strategy:        cfg.Strategy,
-		StrategyParams:  params,
-		StartDate:       cfg.StartDate,
-		EndDate:         cfg.EndDate,
-		InitialBalance:  cfg.InitialBalance,
-		SlippageModel:   cfg.SlippageModel,
-		SlippageValue:   cfg.SlippageValue,
-		CommissionRate: cfg.CommissionRate,
-		DataSource:      cfg.DataSource,
-		DataGranularity: cfg.DataGranularity,
+		Name:             cfg.Name,
+		Book:             cfg.Book,
+		Strategy:         cfg.Strategy,
+		StrategyParams:   params,
+		StartDate:        cfg.StartDate,
+		EndDate:          cfg.EndDate,
+		InitialBalance:   cfg.InitialBalance,
+		SlippageModel:    cfg.SlippageModel,
+		SlippageValue:    cfg.SlippageValue,
+		CommissionRate:   cfg.CommissionRate,
+		MakerFee:         cfg.MakerFee,
+		TakerFee:         cfg.TakerFee,
+		DataSource:       cfg.DataSource,
+		DataGranularity:  cfg.DataGranularity,
 	}
 }
 

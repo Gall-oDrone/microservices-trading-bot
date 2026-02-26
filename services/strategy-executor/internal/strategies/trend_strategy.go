@@ -2,11 +2,13 @@ package strategies
 
 import (
 	"bitso-trading-platform/shared/pkg/bitso"
+	"bitso-trading-platform/shared/pkg/models"
 	"fmt"
 	"time"
 )
 
-// TrendStrategy implements a trend following trading strategy
+// TrendStrategy implements a trend following trading strategy.
+// Parameters are config-driven for intraday tuning (see INTRADAY-STRATEGIES.md).
 type TrendStrategy struct {
 	*BaseStrategy
 	lastTradeTime     time.Time
@@ -17,14 +19,26 @@ type TrendStrategy struct {
 	priceHistory      []float64
 }
 
-// NewTrendStrategy creates a new trend strategy
-func NewTrendStrategy(book *bitso.Book) *TrendStrategy {
+// NewTrendStrategy creates a new trend strategy from a trading config.
+// Reads from config.Parameters: trade_interval_minutes, trend_period_minutes, momentum_threshold_pct.
+func NewTrendStrategy(config *models.TradingConfig) *TrendStrategy {
+	if config == nil || config.Book == nil {
+		return &TrendStrategy{
+			BaseStrategy:      NewBaseStrategy("trend_following"),
+			book:              bitso.NewBook(bitso.BTC, bitso.MXN),
+			tradeInterval:     10 * time.Minute,
+			trendPeriod:       30 * time.Minute,
+			momentumThreshold: 0.015,
+			priceHistory:      make([]float64, 0),
+		}
+	}
+	p := NewParamReader(config.Parameters)
 	return &TrendStrategy{
 		BaseStrategy:      NewBaseStrategy("trend_following"),
-		book:              book,
-		tradeInterval:     10 * time.Minute,
-		trendPeriod:       30 * time.Minute,
-		momentumThreshold: 0.015, // 1.5% momentum threshold
+		book:              config.Book,
+		tradeInterval:     p.DurationMinutes("trade_interval_minutes", 10*time.Minute),
+		trendPeriod:       p.DurationMinutes("trend_period_minutes", 30*time.Minute),
+		momentumThreshold: p.Float64("momentum_threshold_pct", 0.015),
 		priceHistory:      make([]float64, 0),
 	}
 }
@@ -45,8 +59,11 @@ func (s *TrendStrategy) Execute(ticker *bitso.Ticker) error {
 	currentPrice := ticker.Bid.Float64()
 	s.priceHistory = append(s.priceHistory, currentPrice)
 
-	// Keep only recent price history (last 30 minutes worth)
-	maxHistorySize := 30 // Assuming 1-minute intervals
+	// Keep only recent price history (trend_period worth; assume ~1 sample/min)
+	maxHistorySize := int(s.trendPeriod.Minutes())
+	if maxHistorySize < 5 {
+		maxHistorySize = 5
+	}
 	if len(s.priceHistory) > maxHistorySize {
 		s.priceHistory = s.priceHistory[len(s.priceHistory)-maxHistorySize:]
 	}

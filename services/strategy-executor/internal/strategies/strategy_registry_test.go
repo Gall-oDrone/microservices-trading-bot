@@ -41,7 +41,7 @@ func TestRegistry_RegisterFactory(t *testing.T) {
 
 	// Create a custom factory
 	customFactory := func(config *models.TradingConfig) (Strategy, error) {
-		return NewBasicStrategy(config.Book), nil
+		return NewBasicStrategy(config), nil
 	}
 
 	// Register factory
@@ -75,7 +75,7 @@ func TestRegistry_UnregisterFactory(t *testing.T) {
 
 	// Register a custom factory
 	customFactory := func(config *models.TradingConfig) (Strategy, error) {
-		return NewBasicStrategy(config.Book), nil
+		return NewBasicStrategy(config), nil
 	}
 	registry.RegisterFactory("custom", customFactory)
 

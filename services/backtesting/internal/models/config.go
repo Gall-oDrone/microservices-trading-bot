@@ -24,9 +24,11 @@ type BacktestConfig struct {
 	StrategyParams map[string]interface{} `json:"strategy_params"` // Strategy-specific parameters
 
 	// Execution settings
-	SlippageModel  string  `json:"slippage_model"`  // "none", "fixed", "percentage"
-	SlippageValue  float64 `json:"slippage_value"`  // Value depends on model
-	CommissionRate float64 `json:"commission_rate"` // Commission as decimal (0.001 = 0.1%)
+	SlippageModel   string  `json:"slippage_model"`   // "none", "fixed", "percentage"
+	SlippageValue   float64 `json:"slippage_value"`   // Value depends on model
+	CommissionRate  float64 `json:"commission_rate"`  // Legacy: single rate (used for both when MakerFee/TakerFee not set)
+	MakerFee        float64 `json:"maker_fee"`        // Maker fee as decimal (Bitso btc_mxn: 0.005). See https://docs.bitso.com/bitso-api/docs/list-fees
+	TakerFee        float64 `json:"taker_fee"`       // Taker fee as decimal (Bitso btc_mxn: 0.0065)
 
 	// Data settings
 	DataSource      string `json:"data_source"`      // "market-data", "file"
@@ -69,8 +71,10 @@ func NewBacktestConfig(name, book string, startDate, endDate time.Time) *Backtes
 		Strategy:        "basic",
 		StrategyParams:  make(map[string]interface{}),
 		SlippageModel:   "percentage",
-		SlippageValue:   0.001, // 0.1%
-		CommissionRate:  0.001, // 0.1%
+		SlippageValue:   0.001,  // 0.1%
+		CommissionRate:  0,      // When 0, MakerFee/TakerFee are used
+		MakerFee:        0.005, // Bitso btc_mxn maker (https://docs.bitso.com/bitso-api/docs/list-fees)
+		TakerFee:        0.0065,
 		DataSource:      "market-data",
 		DataGranularity: "tick",
 		CreatedAt:       time.Now(),
@@ -123,6 +127,12 @@ func (c *BacktestConfig) Validate() error {
 
 	if c.CommissionRate < 0 {
 		return fmt.Errorf("commission_rate must be non-negative")
+	}
+	if c.MakerFee < 0 || c.MakerFee > 0.1 {
+		return fmt.Errorf("maker_fee must be in [0, 0.1], got %f", c.MakerFee)
+	}
+	if c.TakerFee < 0 || c.TakerFee > 0.1 {
+		return fmt.Errorf("taker_fee must be in [0, 0.1], got %f", c.TakerFee)
 	}
 
 	// Validate data source
@@ -182,9 +192,19 @@ func (c *BacktestConfig) WithSlippage(model string, value float64) *BacktestConf
 	return c
 }
 
-// WithCommission sets the commission rate
+// WithCommission sets the commission rate (legacy: used for both maker and taker when set)
 func (c *BacktestConfig) WithCommission(rate float64) *BacktestConfig {
 	c.CommissionRate = rate
+	c.MakerFee = 0
+	c.TakerFee = 0
+	return c
+}
+
+// WithMakerTakerFees sets maker and taker fees (Bitso-style). See https://docs.bitso.com/bitso-api/docs/list-fees
+func (c *BacktestConfig) WithMakerTakerFees(maker, taker float64) *BacktestConfig {
+	c.MakerFee = maker
+	c.TakerFee = taker
+	c.CommissionRate = 0
 	return c
 }
 

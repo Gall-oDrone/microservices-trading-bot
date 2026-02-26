@@ -30,7 +30,11 @@ func GenerateTextReport(result *models.BacktestResult) string {
 		sb.WriteString(fmt.Sprintf("End Date:              %s\n", c.EndDate.Format("2006-01-02")))
 		sb.WriteString(fmt.Sprintf("Initial Balance:       $%.2f\n", c.InitialBalance))
 		sb.WriteString(fmt.Sprintf("Slippage:              %s %.4f\n", c.SlippageModel, c.SlippageValue))
-		sb.WriteString(fmt.Sprintf("Commission Rate:       %.4f\n", c.CommissionRate))
+		if c.MakerFee > 0 || c.TakerFee > 0 {
+			sb.WriteString(fmt.Sprintf("Fees (Bitso-style):    maker %.4f  taker %.4f\n", c.MakerFee, c.TakerFee))
+		} else {
+			sb.WriteString(fmt.Sprintf("Commission Rate:       %.4f\n", c.CommissionRate))
+		}
 		if len(c.StrategyParams) > 0 {
 			paramsJSON, _ := json.Marshal(c.StrategyParams)
 			sb.WriteString(fmt.Sprintf("Strategy Params:       %s\n", string(paramsJSON)))

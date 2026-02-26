@@ -65,8 +65,12 @@ func executeMarketOrder(sim *Simulator, order *models.Order) (*OrderExecution, e
 	// Calculate execution price
 	executionPrice := calculateExecutionPrice(currentPrice, order.Side, slippage)
 
-	// Calculate commission
-	commission := calculateCommission(order.Amount, executionPrice, sim.config.CommissionRate)
+	// Market order = taker fee
+	rate := sim.config.TakerFee
+	if sim.config.MakerFee == 0 && sim.config.TakerFee == 0 {
+		rate = sim.config.CommissionRate
+	}
+	commission := calculateCommission(order.Amount, executionPrice, rate)
 
 	return &OrderExecution{
 		OrderID:        order.ID,
@@ -114,8 +118,12 @@ func executeLimitOrder(sim *Simulator, order *models.Order) (*OrderExecution, er
 	slippage := sim.slippageModel.Calculate(order, executionPrice) * 0.5 // Reduced slippage
 	executionPrice = calculateExecutionPrice(executionPrice, order.Side, slippage)
 
-	// Calculate commission
-	commission := calculateCommission(order.Amount, executionPrice, sim.config.CommissionRate)
+	// Limit order resting = maker fee
+	rate := sim.config.MakerFee
+	if sim.config.MakerFee == 0 && sim.config.TakerFee == 0 {
+		rate = sim.config.CommissionRate
+	}
+	commission := calculateCommission(order.Amount, executionPrice, rate)
 
 	return &OrderExecution{
 		OrderID:        order.ID,

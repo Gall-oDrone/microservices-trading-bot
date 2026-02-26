@@ -359,9 +359,13 @@ Create a new backtest.
   },
   "slippage_model": "percentage",
   "slippage_value": 0.001,
-  "commission_rate": 0.001
+  "commission_rate": 0.001,
+  "maker_fee": 0.005,
+  "taker_fee": 0.0065
 }
 ```
+
+**Fees:** By default, backtests use Bitso-style maker/taker fees for **btc_mxn** (maker 0.005, taker 0.0065). See [Bitso List Fees](https://docs.bitso.com/bitso-api/docs/list-fees). Send `maker_fee` and/or `taker_fee` to override; send `commission_rate` to use a single rate for both (legacy).
 
 **Response** (201 Created):
 ```json

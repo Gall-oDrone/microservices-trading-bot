@@ -50,7 +50,9 @@ type Simulator struct {
 type SimulatorConfig struct {
 	SlippageModel   string  // "none", "fixed", "percentage"
 	SlippageValue   float64 // Value depends on model
-	CommissionRate  float64 // Commission as decimal
+	CommissionRate  float64 // Legacy: single rate (used when MakerFee/TakerFee both 0)
+	MakerFee        float64 // Maker fee decimal (Bitso btc_mxn: 0.005)
+	TakerFee        float64 // Taker fee decimal (Bitso btc_mxn: 0.0065)
 	EnableOrderBook bool    // Whether to simulate order book
 }
 
@@ -93,10 +95,14 @@ func (s *Simulator) Initialize(ctx context.Context, config *SimulatorConfig) err
 	s.slippageModel = NewSlippageModel(config.SlippageModel, config.SlippageValue)
 
 	if s.logger != nil {
-		s.logger.Info("Simulator initialized", map[string]interface{}{
-			"slippage_model":  config.SlippageModel,
-			"commission_rate": config.CommissionRate,
-		})
+		fields := map[string]interface{}{"slippage_model": config.SlippageModel}
+		if config.MakerFee > 0 || config.TakerFee > 0 {
+			fields["maker_fee"] = config.MakerFee
+			fields["taker_fee"] = config.TakerFee
+		} else {
+			fields["commission_rate"] = config.CommissionRate
+		}
+		s.logger.Info("Simulator initialized", fields)
 	}
 
 	return nil
@@ -146,8 +152,12 @@ func (s *Simulator) ExecuteOrder(order *sharedModels.Order) (*OrderExecution, er
 	// Calculate execution price
 	executionPrice := calculateExecutionPrice(currentPrice, order.Side, slippage)
 
-	// Calculate commission
-	commission := calculateCommission(order.Amount, executionPrice, s.config.CommissionRate)
+	// Commission: use taker fee (market-style execution) when maker/taker set, else legacy single rate
+	rate := s.config.TakerFee
+	if s.config.MakerFee == 0 && s.config.TakerFee == 0 {
+		rate = s.config.CommissionRate
+	}
+	commission := calculateCommission(order.Amount, executionPrice, rate)
 
 	return &OrderExecution{
 		OrderID:        order.ID,

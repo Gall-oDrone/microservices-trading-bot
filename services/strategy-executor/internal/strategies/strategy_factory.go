@@ -17,7 +17,7 @@ func NewBasicStrategyFactory() StrategyFactory {
 			return nil, fmt.Errorf("trading book is required")
 		}
 
-		return NewBasicStrategy(config.Book), nil
+		return NewBasicStrategy(config), nil
 	}
 }
 
@@ -32,7 +32,7 @@ func NewTrendStrategyFactory() StrategyFactory {
 			return nil, fmt.Errorf("trading book is required")
 		}
 
-		return NewTrendStrategy(config.Book), nil
+		return NewTrendStrategy(config), nil
 	}
 }
 
@@ -47,7 +47,7 @@ func NewArbitrageStrategyFactory() StrategyFactory {
 			return nil, fmt.Errorf("trading book is required")
 		}
 
-		return NewArbitrageStrategy(config.Book), nil
+		return NewArbitrageStrategy(config), nil
 	}
 }
 

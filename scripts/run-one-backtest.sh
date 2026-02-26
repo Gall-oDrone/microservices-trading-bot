@@ -31,7 +31,8 @@ fi
 START_DATE="${START_DATE:-2024-06-01T00:00:00Z}"
 END_DATE="${END_DATE:-2024-06-02T23:59:59Z}"
 
-# Create backtest (minimal payload; adjust dates/data_source as needed)
+# Create backtest (minimal payload). Fees default to Bitso btc_mxn (maker 0.005, taker 0.0065).
+# Send commission_rate to use a single rate for both (legacy).
 RESP=$(curl -s -w "\n%{http_code}" -X POST "$API" \
   -H "Content-Type: application/json" \
   -d "{
@@ -43,7 +44,6 @@ RESP=$(curl -s -w "\n%{http_code}" -X POST "$API" \
     \"strategy\": \"basic\",
     \"slippage_model\": \"percentage\",
     \"slippage_value\": 0.001,
-    \"commission_rate\": 0.001,
     \"data_source\": \"market-data\",
     \"data_granularity\": \"trades\"
   }" 2>&1) || true

@@ -54,11 +54,13 @@ func (r *BacktestRunner) Initialize(ctx context.Context) error {
 	// Initialize virtual portfolio
 	r.portfolio = portfolio.NewVirtualPortfolio(r.config.ID, r.config.InitialBalance)
 
-	// Initialize market simulator
+	// Initialize market simulator (Bitso-style maker/taker fees when set)
 	simConfig := &simulator.SimulatorConfig{
-		SlippageModel:  r.config.SlippageModel,
-		SlippageValue:  r.config.SlippageValue,
-		CommissionRate: r.config.CommissionRate,
+		SlippageModel:   r.config.SlippageModel,
+		SlippageValue:   r.config.SlippageValue,
+		CommissionRate:  r.config.CommissionRate,
+		MakerFee:        r.config.MakerFee,
+		TakerFee:        r.config.TakerFee,
 	}
 	r.simulator = simulator.NewSimulator(simConfig, r.logger)
 	if err := r.simulator.Initialize(ctx, simConfig); err != nil {

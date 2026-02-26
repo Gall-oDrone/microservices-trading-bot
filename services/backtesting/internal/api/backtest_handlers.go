@@ -26,7 +26,9 @@ type CreateBacktestRequest struct {
 	StrategyParams  map[string]interface{}  `json:"strategy_params"`
 	SlippageModel   string                  `json:"slippage_model"`
 	SlippageValue   float64                 `json:"slippage_value"`
-	CommissionRate  float64                 `json:"commission_rate"`
+	CommissionRate  float64                 `json:"commission_rate"`  // Legacy: single rate for both
+	MakerFee        float64                 `json:"maker_fee"`        // Bitso-style maker (e.g. 0.005 for btc_mxn)
+	TakerFee        float64                 `json:"taker_fee"`        // Bitso-style taker (e.g. 0.0065 for btc_mxn)
 	DataSource      string                  `json:"data_source"`
 	DataGranularity string                  `json:"data_granularity"`
 	SuccessCriteria *models.SuccessCriteria `json:"success_criteria,omitempty"`
@@ -64,6 +66,16 @@ func (h *Handler) CreateBacktest(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.CommissionRate > 0 {
 		config.WithCommission(req.CommissionRate)
+	}
+	if req.MakerFee > 0 || req.TakerFee > 0 {
+		maker, taker := req.MakerFee, req.TakerFee
+		if maker == 0 {
+			maker = taker
+		}
+		if taker == 0 {
+			taker = maker
+		}
+		config.WithMakerTakerFees(maker, taker)
 	}
 	if req.DataSource != "" {
 		config.DataSource = req.DataSource

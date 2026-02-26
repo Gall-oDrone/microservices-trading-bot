@@ -2,11 +2,13 @@ package strategies
 
 import (
 	"bitso-trading-platform/shared/pkg/bitso"
+	"bitso-trading-platform/shared/pkg/models"
 	"fmt"
 	"time"
 )
 
-// ArbitrageStrategy implements an arbitrage trading strategy
+// ArbitrageStrategy implements an arbitrage trading strategy.
+// Parameters are config-driven for intraday tuning (see INTRADAY-STRATEGIES.md).
 type ArbitrageStrategy struct {
 	*BaseStrategy
 	lastTradeTime   time.Time
@@ -18,14 +20,25 @@ type ArbitrageStrategy struct {
 	lastAskPrice    float64
 }
 
-// NewArbitrageStrategy creates a new arbitrage strategy
-func NewArbitrageStrategy(book *bitso.Book) *ArbitrageStrategy {
+// NewArbitrageStrategy creates a new arbitrage strategy from a trading config.
+// Reads from config.Parameters: trade_interval_minutes, profit_threshold_pct, spread_threshold_pct.
+func NewArbitrageStrategy(config *models.TradingConfig) *ArbitrageStrategy {
+	if config == nil || config.Book == nil {
+		return &ArbitrageStrategy{
+			BaseStrategy:    NewBaseStrategy("arbitrage"),
+			book:            bitso.NewBook(bitso.BTC, bitso.MXN),
+			tradeInterval:   1 * time.Minute,
+			profitThreshold: 0.005,
+			spreadThreshold: 0.002,
+		}
+	}
+	p := NewParamReader(config.Parameters)
 	return &ArbitrageStrategy{
 		BaseStrategy:    NewBaseStrategy("arbitrage"),
-		book:            book,
-		tradeInterval:   1 * time.Minute, // Check frequently for arbitrage opportunities
-		profitThreshold: 0.005,           // 0.5% minimum profit threshold
-		spreadThreshold: 0.002,           // 0.2% minimum spread threshold
+		book:            config.Book,
+		tradeInterval:   p.DurationMinutes("trade_interval_minutes", 1*time.Minute),
+		profitThreshold: p.Float64("profit_threshold_pct", 0.005),
+		spreadThreshold: p.Float64("spread_threshold_pct", 0.002),
 	}
 }
 
