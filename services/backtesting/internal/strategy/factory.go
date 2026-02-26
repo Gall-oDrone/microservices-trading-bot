@@ -20,9 +20,8 @@ func NewStrategyFactory() *StrategyFactory {
 
 	// Register built-in strategies
 	factory.Register("basic", NewBasicStrategy)
-	// TODO: Register more strategies
-	// factory.Register("trend", NewTrendStrategy)
-	// factory.Register("arbitrage", NewArbitrageStrategy)
+	factory.Register("trend", NewTrendStrategy)
+	factory.Register("arbitrage", NewArbitrageStrategy)
 
 	return factory
 }

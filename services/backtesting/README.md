@@ -69,9 +69,8 @@ The Backtesting Service enables traders and developers to test trading strategie
   - Order book simulation (optional)
 
 - **Strategy Integration**
-  - Reuse strategies from strategy-executor
-  - Support for all strategy types
-  - Custom strategy parameters
+  - Built-in strategies: **basic** (RSI), **trend** (trend + momentum), **arbitrage** (price-change threshold)
+  - Custom strategy parameters via `strategy_params`; select strategy via `strategy` in the create request
   - Strategy state management
 
 - **Performance Analytics**
