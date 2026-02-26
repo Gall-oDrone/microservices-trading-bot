@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"bitso-trading-platform/shared/pkg/bitso"
+	"bitso-trading-platform/shared/pkg/indicators"
 )
 
 // BasicStrategy implements a simple RSI-based trading strategy
@@ -96,9 +97,9 @@ func (s *BasicStrategy) OnTrade(trade *bitso.Trade) (*Signal, error) {
 	// Add price to history
 	s.priceHistory = append(s.priceHistory, price)
 
-	// Calculate RSI if we have enough data
+	// Calculate RSI if we have enough data (using shared indicator)
 	if len(s.priceHistory) >= s.rsiPeriod+1 {
-		rsi := s.calculateRSI()
+		rsi := indicators.RSI(s.priceHistory, s.rsiPeriod)
 		s.rsiValues = append(s.rsiValues, rsi)
 
 		// Generate signal based on RSI
@@ -118,9 +119,9 @@ func (s *BasicStrategy) OnTicker(ticker *bitso.Ticker) (*Signal, error) {
 	// Add price to history
 	s.priceHistory = append(s.priceHistory, price)
 
-	// Calculate RSI if we have enough data
+	// Calculate RSI if we have enough data (using shared indicator)
 	if len(s.priceHistory) >= s.rsiPeriod+1 {
-		rsi := s.calculateRSI()
+		rsi := indicators.RSI(s.priceHistory, s.rsiPeriod)
 		s.rsiValues = append(s.rsiValues, rsi)
 
 		// Generate signal based on RSI
@@ -148,43 +149,6 @@ func (s *BasicStrategy) Reset() error {
 	s.rsiValues = make([]float64, 0)
 	s.lastSignalTime = time.Time{}
 	return nil
-}
-
-// calculateRSI calculates the RSI indicator
-func (s *BasicStrategy) calculateRSI() float64 {
-	if len(s.priceHistory) < s.rsiPeriod+1 {
-		return 50.0 // Neutral
-	}
-
-	// Get last N+1 prices
-	prices := s.priceHistory[len(s.priceHistory)-s.rsiPeriod-1:]
-
-	// Calculate price changes
-	gains := 0.0
-	losses := 0.0
-
-	for i := 1; i < len(prices); i++ {
-		change := prices[i] - prices[i-1]
-		if change > 0 {
-			gains += change
-		} else {
-			losses += -change
-		}
-	}
-
-	// Calculate average gain and loss
-	avgGain := gains / float64(s.rsiPeriod)
-	avgLoss := losses / float64(s.rsiPeriod)
-
-	// Calculate RS and RSI
-	if avgLoss == 0 {
-		return 100.0
-	}
-
-	rs := avgGain / avgLoss
-	rsi := 100.0 - (100.0 / (1.0 + rs))
-
-	return rsi
 }
 
 // generateSignalFromRSI generates a trading signal based on RSI

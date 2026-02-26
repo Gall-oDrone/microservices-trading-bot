@@ -1,0 +1,183 @@
+{
+  "id": null,
+  "title": "Financial Indicators",
+  "tags": [
+    "trading",
+    "indicators",
+    "market-data"
+  ],
+  "timezone": "browser",
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
+  "refresh": "10s",
+  "panels": [
+    {
+      "id": 1,
+      "title": "RSI (0–100)",
+      "type": "timeseries",
+      "description": "Relative Strength Index. Oversold < 30, Overbought > 70.",
+      "gridPos": { "h": 5, "w": 8, "x": 0, "y": 0 },
+      "targets": [{ "expr": "market_data_indicator_rsi", "refId": "A", "legendFormat": "{{book}}" }],
+      "fieldConfig": {
+        "defaults": {
+          "min": 0,
+          "max": 100,
+          "thresholds": {
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 30 },
+              { "color": "red", "value": 70 }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": 2,
+      "title": "VWAP",
+      "type": "timeseries",
+      "description": "Volume Weighted Average Price.",
+      "gridPos": { "h": 5, "w": 8, "x": 8, "y": 0 },
+      "targets": [{ "expr": "market_data_indicator_vwap", "refId": "A", "legendFormat": "{{book}}" }]
+    },
+    {
+      "id": 3,
+      "title": "Volume (rolling)",
+      "type": "timeseries",
+      "description": "Cumulative volume in the rolling window.",
+      "gridPos": { "h": 5, "w": 8, "x": 16, "y": 0 },
+      "targets": [{ "expr": "market_data_indicator_volume", "refId": "A", "legendFormat": "{{book}}" }]
+    },
+    {
+      "id": 4,
+      "title": "Volume spike (0/1)",
+      "type": "timeseries",
+      "description": "1 = current volume > 2× average in window.",
+      "gridPos": { "h": 5, "w": 8, "x": 0, "y": 5 },
+      "targets": [{ "expr": "market_data_indicator_volume_spike", "refId": "A", "legendFormat": "{{book}}" }]
+    },
+    {
+      "id": 5,
+      "title": "Momentum 1m / 5m / 15m",
+      "type": "timeseries",
+      "description": "Short-term momentum (1, 5, 15 periods).",
+      "gridPos": { "h": 5, "w": 12, "x": 8, "y": 5 },
+      "targets": [
+        { "expr": "market_data_indicator_momentum_1m", "refId": "A", "legendFormat": "{{book}} 1m" },
+        { "expr": "market_data_indicator_momentum_5m", "refId": "B", "legendFormat": "{{book}} 5m" },
+        { "expr": "market_data_indicator_momentum_15m", "refId": "C", "legendFormat": "{{book}} 15m" }
+      ]
+    },
+    {
+      "id": 6,
+      "title": "Volatility (returns std dev)",
+      "type": "timeseries",
+      "gridPos": { "h": 5, "w": 12, "x": 0, "y": 10 },
+      "targets": [{ "expr": "market_data_indicator_volatility", "refId": "A", "legendFormat": "{{book}}" }]
+    },
+    {
+      "id": 7,
+      "title": "Bid-ask spread (bps)",
+      "type": "timeseries",
+      "description": "Spread in basis points. Tight ≤5 bps, Wide ≥50 bps.",
+      "gridPos": { "h": 5, "w": 8, "x": 12, "y": 10 },
+      "targets": [{ "expr": "market_data_indicator_spread_bps", "refId": "A", "legendFormat": "{{book}}" }]
+    },
+    {
+      "id": 8,
+      "title": "Spread tight (1) / wide (1)",
+      "type": "timeseries",
+      "gridPos": { "h": 5, "w": 12, "x": 0, "y": 15 },
+      "targets": [
+        { "expr": "market_data_indicator_spread_tight", "refId": "A", "legendFormat": "{{book}} tight" },
+        { "expr": "market_data_indicator_spread_wide", "refId": "B", "legendFormat": "{{book}} wide" }
+      ]
+    },
+    {
+      "id": 9,
+      "title": "Order book imbalance (-1 to 1)",
+      "type": "timeseries",
+      "description": "Tier 2: (bid_vol - ask_vol) / total. Positive = more bids.",
+      "gridPos": { "h": 5, "w": 12, "x": 12, "y": 15 },
+      "targets": [{ "expr": "market_data_indicator_orderbook_imbalance", "refId": "A", "legendFormat": "{{book}}" }]
+    },
+    {
+      "id": 10,
+      "title": "EMA short (12)",
+      "type": "timeseries",
+      "gridPos": { "h": 5, "w": 8, "x": 0, "y": 20 },
+      "targets": [{ "expr": "market_data_indicator_ema_short", "refId": "A", "legendFormat": "{{book}}" }]
+    },
+    {
+      "id": 11,
+      "title": "SMA short (20)",
+      "type": "timeseries",
+      "gridPos": { "h": 5, "w": 8, "x": 8, "y": 20 },
+      "targets": [{ "expr": "market_data_indicator_sma_short", "refId": "A", "legendFormat": "{{book}}" }]
+    },
+    {
+      "id": 12,
+      "title": "VWAP deviation",
+      "type": "timeseries",
+      "description": "Tier 2: (price - VWAP) / VWAP.",
+      "gridPos": { "h": 5, "w": 8, "x": 16, "y": 20 },
+      "targets": [{ "expr": "market_data_indicator_vwap_deviation", "refId": "A", "legendFormat": "{{book}}" }]
+    },
+    {
+      "id": 13,
+      "title": "RSI oversold (1) / overbought (1)",
+      "type": "timeseries",
+      "description": "Tier 3: 1 when RSI < 30 or RSI > 70.",
+      "gridPos": { "h": 5, "w": 12, "x": 0, "y": 25 },
+      "targets": [
+        { "expr": "market_data_indicator_rsi_oversold", "refId": "A", "legendFormat": "{{book}} oversold" },
+        { "expr": "market_data_indicator_rsi_overbought", "refId": "B", "legendFormat": "{{book}} overbought" }
+      ]
+    },
+    {
+      "id": 14,
+      "title": "Bollinger Bands (upper / middle / lower)",
+      "type": "timeseries",
+      "description": "Tier 3: 20-period SMA ± 2 std dev.",
+      "gridPos": { "h": 5, "w": 12, "x": 12, "y": 25 },
+      "targets": [
+        { "expr": "market_data_indicator_bollinger_upper", "refId": "A", "legendFormat": "{{book}} upper" },
+        { "expr": "market_data_indicator_bollinger_middle", "refId": "B", "legendFormat": "{{book}} middle" },
+        { "expr": "market_data_indicator_bollinger_lower", "refId": "C", "legendFormat": "{{book}} lower" }
+      ]
+    },
+    {
+      "id": 15,
+      "title": "Bollinger width",
+      "type": "timeseries",
+      "gridPos": { "h": 5, "w": 8, "x": 0, "y": 30 },
+      "targets": [{ "expr": "market_data_indicator_bollinger_width", "refId": "A", "legendFormat": "{{book}}" }]
+    },
+    {
+      "id": 16,
+      "title": "Order flow imbalance (-1 to 1)",
+      "type": "timeseries",
+      "description": "Tier 4: (buy_vol - sell_vol) / total from trades.",
+      "gridPos": { "h": 5, "w": 8, "x": 8, "y": 30 },
+      "targets": [{ "expr": "market_data_indicator_order_flow_imbalance", "refId": "A", "legendFormat": "{{book}}" }]
+    },
+    {
+      "id": 17,
+      "title": "Trade intensity (per sec)",
+      "type": "timeseries",
+      "description": "Tier 4: Trades per second in rolling window.",
+      "gridPos": { "h": 5, "w": 8, "x": 16, "y": 30 },
+      "targets": [{ "expr": "market_data_indicator_trade_intensity_per_sec", "refId": "A", "legendFormat": "{{book}}" }]
+    },
+    {
+      "id": 18,
+      "title": "Trade intensity (per min)",
+      "type": "timeseries",
+      "description": "Tier 4: Trades per minute in rolling window.",
+      "gridPos": { "h": 5, "w": 8, "x": 0, "y": 35 },
+      "targets": [{ "expr": "market_data_indicator_trade_intensity_per_min", "refId": "A", "legendFormat": "{{book}}" }]
+    }
+  ]
+}

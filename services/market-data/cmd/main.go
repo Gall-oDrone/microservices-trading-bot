@@ -163,13 +163,18 @@ func NewApplication() (*Application, error) {
 	tradeProcessor := processor.NewProcessor(processorConfig)
 	appLogger.Info("Trade processor created")
 
+	// Indicator gauges and recorder for Prometheus (RSI, VWAP, momentum, etc.)
+	indicatorGauges := metrics.NewIndicatorGauges()
+	indicatorRecorder := metrics.NewIndicatorRecorder(indicatorGauges)
+
 	// Redis trade writer: single consumer of processor output; writes to cache + storage, forwards to publisher
 	writerConfig := &writer.WriterConfig{
-		Logger:       stdLogger,
-		Cache:        cacheLayer,
-		Storage:      storage,
-		TradesInput:  tradeProcessor.GetProcessedTradesStream(),
-		OutputBuffer: 100,
+		Logger:            stdLogger,
+		Cache:             cacheLayer,
+		Storage:           storage,
+		TradesInput:       tradeProcessor.GetProcessedTradesStream(),
+		OutputBuffer:      100,
+		IndicatorRecorder: indicatorRecorder,
 	}
 	redisWriter := writer.NewWriter(writerConfig)
 	appLogger.Info("Redis trade writer created")

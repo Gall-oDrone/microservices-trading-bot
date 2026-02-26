@@ -32,6 +32,8 @@ type Writer struct {
 	// Output for Kafka publisher (or other consumers)
 	tradesOutput chan *models.TradeEvent
 
+	indicatorRecorder IndicatorRecorder
+
 	// Statistics
 	stats      *WriterStatistics
 	statsMutex sync.RWMutex
@@ -52,13 +54,19 @@ type WriterStatistics struct {
 	AverageWriteMs   float64
 }
 
+// IndicatorRecorder is an optional callback to record indicator metrics per trade.
+type IndicatorRecorder interface {
+	RecordTrade(trade *models.TradeEvent)
+}
+
 // WriterConfig holds configuration for the Redis trade writer
 type WriterConfig struct {
-	Logger      *log.Logger
-	Cache       cache.Cache
-	Storage     historical.Storage
-	TradesInput <-chan *models.TradeEvent
-	OutputBuffer int
+	Logger            *log.Logger
+	Cache             cache.Cache
+	Storage           historical.Storage
+	TradesInput       <-chan *models.TradeEvent
+	OutputBuffer      int
+	IndicatorRecorder IndicatorRecorder // optional: record financial indicators for Prometheus
 }
 
 // NewWriter creates a new Redis trade writer
@@ -72,11 +80,12 @@ func NewWriter(config *WriterConfig) *Writer {
 		outputBuffer = 100
 	}
 	return &Writer{
-		logger:       logger,
-		cache:        config.Cache,
-		storage:      config.Storage,
-		tradesInput:  config.TradesInput,
-		tradesOutput: make(chan *models.TradeEvent, outputBuffer),
+		logger:            logger,
+		cache:             config.Cache,
+		storage:           config.Storage,
+		tradesInput:      config.TradesInput,
+		tradesOutput:     make(chan *models.TradeEvent, outputBuffer),
+		indicatorRecorder: config.IndicatorRecorder,
 		stats: &WriterStatistics{
 			StartTime: time.Now(),
 		},
@@ -147,6 +156,9 @@ func (w *Writer) writeLoop(ctx context.Context) {
 func (w *Writer) writeAndForward(ctx context.Context, trade *models.TradeEvent) {
 	if trade == nil {
 		return
+	}
+	if w.indicatorRecorder != nil {
+		w.indicatorRecorder.RecordTrade(trade)
 	}
 	start := time.Now()
 
