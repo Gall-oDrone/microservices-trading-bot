@@ -486,7 +486,8 @@ Resources:
                           # Don't install curl - curl-minimal is already installed and sufficient
                           # Use --setopt=exclude=curl to prevent curl from being pulled in as dependency
                           # Also add --skip-broken to continue even if some packages fail
-                          if dnf install -y --setopt=exclude=curl --skip-broken git tar gzip vim nodejs npm make gcc g++ argon2 jq unzip zip 2>&1 | tee /tmp/package-install.log; then
+                          # redis6 provides redis-cli for connecting to Redis
+                          if dnf install -y --setopt=exclude=curl --skip-broken git tar gzip vim nodejs npm make gcc g++ argon2 jq unzip zip redis6 2>&1 | tee /tmp/package-install.log; then
                               echo "Package installation successful"
                               return 0
                           else
