@@ -84,6 +84,18 @@ Use these as starting points for **intraday** (shorter holding, tighter targets)
 3. **Backtesting**  
    Backtesting uses its own strategy layer and params (e.g. `rsi_period` for its basic strategy). For **parameter optimization** use the backtesting service’s optimizer API with the appropriate strategy param names for that service (see `services/backtesting/README.md`).
 
+### Backtesting-only indicator strategies
+
+The backtesting service also exposes **intraday indicator-based strategies** (using `shared/pkg/indicators`). Use them via `strategy` in the create-backtest request:
+
+| Strategy | Description | Key params |
+|----------|-------------|------------|
+| `vwap_deviation` | Buy when price below VWAP, sell when above | `buy_threshold_pct`, `sell_threshold_pct` |
+| `bollinger` | Mean reversion at Bollinger bands | `period`, `num_std_dev` |
+| `order_flow` | Trade on buy/sell volume imbalance | `buy_threshold`, `sell_threshold` |
+| `rsi_momentum` | RSI overbought/oversold + momentum confirmation | `rsi_period`, `rsi_oversold`, `rsi_overbought`, `momentum_lookback` |
+| `volatility_breakout` | Enter when price breaks SMA ± volatility band | `volatility_period`, `volatility_mult`, `sma_period` |
+
 ---
 
 ## Trading session (intraday window)

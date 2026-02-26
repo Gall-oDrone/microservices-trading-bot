@@ -70,6 +70,7 @@ The Backtesting Service enables traders and developers to test trading strategie
 
 - **Strategy Integration**
   - Built-in strategies: **basic** (RSI), **trend** (trend + momentum), **arbitrage** (price-change threshold)
+  - **Intraday indicator strategies**: **vwap_deviation**, **bollinger** (mean reversion), **order_flow**, **rsi_momentum**, **volatility_breakout** (use `shared/pkg/indicators`)
   - Custom strategy parameters via `strategy_params`; select strategy via `strategy` in the create request
   - Strategy state management
 

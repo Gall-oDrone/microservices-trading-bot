@@ -22,6 +22,12 @@ func NewStrategyFactory() *StrategyFactory {
 	factory.Register("basic", NewBasicStrategy)
 	factory.Register("trend", NewTrendStrategy)
 	factory.Register("arbitrage", NewArbitrageStrategy)
+	// Intraday indicator-based strategies
+	factory.Register("vwap_deviation", NewVWAPDeviationStrategy)
+	factory.Register("bollinger", NewBollingerStrategy)
+	factory.Register("order_flow", NewOrderFlowStrategy)
+	factory.Register("rsi_momentum", NewRSIMomentumStrategy)
+	factory.Register("volatility_breakout", NewVolatilityBreakoutStrategy)
 
 	return factory
 }
