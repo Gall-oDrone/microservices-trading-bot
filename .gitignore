@@ -43,6 +43,9 @@ __pycache__/
 *.log
 logs/
 
+# Backtest script outputs
+.backtest-results/
+
 # Docker artifacts
 .docker/
 

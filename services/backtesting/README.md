@@ -235,6 +235,23 @@ curl http://localhost:8084/api/v1/backtests/bt-123456
 curl http://localhost:8084/api/v1/backtests/bt-123456/results
 ```
 
+### Scripts (run-all, tune with real data)
+
+From the repo root:
+
+- **`scripts/run-one-backtest.sh [BASE_URL] [STRATEGY]`** — Run a single backtest, poll until done, print report. Use `RECENT=1` to use the last 2 hours (real data from Bitso WebSocket via market-data).
+- **`scripts/run-all-backtests.sh [BASE_URL]`** — Run backtests for all strategies (basic, trend, arbitrage, vwap_deviation, bollinger, order_flow, rsi_momentum, volatility_breakout), then write a **markdown table** and **CSV** to `.backtest-results/backtest-summary-<timestamp>.md` and `.csv`. Use `RECENT=1` for real data.
+- **`scripts/tune-order-flow-real-data.sh [BACKTEST_BASE_URL] [MARKET_DATA_URL]`** — Tune the **order_flow** strategy using **real data** from the Bitso API WebSocket. Requires market-data running with `BITSO_WS_URL=wss://ws.stage.bitso.com` (or production) and Redis. Use **`RECENT=1`** so the date range is the last 2 hours (or set `RECENT_WINDOW_MINUTES`). Runs a parameter grid over `buy_threshold` and `sell_threshold`, then prints the best result.
+
+Example with real data:
+
+```bash
+# 1. Start market-data with Bitso WebSocket (e.g. docker-compose or scripts/start-backtest-with-stage.sh)
+# 2. Let it run for at least the window you want (e.g. 2 hours)
+# 3. Run tuning (uses last 2h by default when RECENT=1)
+RECENT=1 ./scripts/tune-order-flow-real-data.sh http://localhost:8084 http://localhost:8083
+```
+
 ---
 
 ## Configuration
