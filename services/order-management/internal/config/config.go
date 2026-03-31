@@ -167,8 +167,8 @@ func Load() (*Config, error) {
 		},
 		Bitso: BitsoConfig{
 			APIBaseURL: getEnv("BITSO_API_BASE_URL", "https://stage.bitso.com/api"),
-			APIKey:     getEnv("STAGE_BITSO_API_KEY", ""),
-			APISecret:  getEnv("STAGE_BITSO_APISECRET", ""),
+			APIKey:     bitsoAPIKeyFromEnv(),
+			APISecret:  bitsoAPISecretFromEnv(),
 		},
 		Risk: RiskConfig{
 			MaxOpenOrders:        getEnvAsInt("MAX_OPEN_ORDERS", 10),
@@ -331,6 +331,22 @@ func getEnvAsSlice(key string, defaultValue []string) []string {
 		}
 	}
 	return defaultValue
+}
+
+// bitsoAPIKeyFromEnv prefers BITSO_API_KEY (Kubernetes trading-secrets), else STAGE_BITSO_API_KEY (legacy/local).
+func bitsoAPIKeyFromEnv() string {
+	if v := getEnv("BITSO_API_KEY", ""); v != "" {
+		return v
+	}
+	return getEnv("STAGE_BITSO_API_KEY", "")
+}
+
+// bitsoAPISecretFromEnv prefers BITSO_API_SECRET, else STAGE_BITSO_APISECRET (legacy/local).
+func bitsoAPISecretFromEnv() string {
+	if v := getEnv("BITSO_API_SECRET", ""); v != "" {
+		return v
+	}
+	return getEnv("STAGE_BITSO_APISECRET", "")
 }
 
 func trimString(s string) string {
