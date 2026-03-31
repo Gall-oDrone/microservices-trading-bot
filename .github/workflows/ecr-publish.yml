@@ -62,3 +62,73 @@ jobs:
           ${{ steps.vars.outputs.image }}:latest
         cache-from: type=gha
         cache-to: type=gha,mode=max
+
+  # Deploy after all images exist in ECR, using immutable git-SHA tags (not :latest) so pods roll reliably.
+  deploy-development:
+    name: Deploy (Development)
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    environment: development
+    permissions:
+      id-token: write
+      contents: read
+    concurrency:
+      group: deploy-development-eks
+      cancel-in-progress: false
+    env:
+      AWS_REGION: us-east-1
+      NAMESPACE: bitso-trading-dev
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_GITHUB_ACTIONS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Update kubeconfig
+        run: aws eks update-kubeconfig --region ${{ env.AWS_REGION }} --name ${{ secrets.EKS_CLUSTER_NAME_DEVELOPMENT }}
+
+      - name: Deploy with immutable image tags
+        run: |
+          set -euo pipefail
+          TAG="${{ github.sha }}"
+          cd k8s/overlays/development
+          sed -i.bak "s/newTag: latest/newTag: ${TAG}/g" kustomization.yaml
+          kubectl apply -k .
+          rm -f kustomization.yaml.bak
+
+      - name: Apply ServiceMonitors for Prometheus
+        run: kubectl apply -f k8s/monitoring/servicemonitors.yaml
+        continue-on-error: true
+
+      - name: Wait for External Secrets sync
+        run: |
+          echo "Waiting for trading-secrets to be synced from AWS Secrets Manager..."
+          for i in $(seq 1 36); do
+            if kubectl get secret trading-secrets -n ${{ env.NAMESPACE }} &>/dev/null; then
+              echo "trading-secrets synced."
+              break
+            fi
+            if [ $i -eq 36 ]; then
+              echo "::warning::trading-secrets not synced in 3m (check SecretStore/ExternalSecret and AWS Secrets Manager)."
+              kubectl get externalsecret,secretstore -n ${{ env.NAMESPACE }} || true
+              exit 1
+            fi
+            sleep 5
+          done
+
+      - name: Wait for deployments
+        run: |
+          NS="${{ env.NAMESPACE }}"
+          for deploy in kafka redis trading-engine order-management strategy-executor market-data api-gateway backtesting; do
+            if kubectl get deployment "$deploy" -n "$NS" &>/dev/null; then
+              kubectl rollout status "deployment/$deploy" -n "$NS" --timeout=300s
+            fi
+          done
+
+      - name: Show status
+        run: kubectl get pods,externalsecret,secretstore -n ${{ env.NAMESPACE }}

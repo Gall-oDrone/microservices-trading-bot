@@ -48,18 +48,19 @@ func NewConsumer(config *ConsumerConfig) (*Consumer, error) {
 		return nil, fmt.Errorf("group ID is required")
 	}
 
-	// Set defaults
+	// Set defaults (tuned for low-traffic topics: avoid aggressive MinBytes + short MaxWait,
+	// which spams broker fetch timeouts when idle).
 	if config.AutoOffsetReset == "" {
 		config.AutoOffsetReset = "latest"
 	}
 	if config.MinBytes == 0 {
-		config.MinBytes = 10e3 // 10KB
+		config.MinBytes = 1
 	}
 	if config.MaxBytes == 0 {
 		config.MaxBytes = 10e6 // 10MB
 	}
 	if config.MaxWait == 0 {
-		config.MaxWait = 500 * time.Millisecond
+		config.MaxWait = 10 * time.Second
 	}
 	if config.CommitInterval == 0 {
 		config.CommitInterval = 1 * time.Second

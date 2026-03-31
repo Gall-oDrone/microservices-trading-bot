@@ -1,16 +1,18 @@
-# Deploy application to development EKS (bitso-trading-dev).
+# Manual deploy to development EKS when you need to roll out an existing ECR tag without rebuilding.
+# Default push flow: use "Build and Push to ECR" — it builds images and deploys with immutable git-SHA tags.
 # Prerequisites:
-#   - ECR images published (run ECR publish workflow first)
-#   - AWS Secrets Manager has trading-bot/* secrets (run infrastructure/terraform/scripts/secrets/setup-secrets.sh)
-#   - GitHub Environment "development" with secrets:
-#       AWS_GITHUB_ACTIONS_ROLE_ARN  - IAM role ARN for OIDC (from Terraform: ci_role_arn)
-#       EKS_CLUSTER_NAME_DEVELOPMENT - EKS cluster name (e.g. mtb-development)
+#   - ECR images already pushed for the chosen tag
+#   - AWS Secrets Manager / External Secrets configured
+#   - GitHub Environment "development" with AWS_GITHUB_ACTIONS_ROLE_ARN, EKS_CLUSTER_NAME_DEVELOPMENT
 name: Deploy (Development)
 
 on:
   workflow_dispatch:
-  push:
-    branches: [ develop, feat/k8s-deployment-manifests ]
+    inputs:
+      image_tag:
+        description: 'ECR image tag (git SHA). Leave empty to use the workflow commit SHA.'
+        required: false
+        default: ''
 
 env:
   AWS_REGION: us-east-1
@@ -23,10 +25,21 @@ jobs:
     permissions:
       id-token: write
       contents: read
+    concurrency:
+      group: deploy-development-eks
+      cancel-in-progress: false
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+
+      - name: Set image tag
+        id: tag
+        run: |
+          T="${{ inputs.image_tag }}"
+          if [ -z "$T" ]; then T="${{ github.sha }}"; fi
+          echo "Using ECR tag: $T"
+          echo "sha=$T" >> $GITHUB_OUTPUT
 
       - name: Configure AWS credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v4
@@ -38,9 +51,14 @@ jobs:
         run: |
           aws eks update-kubeconfig --region ${{ env.AWS_REGION }} --name ${{ secrets.EKS_CLUSTER_NAME_DEVELOPMENT }}
 
-      - name: Deploy with Kustomize
+      - name: Deploy with immutable image tags
         run: |
-          kubectl apply -k k8s/overlays/development
+          set -euo pipefail
+          TAG="${{ steps.tag.outputs.sha }}"
+          cd k8s/overlays/development
+          sed -i.bak "s/newTag: latest/newTag: ${TAG}/g" kustomization.yaml
+          kubectl apply -k .
+          rm -f kustomization.yaml.bak
 
       - name: Apply ServiceMonitors for Prometheus
         run: |
@@ -65,9 +83,12 @@ jobs:
 
       - name: Wait for deployments
         run: |
-          kubectl rollout status deployment/trading-engine -n ${{ env.NAMESPACE }} --timeout=300s
-          kubectl rollout status deployment/api-gateway -n ${{ env.NAMESPACE }} --timeout=300s
-          kubectl rollout status deployment/market-data -n ${{ env.NAMESPACE }} --timeout=300s
+          NS="${{ env.NAMESPACE }}"
+          for deploy in kafka redis trading-engine order-management strategy-executor market-data api-gateway backtesting; do
+            if kubectl get deployment "$deploy" -n "$NS" &>/dev/null; then
+              kubectl rollout status "deployment/$deploy" -n "$NS" --timeout=300s
+            fi
+          done
 
       - name: Show status
         run: |

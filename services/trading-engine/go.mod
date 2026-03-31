@@ -7,6 +7,7 @@ toolchain go1.23.4
 require (
 	bitso-trading-platform/shared v0.0.0
 	github.com/prometheus/client_golang v1.23.2
+	github.com/segmentio/kafka-go v0.4.47
 )
 
 require (
@@ -26,7 +27,6 @@ require (
 	github.com/prometheus/procfs v0.16.1 // indirect
 	github.com/redis/go-redis/v9 v9.5.1 // indirect
 	github.com/rs/zerolog v1.34.0 // indirect
-	github.com/segmentio/kafka-go v0.4.47 // indirect
 	github.com/shopspring/decimal v1.3.1 // indirect
 	go.yaml.in/yaml/v2 v2.4.2 // indirect
 	golang.org/x/net v0.43.0 // indirect

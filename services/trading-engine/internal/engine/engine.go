@@ -3,6 +3,7 @@ package engine
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -10,6 +11,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	kafkago "github.com/segmentio/kafka-go"
 
 	"bitso-trading-platform/shared/pkg/bitso"
 	"bitso-trading-platform/shared/pkg/config"
@@ -337,14 +340,18 @@ func (te *TradingEngine) kafkaConsumerLoop() {
 			return
 
 		default:
-			// Consume message with timeout
-			ctx, cancel := context.WithTimeout(te.ctx, 5*time.Second)
+			// Consume message with timeout (must exceed shared kafka Consumer MaxWait so fetches can complete)
+			ctx, cancel := context.WithTimeout(te.ctx, 30*time.Second)
 			msg, err := te.kafkaConsumer.Consume(ctx)
 			cancel()
 
 			if err != nil {
-				// Check if it's a timeout or context cancellation
-				if err == context.DeadlineExceeded || err == context.Canceled {
+				if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+					continue
+				}
+				var ke kafkago.Error
+				if errors.As(err, &ke) && ke.Timeout() {
+					// Idle topic / broker fetch window — not a fault condition
 					continue
 				}
 				te.logger.Printf("Error consuming message: %v", err)
