@@ -21,6 +21,11 @@ type ConsumerConfig struct {
 	CommitInterval  time.Duration // How often to commit offsets (default: 1s)
 	StartOffset     int64         // Starting offset (optional, -1=latest, -2=earliest)
 	Logger          *log.Logger   // Optional logger
+
+	// Consumer group tuning (optional; only used when GroupID is set)
+	SessionTimeout    time.Duration // e.g. 45s; kafka-go default ~30s
+	HeartbeatInterval time.Duration // e.g. 9s; must be < SessionTimeout/3
+	ReadBatchTimeout  time.Duration // max wait per batch read; low-traffic topics benefit from higher values
 }
 
 // Consumer wraps kafka-go Reader with additional functionality
@@ -93,6 +98,15 @@ func NewConsumer(config *ConsumerConfig) (*Consumer, error) {
 		StartOffset:    startOffset,
 		Logger:         logger,
 		ErrorLogger:    logger,
+	}
+	if config.SessionTimeout > 0 {
+		readerConfig.SessionTimeout = config.SessionTimeout
+	}
+	if config.HeartbeatInterval > 0 {
+		readerConfig.HeartbeatInterval = config.HeartbeatInterval
+	}
+	if config.ReadBatchTimeout > 0 {
+		readerConfig.ReadBatchTimeout = config.ReadBatchTimeout
 	}
 
 	// Create reader

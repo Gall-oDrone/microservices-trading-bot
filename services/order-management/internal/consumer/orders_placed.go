@@ -44,11 +44,20 @@ func NewOrdersPlacedConsumer(
 	if autoOffsetReset == "" {
 		autoOffsetReset = "earliest"
 	}
+	// Low-traffic topic: long MaxWait/ReadBatchTimeout avoid broker fetch timeouts when idle at log end.
+	// SessionTimeout/HeartbeatInterval reduce spurious group rebalances under load.
+	// Do not wrap ReadMessage in a short outer context.Timeout — that cancels in-flight fetches and spams logs.
 	cfg := &kafka.ConsumerConfig{
-		Brokers:         brokers,
-		Topic:           topic,
-		GroupID:         groupID,
-		AutoOffsetReset: autoOffsetReset,
+		Brokers:           brokers,
+		Topic:             topic,
+		GroupID:           groupID,
+		AutoOffsetReset:   autoOffsetReset,
+		MinBytes:          1,
+		MaxWait:           30 * time.Second,
+		ReadBatchTimeout:  90 * time.Second,
+		SessionTimeout:    45 * time.Second,
+		HeartbeatInterval: 9 * time.Second,
+		CommitInterval:    1 * time.Second,
 	}
 	c, err := kafka.NewConsumer(cfg)
 	if err != nil {
@@ -72,14 +81,14 @@ func (oc *OrdersPlacedConsumer) Run(ctx context.Context) {
 			oc.log.Info("Orders-placed consumer stopping", nil)
 			return
 		default:
-			consumeCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
-			value, err := oc.consumer.Consume(consumeCtx)
-			cancel()
+			// Block on ctx until a message arrives or service shutdown (no short deadline — avoids cancelling kafka-go fetches).
+			value, err := oc.consumer.Consume(ctx)
 			if err != nil {
 				if ctx.Err() != nil {
 					return
 				}
-				oc.log.Debug("Orders-placed consume (timeout or error)", map[string]interface{}{"error": err.Error()})
+				oc.log.Warn("Orders-placed consume error", map[string]interface{}{"error": err.Error()})
+				time.Sleep(2 * time.Second)
 				continue
 			}
 			var evt OrderPlacedEvent

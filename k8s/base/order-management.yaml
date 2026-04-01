@@ -6,7 +6,9 @@ metadata:
     app: bitso-trading-platform
     service: order-management
 spec:
-  replicas: 2
+  # Single replica: trading.orders.placed uses one consumer-group partition; two replicas caused empty
+  # assignments / rebalance noise and competing readers. Scale up only after a dedicated orders-placed worker or sticky assignment.
+  replicas: 1
   selector:
     matchLabels:
       app: bitso-trading-platform
