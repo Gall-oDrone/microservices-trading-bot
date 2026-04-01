@@ -366,7 +366,7 @@ func TestSyncOrderFromBitso_partialThenFilled(t *testing.T) {
 
 	ctx := context.Background()
 	const oid = "bitso-stage-1"
-	if _, err := mgr.RecordOrderPlaced(ctx, oid, "btc_mxn", "buy", 0.01, 1_000_000, "basic"); err != nil {
+	if _, err := mgr.RecordOrderPlaced(ctx, oid, "btc_mxn", "buy", 0.01, 1_000_000, "basic", ""); err != nil {
 		t.Fatalf("RecordOrderPlaced: %v", err)
 	}
 	// Exchange still says partial though notionally fully filled (rounding / API lag).
@@ -381,6 +381,44 @@ func TestSyncOrderFromBitso_partialThenFilled(t *testing.T) {
 	}
 	if pnl.TradesToday("btc_mxn", "basic") != 1 {
 		t.Fatalf("expected 1 closed trade after filled, got %d", pnl.TradesToday("btc_mxn", "basic"))
+	}
+}
+
+// TestRecordOrderPlaced_LinksSignalOrder ensures Bitso OID is stored on the signal-created row (no duplicate orders).
+func TestRecordOrderPlaced_LinksSignalOrder(t *testing.T) {
+	mgr := setupManager()
+	defer mgr.Stop()
+
+	ctx := context.Background()
+	sig := &sharedModels.TradeSignalEvent{
+		EventID:  "exercise-buy-link-test",
+		Book:     "btc_mxn",
+		Strategy: "basic",
+		Signal:   "BUY",
+		Price:    500000.0,
+		Amount:   0.01,
+	}
+	created, err := mgr.CreateOrder(sig)
+	if err != nil {
+		t.Fatalf("CreateOrder: %v", err)
+	}
+	const bitsoOID = "bitso-oid-link-1"
+	linked, err := mgr.RecordOrderPlaced(ctx, bitsoOID, "btc_mxn", "buy", 0.01, 500000.0, "basic", sig.EventID)
+	if err != nil {
+		t.Fatalf("RecordOrderPlaced: %v", err)
+	}
+	if linked.ID != created.ID {
+		t.Fatalf("expected same order row, created=%s linked=%s", created.ID, linked.ID)
+	}
+	if linked.Metadata["bitso_order_id"] != bitsoOID {
+		t.Fatalf("bitso_order_id: want %q, got %v", bitsoOID, linked.Metadata["bitso_order_id"])
+	}
+	list, err := mgr.ListOrders(ctx, models.NewOrderFilters())
+	if err != nil {
+		t.Fatalf("ListOrders: %v", err)
+	}
+	if len(list) != 1 {
+		t.Fatalf("expected 1 order in repo, got %d (duplicate placement rows?)", len(list))
 	}
 }
 

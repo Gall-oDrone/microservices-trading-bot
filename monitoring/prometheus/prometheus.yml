@@ -43,10 +43,10 @@ scrape_configs:
       - targets: ['market-data:8083']
     metrics_path: '/metrics'
 
-  # Order Management Service
+  # Order Management Service (docker-compose: SERVICE_PORT/METRICS_PORT 8086; k8s: 8082)
   - job_name: 'order-management'
     static_configs:
-      - targets: ['order-management:8084']
+      - targets: ['order-management:8086']
     metrics_path: '/metrics'
 
   # API Gateway Service

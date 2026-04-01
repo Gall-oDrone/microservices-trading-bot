@@ -155,6 +155,7 @@ func NewApplication() (*Application, error) {
 		cfg.Kafka.ConsumerGroup+"-orders-placed",
 		orderManager,
 		appLogger,
+		cfg.Kafka.OrdersPlacedAutoOffsetReset,
 	)
 	if ordersPlacedConsumer != nil {
 		appLogger.Info("Orders-placed consumer configured", map[string]interface{}{"topic": cfg.Kafka.TopicOrdersPlaced})

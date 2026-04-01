@@ -60,9 +60,11 @@ type KafkaConfig struct {
 	TopicEvents string `json:"topic_events"`  // Output: order-management.events
 
 	// Consumer settings
-	AutoOffsetReset string        `json:"auto_offset_reset"`
-	CommitInterval  time.Duration `json:"commit_interval"`
-	MaxWait         time.Duration `json:"max_wait"`
+	AutoOffsetReset string `json:"auto_offset_reset"`
+	// OrdersPlacedAutoOffsetReset: offset policy for trading.orders.placed only (default "earliest" so new consumer groups do not miss placement events).
+	OrdersPlacedAutoOffsetReset string        `json:"orders_placed_auto_offset_reset"`
+	CommitInterval              time.Duration `json:"commit_interval"`
+	MaxWait                     time.Duration `json:"max_wait"`
 
 	// Producer settings
 	BatchSize        int           `json:"batch_size"`
@@ -141,8 +143,9 @@ func Load() (*Config, error) {
 			TopicOrdersPlaced: getEnv("KAFKA_TOPIC_ORDERS_PLACED", "trading.orders.placed"),
 			TopicOrders:       getEnv("KAFKA_TOPIC_ORDERS", "order-management.orders"),
 			TopicEvents:       getEnv("KAFKA_TOPIC_EVENTS", "order-management.events"),
-			AutoOffsetReset:  getEnv("KAFKA_AUTO_OFFSET_RESET", "latest"),
-			CommitInterval:   getEnvAsDuration("KAFKA_COMMIT_INTERVAL", 1*time.Second),
+			AutoOffsetReset:             getEnv("KAFKA_AUTO_OFFSET_RESET", "latest"),
+			OrdersPlacedAutoOffsetReset: getEnv("KAFKA_ORDERS_PLACED_AUTO_OFFSET_RESET", "earliest"),
+			CommitInterval:              getEnvAsDuration("KAFKA_COMMIT_INTERVAL", 1*time.Second),
 			MaxWait:          getEnvAsDuration("KAFKA_MAX_WAIT", 500*time.Millisecond),
 			BatchSize:        getEnvAsInt("KAFKA_BATCH_SIZE", 100),
 			BatchTimeout:     getEnvAsDuration("KAFKA_BATCH_TIMEOUT", 1*time.Second),

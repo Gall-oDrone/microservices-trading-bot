@@ -49,6 +49,7 @@ type MetricsRecorder interface {
 // orderPlacedEvent is published to Kafka for order-management sync
 type orderPlacedEvent struct {
 	OrderID  string  `json:"order_id"`
+	EventID  string  `json:"event_id,omitempty"` // same as TradeSignalEvent.EventID — OM links Bitso OID to the signal-created order
 	Book     string  `json:"book"`
 	Side     string  `json:"side"`
 	Amount   float64 `json:"amount"`
@@ -576,6 +577,7 @@ func (te *TradingEngine) recordOrderFailedIfMetrics(bookOrFallback, reason strin
 func (te *TradingEngine) publishOrderPlaced(orderID string, signal *models.TradeSignalEvent, book *bitso.Book, side string) {
 	evt := orderPlacedEvent{
 		OrderID:  orderID,
+		EventID:  signal.EventID,
 		Book:     book.String(),
 		Side:     side,
 		Amount:   signal.Amount,

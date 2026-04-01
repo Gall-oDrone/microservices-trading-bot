@@ -14,6 +14,7 @@ import (
 // OrderPlacedEvent matches the payload from trading-engine (trading.orders.placed)
 type OrderPlacedEvent struct {
 	OrderID  string  `json:"order_id"`
+	EventID  string  `json:"event_id,omitempty"`
 	Book     string  `json:"book"`
 	Side     string  `json:"side"`
 	Amount   float64 `json:"amount"`
@@ -35,15 +36,19 @@ func NewOrdersPlacedConsumer(
 	groupID string,
 	orderManager manager.OrderManager,
 	log *logger.Logger,
+	autoOffsetReset string,
 ) (*OrdersPlacedConsumer, error) {
 	if len(brokers) == 0 || topic == "" || groupID == "" {
 		return nil, nil // disabled
+	}
+	if autoOffsetReset == "" {
+		autoOffsetReset = "earliest"
 	}
 	cfg := &kafka.ConsumerConfig{
 		Brokers:         brokers,
 		Topic:           topic,
 		GroupID:         groupID,
-		AutoOffsetReset: "latest",
+		AutoOffsetReset: autoOffsetReset,
 	}
 	c, err := kafka.NewConsumer(cfg)
 	if err != nil {
@@ -91,7 +96,7 @@ func (oc *OrdersPlacedConsumer) Run(ctx context.Context) {
 				continue
 			}
 			recordCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
-			_, err = oc.orderManager.RecordOrderPlaced(recordCtx, evt.OrderID, evt.Book, strings.ToLower(evt.Side), evt.Amount, evt.Price, evt.Strategy)
+			_, err = oc.orderManager.RecordOrderPlaced(recordCtx, evt.OrderID, evt.Book, strings.ToLower(evt.Side), evt.Amount, evt.Price, evt.Strategy, evt.EventID)
 			cancel()
 			if err != nil {
 				oc.log.Warn("RecordOrderPlaced failed", map[string]interface{}{"error": err.Error(), "bitso_order_id": evt.OrderID})

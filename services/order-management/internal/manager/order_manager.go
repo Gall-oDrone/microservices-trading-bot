@@ -3,6 +3,7 @@ package manager
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -29,7 +30,8 @@ type OrderManager interface {
 	// SyncOrderFromBitso updates an order from Bitso (used by Bitso sync job).
 	SyncOrderFromBitso(ctx context.Context, bitsoOrderID string, filledAmount, avgPrice float64, status models.OrderStatus) error
 	// RecordOrderPlaced records an order placed by the trading-engine (from Kafka trading.orders.placed). Idempotent.
-	RecordOrderPlaced(ctx context.Context, bitsoOrderID, book, side string, amount, price float64, strategy string) (*models.Order, error)
+	// signalEventID must match TradeSignalEvent.EventID when present so the existing signal-created order is linked (metadata bitso_order_id) instead of duplicating rows.
+	RecordOrderPlaced(ctx context.Context, bitsoOrderID, book, side string, amount, price float64, strategy, signalEventID string) (*models.Order, error)
 	UpdateOrderStatus(ctx context.Context, orderID string, status models.OrderStatus, metadata map[string]interface{}) error
 	CancelOrder(ctx context.Context, orderID string) error
 	GetOrder(ctx context.Context, orderID string) (*models.Order, error)
@@ -212,12 +214,73 @@ func (m *Manager) ProcessSignal(ctx context.Context, signal *sharedModels.TradeS
 
 // RecordOrderPlaced records an order placed by the trading-engine (consumed from Kafka trading.orders.placed).
 // Idempotent: if an order with this bitso_order_id already exists, returns it without error.
-func (m *Manager) RecordOrderPlaced(ctx context.Context, bitsoOrderID, book, side string, amount, price float64, strategy string) (*models.Order, error) {
+// When signalEventID matches an existing order (same as TradeSignalEvent.EventID), attaches bitso_order_id to that row
+// so Bitso sync (ListActiveBitsoOrderIDs) and fill metrics work. Otherwise creates a standalone order (legacy / tests).
+func (m *Manager) RecordOrderPlaced(ctx context.Context, bitsoOrderID, book, side string, amount, price float64, strategy, signalEventID string) (*models.Order, error) {
 	existing, err := m.repository.GetByBitsoOrderID(ctx, bitsoOrderID)
 	if err == nil && existing != nil {
 		m.logger.Debug("Order already recorded for bitso_order_id", map[string]interface{}{"bitso_order_id": bitsoOrderID})
 		return existing, nil
 	}
+
+	if signalEventID != "" {
+		bySignal, sigErr := m.repository.GetBySignalID(ctx, signalEventID)
+		if sigErr != nil && !strings.Contains(sigErr.Error(), "not found") {
+			return nil, fmt.Errorf("get order by signal for placement: %w", sigErr)
+		}
+		if sigErr == nil && bySignal != nil {
+			if bid, ok := bySignal.Metadata["bitso_order_id"].(string); ok && bid != "" {
+				if bid == bitsoOrderID {
+					return bySignal, nil
+				}
+				return nil, fmt.Errorf("signal %s already has bitso_order_id %s (got %s)", signalEventID, bid, bitsoOrderID)
+			}
+			m.mu.Lock()
+			defer m.mu.Unlock()
+			bySignal, err = m.repository.Get(ctx, bySignal.ID)
+			if err != nil {
+				return nil, err
+			}
+			if bid, ok := bySignal.Metadata["bitso_order_id"].(string); ok && bid != "" {
+				if bid == bitsoOrderID {
+					return bySignal, nil
+				}
+				return nil, fmt.Errorf("signal %s already has bitso_order_id %s (got %s)", signalEventID, bid, bitsoOrderID)
+			}
+			if bySignal.Metadata == nil {
+				bySignal.Metadata = make(map[string]interface{})
+			}
+			bySignal.Metadata["bitso_order_id"] = bitsoOrderID
+			switch bySignal.Status {
+			case models.OrderStatusValidated:
+				if err := m.stateMachine.Transition(bySignal, models.OrderStatusSubmitted); err != nil {
+					return nil, err
+				}
+			case models.OrderStatusPending:
+				if err := m.stateMachine.Transition(bySignal, models.OrderStatusValidated); err != nil {
+					return nil, err
+				}
+				if err := m.stateMachine.Transition(bySignal, models.OrderStatusSubmitted); err != nil {
+					return nil, err
+				}
+			default:
+				// Submitted+ : only attach exchange id for sync
+			}
+			if err := m.repository.Update(ctx, bySignal); err != nil {
+				return nil, fmt.Errorf("link bitso to signal order: %w", err)
+			}
+			m.updateActiveOrderMetrics(ctx)
+			m.logger.Info("Linked Bitso order to signal order", map[string]interface{}{
+				"order_id":       bySignal.ID,
+				"signal_id":      signalEventID,
+				"bitso_order_id": bitsoOrderID,
+				"book":           book,
+				"side":           side,
+			})
+			return bySignal, nil
+		}
+	}
+
 	order := models.NewOrder(
 		bitsoOrderID, // use as signal ID for reference
 		book,
