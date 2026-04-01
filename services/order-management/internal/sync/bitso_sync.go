@@ -2,6 +2,7 @@ package sync
 
 import (
 	"context"
+	"sync"
 	"time"
 
 	"bitso-trading-platform/order-management/internal/logger"
@@ -14,6 +15,8 @@ type BitsoSyncMetrics interface {
 	RecordBitsoSyncAttempt()
 	RecordBitsoSyncError()
 	SetBitsoSyncLastSuccessTimestamp(ts float64)
+	// SetActiveOrders sets orders_active{book} from exchange truth (see refreshOpenOrdersGauge).
+	SetActiveOrders(book string, count float64)
 }
 
 // BitsoSyncJob polls Bitso for active orders and updates order-management (status, fills)
@@ -23,6 +26,10 @@ type BitsoSyncJob struct {
 	log          *logger.Logger
 	interval     time.Duration
 	metrics      BitsoSyncMetrics // optional: for Prometheus
+
+	// lastBooksWithBitsoActive tracks books we previously published with count>0 so we can set 0 when empty.
+	activeBooksMu            sync.Mutex
+	lastBooksWithBitsoActive map[string]struct{}
 }
 
 // OrderManagerSync is the subset of order-manager needed for sync
@@ -38,17 +45,19 @@ func NewBitsoSyncJob(bitsoClient *bitso.Client, orderManager OrderManagerSync, l
 		interval = 60 * time.Second
 	}
 	return &BitsoSyncJob{
-		bitsoClient:  bitsoClient,
-		orderManager: orderManager,
-		log:          log,
-		interval:     interval,
-		metrics:      metrics,
+		bitsoClient:              bitsoClient,
+		orderManager:             orderManager,
+		log:                      log,
+		interval:                 interval,
+		metrics:                  metrics,
+		lastBooksWithBitsoActive: make(map[string]struct{}),
 	}
 }
 
 // Run runs the sync loop until ctx is cancelled
 func (j *BitsoSyncJob) Run(ctx context.Context) {
 	j.log.Info("Bitso sync job started", map[string]interface{}{"interval": j.interval})
+	j.syncOnce(ctx)
 	ticker := time.NewTicker(j.interval)
 	defer ticker.Stop()
 	for {
@@ -66,6 +75,9 @@ func (j *BitsoSyncJob) syncOnce(ctx context.Context) {
 	if j.metrics != nil {
 		j.metrics.RecordBitsoSyncAttempt()
 	}
+	// Always refresh orders_active from Bitso /open_orders so Grafana matches the Stage dashboard (not only OM repo state).
+	defer j.refreshOpenOrdersGauge()
+
 	oids, err := j.orderManager.ListActiveBitsoOrderIDs(ctx)
 	if err != nil {
 		j.log.Warn("ListActiveBitsoOrderIDs failed", map[string]interface{}{"error": err.Error()})
@@ -114,6 +126,37 @@ func (j *BitsoSyncJob) syncOnce(ctx context.Context) {
 	if j.metrics != nil {
 		j.metrics.SetBitsoSyncLastSuccessTimestamp(float64(time.Now().Unix()))
 	}
+}
+
+// refreshOpenOrdersGauge sets Prometheus orders_active{book} from GET /open_orders (Bitso source of truth).
+func (j *BitsoSyncJob) refreshOpenOrdersGauge() {
+	if j.metrics == nil {
+		return
+	}
+	orders, err := j.bitsoClient.MyOpenOrders(nil)
+	if err != nil {
+		j.log.Warn("MyOpenOrders failed (orders_active gauge unchanged)", map[string]interface{}{"error": err.Error()})
+		return
+	}
+	bookCounts := make(map[string]int)
+	for i := range orders {
+		book := orders[i].Book.String()
+		bookCounts[book]++
+	}
+	j.activeBooksMu.Lock()
+	for book := range j.lastBooksWithBitsoActive {
+		if _, ok := bookCounts[book]; !ok {
+			bookCounts[book] = 0
+		}
+	}
+	j.lastBooksWithBitsoActive = make(map[string]struct{})
+	for book, n := range bookCounts {
+		j.metrics.SetActiveOrders(book, float64(n))
+		if n > 0 {
+			j.lastBooksWithBitsoActive[book] = struct{}{}
+		}
+	}
+	j.activeBooksMu.Unlock()
 }
 
 func (j *BitsoSyncJob) applyBitsoUserOrder(ctx context.Context, uo *bitso.UserOrder) {

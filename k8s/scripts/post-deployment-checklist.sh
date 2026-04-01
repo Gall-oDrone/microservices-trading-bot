@@ -97,12 +97,24 @@ run_phase_3() {
   local kafka_pod
   kafka_pod=$(kubectl get pods -n "$NAMESPACE" -l app=bitso-trading-platform,service=kafka -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || true)
   if [ -n "$kafka_pod" ]; then
-    local topics="market-data.trades market-data.orderbook market-data.ticker trading.orders trading.signals"
+    local topics="market-data.trades market-data.orderbook market-data.ticker trading.orders"
     for t in $topics; do
       kubectl exec "$kafka_pod" -n "$NAMESPACE" -- /opt/kafka/bin/kafka-topics.sh --create --if-not-exists \
         --bootstrap-server localhost:9092 --topic "$t" --partitions 1 --replication-factor 1 2>/dev/null || true
     done
-    print_success "Kafka topics created/verified"
+    # trading.signals: use >= trading-engine Deployment replicas so each consumer in trading-engine-group gets a partition
+    local te_replicas
+    te_replicas=$(kubectl get deployment trading-engine -n "$NAMESPACE" -o jsonpath='{.spec.replicas}' 2>/dev/null || echo "2")
+    if [ -z "$te_replicas" ] || [ "$te_replicas" -lt 1 ]; then te_replicas=2; fi
+    local sig_parts="$te_replicas"
+    if [ "$sig_parts" -lt 2 ]; then sig_parts=2; fi
+    kubectl exec "$kafka_pod" -n "$NAMESPACE" -- /opt/kafka/bin/kafka-topics.sh --create --if-not-exists \
+      --bootstrap-server localhost:9092 --topic trading.signals --partitions "$sig_parts" --replication-factor 1 2>/dev/null || true
+    kubectl exec "$kafka_pod" -n "$NAMESPACE" -- /opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 \
+      --describe --topic trading.signals &>/dev/null && \
+      kubectl exec "$kafka_pod" -n "$NAMESPACE" -- /opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 \
+        --alter --topic trading.signals --partitions "$sig_parts" 2>/dev/null || true
+    print_success "Kafka topics created/verified (trading.signals partitions=$sig_parts)"
   else
     print_warning "Kafka pod not found; skipping topic creation"
   fi

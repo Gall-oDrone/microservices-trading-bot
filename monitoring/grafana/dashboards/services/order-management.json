@@ -26,7 +26,7 @@
       },
       "targets": [
         {
-          "expr": "max(up{job=~\"order-management.*\"}) or vector(0)",
+          "expr": "max(up{job=~\".*order-management.*\"}) or vector(0)",
           "refId": "A"
         }
       ],
@@ -62,7 +62,7 @@
       },
       "targets": [
         {
-          "expr": "sum(orders_created_total{job=~\"order-management.*\"}) or vector(0)",
+          "expr": "sum(orders_created_total{job=~\".*order-management.*\"}) or vector(0)",
           "refId": "A"
         }
       ]
@@ -79,7 +79,7 @@
       },
       "targets": [
         {
-          "expr": "sum(orders_filled_total{job=~\"order-management.*\"}) or vector(0)",
+          "expr": "sum(orders_filled_total{job=~\".*order-management.*\"}) or vector(0)",
           "refId": "A"
         }
       ]
@@ -96,7 +96,7 @@
       },
       "targets": [
         {
-          "expr": "sum(orders_active{job=~\"order-management.*\"}) or vector(0)",
+          "expr": "sum(orders_active{job=~\".*order-management.*\"}) or vector(0)",
           "refId": "A"
         }
       ]
@@ -124,7 +124,7 @@
       },
       "targets": [
         {
-          "expr": "histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket{job=~\"order-management.*\"}[5m])) by (le, path))",
+          "expr": "histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket{job=~\".*order-management.*\"}[5m])) by (le, path))",
           "refId": "A",
           "legendFormat": "{{path}}"
         }
@@ -142,7 +142,7 @@
       },
       "targets": [
         {
-          "expr": "sum(rate(http_requests_total{job=~\"order-management.*\"}[5m])) by (status)",
+          "expr": "sum(rate(http_requests_total{job=~\".*order-management.*\"}[5m])) by (status)",
           "refId": "A",
           "legendFormat": "{{status}}"
         }
@@ -171,7 +171,7 @@
       },
       "targets": [
         {
-          "expr": "sum(trading_daily_realized_pnl_currency{job=~\"order-management.*\"})",
+          "expr": "sum(trading_daily_realized_pnl_currency{job=~\".*order-management.*\"})",
           "refId": "A"
         }
       ],
@@ -193,7 +193,7 @@
       },
       "targets": [
         {
-          "expr": "sum(trading_daily_unrealized_pnl_currency{job=~\"order-management.*\"})",
+          "expr": "sum(trading_daily_unrealized_pnl_currency{job=~\".*order-management.*\"})",
           "refId": "A"
         }
       ],
@@ -215,7 +215,7 @@
       },
       "targets": [
         {
-          "expr": "max(trading_drawdown_percent{job=~\"order-management.*\"})",
+          "expr": "max(trading_drawdown_percent{job=~\".*order-management.*\"})",
           "refId": "A"
         }
       ],
@@ -237,7 +237,7 @@
       },
       "targets": [
         {
-          "expr": "sum(trading_trades_today_total{job=~\"order-management.*\"})",
+          "expr": "sum(trading_trades_today_total{job=~\".*order-management.*\"})",
           "refId": "A"
         }
       ]
@@ -254,7 +254,7 @@
       },
       "targets": [
         {
-          "expr": "sum(rate(kafka_messages_consumed_total{job=~\"order-management.*\"}[5m])) by (topic)",
+          "expr": "sum(rate(kafka_messages_consumed_total{job=~\".*order-management.*\"}[5m])) by (topic)",
           "refId": "A",
           "legendFormat": "{{topic}}"
         }
@@ -272,7 +272,7 @@
       },
       "targets": [
         {
-          "expr": "sum(risk_violations_total{job=~\"order-management.*\"}) or vector(0)",
+          "expr": "sum(risk_violations_total{job=~\".*order-management.*\"}) or vector(0)",
           "refId": "A"
         }
       ]
@@ -289,7 +289,7 @@
       },
       "targets": [
         {
-          "expr": "max(service_uptime_seconds{job=~\"order-management.*\"}) or vector(0)",
+          "expr": "max(service_uptime_seconds{job=~\".*order-management.*\"}) or vector(0)",
           "refId": "A"
         }
       ]

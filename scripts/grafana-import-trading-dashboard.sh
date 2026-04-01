@@ -43,8 +43,8 @@ if [ ! -f "$DASHBOARD_JSON" ]; then
   exit 1
 fi
 
-# Grafana API expects { "dashboard": {...}, "overwrite": true }
-payload=$(jq '. + {"overwrite": true}' "$DASHBOARD_JSON") || {
+# API expects { "dashboard": {...}, "overwrite": true }. Support both wrapped and raw dashboard JSON.
+payload=$(jq 'if .dashboard then . + {"overwrite": true} else { dashboard: ., overwrite: true } end' "$DASHBOARD_JSON") || {
   echo "Error: Failed to read or parse dashboard JSON: $DASHBOARD_JSON" >&2
   exit 1
 }

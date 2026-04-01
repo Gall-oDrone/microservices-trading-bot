@@ -68,6 +68,7 @@ func setupManager() *manager.Manager {
 		testManagerMetrics,
 		nil,
 		nil,
+		true,
 	)
 }
 

@@ -526,3 +526,26 @@ func (mc *MetricsCollector) SetWinsToday(book, strategy string, count float64) {
 func (mc *MetricsCollector) SetLossesToday(book, strategy string, count float64) {
 	mc.lossesToday.WithLabelValues(book, strategy).Set(count)
 }
+
+// PrimeIntradayGauges registers initial label combinations so /metrics and Grafana show 0 instead of "no data"
+// before the first trade or position feed. Use the same currency/book/strategy as RecordTradeClosed and feeds.
+func (mc *MetricsCollector) PrimeIntradayGauges(currency, book, strategy string) {
+	if currency == "" {
+		currency = "MXN"
+	}
+	if book == "" {
+		book = "btc_mxn"
+	}
+	if strategy == "" {
+		strategy = "basic"
+	}
+	mc.dailyRealizedPnL.WithLabelValues(currency).Set(0)
+	mc.dailyUnrealizedPnL.WithLabelValues(currency).Set(0)
+	mc.drawdownPercent.WithLabelValues(currency).Set(0)
+	mc.drawdownAbsolute.WithLabelValues(currency).Set(0)
+	mc.peakEquity.WithLabelValues(currency).Set(0)
+	mc.currentEquity.WithLabelValues(currency).Set(0)
+	mc.tradesToday.WithLabelValues(book, strategy).Set(0)
+	mc.winsToday.WithLabelValues(book, strategy).Set(0)
+	mc.lossesToday.WithLabelValues(book, strategy).Set(0)
+}

@@ -82,6 +82,9 @@ func NewApplication() (*Application, error) {
 	metricsCollector := metrics.NewMetricsCollector(appName)
 	appLogger.Info("Metrics collector initialized", nil)
 
+	// Intraday P&L: prime gauges so Grafana shows 0 (not empty) before first fill/feed
+	metricsCollector.PrimeIntradayGauges("MXN", "btc_mxn", "basic")
+
 	// Intraday P&L aggregator (writes to Prometheus)
 	pnlRecorder := metrics.NewIntradayAggregator(metricsCollector, nil)
 	appLogger.Info("Intraday P&L aggregator initialized", nil)
@@ -125,6 +128,9 @@ func NewApplication() (*Application, error) {
 		fillLedger = repository.NewInMemoryFillLedger()
 	}
 
+	// When Bitso credentials exist, Bitso sync sets orders_active from /open_orders (matches Stage UI); otherwise use repo counts.
+	repositoryActiveOrdersGauge := cfg.Bitso.APIKey == "" || cfg.Bitso.APISecret == ""
+
 	// Order manager with PnL recorder so filled orders update intraday metrics
 	orderManager := manager.NewOrderManager(
 		cfg,
@@ -136,8 +142,11 @@ func NewApplication() (*Application, error) {
 		metricsCollector,
 		pnlRecorder,
 		fillLedger,
+		repositoryActiveOrdersGauge,
 	)
-	appLogger.Info("Order manager initialized", nil)
+	appLogger.Info("Order manager initialized", map[string]interface{}{
+		"active_orders_gauge_source": map[bool]string{true: "repository", false: "bitso_open_orders"}[repositoryActiveOrdersGauge],
+	})
 
 	// Optional: consumer for trading.orders.placed (from trading-engine)
 	ordersPlacedConsumer, _ := consumer.NewOrdersPlacedConsumer(
@@ -254,6 +263,7 @@ func (app *Application) Start() error {
 
 // feedIntradayMetrics periodically pushes position summary (equity, unrealized P&L) to the aggregator.
 func (app *Application) feedIntradayMetrics() {
+	app.feedIntradayMetricsOnce()
 	ticker := time.NewTicker(60 * time.Second)
 	defer ticker.Stop()
 	for {
@@ -261,22 +271,25 @@ func (app *Application) feedIntradayMetrics() {
 		case <-app.ctx.Done():
 			return
 		case <-ticker.C:
-			ctx, cancel := context.WithTimeout(app.ctx, 10*time.Second)
-			summary, err := app.orderManager.GetPositionSummary(ctx)
-			cancel()
-			if err != nil {
-				app.logger.Debug("Position summary for intraday metrics failed (may be empty)", map[string]interface{}{"error": err.Error()})
-				continue
-			}
-			if summary == nil {
-				continue
-			}
-			// Feed unrealized P&L and session equity (TotalPnL as proxy for drawdown)
-			currency := "MXN"
-			app.pnlRecorder.RecordDailyUnrealizedPnL(currency, decimal.NewFromFloat(summary.TotalUnrealizedPnL))
-			app.pnlRecorder.RecordEquityUpdate(currency, decimal.NewFromFloat(summary.TotalPnL))
+			app.feedIntradayMetricsOnce()
 		}
 	}
+}
+
+func (app *Application) feedIntradayMetricsOnce() {
+	ctx, cancel := context.WithTimeout(app.ctx, 10*time.Second)
+	summary, err := app.orderManager.GetPositionSummary(ctx)
+	cancel()
+	if err != nil {
+		app.logger.Debug("Position summary for intraday metrics failed (may be empty)", map[string]interface{}{"error": err.Error()})
+		return
+	}
+	if summary == nil {
+		return
+	}
+	currency := "MXN"
+	app.pnlRecorder.RecordDailyUnrealizedPnL(currency, decimal.NewFromFloat(summary.TotalUnrealizedPnL))
+	app.pnlRecorder.RecordEquityUpdate(currency, decimal.NewFromFloat(summary.TotalPnL))
 }
 
 // startMetricsCollection starts periodic metrics collection

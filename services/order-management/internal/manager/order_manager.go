@@ -60,10 +60,16 @@ type Manager struct {
 	// activeBooksMu guards lastBooksWithNonZeroActive for Prometheus gauge resets.
 	activeBooksMu              sync.Mutex
 	lastBooksWithNonZeroActive map[string]struct{}
+
+	// repositoryActiveOrdersGauge: when true, orders_active is derived from the local repo (10s ticker).
+	// When false (Bitso sync enabled), orders_active is set from Bitso /open_orders only — avoids Grafana
+	// disagreeing with the Stage dashboard when OM has not ingested an order yet.
+	repositoryActiveOrdersGauge bool
 }
 
 // NewOrderManager creates a new order manager. pnlRecorder is optional (nil disables intraday P&L metrics).
 // fillLedger is optional (nil skips Redis/in-memory fill ledger append).
+// repositoryActiveOrdersGauge: pass true if Bitso sync is not used; pass false when Bitso sync updates orders_active from /open_orders.
 func NewOrderManager(
 	config *config.Config,
 	logger *logger.Logger,
@@ -74,6 +80,7 @@ func NewOrderManager(
 	metrics *metrics.MetricsCollector,
 	pnlRecorder sharedMetrics.PnLRecorder,
 	fillLedger repository.FillLedger,
+	repositoryActiveOrdersGauge bool,
 ) *Manager {
 	return &Manager{
 		logger:       logger,
@@ -88,7 +95,8 @@ func NewOrderManager(
 		fillLedger:   fillLedger,
 		stopChan:     make(chan struct{}),
 
-		lastBooksWithNonZeroActive: make(map[string]struct{}),
+		lastBooksWithNonZeroActive:  make(map[string]struct{}),
+		repositoryActiveOrdersGauge: repositoryActiveOrdersGauge,
 	}
 }
 
@@ -225,6 +233,7 @@ func (m *Manager) RecordOrderPlaced(ctx context.Context, bitsoOrderID, book, sid
 		return nil, fmt.Errorf("create order for placed: %w", err)
 	}
 	m.metrics.RecordOrderCreated(book, strategy)
+	m.updateActiveOrderMetrics(ctx)
 	m.logger.Info("Recorded order placed", map[string]interface{}{
 		"order_id":       order.ID,
 		"bitso_order_id": bitsoOrderID,
@@ -292,6 +301,7 @@ func (m *Manager) SyncOrderFromBitso(ctx context.Context, bitsoOrderID string, f
 	case models.OrderStatusCancelled:
 		m.metrics.RecordOrderCancelled(order.Book, order.Strategy, "exchange")
 	}
+	m.updateActiveOrderMetrics(ctx)
 	m.logger.Debug("Synced order from Bitso", map[string]interface{}{
 		"order_id": order.ID, "bitso_order_id": bitsoOrderID, "status": status,
 	})
@@ -473,6 +483,7 @@ func (m *Manager) UpdateOrderStatus(ctx context.Context, orderID string, status 
 	case models.OrderStatusRejected:
 		m.metrics.RecordOrderRejected(order.Book, order.Strategy, "manual")
 	}
+	m.updateActiveOrderMetrics(ctx)
 
 	m.logger.Info("Order status updated", map[string]interface{}{
 		"order_id":   orderID,
@@ -509,6 +520,7 @@ func (m *Manager) CancelOrder(ctx context.Context, orderID string) error {
 	}
 
 	m.metrics.RecordOrderCancelled(order.Book, order.Strategy, "user_requested")
+	m.updateActiveOrderMetrics(ctx)
 
 	m.logger.Info("Order cancelled", map[string]interface{}{
 		"order_id": orderID,
@@ -592,6 +604,9 @@ func quoteCurrencyFromBook(book string) string {
 
 // updateActiveOrderMetrics updates metrics for active orders
 func (m *Manager) updateActiveOrderMetrics(ctx context.Context) {
+	if !m.repositoryActiveOrdersGauge {
+		return
+	}
 	activeOrders, err := m.repository.GetActiveOrders(ctx)
 	if err != nil {
 		m.logger.Error("Failed to get active orders", map[string]interface{}{
