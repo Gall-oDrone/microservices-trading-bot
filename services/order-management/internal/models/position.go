@@ -3,6 +3,7 @@ package models
 import (
 	"encoding/json"
 	"fmt"
+	"math"
 	"time"
 )
 
@@ -131,63 +132,97 @@ func (p *Position) RemoveOrder(orderID string) {
 	p.UpdatedAt = time.Now()
 }
 
-// UpdateFromFill updates the position when an order is filled
-func (p *Position) UpdateFromFill(order *Order, fillAmount, fillPrice float64) {
-	// Update position size
+// ApplyFill applies a fill delta (major amount) at fillPrice (quote per major).
+// Returns realized P&L in quote currency (e.g. MXN) contributed by this fill only.
+func (p *Position) ApplyFill(order *Order, fillAmount, fillPrice float64) (realizedDelta float64) {
+	if fillAmount <= 0 {
+		return 0
+	}
+
 	if order.Side == "buy" {
-		// Increase size for buy orders (long position)
-		if p.Side == "" {
-			p.Side = "long"
+		rem := fillAmount
+		for rem > 0 {
+			if p.Side == "short" && p.Size > 0 {
+				cover := rem
+				if cover > p.Size {
+					cover = p.Size
+				}
+				pnl := (p.EntryPrice - fillPrice) * cover
+				p.RealizedPnL += pnl
+				realizedDelta += pnl
+				p.Size -= cover
+				rem -= cover
+				if p.Size == 0 {
+					p.Side = ""
+					p.EntryPrice = 0
+				}
+				continue
+			}
+			if p.Side == "" {
+				p.Side = "long"
+			}
+			if p.Side != "long" {
+				break
+			}
+			prev := p.Size
+			p.Size += rem
+			if prev == 0 {
+				p.EntryPrice = fillPrice
+			} else {
+				p.EntryPrice = (prev*p.EntryPrice + rem*fillPrice) / p.Size
+			}
+			rem = 0
 		}
-
-		previousSize := p.Size
-		p.Size += fillAmount
-
-		// Update average entry price
-		if previousSize == 0 {
-			p.EntryPrice = fillPrice
-		} else {
-			totalCost := (previousSize * p.EntryPrice) + (fillAmount * fillPrice)
-			p.EntryPrice = totalCost / p.Size
-		}
-
 	} else if order.Side == "sell" {
-		// Decrease size for sell orders (or short position)
-		if p.Size >= fillAmount {
-			// Closing part of long position
-			pnl := (fillPrice - p.EntryPrice) * fillAmount
-			p.RealizedPnL += pnl
-			p.Size -= fillAmount
-		} else {
-			// Opening or increasing short position
+		rem := fillAmount
+		for rem > 0 {
+			if p.Side == "long" && p.Size > 0 {
+				close := math.Min(rem, p.Size)
+				pnl := (fillPrice - p.EntryPrice) * close
+				p.RealizedPnL += pnl
+				realizedDelta += pnl
+				p.Size -= close
+				rem -= close
+				if p.Size == 0 {
+					p.Side = ""
+					p.EntryPrice = 0
+				}
+				continue
+			}
 			if p.Side == "" {
 				p.Side = "short"
 			}
-
-			previousSize := p.Size
-			p.Size += fillAmount
-
-			// Update average entry price for short
-			if previousSize == 0 {
-				p.EntryPrice = fillPrice
-			} else {
-				totalCost := (previousSize * p.EntryPrice) + (fillAmount * fillPrice)
-				p.EntryPrice = totalCost / p.Size
+			if p.Side == "short" {
+				prev := p.Size
+				p.Size += rem
+				if prev == 0 {
+					p.EntryPrice = fillPrice
+				} else {
+					p.EntryPrice = (prev*p.EntryPrice + rem*fillPrice) / p.Size
+				}
+				rem = 0
+				continue
 			}
+			p.Side = "short"
+			p.Size = rem
+			p.EntryPrice = fillPrice
+			rem = 0
 		}
 	}
 
-	// Recalculate unrealized P&L
 	if p.CurrentPrice > 0 {
 		p.UnrealizedPnL = p.CalculateUnrealizedPnL()
 	}
-
 	p.UpdatedAt = time.Now()
-
-	// Check if position should be closed
 	if p.Size == 0 && p.OpenOrdersCount == 0 {
 		p.Close()
 	}
+	return realizedDelta
+}
+
+// UpdateFromFill updates the position when an order is filled (delegates to ApplyFill).
+func (p *Position) UpdateFromFill(order *Order, fillAmount, fillPrice float64) {
+	p.ApplyFill(order, fillAmount, fillPrice)
 }
 
 // Close closes the position

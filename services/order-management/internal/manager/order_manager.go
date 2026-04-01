@@ -50,6 +50,7 @@ type Manager struct {
 	stateMachine *StateMachine
 	metrics      *metrics.MetricsCollector
 	pnlRecorder  sharedMetrics.PnLRecorder // optional; nil disables intraday P&L recording
+	fillLedger   repository.FillLedger     // optional; nil skips append-only fill audit
 
 	// Internal state
 	stopChan chan struct{}
@@ -62,6 +63,7 @@ type Manager struct {
 }
 
 // NewOrderManager creates a new order manager. pnlRecorder is optional (nil disables intraday P&L metrics).
+// fillLedger is optional (nil skips Redis/in-memory fill ledger append).
 func NewOrderManager(
 	config *config.Config,
 	logger *logger.Logger,
@@ -71,6 +73,7 @@ func NewOrderManager(
 	positionRepo repository.PositionRepository,
 	metrics *metrics.MetricsCollector,
 	pnlRecorder sharedMetrics.PnLRecorder,
+	fillLedger repository.FillLedger,
 ) *Manager {
 	return &Manager{
 		logger:       logger,
@@ -82,6 +85,7 @@ func NewOrderManager(
 		stateMachine: NewStateMachine(logger),
 		metrics:      metrics,
 		pnlRecorder:  pnlRecorder,
+		fillLedger:   fillLedger,
 		stopChan:     make(chan struct{}),
 
 		lastBooksWithNonZeroActive: make(map[string]struct{}),
@@ -249,10 +253,28 @@ func (m *Manager) SyncOrderFromBitso(ctx context.Context, bitsoOrderID string, f
 	if order.IsClosed() {
 		return nil
 	}
-	// Update fill if we have new fill data
-	if filledAmount > order.FilledAmount && (status == models.OrderStatusPartiallyFilled || status == models.OrderStatusFilled) {
-		order.RecordFill(filledAmount-order.FilledAmount, avgPrice)
+	if order.Metadata == nil {
+		order.Metadata = make(map[string]interface{})
 	}
+
+	var fillDelta float64
+	if filledAmount > order.FilledAmount && (status == models.OrderStatusPartiallyFilled || status == models.OrderStatusFilled) {
+		fillDelta = filledAmount - order.FilledAmount
+	}
+	if fillDelta > 0 {
+		pos, err := m.getOrCreatePosition(ctx, order.Book)
+		if err != nil {
+			return fmt.Errorf("position for fill: %w", err)
+		}
+		rd := pos.ApplyFill(order, fillDelta, avgPrice)
+		prev := metaFloat(order.Metadata, orderFillRealizedPnLMetaKey)
+		setMetaFloat(order.Metadata, orderFillRealizedPnLMetaKey, prev+rd)
+		if err := m.positionRepo.Update(ctx, pos); err != nil {
+			return fmt.Errorf("position update: %w", err)
+		}
+		order.RecordFill(fillDelta, avgPrice)
+	}
+
 	if status != order.Status {
 		if err := m.stateMachine.Transition(order, status); err != nil {
 			return err
@@ -264,7 +286,9 @@ func (m *Manager) SyncOrderFromBitso(ctx context.Context, bitsoOrderID string, f
 	switch status {
 	case models.OrderStatusFilled:
 		m.metrics.RecordOrderFilled(order.Book, order.Strategy)
-		m.recordTradeClosedForIntraday(order, nil)
+		totalRealized := metaFloat(order.Metadata, orderFillRealizedPnLMetaKey)
+		m.recordTradeClosedForIntraday(order, map[string]interface{}{"realized_pnl": totalRealized})
+		m.appendFillLedger(ctx, order, bitsoOrderID, totalRealized)
 	case models.OrderStatusCancelled:
 		m.metrics.RecordOrderCancelled(order.Book, order.Strategy, "exchange")
 	}
@@ -324,6 +348,42 @@ func (m *Manager) ListActiveBitsoOrderIDs(ctx context.Context) ([]string, error)
 		}
 	}
 	return ids, nil
+}
+
+func (m *Manager) getOrCreatePosition(ctx context.Context, book string) (*models.Position, error) {
+	pos, err := m.positionRepo.Get(ctx, book)
+	if err == nil {
+		return pos, nil
+	}
+	np := models.NewPosition(book, "")
+	if err := m.positionRepo.Create(ctx, np); err != nil {
+		if pos2, err2 := m.positionRepo.Get(ctx, book); err2 == nil {
+			return pos2, nil
+		}
+		return nil, err
+	}
+	return m.positionRepo.Get(ctx, book)
+}
+
+func (m *Manager) appendFillLedger(ctx context.Context, order *models.Order, bitsoOID string, realizedMXN float64) {
+	if m.fillLedger == nil {
+		return
+	}
+	e := &models.FillLedgerEntry{
+		ID:             fmt.Sprintf("%s-%s-%d", order.ID, bitsoOID, time.Now().UnixNano()),
+		Timestamp:      time.Now().UTC(),
+		OrderID:        order.ID,
+		BitsoOrderID:   bitsoOID,
+		Book:           order.Book,
+		Strategy:       order.Strategy,
+		Side:           order.Side,
+		Amount:         order.Amount,
+		AvgPrice:       order.AveragePrice,
+		RealizedPnLMXN: realizedMXN,
+	}
+	if err := m.fillLedger.Append(ctx, e); err != nil {
+		m.logger.Debug("Fill ledger append failed", map[string]interface{}{"error": err.Error()})
+	}
 }
 
 // CreateOrder creates an order from a trading signal
@@ -500,27 +560,20 @@ func (m *Manager) recordTradeClosedForIntraday(order *models.Order, metadata map
 		return
 	}
 	currency := quoteCurrencyFromBook(order.Book)
-	var realizedPnL decimal.Decimal
+	realizedPnL := decimal.Zero
 	if metadata != nil {
-		if v, ok := metadata["realized_pnl"]; ok {
-			switch t := v.(type) {
-			case float64:
-				realizedPnL = decimal.NewFromFloat(t)
-			case float32:
-				realizedPnL = decimal.NewFromFloat(float64(t))
-			case int:
-				realizedPnL = decimal.NewFromInt(int64(t))
-			case int64:
-				realizedPnL = decimal.NewFromInt(t)
-			}
-		}
+		realizedPnL = decimal.NewFromFloat(metaFloat(metadata, "realized_pnl"))
 	}
 	outcome := sharedMetrics.TradeOutcome{
 		Book:        order.Book,
 		Strategy:    order.Strategy,
 		Currency:    currency,
 		RealizedPnL: sharedMetrics.NewMonetaryAmount(realizedPnL, currency),
-		IsWin:       realizedPnL.GreaterThan(decimal.Zero),
+	}
+	if realizedPnL.IsZero() {
+		outcome.IsBreakeven = true
+	} else {
+		outcome.IsWin = realizedPnL.GreaterThan(decimal.Zero)
 	}
 	m.pnlRecorder.RecordTradeClosed(outcome)
 }

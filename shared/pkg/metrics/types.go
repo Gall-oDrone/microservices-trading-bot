@@ -66,9 +66,10 @@ func (p PnLSnapshot) TotalPnL() MonetaryAmount {
 
 // TradeOutcome represents the result of a single closed trade for metrics.
 type TradeOutcome struct {
-	Book        string
-	Strategy    string
-	Currency    string
-	RealizedPnL MonetaryAmount
-	IsWin       bool // true if realized P&L > 0
+	Book         string
+	Strategy     string
+	Currency     string
+	RealizedPnL  MonetaryAmount
+	IsWin        bool // true if realized P&L > 0
+	IsBreakeven  bool // true if realized P&L == 0 (exclude from win/loss counts; still counts as a closed trade)
 }

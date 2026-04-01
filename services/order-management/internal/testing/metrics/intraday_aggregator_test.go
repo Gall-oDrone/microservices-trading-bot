@@ -125,6 +125,30 @@ func TestIntradayAggregator_RecordTradeClosed(t *testing.T) {
 	}
 }
 
+func TestIntradayAggregator_RecordTradeClosed_Breakeven(t *testing.T) {
+	writer := newMockWriter()
+	session := fixedSessionProvider{date: time.Date(2025, 2, 5, 12, 0, 0, 0, time.UTC)}
+	agg := metrics.NewIntradayAggregator(writer, session)
+
+	outcome := sharedMetrics.TradeOutcome{
+		Book:        "btc_mxn",
+		Strategy:    "basic",
+		Currency:    "MXN",
+		RealizedPnL: sharedMetrics.NewMonetaryAmount(decimal.Zero, "MXN"),
+		IsBreakeven: true,
+	}
+	agg.RecordTradeClosed(outcome)
+
+	writer.mu.Lock()
+	defer writer.mu.Unlock()
+	if writer.TradesToday["btc_mxn|basic"] != 1 {
+		t.Errorf("TradesToday: want 1, got %v", writer.TradesToday["btc_mxn|basic"])
+	}
+	if writer.WinsToday["btc_mxn|basic"] != 0 || writer.LossesToday["btc_mxn|basic"] != 0 {
+		t.Errorf("breakeven should not win/loss: wins=%v losses=%v", writer.WinsToday["btc_mxn|basic"], writer.LossesToday["btc_mxn|basic"])
+	}
+}
+
 func TestIntradayAggregator_RecordEquityUpdate_Drawdown(t *testing.T) {
 	writer := newMockWriter()
 	session := fixedSessionProvider{date: time.Date(2025, 2, 5, 12, 0, 0, 0, time.UTC)}

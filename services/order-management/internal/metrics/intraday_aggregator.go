@@ -28,9 +28,10 @@ type IntradayAggregator struct {
 	currentEquity      map[string]decimal.Decimal
 
 	// Per book+strategy counts for current session
-	tradesToday map[string]int64 // key: book|strategy
-	winsToday   map[string]int64
-	lossesToday map[string]int64
+	tradesToday   map[string]int64 // key: book|strategy
+	winsToday     map[string]int64
+	lossesToday   map[string]int64
+	breakevensToday map[string]int64 // realized P&L == 0 (still a closed trade)
 }
 
 // NewIntradayAggregator creates an aggregator that writes to the given writer
@@ -50,9 +51,10 @@ func NewIntradayAggregator(writer IntradayMetricsWriter, session sharedMetrics.S
 		dailyUnrealizedPnL:  make(map[string]decimal.Decimal),
 		peakEquity:          make(map[string]decimal.Decimal),
 		currentEquity:       make(map[string]decimal.Decimal),
-		tradesToday:         make(map[string]int64),
-		winsToday:           make(map[string]int64),
-		lossesToday:         make(map[string]int64),
+		tradesToday:       make(map[string]int64),
+		winsToday:         make(map[string]int64),
+		lossesToday:       make(map[string]int64),
+		breakevensToday:   make(map[string]int64),
 	}
 }
 
@@ -76,6 +78,7 @@ func (a *IntradayAggregator) maybeResetSession() {
 		a.tradesToday = make(map[string]int64)
 		a.winsToday = make(map[string]int64)
 		a.lossesToday = make(map[string]int64)
+		a.breakevensToday = make(map[string]int64)
 	}
 }
 
@@ -111,9 +114,12 @@ func (a *IntradayAggregator) RecordTradeClosed(outcome sharedMetrics.TradeOutcom
 	a.mu.Lock()
 	k := key(outcome.Book, outcome.Strategy)
 	a.tradesToday[k]++
-	if outcome.IsWin {
+	switch {
+	case outcome.IsBreakeven:
+		a.breakevensToday[k]++
+	case outcome.IsWin:
 		a.winsToday[k]++
-	} else {
+	default:
 		a.lossesToday[k]++
 	}
 	prev := a.dailyRealizedPnL[outcome.Currency]

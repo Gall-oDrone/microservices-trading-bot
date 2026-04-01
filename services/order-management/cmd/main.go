@@ -118,6 +118,13 @@ func NewApplication() (*Application, error) {
 	orderValidator := validator.NewOrderValidator(&cfg.Risk, appLogger, orderRepo, metricsCollector)
 	riskManager := risk.NewRiskManager(&cfg.Risk, appLogger, orderRepo, positionRepo, metricsCollector)
 
+	var fillLedger repository.FillLedger
+	if cfg.Storage.Type == "redis" && redisClient != nil {
+		fillLedger = repository.NewRedisFillLedger(redisClient)
+	} else {
+		fillLedger = repository.NewInMemoryFillLedger()
+	}
+
 	// Order manager with PnL recorder so filled orders update intraday metrics
 	orderManager := manager.NewOrderManager(
 		cfg,
@@ -128,6 +135,7 @@ func NewApplication() (*Application, error) {
 		positionRepo,
 		metricsCollector,
 		pnlRecorder,
+		fillLedger,
 	)
 	appLogger.Info("Order manager initialized", nil)
 

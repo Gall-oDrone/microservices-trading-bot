@@ -112,6 +112,7 @@ func buildManagerWithIntraday(t *testing.T) (*manager.Manager, *mockIntradayWrit
 		positionRepo,
 		metricsCollector,
 		aggregator,
+		nil, // fill ledger optional
 	)
 	return mgr, writer
 }

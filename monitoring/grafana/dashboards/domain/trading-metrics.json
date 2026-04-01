@@ -505,7 +505,7 @@
       },
       "targets": [
         {
-          "expr": "(sum(trading_wins_today_total) / (sum(trading_wins_today_total) + sum(trading_losses_today_total) + 1e-9)) * 100",
+          "expr": "(sum(trading_wins_today_total) / (sum(trading_trades_today_total) + 1e-9)) * 100",
           "refId": "A"
         }
       ],

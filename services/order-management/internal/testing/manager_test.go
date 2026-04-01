@@ -67,6 +67,7 @@ func setupManager() *manager.Manager {
 		positionRepo,
 		testManagerMetrics,
 		nil,
+		nil,
 	)
 }
 
