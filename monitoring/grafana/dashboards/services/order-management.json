@@ -96,7 +96,7 @@
       },
       "targets": [
         {
-          "expr": "sum(orders_active{job=~\".*order-management.*\"}) or vector(0)",
+          "expr": "max(orders_active{job=~\".*order-management.*\"}) or vector(0)",
           "refId": "A"
         }
       ]
@@ -171,7 +171,7 @@
       },
       "targets": [
         {
-          "expr": "sum(trading_daily_realized_pnl_currency{job=~\".*order-management.*\"})",
+          "expr": "max(trading_daily_realized_pnl_currency{job=~\".*order-management.*\"})",
           "refId": "A"
         }
       ],
@@ -193,7 +193,7 @@
       },
       "targets": [
         {
-          "expr": "sum(trading_daily_unrealized_pnl_currency{job=~\".*order-management.*\"})",
+          "expr": "max(trading_daily_unrealized_pnl_currency{job=~\".*order-management.*\"})",
           "refId": "A"
         }
       ],
@@ -237,7 +237,7 @@
       },
       "targets": [
         {
-          "expr": "sum(trading_trades_today_total{job=~\".*order-management.*\"})",
+          "expr": "max(trading_trades_today_total{job=~\".*order-management.*\"})",
           "refId": "A"
         }
       ]

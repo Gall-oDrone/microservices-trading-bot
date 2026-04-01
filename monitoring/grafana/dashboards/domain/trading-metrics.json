@@ -269,7 +269,7 @@
       },
       "targets": [
         {
-          "expr": "sum(trading_daily_realized_pnl_currency{job=~\".*order-management.*\"}) or vector(0)",
+          "expr": "max(trading_daily_realized_pnl_currency{job=~\".*order-management.*\"}) or vector(0)",
           "refId": "A"
         }
       ],
@@ -310,7 +310,7 @@
       },
       "targets": [
         {
-          "expr": "sum(trading_daily_unrealized_pnl_currency{job=~\".*order-management.*\"}) or vector(0)",
+          "expr": "max(trading_daily_unrealized_pnl_currency{job=~\".*order-management.*\"}) or vector(0)",
           "refId": "A"
         }
       ],
@@ -392,7 +392,7 @@
       },
       "targets": [
         {
-          "expr": "sum(trading_drawdown_absolute_currency{job=~\".*order-management.*\"}) or vector(0)",
+          "expr": "max(trading_drawdown_absolute_currency{job=~\".*order-management.*\"}) or vector(0)",
           "refId": "A"
         }
       ],
@@ -414,7 +414,7 @@
       },
       "targets": [
         {
-          "expr": "sum(trading_current_equity_currency{job=~\".*order-management.*\"}) or vector(0)",
+          "expr": "max(trading_current_equity_currency{job=~\".*order-management.*\"}) or vector(0)",
           "refId": "A"
         }
       ],
@@ -436,7 +436,7 @@
       },
       "targets": [
         {
-          "expr": "sum(trading_peak_equity_currency{job=~\".*order-management.*\"}) or vector(0)",
+          "expr": "max(trading_peak_equity_currency{job=~\".*order-management.*\"}) or vector(0)",
           "refId": "A"
         }
       ],
@@ -458,7 +458,7 @@
       },
       "targets": [
         {
-          "expr": "sum(trading_trades_today_total{job=~\".*order-management.*\"}) or vector(0)",
+          "expr": "max(trading_trades_today_total{job=~\".*order-management.*\"}) or vector(0)",
           "refId": "A"
         }
       ]
@@ -475,12 +475,12 @@
       },
       "targets": [
         {
-          "expr": "sum(trading_wins_today_total{job=~\".*order-management.*\"}) or vector(0)",
+          "expr": "max(trading_wins_today_total{job=~\".*order-management.*\"}) or vector(0)",
           "refId": "A",
           "legendFormat": "Wins"
         },
         {
-          "expr": "sum(trading_losses_today_total{job=~\".*order-management.*\"}) or vector(0)",
+          "expr": "max(trading_losses_today_total{job=~\".*order-management.*\"}) or vector(0)",
           "refId": "B",
           "legendFormat": "Losses"
         }
@@ -505,7 +505,7 @@
       },
       "targets": [
         {
-          "expr": "(sum(trading_wins_today_total{job=~\".*order-management.*\"}) / (sum(trading_trades_today_total{job=~\".*order-management.*\"}) + 1e-9)) * 100",
+          "expr": "(max(trading_wins_today_total{job=~\".*order-management.*\"}) / (max(trading_trades_today_total{job=~\".*order-management.*\"}) + 1e-9)) * 100",
           "refId": "A"
         }
       ],
