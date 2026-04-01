@@ -72,6 +72,41 @@ func setupManager() *manager.Manager {
 	)
 }
 
+// setupManagerWithPnL is like setupManager but wires an IntradayAggregator for intraday P&L tests.
+// Reuses testManagerMetrics so Prometheus does not register duplicate collectors.
+func setupManagerWithPnL() (*manager.Manager, *metrics.IntradayAggregator) {
+	testManagerMetrics.PrimeIntradayGauges("MXN", "btc_mxn", "basic")
+	pnl := metrics.NewIntradayAggregator(testManagerMetrics, nil)
+	orderRepo := repository.NewInMemoryOrderRepository(testManagerLogger, testManagerMetrics)
+	positionRepo := repository.NewInMemoryPositionRepository(testManagerLogger, testManagerMetrics)
+	v := validator.NewOrderValidator(
+		&testManagerConfig.Risk,
+		testManagerLogger,
+		orderRepo,
+		testManagerMetrics,
+	)
+	rm := risk.NewRiskManager(
+		&testManagerConfig.Risk,
+		testManagerLogger,
+		orderRepo,
+		positionRepo,
+		testManagerMetrics,
+	)
+	mgr := manager.NewOrderManager(
+		testManagerConfig,
+		testManagerLogger,
+		v,
+		rm,
+		orderRepo,
+		positionRepo,
+		testManagerMetrics,
+		pnl,
+		nil,
+		true,
+	)
+	return mgr, pnl
+}
+
 func TestProcessSignal(t *testing.T) {
 	mgr := setupManager()
 	defer mgr.Stop()
@@ -319,6 +354,33 @@ func TestListOrders(t *testing.T) {
 	}
 	if len(orders) != 2 {
 		t.Errorf("Expected 2 orders for btc_mxn, got %d", len(orders))
+	}
+}
+
+// TestSyncOrderFromBitso_partialThenFilled verifies Bitso can report "partial" while the fill
+// amount already completes the order; sync must not fail by setting status=filled from amounts
+// before transitioning to partial (invalid filled→partial transition).
+func TestSyncOrderFromBitso_partialThenFilled(t *testing.T) {
+	mgr, pnl := setupManagerWithPnL()
+	defer mgr.Stop()
+
+	ctx := context.Background()
+	const oid = "bitso-stage-1"
+	if _, err := mgr.RecordOrderPlaced(ctx, oid, "btc_mxn", "buy", 0.01, 1_000_000, "basic"); err != nil {
+		t.Fatalf("RecordOrderPlaced: %v", err)
+	}
+	// Exchange still says partial though notionally fully filled (rounding / API lag).
+	if err := mgr.SyncOrderFromBitso(ctx, oid, 0.01, 1_000_000, models.OrderStatusPartiallyFilled); err != nil {
+		t.Fatalf("SyncOrderFromBitso (partial): %v", err)
+	}
+	if pnl.TradesToday("btc_mxn", "basic") != 0 {
+		t.Fatalf("expected no closed-trade count after partial, got %d", pnl.TradesToday("btc_mxn", "basic"))
+	}
+	if err := mgr.SyncOrderFromBitso(ctx, oid, 0.01, 1_000_000, models.OrderStatusFilled); err != nil {
+		t.Fatalf("SyncOrderFromBitso (filled): %v", err)
+	}
+	if pnl.TradesToday("btc_mxn", "basic") != 1 {
+		t.Fatalf("expected 1 closed trade after filled, got %d", pnl.TradesToday("btc_mxn", "basic"))
 	}
 }
 

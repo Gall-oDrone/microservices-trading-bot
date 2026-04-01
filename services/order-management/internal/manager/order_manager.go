@@ -281,7 +281,11 @@ func (m *Manager) SyncOrderFromBitso(ctx context.Context, bitsoOrderID string, f
 		if err := m.positionRepo.Update(ctx, pos); err != nil {
 			return fmt.Errorf("position update: %w", err)
 		}
-		order.RecordFill(fillDelta, avgPrice)
+		// Do not use RecordFill here: it mutates status from fill amounts, which can disagree with
+		// Bitso (e.g. remaining≈0 locally while Bitso still reports "partially filled"). That made
+		// Transition(order, partial) fail after status was already set to filled, blocking sync and
+		// intraday RecordTradeClosed. Exchange status is applied below via the state machine.
+		order.AccumulateFill(fillDelta, avgPrice)
 	}
 
 	if status != order.Status {

@@ -158,6 +158,25 @@ func (o *Order) RecordFill(filledAmount, fillPrice float64) {
 	o.UpdatedAt = time.Now()
 }
 
+// AccumulateFill updates filled quantity and average price from a fill delta without changing status.
+// Used when syncing from the exchange so Bitso-reported status is applied only via the state machine.
+func (o *Order) AccumulateFill(fillDelta, fillPrice float64) {
+	if fillDelta <= 0 {
+		return
+	}
+	previousFilledAmount := o.FilledAmount
+	o.FilledAmount += fillDelta
+	o.RemainingAmount = o.Amount - o.FilledAmount
+	if o.RemainingAmount < 0 && o.RemainingAmount > -1e-6 {
+		o.RemainingAmount = 0
+	}
+	totalValue := (previousFilledAmount * o.AveragePrice) + (fillDelta * fillPrice)
+	if o.FilledAmount > 0 {
+		o.AveragePrice = totalValue / o.FilledAmount
+	}
+	o.UpdatedAt = time.Now()
+}
+
 // GetFillPercentage returns the fill percentage (0-100)
 func (o *Order) GetFillPercentage() float64 {
 	if o.Amount == 0 {
