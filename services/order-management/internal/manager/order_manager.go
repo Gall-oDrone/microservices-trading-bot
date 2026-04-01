@@ -15,6 +15,7 @@ import (
 	"bitso-trading-platform/order-management/internal/repository"
 	"bitso-trading-platform/order-management/internal/risk"
 	"bitso-trading-platform/order-management/internal/validator"
+	"bitso-trading-platform/shared/pkg/bitso"
 	sharedMetrics "bitso-trading-platform/shared/pkg/metrics"
 	sharedModels "bitso-trading-platform/shared/pkg/models"
 )
@@ -54,6 +55,10 @@ type Manager struct {
 	stopChan chan struct{}
 	wg       sync.WaitGroup
 	mu       sync.RWMutex
+
+	// activeBooksMu guards lastBooksWithNonZeroActive for Prometheus gauge resets.
+	activeBooksMu              sync.Mutex
+	lastBooksWithNonZeroActive map[string]struct{}
 }
 
 // NewOrderManager creates a new order manager. pnlRecorder is optional (nil disables intraday P&L metrics).
@@ -78,6 +83,8 @@ func NewOrderManager(
 		metrics:      metrics,
 		pnlRecorder:  pnlRecorder,
 		stopChan:     make(chan struct{}),
+
+		lastBooksWithNonZeroActive: make(map[string]struct{}),
 	}
 }
 
@@ -265,6 +272,43 @@ func (m *Manager) SyncOrderFromBitso(ctx context.Context, bitsoOrderID string, f
 		"order_id": order.ID, "bitso_order_id": bitsoOrderID, "status": status,
 	})
 	return nil
+}
+
+// SyncOrderFromBitsoTrades updates order state from Bitso /order_trades when /orders lookup omits the OID (e.g. completed).
+func (m *Manager) SyncOrderFromBitsoTrades(ctx context.Context, bitsoOrderID string, trades []bitso.UserOrderTrade) error {
+	if len(trades) == 0 {
+		return nil
+	}
+	order, err := m.repository.GetByBitsoOrderID(ctx, bitsoOrderID)
+	if err != nil {
+		return err
+	}
+	if order.IsClosed() {
+		return nil
+	}
+	var filledMajor, vwapNum float64
+	for _, t := range trades {
+		maj := (&t.Major).Float64()
+		pr := (&t.Price).Float64()
+		filledMajor += maj
+		vwapNum += maj * pr
+	}
+	if filledMajor <= 0 {
+		return nil
+	}
+	avgPrice := vwapNum / filledMajor
+	eps := 1e-7
+	if order.Amount > 0 {
+		eps = order.Amount * 1e-9
+		if eps < 1e-12 {
+			eps = 1e-12
+		}
+	}
+	status := models.OrderStatusPartiallyFilled
+	if filledMajor+eps >= order.Amount {
+		status = models.OrderStatusFilled
+	}
+	return m.SyncOrderFromBitso(ctx, bitsoOrderID, filledMajor, avgPrice, status)
 }
 
 // ListActiveBitsoOrderIDs returns Bitso order IDs for all active orders that have one (for sync job)
@@ -509,8 +553,18 @@ func (m *Manager) updateActiveOrderMetrics(ctx context.Context) {
 		bookCounts[order.Book]++
 	}
 
-	// Update metrics
+	m.activeBooksMu.Lock()
+	for book := range m.lastBooksWithNonZeroActive {
+		if _, ok := bookCounts[book]; !ok {
+			bookCounts[book] = 0
+		}
+	}
+	m.lastBooksWithNonZeroActive = make(map[string]struct{})
 	for book, count := range bookCounts {
 		m.metrics.SetActiveOrders(book, float64(count))
+		if count > 0 {
+			m.lastBooksWithNonZeroActive[book] = struct{}{}
+		}
 	}
+	m.activeBooksMu.Unlock()
 }

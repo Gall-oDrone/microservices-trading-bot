@@ -29,6 +29,7 @@ type BitsoSyncJob struct {
 type OrderManagerSync interface {
 	ListActiveBitsoOrderIDs(ctx context.Context) ([]string, error)
 	SyncOrderFromBitso(ctx context.Context, bitsoOrderID string, filledAmount, avgPrice float64, status models.OrderStatus) error
+	SyncOrderFromBitsoTrades(ctx context.Context, bitsoOrderID string, trades []bitso.UserOrderTrade) error
 }
 
 // NewBitsoSyncJob creates a sync job that polls Bitso every interval. metrics is optional (Phase 2).
@@ -85,27 +86,52 @@ func (j *BitsoSyncJob) syncOnce(ctx context.Context) {
 		}
 		return
 	}
-	for _, uo := range orders {
-		bitsoOID := uo.OID
-		original := (&uo.OriginalAmount).Float64()
-		unfilled := (&uo.UnfilledAmount).Float64()
-		filledAmount := original - unfilled
-		price := (&uo.Price).Float64()
-		avgPrice := price
-		if filledAmount > 0 && original > 0 {
-			// approximate avg from price (Bitso doesn't give per-fill in UserOrder; use limit price)
-			avgPrice = price
+	seen := make(map[string]struct{}, len(orders))
+	for i := range orders {
+		uo := &orders[i]
+		seen[uo.OID] = struct{}{}
+		j.applyBitsoUserOrder(ctx, uo)
+	}
+	for _, oid := range oids {
+		if _, ok := seen[oid]; ok {
+			continue
 		}
-		status := bitsoOrderStatusToModel(uo.Status)
-		if err := j.orderManager.SyncOrderFromBitso(ctx, bitsoOID, filledAmount, avgPrice, status); err != nil {
-			j.log.Debug("SyncOrderFromBitso failed", map[string]interface{}{
-				"bitso_order_id": bitsoOID,
+		trades, err := j.bitsoClient.OrderTrades(oid, nil)
+		if err != nil {
+			j.log.Warn("OrderTrades fallback failed", map[string]interface{}{
+				"bitso_order_id": oid,
+				"error":          err.Error(),
+			})
+			continue
+		}
+		if err := j.orderManager.SyncOrderFromBitsoTrades(ctx, oid, trades); err != nil {
+			j.log.Debug("SyncOrderFromBitsoTrades failed", map[string]interface{}{
+				"bitso_order_id": oid,
 				"error":          err.Error(),
 			})
 		}
 	}
 	if j.metrics != nil {
 		j.metrics.SetBitsoSyncLastSuccessTimestamp(float64(time.Now().Unix()))
+	}
+}
+
+func (j *BitsoSyncJob) applyBitsoUserOrder(ctx context.Context, uo *bitso.UserOrder) {
+	bitsoOID := uo.OID
+	original := (&uo.OriginalAmount).Float64()
+	unfilled := (&uo.UnfilledAmount).Float64()
+	filledAmount := original - unfilled
+	price := (&uo.Price).Float64()
+	avgPrice := price
+	if filledAmount > 0 && original > 0 {
+		avgPrice = price
+	}
+	status := bitsoOrderStatusToModel(uo.Status)
+	if err := j.orderManager.SyncOrderFromBitso(ctx, bitsoOID, filledAmount, avgPrice, status); err != nil {
+		j.log.Debug("SyncOrderFromBitso failed", map[string]interface{}{
+			"bitso_order_id": bitsoOID,
+			"error":          err.Error(),
+		})
 	}
 }
 
