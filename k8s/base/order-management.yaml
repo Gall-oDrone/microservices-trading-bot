@@ -50,6 +50,20 @@ spec:
               key: kafka-topic-orders
         - name: KAFKA_CONSUMER_GROUP
           value: "order-management-group"
+        - name: KAFKA_TOPIC_SIGNALS
+          valueFrom:
+            configMapKeyRef:
+              name: trading-config
+              key: kafka-topic-signals
+        - name: KAFKA_TOPIC_ORDERS_PLACED
+          valueFrom:
+            configMapKeyRef:
+              name: trading-config
+              key: kafka-topic-orders-placed
+        - name: KAFKA_SIGNALS_AUTO_OFFSET_RESET
+          value: "earliest"
+        - name: STORAGE_TYPE
+          value: "redis"
         - name: REDIS_HOST
           valueFrom:
             configMapKeyRef:

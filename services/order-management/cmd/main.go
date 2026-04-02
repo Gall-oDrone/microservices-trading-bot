@@ -44,6 +44,7 @@ type Application struct {
 	httpServer           *server.HTTPServer
 	orderManager         *manager.Manager
 	pnlRecorder          *metrics.IntradayAggregator
+	signalsConsumer      *consumer.SignalsConsumer
 	ordersPlacedConsumer *consumer.OrdersPlacedConsumer
 	bitsoSyncJob         *sync.BitsoSyncJob
 
@@ -148,6 +149,19 @@ func NewApplication() (*Application, error) {
 		"active_orders_gauge_source": map[bool]string{true: "repository", false: "bitso_open_orders"}[repositoryActiveOrdersGauge],
 	})
 
+	// Consumer for trading.signals: creates Redis orders (event_id) before trading-engine publishes trading.orders.placed.
+	signalsConsumer, _ := consumer.NewSignalsConsumer(
+		cfg.Kafka.Brokers,
+		cfg.Kafka.TopicSignals,
+		cfg.Kafka.ConsumerGroup+"-signals",
+		orderManager,
+		appLogger,
+		cfg.Kafka.SignalsAutoOffsetReset,
+	)
+	if signalsConsumer != nil {
+		appLogger.Info("Trading-signals consumer configured", map[string]interface{}{"topic": cfg.Kafka.TopicSignals})
+	}
+
 	// Optional: consumer for trading.orders.placed (from trading-engine)
 	ordersPlacedConsumer, _ := consumer.NewOrdersPlacedConsumer(
 		cfg.Kafka.Brokers,
@@ -210,6 +224,7 @@ func NewApplication() (*Application, error) {
 		httpServer:           httpServer,
 		orderManager:         orderManager,
 		pnlRecorder:          pnlRecorder,
+		signalsConsumer:      signalsConsumer,
 		ordersPlacedConsumer: ordersPlacedConsumer,
 		bitsoSyncJob:         bitsoSyncJob,
 		redisClient:          redisClient,
@@ -231,6 +246,9 @@ func (app *Application) Start() error {
 	// Feed equity and unrealized P&L into intraday aggregator periodically
 	go app.feedIntradayMetrics()
 
+	if app.signalsConsumer != nil {
+		go app.signalsConsumer.Run(app.ctx)
+	}
 	if app.ordersPlacedConsumer != nil {
 		go app.ordersPlacedConsumer.Run(app.ctx)
 	}
@@ -339,6 +357,13 @@ func (app *Application) Stop() error {
 			}
 		}
 
+		if app.signalsConsumer != nil {
+			app.logger.Info("Closing trading-signals consumer...", nil)
+			if err := app.signalsConsumer.Close(); err != nil {
+				app.logger.Error("Error closing trading-signals consumer", map[string]interface{}{"error": err})
+				lastErr = err
+			}
+		}
 		if app.ordersPlacedConsumer != nil {
 			app.logger.Info("Closing orders-placed consumer...", nil)
 			if err := app.ordersPlacedConsumer.Close(); err != nil {

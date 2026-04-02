@@ -10,9 +10,11 @@ set -euo pipefail
 NAMESPACE="${NAMESPACE:-bitso-trading-dev}"
 MONITORING_NS="${MONITORING_NS:-monitoring}"
 TOPIC="${KAFKA_TOPIC_ORDERS_PLACED:-trading.orders.placed}"
+TOPIC_SIGNALS="${KAFKA_TOPIC_SIGNALS:-trading.signals}"
 GROUP="${ORDERS_PLACED_GROUP:-order-management-group-orders-placed}"
+GROUP_SIGNALS="${SIGNALS_GROUP:-order-management-group-signals}"
 
-echo "=== Namespace: $NAMESPACE | Topic: $TOPIC | Group: $GROUP ==="
+echo "=== Namespace: $NAMESPACE | orders.placed: $TOPIC / $GROUP | signals: $TOPIC_SIGNALS / $GROUP_SIGNALS ==="
 echo ""
 
 echo "--- order-management pods ---"
@@ -36,9 +38,13 @@ else
   kubectl exec -n "$NAMESPACE" "$KAFKA_POD" -- /opt/kafka/bin/kafka-topics.sh \
     --bootstrap-server localhost:9092 --describe --topic "$TOPIC" 2>&1 || true
   echo ""
-  echo "--- kafka-consumer-groups --describe $GROUP ---"
+  echo "--- kafka-consumer-groups --describe $GROUP (orders.placed) ---"
   kubectl exec -n "$NAMESPACE" "$KAFKA_POD" -- /opt/kafka/bin/kafka-consumer-groups.sh \
     --bootstrap-server localhost:9092 --describe --group "$GROUP" 2>&1 || true
+  echo ""
+  echo "--- kafka-consumer-groups --describe $GROUP_SIGNALS (trading.signals) ---"
+  kubectl exec -n "$NAMESPACE" "$KAFKA_POD" -- /opt/kafka/bin/kafka-consumer-groups.sh \
+    --bootstrap-server localhost:9092 --describe --group "$GROUP_SIGNALS" 2>&1 || true
   echo ""
   echo "--- kafka-console-consumer (dry-run: one message if any, 5s timeout) ---"
   kubectl exec -n "$NAMESPACE" "$KAFKA_POD" -- timeout 8 \

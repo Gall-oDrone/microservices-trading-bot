@@ -147,6 +147,17 @@ func (m *Manager) ProcessSignal(ctx context.Context, signal *sharedModels.TradeS
 		return nil, fmt.Errorf("signal validation failed: %w", err)
 	}
 
+	// Idempotent replay: same Kafka signal delivered twice should not create a second order.
+	if existing, err := m.repository.GetBySignalID(ctx, signal.EventID); err == nil && existing != nil {
+		m.logger.Debug("Signal already processed", map[string]interface{}{
+			"signal_id": signal.EventID,
+			"order_id":  existing.ID,
+		})
+		return existing, nil
+	} else if err != nil && !strings.Contains(err.Error(), "not found") {
+		return nil, fmt.Errorf("get by signal: %w", err)
+	}
+
 	// Create order from signal
 	order, err := m.CreateOrder(signal)
 	if err != nil {
@@ -224,9 +235,24 @@ func (m *Manager) RecordOrderPlaced(ctx context.Context, bitsoOrderID, book, sid
 	}
 
 	if signalEventID != "" {
-		bySignal, sigErr := m.repository.GetBySignalID(ctx, signalEventID)
-		if sigErr != nil && !strings.Contains(sigErr.Error(), "not found") {
-			return nil, fmt.Errorf("get order by signal for placement: %w", sigErr)
+		// Trading-engine may publish trading.orders.placed before this service finishes ProcessSignal for the same event_id.
+		var bySignal *models.Order
+		var sigErr error
+		for attempt := 0; attempt < 60; attempt++ {
+			bySignal, sigErr = m.repository.GetBySignalID(ctx, signalEventID)
+			if sigErr == nil && bySignal != nil {
+				break
+			}
+			if sigErr != nil && !strings.Contains(sigErr.Error(), "not found") {
+				return nil, fmt.Errorf("get order by signal for placement: %w", sigErr)
+			}
+			if attempt < 59 {
+				select {
+				case <-ctx.Done():
+					return nil, ctx.Err()
+				case <-time.After(50 * time.Millisecond):
+				}
+			}
 		}
 		if sigErr == nil && bySignal != nil {
 			if bid, ok := bySignal.Metadata["bitso_order_id"].(string); ok && bid != "" {

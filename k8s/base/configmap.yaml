@@ -17,6 +17,7 @@ data:
   kafka-topic-ticker: "market-data.ticker"
   kafka-topic-orders: "trading.orders"
   kafka-topic-signals: "trading.signals"
+  kafka-topic-orders-placed: "trading.orders.placed"
   
   # Bitso API configuration
   bitso-ws-url: "wss://ws.bitso.com"
