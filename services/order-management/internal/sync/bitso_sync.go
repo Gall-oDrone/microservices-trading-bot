@@ -30,13 +30,21 @@ type BitsoSyncJob struct {
 	// lastBooksWithBitsoActive tracks books we previously published with count>0 so we can set 0 when empty.
 	activeBooksMu            sync.Mutex
 	lastBooksWithBitsoActive map[string]struct{}
+
+	// staleOrderRetries tracks how many times an order has failed lookup; after maxStaleRetries, mark as stale.
+	staleOrderMu      sync.Mutex
+	staleOrderRetries map[string]int
 }
+
+const maxStaleRetries = 3
 
 // OrderManagerSync is the subset of order-manager needed for sync
 type OrderManagerSync interface {
 	ListActiveBitsoOrderIDs(ctx context.Context) ([]string, error)
 	SyncOrderFromBitso(ctx context.Context, bitsoOrderID string, filledAmount, avgPrice float64, status models.OrderStatus) error
 	SyncOrderFromBitsoTrades(ctx context.Context, bitsoOrderID string, trades []bitso.UserOrderTrade) error
+	// MarkOrderStale marks an order as cancelled when it's missing from Bitso after retries.
+	MarkOrderStale(ctx context.Context, bitsoOrderID string) error
 }
 
 // NewBitsoSyncJob creates a sync job that polls Bitso every interval. metrics is optional (Phase 2).
@@ -51,6 +59,7 @@ func NewBitsoSyncJob(bitsoClient *bitso.Client, orderManager OrderManagerSync, l
 		interval:                 interval,
 		metrics:                  metrics,
 		lastBooksWithBitsoActive: make(map[string]struct{}),
+		staleOrderRetries:        make(map[string]int),
 	}
 }
 
@@ -89,33 +98,54 @@ func (j *BitsoSyncJob) syncOnce(ctx context.Context) {
 	if len(oids) == 0 {
 		return
 	}
-	// Bitso LookupOrders accepts comma-separated; API is /orders/oid1,oid2,...
-	orders, err := j.bitsoClient.LookupOrders(oids)
-	if err != nil {
-		j.log.Warn("Bitso LookupOrders failed", map[string]interface{}{"error": err.Error()})
-		if j.metrics != nil {
-			j.metrics.RecordBitsoSyncError()
-		}
-		return
-	}
+
+	// Try batch lookup first; if it fails (e.g., 404 due to stale orders), fall back to individual lookups
+	orders, batchErr := j.bitsoClient.LookupOrders(oids)
 	seen := make(map[string]struct{}, len(orders))
-	for i := range orders {
-		uo := &orders[i]
-		seen[uo.OID] = struct{}{}
-		j.applyBitsoUserOrder(ctx, uo)
+	
+	if batchErr == nil {
+		// Batch succeeded, process results
+		for i := range orders {
+			uo := &orders[i]
+			seen[uo.OID] = struct{}{}
+			j.applyBitsoUserOrder(ctx, uo)
+			j.clearStaleRetry(uo.OID)
+		}
+	} else {
+		j.log.Info("Batch LookupOrders failed, falling back to individual lookups", map[string]interface{}{
+			"error":      batchErr.Error(),
+			"num_orders": len(oids),
+		})
 	}
+
+	// For orders not in batch response (or if batch failed), try individual OrderTrades lookups
 	for _, oid := range oids {
 		if _, ok := seen[oid]; ok {
 			continue
 		}
+		
 		trades, err := j.bitsoClient.OrderTrades(oid, nil)
 		if err != nil {
-			j.log.Warn("OrderTrades fallback failed", map[string]interface{}{
-				"bitso_order_id": oid,
-				"error":          err.Error(),
-			})
+			// Track this failure for stale order cleanup
+			retries := j.incrementStaleRetry(oid)
+			if retries >= maxStaleRetries {
+				j.log.Info("Marking order as stale after max retries", map[string]interface{}{
+					"bitso_order_id": oid,
+					"retries":        retries,
+				})
+				if err := j.orderManager.MarkOrderStale(ctx, oid); err != nil {
+					j.log.Warn("MarkOrderStale failed", map[string]interface{}{
+						"bitso_order_id": oid,
+						"error":          err.Error(),
+					})
+				}
+				j.clearStaleRetry(oid)
+			}
 			continue
 		}
+		
+		// Got trades, sync the order
+		j.clearStaleRetry(oid)
 		if err := j.orderManager.SyncOrderFromBitsoTrades(ctx, oid, trades); err != nil {
 			j.log.Debug("SyncOrderFromBitsoTrades failed", map[string]interface{}{
 				"bitso_order_id": oid,
@@ -123,9 +153,23 @@ func (j *BitsoSyncJob) syncOnce(ctx context.Context) {
 			})
 		}
 	}
+	
 	if j.metrics != nil {
 		j.metrics.SetBitsoSyncLastSuccessTimestamp(float64(time.Now().Unix()))
 	}
+}
+
+func (j *BitsoSyncJob) incrementStaleRetry(oid string) int {
+	j.staleOrderMu.Lock()
+	defer j.staleOrderMu.Unlock()
+	j.staleOrderRetries[oid]++
+	return j.staleOrderRetries[oid]
+}
+
+func (j *BitsoSyncJob) clearStaleRetry(oid string) {
+	j.staleOrderMu.Lock()
+	defer j.staleOrderMu.Unlock()
+	delete(j.staleOrderRetries, oid)
 }
 
 // refreshOpenOrdersGauge sets Prometheus orders_active{book} from GET /open_orders (Bitso source of truth).

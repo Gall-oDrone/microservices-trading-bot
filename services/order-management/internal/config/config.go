@@ -99,9 +99,12 @@ type TradingEngineConfig struct {
 
 // BitsoConfig holds Bitso API config for the sync job (optional)
 type BitsoConfig struct {
-	APIBaseURL string `json:"api_base_url"`
-	APIKey     string `json:"api_key"`
-	APISecret  string `json:"api_secret"`
+	APIBaseURL            string        `json:"api_base_url"`
+	APIKey                string        `json:"api_key"`
+	APISecret             string        `json:"api_secret"`
+	SyncInterval          time.Duration `json:"sync_interval"`           // Interval for polling /orders (default 10s)
+	UserTradesPollEnabled bool          `json:"user_trades_poll_enabled"` // Enable /user_trades polling for fill discovery
+	UserTradesPollInterval time.Duration `json:"user_trades_poll_interval"` // Interval for /user_trades polling (default 15s)
 }
 
 // RiskConfig holds risk management configuration
@@ -172,9 +175,12 @@ func Load() (*Config, error) {
 			RetryDelay: getEnvAsDuration("TRADING_ENGINE_RETRY_DELAY", 1*time.Second),
 		},
 		Bitso: BitsoConfig{
-			APIBaseURL: getEnv("BITSO_API_BASE_URL", "https://stage.bitso.com/api"),
-			APIKey:     bitsoAPIKeyFromEnv(),
-			APISecret:  bitsoAPISecretFromEnv(),
+			APIBaseURL:             getEnv("BITSO_API_BASE_URL", "https://stage.bitso.com/api"),
+			APIKey:                 bitsoAPIKeyFromEnv(),
+			APISecret:              bitsoAPISecretFromEnv(),
+			SyncInterval:           getEnvAsDuration("BITSO_SYNC_INTERVAL", 10*time.Second),
+			UserTradesPollEnabled:  getEnvAsBool("BITSO_USER_TRADES_POLL_ENABLED", true),
+			UserTradesPollInterval: getEnvAsDuration("BITSO_USER_TRADES_POLL_INTERVAL", 15*time.Second),
 		},
 		Risk: RiskConfig{
 			MaxOpenOrders:        getEnvAsInt("MAX_OPEN_ORDERS", 10),

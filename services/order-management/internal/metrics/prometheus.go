@@ -54,6 +54,11 @@ type MetricsCollector struct {
 	bitsoSyncErrorsTotal          prometheus.Counter
 	bitsoSyncLastSuccessTimestamp prometheus.Gauge
 
+	// User-trades poller (Phase 3: continuous fill discovery)
+	userTradesPollAttemptsTotal    prometheus.Counter
+	userTradesPollErrorsTotal      prometheus.Counter
+	userTradesLastPollTimestamp    prometheus.Gauge
+
 	// Session risk endpoint (Phase 2)
 	sessionRiskRequestsTotal     prometheus.Counter
 	sessionRiskRequestErrorsTotal prometheus.Counter
@@ -260,6 +265,20 @@ func NewMetricsCollector(serviceName string) *MetricsCollector {
 			Help: "Unix timestamp of last successful Bitso sync; alert if stale",
 		}),
 
+		// User-trades poller (Phase 3: continuous fill discovery)
+		userTradesPollAttemptsTotal: promauto.NewCounter(prometheus.CounterOpts{
+			Name: "user_trades_poll_attempts_total",
+			Help: "Total number of user-trades poll attempts",
+		}),
+		userTradesPollErrorsTotal: promauto.NewCounter(prometheus.CounterOpts{
+			Name: "user_trades_poll_errors_total",
+			Help: "Total number of user-trades poll errors",
+		}),
+		userTradesLastPollTimestamp: promauto.NewGauge(prometheus.GaugeOpts{
+			Name: "user_trades_last_poll_timestamp_seconds",
+			Help: "Unix timestamp of last successful user-trades poll",
+		}),
+
 		// Session risk endpoint (Phase 2)
 		sessionRiskRequestsTotal: promauto.NewCounter(prometheus.CounterOpts{
 			Name: "session_risk_requests_total",
@@ -462,6 +481,20 @@ func (mc *MetricsCollector) RecordBitsoSyncError() {
 
 func (mc *MetricsCollector) SetBitsoSyncLastSuccessTimestamp(ts float64) {
 	mc.bitsoSyncLastSuccessTimestamp.Set(ts)
+}
+
+// User-trades poller (Phase 3)
+
+func (mc *MetricsCollector) RecordUserTradesPollAttempt() {
+	mc.userTradesPollAttemptsTotal.Inc()
+}
+
+func (mc *MetricsCollector) RecordUserTradesPollError() {
+	mc.userTradesPollErrorsTotal.Inc()
+}
+
+func (mc *MetricsCollector) SetUserTradesLastPollTimestamp(ts float64) {
+	mc.userTradesLastPollTimestamp.Set(ts)
 }
 
 // Session risk endpoint (Phase 2)

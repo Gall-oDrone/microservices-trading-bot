@@ -54,7 +54,12 @@ func (sm *StateMachine) initializeTransitions() {
 		// Final states have no allowed transitions
 		models.OrderStatusFilled:    {},
 		models.OrderStatusCancelled: {},
-		models.OrderStatusRejected:  {},
+		// Rejected orders can transition to filled if they were actually placed on Bitso
+		// and got filled despite the risk check failure in order-management.
+		models.OrderStatusRejected: {
+			models.OrderStatusFilled,
+			models.OrderStatusPartiallyFilled,
+		},
 	}
 }
 

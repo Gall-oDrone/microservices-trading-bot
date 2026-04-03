@@ -47,6 +47,7 @@ type Application struct {
 	signalsConsumer      *consumer.SignalsConsumer
 	ordersPlacedConsumer *consumer.OrdersPlacedConsumer
 	bitsoSyncJob         *sync.BitsoSyncJob
+	userTradesPoller     *sync.UserTradesPoller
 
 	// Redis client (non-nil when STORAGE_TYPE=redis; closed on shutdown)
 	redisClient *redis.Client
@@ -177,13 +178,26 @@ func NewApplication() (*Application, error) {
 
 	// Optional: Bitso sync job (poll order status when Bitso credentials set)
 	var bitsoSyncJob *sync.BitsoSyncJob
+	var userTradesPoller *sync.UserTradesPoller
 	if cfg.Bitso.APIKey != "" && cfg.Bitso.APISecret != "" {
 		bitsoClient := bitso.NewClient()
 		bitsoClient.SetLogLevel(bitso.LogLevelInfo)
 		bitsoClient.SetAuth(cfg.Bitso.APIKey, cfg.Bitso.APISecret)
 		bitsoClient.SetAPIBaseURL(cfg.Bitso.APIBaseURL)
-		bitsoSyncJob = sync.NewBitsoSyncJob(bitsoClient, orderManager, appLogger, 60*time.Second, metricsCollector)
-		appLogger.Info("Bitso sync job configured", nil)
+		bitsoSyncJob = sync.NewBitsoSyncJob(bitsoClient, orderManager, appLogger, cfg.Bitso.SyncInterval, metricsCollector)
+		appLogger.Info("Bitso sync job configured", map[string]interface{}{"interval": cfg.Bitso.SyncInterval})
+		// User-trades poller for continuous fill discovery
+		if cfg.Bitso.UserTradesPollEnabled {
+			book := os.Getenv("BITSO_BOOK")
+			if book == "" {
+				book = "btc_mxn"
+			}
+			userTradesPoller = sync.NewUserTradesPoller(bitsoClient, orderManager, appLogger, cfg.Bitso.UserTradesPollInterval, book, metricsCollector)
+			appLogger.Info("User-trades poller configured", map[string]interface{}{
+				"interval": cfg.Bitso.UserTradesPollInterval,
+				"book":     book,
+			})
+		}
 	}
 
 	// Initialize health manager
@@ -227,6 +241,7 @@ func NewApplication() (*Application, error) {
 		signalsConsumer:      signalsConsumer,
 		ordersPlacedConsumer: ordersPlacedConsumer,
 		bitsoSyncJob:         bitsoSyncJob,
+		userTradesPoller:     userTradesPoller,
 		redisClient:          redisClient,
 		ctx:                  ctx,
 		cancel:               cancel,
@@ -254,6 +269,9 @@ func (app *Application) Start() error {
 	}
 	if app.bitsoSyncJob != nil {
 		go app.bitsoSyncJob.Run(app.ctx)
+	}
+	if app.userTradesPoller != nil {
+		go app.userTradesPoller.Run(app.ctx)
 	}
 
 	// Start metrics collection

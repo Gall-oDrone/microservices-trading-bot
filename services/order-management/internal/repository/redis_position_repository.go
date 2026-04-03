@@ -13,7 +13,10 @@ import (
 	"bitso-trading-platform/order-management/internal/models"
 )
 
+const positionKeyPrefix = "om:position:"
+
 // RedisPositionRepository implements PositionRepository using Redis.
+// Positions are keyed by book (e.g., "btc_mxn") for quick lookups.
 type RedisPositionRepository struct {
 	client  *redis.Client
 	logger  *logger.Logger
@@ -29,8 +32,8 @@ func NewRedisPositionRepository(client *redis.Client, logger *logger.Logger, met
 	}
 }
 
-func positionKey(book string) string { return keyPrefix + "position:" + book }
-func positionBooksKey() string       { return keyPrefix + "position:books" }
+func positionKey(book string) string { return positionKeyPrefix + book }
+func positionBooksKey() string       { return positionKeyPrefix + "books" }
 
 // Create creates a new position.
 func (r *RedisPositionRepository) Create(ctx context.Context, position *models.Position) error {
@@ -41,6 +44,14 @@ func (r *RedisPositionRepository) Create(ctx context.Context, position *models.P
 		return fmt.Errorf("invalid position: %w", err)
 	}
 
+	exists, err := r.client.Exists(ctx, positionKey(position.Book)).Result()
+	if err != nil {
+		return fmt.Errorf("redis check exists: %w", err)
+	}
+	if exists > 0 {
+		return fmt.Errorf("position already exists for book: %s", position.Book)
+	}
+
 	data, err := json.Marshal(position)
 	if err != nil {
 		return fmt.Errorf("marshal position: %w", err)
@@ -49,12 +60,17 @@ func (r *RedisPositionRepository) Create(ctx context.Context, position *models.P
 	pipe := r.client.Pipeline()
 	pipe.Set(ctx, positionKey(position.Book), data, 0)
 	pipe.SAdd(ctx, positionBooksKey(), position.Book)
+
 	_, err = pipe.Exec(ctx)
 	if err != nil {
 		return fmt.Errorf("redis create position: %w", err)
 	}
 
-	r.logger.Debug("Position created", map[string]interface{}{"book": position.Book, "side": position.Side, "size": position.Size})
+	r.logger.Debug("Position created", map[string]interface{}{
+		"book": position.Book,
+		"side": position.Side,
+		"size": position.Size,
+	})
 	return nil
 }
 
@@ -67,16 +83,30 @@ func (r *RedisPositionRepository) Update(ctx context.Context, position *models.P
 		return fmt.Errorf("invalid position: %w", err)
 	}
 
+	exists, err := r.client.Exists(ctx, positionKey(position.Book)).Result()
+	if err != nil {
+		return fmt.Errorf("redis check exists: %w", err)
+	}
+	if exists == 0 {
+		return fmt.Errorf("position not found for book: %s", position.Book)
+	}
+
 	data, err := json.Marshal(position)
 	if err != nil {
 		return fmt.Errorf("marshal position: %w", err)
 	}
 
-	if err := r.client.Set(ctx, positionKey(position.Book), data, 0).Err(); err != nil {
+	err = r.client.Set(ctx, positionKey(position.Book), data, 0).Err()
+	if err != nil {
 		return fmt.Errorf("redis update position: %w", err)
 	}
 
-	r.logger.Debug("Position updated", map[string]interface{}{"book": position.Book, "size": position.Size})
+	r.logger.Debug("Position updated", map[string]interface{}{
+		"book":         position.Book,
+		"side":         position.Side,
+		"size":         position.Size,
+		"realized_pnl": position.RealizedPnL,
+	})
 	return nil
 }
 
@@ -87,15 +117,18 @@ func (r *RedisPositionRepository) Get(ctx context.Context, book string) (*models
 		if err == redis.Nil {
 			return nil, fmt.Errorf("position not found for book: %s", book)
 		}
-		return nil, fmt.Errorf("redis get: %w", err)
+		return nil, fmt.Errorf("redis get position: %w", err)
 	}
+
 	var position models.Position
 	if err := json.Unmarshal(data, &position); err != nil {
 		return nil, fmt.Errorf("unmarshal position: %w", err)
 	}
+
 	if position.Metadata == nil {
 		position.Metadata = make(map[string]interface{})
 	}
+
 	return position.Clone(), nil
 }
 
@@ -105,6 +138,7 @@ func (r *RedisPositionRepository) GetAll(ctx context.Context) ([]*models.Positio
 	if err != nil {
 		return nil, fmt.Errorf("redis smembers: %w", err)
 	}
+
 	positions := make([]*models.Position, 0, len(books))
 	for _, book := range books {
 		pos, err := r.Get(ctx, book)
@@ -113,6 +147,7 @@ func (r *RedisPositionRepository) GetAll(ctx context.Context) ([]*models.Positio
 		}
 		positions = append(positions, pos)
 	}
+
 	return positions, nil
 }
 
@@ -124,22 +159,34 @@ func (r *RedisPositionRepository) List(ctx context.Context, filters *models.Posi
 	if err := filters.Validate(); err != nil {
 		return nil, fmt.Errorf("invalid filters: %w", err)
 	}
+
 	positions, err := r.GetAll(ctx)
 	if err != nil {
 		return nil, err
 	}
+
 	return filters.Apply(positions), nil
 }
 
 // Delete deletes a position.
 func (r *RedisPositionRepository) Delete(ctx context.Context, book string) error {
+	exists, err := r.client.Exists(ctx, positionKey(book)).Result()
+	if err != nil {
+		return fmt.Errorf("redis check exists: %w", err)
+	}
+	if exists == 0 {
+		return fmt.Errorf("position not found for book: %s", book)
+	}
+
 	pipe := r.client.Pipeline()
 	pipe.Del(ctx, positionKey(book))
 	pipe.SRem(ctx, positionBooksKey(), book)
-	_, err := pipe.Exec(ctx)
+
+	_, err = pipe.Exec(ctx)
 	if err != nil {
 		return fmt.Errorf("redis delete position: %w", err)
 	}
+
 	r.logger.Debug("Position deleted", map[string]interface{}{"book": book})
 	return nil
 }
@@ -150,13 +197,15 @@ func (r *RedisPositionRepository) GetOpenPositions(ctx context.Context) ([]*mode
 	if err != nil {
 		return nil, err
 	}
-	open := make([]*models.Position, 0)
-	for _, p := range positions {
-		if p.IsOpen() {
-			open = append(open, p)
+
+	openPositions := make([]*models.Position, 0)
+	for _, pos := range positions {
+		if pos.IsOpen() {
+			openPositions = append(openPositions, pos)
 		}
 	}
-	return open, nil
+
+	return openPositions, nil
 }
 
 // GetSummary retrieves a summary of all positions.
@@ -165,6 +214,7 @@ func (r *RedisPositionRepository) GetSummary(ctx context.Context) (*models.Posit
 	if err != nil {
 		return nil, err
 	}
+
 	return models.NewPositionSummary(positions), nil
 }
 

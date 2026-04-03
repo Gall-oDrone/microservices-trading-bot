@@ -336,24 +336,52 @@ func (m *Manager) RecordOrderPlaced(ctx context.Context, bitsoOrderID, book, sid
 func (m *Manager) SyncOrderFromBitso(ctx context.Context, bitsoOrderID string, filledAmount, avgPrice float64, status models.OrderStatus) error {
 	order, err := m.repository.GetByBitsoOrderID(ctx, bitsoOrderID)
 	if err != nil {
+		m.logger.Debug("SyncOrderFromBitso: GetByBitsoOrderID failed", map[string]interface{}{
+			"bitso_order_id": bitsoOrderID,
+			"error":          err.Error(),
+		})
 		return err
 	}
-	if order.IsClosed() {
+	// Skip truly closed orders (filled, cancelled) but NOT rejected.
+	// Rejected orders may have been placed on Bitso by trading-engine despite risk check failures.
+	if order.IsClosed() && order.Status != models.OrderStatusRejected {
+		m.logger.Debug("SyncOrderFromBitso: order already closed, skipping", map[string]interface{}{
+			"order_id":       order.ID,
+			"bitso_order_id": bitsoOrderID,
+			"order_status":   string(order.Status),
+		})
 		return nil // already final
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	// Reload for mutex
+	prevStatus := order.Status
 	order, err = m.repository.Get(ctx, order.ID)
 	if err != nil {
 		return err
 	}
 	if order.IsClosed() {
+		m.logger.Debug("SyncOrderFromBitso: order closed after reload, skipping", map[string]interface{}{
+			"order_id":       order.ID,
+			"bitso_order_id": bitsoOrderID,
+			"order_status":   string(order.Status),
+		})
 		return nil
 	}
 	if order.Metadata == nil {
 		order.Metadata = make(map[string]interface{})
 	}
+
+	m.logger.Info("SyncOrderFromBitso: processing", map[string]interface{}{
+		"order_id":         order.ID,
+		"bitso_order_id":   bitsoOrderID,
+		"prev_status":      string(prevStatus),
+		"current_status":   string(order.Status),
+		"target_status":    string(status),
+		"prev_filled":      order.FilledAmount,
+		"incoming_filled":  filledAmount,
+		"avg_price":        avgPrice,
+	})
 
 	var fillDelta float64
 	if filledAmount > order.FilledAmount && (status == models.OrderStatusPartiallyFilled || status == models.OrderStatusFilled) {
@@ -375,12 +403,39 @@ func (m *Manager) SyncOrderFromBitso(ctx context.Context, bitsoOrderID string, f
 		// Transition(order, partial) fail after status was already set to filled, blocking sync and
 		// intraday RecordTradeClosed. Exchange status is applied below via the state machine.
 		order.AccumulateFill(fillDelta, avgPrice)
+		m.logger.Info("SyncOrderFromBitso: applied fill", map[string]interface{}{
+			"order_id":       order.ID,
+			"bitso_order_id": bitsoOrderID,
+			"fill_delta":     fillDelta,
+			"realized_pnl":   rd,
+			"total_realized": metaFloat(order.Metadata, orderFillRealizedPnLMetaKey),
+		})
+	} else {
+		m.logger.Debug("SyncOrderFromBitso: no fill delta", map[string]interface{}{
+			"order_id":        order.ID,
+			"bitso_order_id":  bitsoOrderID,
+			"incoming_filled": filledAmount,
+			"order_filled":    order.FilledAmount,
+		})
 	}
 
 	if status != order.Status {
 		if err := m.stateMachine.Transition(order, status); err != nil {
+			m.logger.Warn("SyncOrderFromBitso: state transition failed", map[string]interface{}{
+				"order_id":       order.ID,
+				"bitso_order_id": bitsoOrderID,
+				"from_status":    string(order.Status),
+				"to_status":      string(status),
+				"error":          err.Error(),
+			})
 			return err
 		}
+		m.logger.Info("SyncOrderFromBitso: state transitioned", map[string]interface{}{
+			"order_id":       order.ID,
+			"bitso_order_id": bitsoOrderID,
+			"from_status":    string(prevStatus),
+			"to_status":      string(status),
+		})
 	}
 	if err := m.repository.Update(ctx, order); err != nil {
 		return err
@@ -391,27 +446,55 @@ func (m *Manager) SyncOrderFromBitso(ctx context.Context, bitsoOrderID string, f
 		totalRealized := metaFloat(order.Metadata, orderFillRealizedPnLMetaKey)
 		m.recordTradeClosedForIntraday(order, map[string]interface{}{"realized_pnl": totalRealized})
 		m.appendFillLedger(ctx, order, bitsoOrderID, totalRealized)
+		m.logger.Info("SyncOrderFromBitso: recorded fill metrics", map[string]interface{}{
+			"order_id":       order.ID,
+			"bitso_order_id": bitsoOrderID,
+			"book":           order.Book,
+			"strategy":       order.Strategy,
+			"realized_pnl":   totalRealized,
+		})
 	case models.OrderStatusCancelled:
 		m.metrics.RecordOrderCancelled(order.Book, order.Strategy, "exchange")
 	}
 	m.updateActiveOrderMetrics(ctx)
-	m.logger.Debug("Synced order from Bitso", map[string]interface{}{
-		"order_id": order.ID, "bitso_order_id": bitsoOrderID, "status": status,
-	})
 	return nil
 }
 
 // SyncOrderFromBitsoTrades updates order state from Bitso /order_trades when /orders lookup omits the OID (e.g. completed).
 func (m *Manager) SyncOrderFromBitsoTrades(ctx context.Context, bitsoOrderID string, trades []bitso.UserOrderTrade) error {
 	if len(trades) == 0 {
+		m.logger.Info("SyncOrderFromBitsoTrades: no trades", map[string]interface{}{
+			"bitso_order_id": bitsoOrderID,
+		})
 		return nil
 	}
 	order, err := m.repository.GetByBitsoOrderID(ctx, bitsoOrderID)
 	if err != nil {
+		m.logger.Info("SyncOrderFromBitsoTrades: GetByBitsoOrderID failed", map[string]interface{}{
+			"bitso_order_id": bitsoOrderID,
+			"error":          err.Error(),
+		})
 		return err
 	}
-	if order.IsClosed() {
+	// Skip truly closed orders (filled, cancelled) but NOT rejected.
+	// Rejected orders may have been placed on Bitso by trading-engine despite risk check failures.
+	// If they got filled, we still need to process them for P&L.
+	if order.IsClosed() && order.Status != models.OrderStatusRejected {
+		m.logger.Info("SyncOrderFromBitsoTrades: order already closed", map[string]interface{}{
+			"order_id":       order.ID,
+			"bitso_order_id": bitsoOrderID,
+			"order_status":   string(order.Status),
+		})
 		return nil
+	}
+
+	// If order was rejected but has fills, we need to recover it
+	wasRejected := order.Status == models.OrderStatusRejected
+	if wasRejected {
+		m.logger.Info("SyncOrderFromBitsoTrades: recovering rejected order with Bitso fills", map[string]interface{}{
+			"order_id":       order.ID,
+			"bitso_order_id": bitsoOrderID,
+		})
 	}
 	var filledMajor, vwapNum float64
 	for _, t := range trades {
@@ -421,6 +504,10 @@ func (m *Manager) SyncOrderFromBitsoTrades(ctx context.Context, bitsoOrderID str
 		vwapNum += maj * pr
 	}
 	if filledMajor <= 0 {
+		m.logger.Debug("SyncOrderFromBitsoTrades: no filled amount", map[string]interface{}{
+			"bitso_order_id": bitsoOrderID,
+			"num_trades":     len(trades),
+		})
 		return nil
 	}
 	avgPrice := vwapNum / filledMajor
@@ -435,6 +522,17 @@ func (m *Manager) SyncOrderFromBitsoTrades(ctx context.Context, bitsoOrderID str
 	if filledMajor+eps >= order.Amount {
 		status = models.OrderStatusFilled
 	}
+
+	m.logger.Info("SyncOrderFromBitsoTrades: calculated fill", map[string]interface{}{
+		"order_id":       order.ID,
+		"bitso_order_id": bitsoOrderID,
+		"num_trades":     len(trades),
+		"filled_major":   filledMajor,
+		"order_amount":   order.Amount,
+		"avg_price":      avgPrice,
+		"computed_status": string(status),
+	})
+
 	return m.SyncOrderFromBitso(ctx, bitsoOrderID, filledMajor, avgPrice, status)
 }
 
@@ -451,6 +549,55 @@ func (m *Manager) ListActiveBitsoOrderIDs(ctx context.Context) ([]string, error)
 		}
 	}
 	return ids, nil
+}
+
+// MarkOrderStale marks an order as cancelled when it's missing from Bitso after multiple retries.
+// This cleans up stale orders that may have been completed/cancelled on Bitso but weren't synced properly.
+func (m *Manager) MarkOrderStale(ctx context.Context, bitsoOrderID string) error {
+	order, err := m.repository.GetByBitsoOrderID(ctx, bitsoOrderID)
+	if err != nil {
+		return err
+	}
+	if order.IsClosed() {
+		return nil // already closed
+	}
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	// Reload under lock
+	order, err = m.repository.Get(ctx, order.ID)
+	if err != nil {
+		return err
+	}
+	if order.IsClosed() {
+		return nil
+	}
+
+	// Mark as cancelled with stale reason
+	if order.Metadata == nil {
+		order.Metadata = make(map[string]interface{})
+	}
+	order.Metadata["stale_reason"] = "missing_from_bitso_after_retries"
+	order.Metadata["stale_at"] = time.Now().UTC().Format(time.RFC3339)
+
+	if err := m.stateMachine.Transition(order, models.OrderStatusCancelled); err != nil {
+		return err
+	}
+	if err := m.repository.Update(ctx, order); err != nil {
+		return err
+	}
+
+	m.metrics.RecordOrderCancelled(order.Book, order.Strategy, "stale")
+	m.updateActiveOrderMetrics(ctx)
+
+	m.logger.Info("Order marked as stale", map[string]interface{}{
+		"order_id":       order.ID,
+		"bitso_order_id": bitsoOrderID,
+		"book":           order.Book,
+	})
+
+	return nil
 }
 
 func (m *Manager) getOrCreatePosition(ctx context.Context, book string) (*models.Position, error) {
@@ -625,6 +772,11 @@ func (m *Manager) CancelOrder(ctx context.Context, orderID string) error {
 // GetOrder retrieves an order by ID
 func (m *Manager) GetOrder(ctx context.Context, orderID string) (*models.Order, error) {
 	return m.repository.Get(ctx, orderID)
+}
+
+// GetOrderByBitsoOrderID retrieves an order by its Bitso exchange order ID.
+func (m *Manager) GetOrderByBitsoOrderID(ctx context.Context, bitsoOrderID string) (*models.Order, error) {
+	return m.repository.GetByBitsoOrderID(ctx, bitsoOrderID)
 }
 
 // ListOrders lists orders with optional filters
