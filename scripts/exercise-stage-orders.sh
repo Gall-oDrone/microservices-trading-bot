@@ -20,6 +20,7 @@
 #   BOOK                (default btc_mxn) — must match trading-engine configured book
 #   TARGET_NOTIONAL_MXN (default 2000) — target major*quote ≈ MXN for sizing amount
 #   SLEEP_BETWEEN_SEC   (default 60) — wait after BUY before SELL (fills + sync)
+#   SINGLE_LEG          (default unset) — set to "buy" or "sell" to publish only that leg (two runs: buy then sell)
 #   KAFKA_PRODUCER_CMD  optional: overrides producer (stdin → Kafka); set automatically when USE_KUBECTL=1
 
 set -euo pipefail
@@ -34,6 +35,7 @@ BOOK="${BOOK:-btc_mxn}"
 # Default notional: Bitso stage accounts often have limited MXN; override if your stage wallet is funded.
 TARGET_NOTIONAL_MXN="${TARGET_NOTIONAL_MXN:-2000}"
 SLEEP_BETWEEN_SEC="${SLEEP_BETWEEN_SEC:-60}"
+SINGLE_LEG="${SINGLE_LEG:-}"
 MIN_MAJOR="${MIN_MAJOR:-0.001}"
 MAX_MAJOR="${MAX_MAJOR:-0.1}"
 USE_KUBECTL="${USE_KUBECTL:-0}"
@@ -46,6 +48,10 @@ NC='\033[0m'
 info() { echo -e "${BLUE}[INFO]${NC} $*"; }
 ok() { echo -e "${GREEN}[OK]${NC} $*"; }
 fail() { echo -e "${RED}[FAIL]${NC} $*"; exit 1; }
+
+if [[ -n "$SINGLE_LEG" && "$SINGLE_LEG" != "buy" && "$SINGLE_LEG" != "sell" ]]; then
+  fail "SINGLE_LEG must be empty (full BUY+SELL), buy, or sell"
+fi
 
 if ! command -v jq &>/dev/null; then
   fail "jq is required (sudo yum install -y jq / apt install jq)"
@@ -111,7 +117,10 @@ echo "  TARGET_NOTIONAL_MXN: $TARGET_NOTIONAL_MXN"
 echo "  Amount (major):     $AMT"
 echo "  BUY  limit price:   $BUY_PRICE MXN (≤ ask×1.05)"
 echo "  SELL limit price:   $SELL_PRICE MXN (≥ bid×0.95)"
-echo "  Sleep before SELL:  ${SLEEP_BETWEEN_SEC}s"
+if [[ -z "$SINGLE_LEG" ]]; then
+  echo "  Sleep before SELL:  ${SLEEP_BETWEEN_SEC}s"
+fi
+echo "  SINGLE_LEG:         ${SINGLE_LEG:-(full BUY then SELL)}"
 echo "======================================================"
 echo ""
 
@@ -133,18 +142,38 @@ produce_line() {
   fail "No Kafka producer: USE_KUBECTL=1, install kcat, set KAFKA_PRODUCER_CMD, or use docker-compose kafka service."
 }
 
-info "Publishing BUY signal..."
-echo "$buy_json"
-produce_line "$buy_json"
-ok "BUY published"
+if [[ -z "$SINGLE_LEG" || "$SINGLE_LEG" == "buy" ]]; then
+  info "Publishing BUY signal..."
+  echo "$buy_json"
+  produce_line "$buy_json"
+  ok "BUY published"
+fi
 
-info "Waiting ${SLEEP_BETWEEN_SEC}s (allow fill + order-management Bitso sync + metrics)..."
-sleep "$SLEEP_BETWEEN_SEC"
+if [[ "$SINGLE_LEG" == "buy" ]]; then
+  echo ""
+  ok "Done (buy only). Watch Grafana: orders_created_total, sum(orders_active), orders_filled_total (order-management job)."
+  exit 0
+fi
+
+if [[ -z "$SINGLE_LEG" ]]; then
+  info "Waiting ${SLEEP_BETWEEN_SEC}s (allow fill + order-management Bitso sync + metrics)..."
+  sleep "$SLEEP_BETWEEN_SEC"
+fi
 
 # Refresh ticker for SELL validation (bid may move)
 TICKER_JSON2="$(curl -sS --max-time 15 "$TICKER_URL")" || fail "curl ticker failed (second)"
 BID2="$(echo "$TICKER_JSON2" | jq -r '.payload.bid')"
 SELL_PRICE="$(awk -v b="$BID2" 'BEGIN { printf "%.2f", b * 1.0005 }')"
+# Recompute amount from refreshed last for SELL-only leg so notional stays consistent
+if [[ "$SINGLE_LEG" == "sell" ]]; then
+  LAST2="$(echo "$TICKER_JSON2" | jq -r '.payload.last')"
+  RAW_AMT2="$(awk -v t="$TARGET_NOTIONAL_MXN" -v l="$LAST2" 'BEGIN { printf "%.8f", (t / l) }')"
+  AMT="$(awk -v a="$RAW_AMT2" -v mn="$MIN_MAJOR" -v mx="$MAX_MAJOR" 'BEGIN {
+    if (a < mn) a = mn
+    if (a > mx) a = mx
+    printf "%.8f", a
+  }')"
+fi
 sell_json="$(jq -nc \
   --arg id "$SELL_EVENT_ID" \
   --arg book "$BOOK" \
@@ -153,10 +182,12 @@ sell_json="$(jq -nc \
   --arg a "$AMT" \
   '{event_id:$id, timestamp:$ts, book:$book, strategy:"basic", signal:"SELL", price:($p|tonumber), amount:($a|tonumber), metadata:{reason:"exercise-stage-orders.sh", leg:"sell"}}')"
 
-info "Publishing SELL signal (bid refreshed → sell price $SELL_PRICE MXN)..."
-echo "$sell_json"
-produce_line "$sell_json"
-ok "SELL published"
+if [[ -z "$SINGLE_LEG" || "$SINGLE_LEG" == "sell" ]]; then
+  info "Publishing SELL signal (bid refreshed → sell price $SELL_PRICE MXN)..."
+  echo "$sell_json"
+  produce_line "$sell_json"
+  ok "SELL published"
+fi
 
 echo ""
 ok "Done. Watch Grafana: orders_created_total, sum(orders_active), orders_filled_total (order-management job)."
