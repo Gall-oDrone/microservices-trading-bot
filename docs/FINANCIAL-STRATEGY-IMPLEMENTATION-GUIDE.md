@@ -2,9 +2,22 @@
 
 This document outlines the recommended approach for implementing financial metric and model-based trading strategies, backtesting them using the Bitso Stage API, and validating them in a controlled environment before any production consideration.
 
-**Document Version:** 1.0  
+**Document Version:** 1.1  
 **Date:** April 7, 2026  
+**Last Updated:** April 7, 2026  
 **Prerequisites:** Phases 1-6 of [INTRADAY-STRATEGY-IMPLEMENTATION-PLAN.md](../INTRADAY-STRATEGY-IMPLEMENTATION-PLAN.md) complete; P&L fixes from [PNL-DEBUGGING-AND-FIXES.md](PNL-DEBUGGING-AND-FIXES.md) applied.
+
+---
+
+## Implementation Progress
+
+| Phase | Status | Completion Date | Notes |
+|-------|--------|-----------------|-------|
+| **Phase 1: Foundation Fixes** | ✅ Complete | April 2026 | Pre-trade validation, Redis persistence, integration tests |
+| **Phase 2: Indicator Infrastructure** | ✅ Complete | April 2026 | All core indicators implemented (SMA, EMA, RSI, Bollinger, ATR, VWAP) |
+| **Phase 3: Strategy Framework** | ✅ Complete | April 7, 2026 | Enhanced strategy interface, registry, mean reversion + momentum strategies |
+| **Phase 4: Backtest Integration** | 🔄 Pending | - | Unified code, promotion workflow |
+| **Phase 5: Stage Observation** | 🔄 Pending | - | Stage deployment, monitoring |
 
 ---
 
@@ -235,9 +248,11 @@ bar:btc_mxn:5m:{timestamp}  → {"o": 1189000, "h": 1192000, "l": 1188000, "c": 
 
 ## Implementation Phases
 
-### Phase 1: Foundation Fixes (Priority: Critical)
+### Phase 1: Foundation Fixes (Priority: Critical) ✅ COMPLETE
 
 **Goal:** Ensure infrastructure reliability before any strategy development.
+
+**Status:** Completed - Pre-trade validation endpoint added, Redis persistence configured, integration tests created.
 
 #### 1.1 Pre-Trade Risk Alignment
 
@@ -292,9 +307,23 @@ Create automated tests for the full trading cycle:
 
 ---
 
-### Phase 2: Indicator Infrastructure
+### Phase 2: Indicator Infrastructure ✅ COMPLETE
 
 **Goal:** Provide computed technical indicators for strategies to consume.
+
+**Status:** Completed - All core indicators implemented with Redis storage and HTTP API.
+
+**Implemented Files:**
+- `services/strategy-executor/internal/indicators/interface.go` - Indicator interfaces
+- `services/strategy-executor/internal/indicators/sma.go` - Simple Moving Average
+- `services/strategy-executor/internal/indicators/ema.go` - Exponential Moving Average
+- `services/strategy-executor/internal/indicators/rsi.go` - Relative Strength Index
+- `services/strategy-executor/internal/indicators/bollinger.go` - Bollinger Bands
+- `services/strategy-executor/internal/indicators/atr.go` - Average True Range
+- `services/strategy-executor/internal/indicators/vwap.go` - Volume Weighted Average Price
+- `services/strategy-executor/internal/indicators/service.go` - Indicator computation service
+- `services/strategy-executor/internal/indicators/store.go` - Redis + in-memory storage
+- `services/strategy-executor/internal/indicators/data_provider.go` - Market data provider
 
 #### 2.1 Core Indicators
 
@@ -347,9 +376,32 @@ GET /api/v1/indicators/{book}/snapshot  # All indicators at once
 
 ---
 
-### Phase 3: Strategy Framework
+### Phase 3: Strategy Framework ✅ COMPLETE
 
 **Goal:** Create a pluggable framework for implementing and managing strategies.
+
+**Status:** Completed - Strategy interface, registry, and two initial strategies implemented.
+
+**Implemented Files:**
+- `services/strategy-executor/internal/strategies/enhanced_strategy.go` - Enhanced strategy interface and base implementation
+- `services/strategy-executor/internal/strategies/enhanced_registry.go` - Strategy registry with lifecycle management
+- `services/strategy-executor/internal/strategies/mean_reversion.go` - Mean Reversion strategy (Bollinger Bands)
+- `services/strategy-executor/internal/strategies/momentum_strategy.go` - Momentum strategy (RSI + EMA)
+- `services/strategy-executor/internal/server/http_server.go` - HTTP API for strategy management
+- `services/strategy-executor/cmd/main.go` - Full integration with indicators and strategies
+
+**API Endpoints:**
+- `GET /api/v1/strategies` - List all strategies
+- `POST /api/v1/strategies` - Create new strategy
+- `GET /api/v1/strategies/{name}` - Get strategy info
+- `DELETE /api/v1/strategies/{name}` - Remove strategy
+- `POST /api/v1/strategies/{name}/start` - Start strategy
+- `POST /api/v1/strategies/{name}/stop` - Stop strategy
+- `GET /api/v1/strategies/{name}/state` - Get strategy state
+- `GET /api/v1/strategies/{name}/metrics` - Get strategy metrics
+- `GET /api/v1/strategies/types` - List available strategy types
+- `GET /api/v1/strategies/stats` - Get registry statistics
+- `GET /api/v1/indicators/{book}/snapshot` - Get all indicators for a book
 
 #### 3.1 Strategy Interface and Registry
 
@@ -461,7 +513,7 @@ func main() {
 
 ---
 
-### Phase 4: Backtest Integration
+### Phase 4: Backtest Integration 🔄 PENDING
 
 **Goal:** Ensure strategy code works identically in backtest and live modes.
 

@@ -2,12 +2,16 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"bitso-trading-platform/strategy-executor/internal/health"
+	"bitso-trading-platform/strategy-executor/internal/indicators"
 	"bitso-trading-platform/strategy-executor/internal/metrics"
+	"bitso-trading-platform/strategy-executor/internal/strategies"
 )
 
 // Server represents the HTTP server
@@ -21,9 +25,11 @@ type Server struct {
 
 // Handlers holds all HTTP handlers
 type Handlers struct {
-	Health  *HealthHandler
-	Metrics *MetricsHandler
-	API     *APIHandler
+	Health     *HealthHandler
+	Metrics    *MetricsHandler
+	API        *APIHandler
+	Indicators *IndicatorHandler
+	Strategies *StrategyHandler
 }
 
 // HealthHandler handles health check endpoints
@@ -38,7 +44,17 @@ type MetricsHandler struct {
 
 // APIHandler handles API endpoints
 type APIHandler struct {
-	// Add service dependencies here
+	registry *strategies.EnhancedRegistry
+}
+
+// IndicatorHandler handles indicator API endpoints
+type IndicatorHandler struct {
+	service *indicators.Service
+}
+
+// StrategyHandler handles strategy management endpoints
+type StrategyHandler struct {
+	registry *strategies.EnhancedRegistry
 }
 
 // Config holds server configuration
@@ -47,28 +63,61 @@ type Config struct {
 	Port int
 }
 
+// ServerOptions holds optional dependencies for the server
+type ServerOptions struct {
+	IndicatorService *indicators.Service
+	StrategyRegistry *strategies.EnhancedRegistry
+}
+
 // New creates a new HTTP server
 func New(config *Config, healthMgr *health.Manager, metrics *metrics.Metrics) *Server {
+	return NewWithOptions(config, healthMgr, metrics, nil)
+}
+
+// NewWithOptions creates a new HTTP server with optional dependencies
+func NewWithOptions(config *Config, healthMgr *health.Manager, metrics *metrics.Metrics, opts *ServerOptions) *Server {
+	var registry *strategies.EnhancedRegistry
+	if opts != nil && opts.StrategyRegistry != nil {
+		registry = opts.StrategyRegistry
+	}
+
 	handlers := &Handlers{
 		Health:  &HealthHandler{healthMgr: healthMgr},
 		Metrics: &MetricsHandler{metrics: metrics},
-		API:     &APIHandler{},
+		API:     &APIHandler{registry: registry},
+	}
+
+	if opts != nil && opts.IndicatorService != nil {
+		handlers.Indicators = &IndicatorHandler{service: opts.IndicatorService}
+	}
+
+	if registry != nil {
+		handlers.Strategies = &StrategyHandler{registry: registry}
 	}
 
 	mux := http.NewServeMux()
 
-	// Health endpoints
 	mux.HandleFunc("/health", handlers.Health.Health)
 	mux.HandleFunc("/health/ready", handlers.Health.Ready)
 	mux.HandleFunc("/health/live", handlers.Health.Live)
 
-	// Metrics endpoint
 	mux.HandleFunc("/metrics", handlers.Metrics.Metrics)
 
-	// API endpoints
 	mux.HandleFunc("/api/v1/status", handlers.API.Status)
-	mux.HandleFunc("/api/v1/strategies", handlers.API.Strategies)
-	mux.HandleFunc("/api/v1/strategies/", handlers.API.StrategyHandler)
+
+	if handlers.Strategies != nil {
+		mux.HandleFunc("/api/v1/strategies", handlers.Strategies.HandleStrategies)
+		mux.HandleFunc("/api/v1/strategies/", handlers.Strategies.HandleStrategy)
+		mux.HandleFunc("/api/v1/strategies/types", handlers.Strategies.GetAvailableTypes)
+		mux.HandleFunc("/api/v1/strategies/stats", handlers.Strategies.GetStats)
+	} else {
+		mux.HandleFunc("/api/v1/strategies", handlers.API.Strategies)
+		mux.HandleFunc("/api/v1/strategies/", handlers.API.StrategyHandler)
+	}
+
+	if handlers.Indicators != nil {
+		mux.HandleFunc("/api/v1/indicators/", handlers.Indicators.HandleIndicators)
+	}
 
 	server := &http.Server{
 		Addr:         fmt.Sprintf("%s:%d", config.Host, config.Port),
@@ -294,4 +343,326 @@ func (h *APIHandler) stopStrategy(w http.ResponseWriter, r *http.Request, name s
 	// TODO: Implement stop strategy
 	w.WriteHeader(http.StatusNotImplemented)
 	w.Write([]byte("Not implemented"))
+}
+
+// Indicator endpoint handlers
+
+// HandleIndicators routes indicator requests
+// GET /api/v1/indicators/{book} - Get all indicators for a book
+// GET /api/v1/indicators/{book}/{indicator}?period=20 - Get specific indicator
+// GET /api/v1/indicators/{book}/snapshot - Get all indicators at once
+func (h *IndicatorHandler) HandleIndicators(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	path := strings.TrimPrefix(r.URL.Path, "/api/v1/indicators/")
+	parts := strings.Split(path, "/")
+
+	if len(parts) == 0 || parts[0] == "" {
+		http.Error(w, "Book is required", http.StatusBadRequest)
+		return
+	}
+
+	book := parts[0]
+
+	if len(parts) == 1 {
+		h.getAllIndicators(w, r, book)
+		return
+	}
+
+	indicator := parts[1]
+
+	if indicator == "snapshot" {
+		h.getSnapshot(w, r, book)
+		return
+	}
+
+	h.getIndicator(w, r, book, indicator)
+}
+
+// getAllIndicators returns all indicators for a book
+func (h *IndicatorHandler) getAllIndicators(w http.ResponseWriter, r *http.Request, book string) {
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
+	indicators, err := h.service.GetAllIndicators(ctx, book)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to get indicators: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(indicators)
+}
+
+// getIndicator returns a specific indicator for a book
+func (h *IndicatorHandler) getIndicator(w http.ResponseWriter, r *http.Request, book, indicator string) {
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
+	var result interface{}
+	var err error
+
+	switch indicator {
+	case "sma":
+		result, err = h.service.GetSMA(ctx, book)
+	case "ema":
+		result, err = h.service.GetEMA(ctx, book)
+	case "rsi":
+		result, err = h.service.GetRSI(ctx, book)
+	case "bollinger":
+		result, err = h.service.GetBollinger(ctx, book)
+	case "atr":
+		result, err = h.service.GetATR(ctx, book)
+	case "vwap":
+		result, err = h.service.GetVWAP(ctx, book)
+	default:
+		http.Error(w, fmt.Sprintf("Unknown indicator: %s", indicator), http.StatusBadRequest)
+		return
+	}
+
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to get indicator: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	if result == nil {
+		http.Error(w, "Indicator not found", http.StatusNotFound)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(result)
+}
+
+// getSnapshot returns all indicators for a book in a single response
+func (h *IndicatorHandler) getSnapshot(w http.ResponseWriter, r *http.Request, book string) {
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
+	snapshot, err := h.service.GetSnapshot(ctx, book)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to get snapshot: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(snapshot)
+}
+
+// HandleStrategies handles list and create strategy operations
+func (h *StrategyHandler) HandleStrategies(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		h.listStrategies(w, r)
+	case http.MethodPost:
+		h.createStrategy(w, r)
+	default:
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+// HandleStrategy handles single strategy operations
+func (h *StrategyHandler) HandleStrategy(w http.ResponseWriter, r *http.Request) {
+	path := strings.TrimPrefix(r.URL.Path, "/api/v1/strategies/")
+	parts := strings.Split(path, "/")
+
+	if len(parts) == 0 || parts[0] == "" {
+		http.Error(w, "Strategy name required", http.StatusBadRequest)
+		return
+	}
+
+	name := parts[0]
+
+	if len(parts) > 1 {
+		action := parts[1]
+		switch action {
+		case "start":
+			h.startStrategy(w, r, name)
+		case "stop":
+			h.stopStrategy(w, r, name)
+		case "state":
+			h.getStrategyState(w, r, name)
+		case "metrics":
+			h.getStrategyMetrics(w, r, name)
+		default:
+			http.Error(w, "Unknown action", http.StatusNotFound)
+		}
+		return
+	}
+
+	switch r.Method {
+	case http.MethodGet:
+		h.getStrategy(w, r, name)
+	case http.MethodDelete:
+		h.deleteStrategy(w, r, name)
+	default:
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+// listStrategies returns all registered strategies
+func (h *StrategyHandler) listStrategies(w http.ResponseWriter, r *http.Request) {
+	infos := h.registry.GetAllStrategyInfo()
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"strategies": infos,
+		"count":      len(infos),
+	})
+}
+
+// createStrategy creates and registers a new strategy
+func (h *StrategyHandler) createStrategy(w http.ResponseWriter, r *http.Request) {
+	var config strategies.StrategyConfig
+	if err := json.NewDecoder(r.Body).Decode(&config); err != nil {
+		http.Error(w, fmt.Sprintf("Invalid request body: %v", err), http.StatusBadRequest)
+		return
+	}
+
+	if config.Name == "" || config.Type == "" || config.Book == "" {
+		http.Error(w, "Name, type, and book are required", http.StatusBadRequest)
+		return
+	}
+
+	strategy, err := h.registry.CreateAndRegister(config)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to create strategy: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"name":    strategy.Name(),
+		"version": strategy.Version(),
+		"status":  "created",
+	})
+}
+
+// getStrategy returns strategy info
+func (h *StrategyHandler) getStrategy(w http.ResponseWriter, r *http.Request, name string) {
+	info, err := h.registry.GetStrategyInfo(name)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Strategy not found: %v", err), http.StatusNotFound)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(info)
+}
+
+// deleteStrategy removes a strategy
+func (h *StrategyHandler) deleteStrategy(w http.ResponseWriter, r *http.Request, name string) {
+	if err := h.registry.Remove(name); err != nil {
+		http.Error(w, fmt.Sprintf("Failed to remove strategy: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// startStrategy starts a strategy
+func (h *StrategyHandler) startStrategy(w http.ResponseWriter, r *http.Request, name string) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+	defer cancel()
+
+	if err := h.registry.Start(ctx, name); err != nil {
+		http.Error(w, fmt.Sprintf("Failed to start strategy: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"name":   name,
+		"status": "started",
+	})
+}
+
+// stopStrategy stops a strategy
+func (h *StrategyHandler) stopStrategy(w http.ResponseWriter, r *http.Request, name string) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	if err := h.registry.Stop(name); err != nil {
+		http.Error(w, fmt.Sprintf("Failed to stop strategy: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"name":   name,
+		"status": "stopped",
+	})
+}
+
+// getStrategyState returns the current state of a strategy
+func (h *StrategyHandler) getStrategyState(w http.ResponseWriter, r *http.Request, name string) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	strategy, err := h.registry.Get(name)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Strategy not found: %v", err), http.StatusNotFound)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(strategy.GetState())
+}
+
+// getStrategyMetrics returns the metrics of a strategy
+func (h *StrategyHandler) getStrategyMetrics(w http.ResponseWriter, r *http.Request, name string) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	strategy, err := h.registry.Get(name)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Strategy not found: %v", err), http.StatusNotFound)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(strategy.GetMetrics())
+}
+
+// GetAvailableTypes returns available strategy types
+func (h *StrategyHandler) GetAvailableTypes(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	types := h.registry.GetAvailableTypes()
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"types": types,
+	})
+}
+
+// GetStats returns registry statistics
+func (h *StrategyHandler) GetStats(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	stats := h.registry.GetStats()
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(stats)
 }

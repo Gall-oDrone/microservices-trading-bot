@@ -21,6 +21,12 @@ type Config struct {
 	// Market data service configuration
 	MarketData MarketDataConfig `json:"market_data"`
 
+	// Redis configuration
+	Redis RedisConfig `json:"redis"`
+
+	// Indicators configuration
+	Indicators IndicatorsConfig `json:"indicators"`
+
 	// Strategy configuration
 	Strategy StrategyConfig `json:"strategy"`
 
@@ -113,6 +119,29 @@ type MetricsConfig struct {
 	Port    int    `json:"port"`
 }
 
+// RedisConfig holds Redis configuration
+type RedisConfig struct {
+	Host     string        `json:"host"`
+	Port     int           `json:"port"`
+	Password string        `json:"password"`
+	DB       int           `json:"db"`
+	Enabled  bool          `json:"enabled"`
+	TTL      time.Duration `json:"ttl"`
+}
+
+// IndicatorsConfig holds indicators configuration
+type IndicatorsConfig struct {
+	Enabled         bool          `json:"enabled"`
+	UpdateInterval  time.Duration `json:"update_interval"`
+	SMAPeriod       int           `json:"sma_period"`
+	EMAPeriod       int           `json:"ema_period"`
+	RSIPeriod       int           `json:"rsi_period"`
+	BollingerPeriod int           `json:"bollinger_period"`
+	BollingerStdDev float64       `json:"bollinger_stddev"`
+	ATRPeriod       int           `json:"atr_period"`
+	Books           []string      `json:"books"`
+}
+
 // Load loads configuration from environment variables with defaults
 func Load() (*Config, error) {
 	config := &Config{
@@ -155,6 +184,25 @@ func Load() (*Config, error) {
 			Timeout:    getEnvAsDuration("MARKET_DATA_TIMEOUT", 30*time.Second),
 			RetryCount: getEnvAsInt("MARKET_DATA_RETRY_COUNT", 3),
 			RetryDelay: getEnvAsDuration("MARKET_DATA_RETRY_DELAY", 1*time.Second),
+		},
+		Redis: RedisConfig{
+			Host:     getEnv("REDIS_HOST", "localhost"),
+			Port:     getEnvAsInt("REDIS_PORT", 6379),
+			Password: getEnv("REDIS_PASSWORD", ""),
+			DB:       getEnvAsInt("REDIS_DB", 0),
+			Enabled:  getEnvAsBool("REDIS_ENABLED", true),
+			TTL:      getEnvAsDuration("REDIS_TTL", 5*time.Minute),
+		},
+		Indicators: IndicatorsConfig{
+			Enabled:         getEnvAsBool("INDICATORS_ENABLED", true),
+			UpdateInterval:  getEnvAsDuration("INDICATORS_UPDATE_INTERVAL", 30*time.Second),
+			SMAPeriod:       getEnvAsInt("INDICATORS_SMA_PERIOD", 20),
+			EMAPeriod:       getEnvAsInt("INDICATORS_EMA_PERIOD", 20),
+			RSIPeriod:       getEnvAsInt("INDICATORS_RSI_PERIOD", 14),
+			BollingerPeriod: getEnvAsInt("INDICATORS_BOLLINGER_PERIOD", 20),
+			BollingerStdDev: getEnvAsFloat("INDICATORS_BOLLINGER_STDDEV", 2.0),
+			ATRPeriod:       getEnvAsInt("INDICATORS_ATR_PERIOD", 14),
+			Books:           getEnvAsSlice("INDICATORS_BOOKS", []string{"btc_mxn"}),
 		},
 		Strategy: StrategyConfig{
 			DefaultBook:     getEnv("DEFAULT_BOOK", "btc_mxn"),
