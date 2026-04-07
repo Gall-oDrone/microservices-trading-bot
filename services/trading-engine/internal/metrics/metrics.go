@@ -11,10 +11,11 @@ import (
 
 // Bounded failure reasons for orders_failed_total (keeps cardinality low).
 const (
-	ReasonValidation   = "validation"
-	ReasonBitsoAPI     = "bitso_api"
-	ReasonSessionRisk  = "session_risk"
-	ReasonTickerFetch  = "ticker_fetch"
+	ReasonValidation        = "validation"
+	ReasonBitsoAPI          = "bitso_api"
+	ReasonSessionRisk       = "session_risk"
+	ReasonTickerFetch       = "ticker_fetch"
+	ReasonPreTradeValidation = "pretrade_validation"
 )
 
 // Bounded reasons for signals_dropped_total.
@@ -36,6 +37,13 @@ const (
 	SessionRiskRejected  = "rejected"
 )
 
+// Pre-trade validation result for pretrade_validation_checks_total.
+const (
+	PreTradeApproved = "approved"
+	PreTradeRejected = "rejected"
+	PreTradeError    = "error"
+)
+
 // Collector exposes Prometheus metrics for the trading engine.
 type Collector struct {
 	ordersExecutedTotal   *prometheus.CounterVec
@@ -53,6 +61,9 @@ type Collector struct {
 
 	sessionRiskChecksTotal    *prometheus.CounterVec
 	sessionRiskRejectionsTotal prometheus.Counter
+
+	preTradeValidationChecksTotal *prometheus.CounterVec
+	preTradeValidationRejectionsTotal prometheus.Counter
 
 	kafkaMessagesConsumedTotal     *prometheus.CounterVec
 	kafkaConsumerErrorsTotal       prometheus.Counter
@@ -140,6 +151,18 @@ func NewCollector() *Collector {
 		sessionRiskRejectionsTotal: promauto.NewCounter(prometheus.CounterOpts{
 			Name: "session_risk_rejections_total",
 			Help: "Total orders blocked by daily loss or drawdown limits",
+		}),
+
+		preTradeValidationChecksTotal: promauto.NewCounterVec(
+			prometheus.CounterOpts{
+				Name: "pretrade_validation_checks_total",
+				Help: "Total pre-trade validation checks by result (approved, rejected, error)",
+			},
+			[]string{"result"},
+		),
+		preTradeValidationRejectionsTotal: promauto.NewCounter(prometheus.CounterOpts{
+			Name: "pretrade_validation_rejections_total",
+			Help: "Total orders rejected by pre-trade validation from order-management",
 		}),
 
 		kafkaMessagesConsumedTotal: promauto.NewCounterVec(
@@ -238,6 +261,16 @@ func (c *Collector) RecordSessionRiskCheck(result string) {
 // RecordSessionRiskRejection increments session_risk_rejections_total.
 func (c *Collector) RecordSessionRiskRejection() {
 	c.sessionRiskRejectionsTotal.Inc()
+}
+
+// RecordPreTradeValidation records pretrade_validation_checks_total (result: approved, rejected, error).
+func (c *Collector) RecordPreTradeValidation(result string) {
+	c.preTradeValidationChecksTotal.WithLabelValues(result).Inc()
+}
+
+// RecordPreTradeRejection increments pretrade_validation_rejections_total.
+func (c *Collector) RecordPreTradeRejection() {
+	c.preTradeValidationRejectionsTotal.Inc()
 }
 
 // RecordKafkaMessageConsumed increments kafka_messages_consumed_total by topic.

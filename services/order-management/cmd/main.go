@@ -215,15 +215,21 @@ func NewApplication() (*Application, error) {
 		}))
 	}
 
-	// Initialize HTTP server
-	httpServer := server.NewHTTPServer(
+	// Initialize HTTP server with validation endpoint for pre-trade risk checks
+	httpServer := server.NewHTTPServerWithOptions(
 		&cfg.Service,
 		healthManager,
 		metricsCollector,
 		appLogger,
-		pnlRecorder,
+		&server.HTTPServerOptions{
+			SessionAggregator: pnlRecorder,
+			Validator:         orderValidator,
+			RiskManager:       riskManager,
+		},
 	)
-	appLogger.Info("HTTP server initialized", nil)
+	appLogger.Info("HTTP server initialized", map[string]interface{}{
+		"endpoints": []string{"/health", "/api/v1/status", "/api/v1/risk/session", "/api/v1/orders/validate"},
+	})
 
 	appLogger.Info("Configuration loaded successfully", map[string]interface{}{
 		"service_port": cfg.Service.Port,

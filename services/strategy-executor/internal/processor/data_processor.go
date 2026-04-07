@@ -151,7 +151,7 @@ func (p *Processor) ProcessTradeEvent(event *models.TradeEvent) error {
 		Data:      event,
 		Timestamp: time.Now(),
 		Metadata: map[string]interface{}{
-			"source":     event.Source,
+			"source":     "market_data",
 			"trade_id":   event.ID,
 			"price":      event.Price,
 			"amount":     event.Amount,

@@ -37,6 +37,8 @@ type MetricsRecorder interface {
 	SetBalanceLastSuccessTimestamp(ts float64)
 	RecordSessionRiskCheck(result string)
 	RecordSessionRiskRejection()
+	RecordPreTradeValidation(result string)
+	RecordPreTradeRejection()
 	RecordKafkaMessageConsumed(topic string)
 	RecordKafkaConsumerError()
 	RecordOrderPlacedPublished()
@@ -87,8 +89,9 @@ type TradingEngine struct {
 
 	// Internal components
 	executor            execution.Executor
-	sessionRiskProvider execution.SessionRiskProvider // optional: for daily loss / drawdown limits
-	metricsRecorder     MetricsRecorder              // optional: for Prometheus metrics
+	sessionRiskProvider execution.SessionRiskProvider  // optional: for daily loss / drawdown limits
+	preTradeValidator   execution.PreTradeValidator    // optional: validates orders with order-management before execution
+	metricsRecorder     MetricsRecorder                // optional: for Prometheus metrics
 	book                *bitso.Book
 
 	// State management
@@ -128,6 +131,7 @@ type EngineStatistics struct {
 
 // NewTradingEngine creates a new trading engine instance.
 // sessionRiskProvider is optional; if set, used to enforce MaxDailyLoss/MaxDrawdownPct before placing orders.
+// preTradeValidator is optional; if set, orders are validated with order-management before placement on Bitso.
 // orderPlacedProducer is optional; if set, placed orders are published to Kafka for order-management sync.
 // metricsRecorder is optional; if set, order executions and balance updates are recorded for Prometheus.
 func NewTradingEngine(
@@ -137,6 +141,7 @@ func NewTradingEngine(
 	dbClient *database.RedisClient,
 	kafkaConsumer *kafka.Consumer,
 	sessionRiskProvider execution.SessionRiskProvider,
+	preTradeValidator execution.PreTradeValidator,
 	orderPlacedProducer *kafka.Producer,
 	metricsRecorder MetricsRecorder,
 ) (*TradingEngine, error) {
@@ -171,6 +176,7 @@ func NewTradingEngine(
 		kafkaConsumer: kafkaConsumer,
 		executor:              executor,
 		sessionRiskProvider:   sessionRiskProvider,
+		preTradeValidator:     preTradeValidator,
 		orderPlacedProducer:   orderPlacedProducer,
 		metricsRecorder:       metricsRecorder,
 		book:                  tradingConfig.Book,
@@ -496,6 +502,47 @@ func (te *TradingEngine) processTradeSignal(signal *models.TradeSignalEvent) err
 	}
 	if te.metricsRecorder != nil {
 		te.metricsRecorder.RecordSessionRiskCheck("allowed")
+	}
+
+	// Pre-trade validation: call order-management to validate before placing order on Bitso
+	if te.preTradeValidator != nil {
+		validationReq := &execution.OrderValidationRequest{
+			Book:     signal.Book,
+			Side:     signal.Signal,
+			Type:     "limit",
+			Amount:   signal.Amount,
+			Price:    signal.Price,
+			SignalID: signal.EventID,
+			Strategy: te.config.StrategyType,
+		}
+		validationCtx, validationCancel := context.WithTimeout(te.ctx, 5*time.Second)
+		validationResp, err := te.preTradeValidator.ValidateOrder(validationCtx, validationReq)
+		validationCancel()
+
+		if err != nil {
+			te.logger.Printf("Pre-trade validation error: %v", err)
+			if te.metricsRecorder != nil {
+				te.metricsRecorder.RecordPreTradeValidation("error")
+			}
+			te.recordOrderFailedIfMetrics(signal.Book, "pretrade_validation")
+			return fmt.Errorf("pre-trade validation failed: %w", err)
+		}
+
+		if !validationResp.Approved {
+			te.logger.Printf("Pre-trade validation rejected: %v", validationResp.Errors)
+			if te.metricsRecorder != nil {
+				te.metricsRecorder.RecordPreTradeValidation("rejected")
+				te.metricsRecorder.RecordPreTradeRejection()
+			}
+			te.recordOrderFailedIfMetrics(signal.Book, "pretrade_validation")
+			return fmt.Errorf("order rejected by pre-trade validation: %v", validationResp.Errors)
+		}
+
+		if te.metricsRecorder != nil {
+			te.metricsRecorder.RecordPreTradeValidation("approved")
+		}
+		te.logger.Printf("Pre-trade validation approved for %s %s %.8f @ %.2f",
+			signal.Signal, signal.Book, signal.Amount, signal.Price)
 	}
 
 	// Create trading signal for executor

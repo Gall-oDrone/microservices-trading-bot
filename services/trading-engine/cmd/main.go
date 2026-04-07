@@ -99,10 +99,14 @@ func NewApplication() (*Application, error) {
 	}
 
 	// Optional: SessionRiskProvider for daily loss / drawdown limits (call order-management GET /api/v1/risk/session)
+	// Optional: PreTradeValidator for pre-trade validation (call order-management POST /api/v1/orders/validate)
 	var sessionRiskProvider execution.SessionRiskProvider
+	var preTradeValidator execution.PreTradeValidator
 	if orderMgmtURL := os.Getenv("ORDER_MANAGEMENT_URL"); orderMgmtURL != "" {
 		sessionRiskProvider = execution.NewOrderManagementRiskProvider(orderMgmtURL)
+		preTradeValidator = execution.NewHTTPPreTradeValidator(orderMgmtURL, 5*time.Second)
 		logger.Println("✓ Session risk provider configured (ORDER_MANAGEMENT_URL)")
+		logger.Println("✓ Pre-trade validator configured (ORDER_MANAGEMENT_URL)")
 	}
 
 	// Metrics collector for Prometheus (/metrics and balance/order gauges)
@@ -116,6 +120,7 @@ func NewApplication() (*Application, error) {
 		redisClient,
 		kafkaConsumer,
 		sessionRiskProvider,
+		preTradeValidator,
 		orderPlacedProducer,
 		metricsCollector,
 	)

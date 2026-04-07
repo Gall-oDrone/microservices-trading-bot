@@ -10,23 +10,56 @@ import (
 	"bitso-trading-platform/order-management/internal/config"
 	"bitso-trading-platform/order-management/internal/logger"
 	"bitso-trading-platform/order-management/internal/metrics"
+	"bitso-trading-platform/order-management/internal/models"
+	"bitso-trading-platform/order-management/internal/risk"
+	"bitso-trading-platform/order-management/internal/validator"
 	"bitso-trading-platform/shared/pkg/health"
+	sharedModels "bitso-trading-platform/shared/pkg/models"
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
-// HTTPServer handles HTTP requests
-type HTTPServer struct {
-	logger           *logger.Logger
-	config           *config.ServiceConfig
-	healthManager    *health.HealthManager
-	metrics          *metrics.MetricsCollector
-	sessionAggregator *metrics.IntradayAggregator // optional: for GET /api/v1/risk/session
-	server           *http.Server
-	router           *http.ServeMux
+// OrderValidationRequest represents a pre-trade validation request
+type OrderValidationRequest struct {
+	Book      string  `json:"book"`
+	Side      string  `json:"side"`
+	Type      string  `json:"type"`
+	Amount    float64 `json:"amount"`
+	Price     float64 `json:"price"`
+	SignalID  string  `json:"signal_id,omitempty"`
+	Strategy  string  `json:"strategy,omitempty"`
 }
 
-// NewHTTPServer creates a new HTTP server. sessionAggregator can be nil; if set, GET /api/v1/risk/session is enabled.
+// OrderValidationResponse represents the validation result
+type OrderValidationResponse struct {
+	Valid       bool     `json:"valid"`
+	Approved    bool     `json:"approved"`
+	Errors      []string `json:"errors,omitempty"`
+	Warnings    []string `json:"warnings,omitempty"`
+	ValidatedAt string   `json:"validated_at"`
+}
+
+// HTTPServer handles HTTP requests
+type HTTPServer struct {
+	logger            *logger.Logger
+	config            *config.ServiceConfig
+	healthManager     *health.HealthManager
+	metrics           *metrics.MetricsCollector
+	sessionAggregator *metrics.IntradayAggregator // optional: for GET /api/v1/risk/session
+	validator         validator.OrderValidator    // optional: for POST /api/v1/orders/validate
+	riskManager       risk.RiskManager            // optional: for POST /api/v1/orders/validate
+	server            *http.Server
+	router            *http.ServeMux
+}
+
+// HTTPServerOptions contains optional dependencies for HTTPServer
+type HTTPServerOptions struct {
+	SessionAggregator *metrics.IntradayAggregator
+	Validator         validator.OrderValidator
+	RiskManager       risk.RiskManager
+}
+
+// NewHTTPServer creates a new HTTP server. Options can be nil; individual fields enable specific endpoints.
 func NewHTTPServer(
 	config *config.ServiceConfig,
 	healthManager *health.HealthManager,
@@ -34,15 +67,27 @@ func NewHTTPServer(
 	logger *logger.Logger,
 	sessionAggregator *metrics.IntradayAggregator,
 ) *HTTPServer {
+	return NewHTTPServerWithOptions(config, healthManager, metrics, logger, &HTTPServerOptions{
+		SessionAggregator: sessionAggregator,
+	})
+}
+
+// NewHTTPServerWithOptions creates a new HTTP server with full options.
+func NewHTTPServerWithOptions(
+	config *config.ServiceConfig,
+	healthManager *health.HealthManager,
+	metricsCollector *metrics.MetricsCollector,
+	logger *logger.Logger,
+	opts *HTTPServerOptions,
+) *HTTPServer {
 	router := http.NewServeMux()
 
 	server := &HTTPServer{
-		logger:            logger,
-		config:            config,
-		healthManager:     healthManager,
-		metrics:           metrics,
-		sessionAggregator:  sessionAggregator,
-		router:             router,
+		logger:        logger,
+		config:        config,
+		healthManager: healthManager,
+		metrics:       metricsCollector,
+		router:        router,
 		server: &http.Server{
 			Addr:         fmt.Sprintf("%s:%d", config.Host, config.Port),
 			Handler:      router,
@@ -50,6 +95,12 @@ func NewHTTPServer(
 			WriteTimeout: 15 * time.Second,
 			IdleTimeout:  60 * time.Second,
 		},
+	}
+
+	if opts != nil {
+		server.sessionAggregator = opts.SessionAggregator
+		server.validator = opts.Validator
+		server.riskManager = opts.RiskManager
 	}
 
 	server.setupRoutes()
@@ -95,6 +146,11 @@ func (s *HTTPServer) setupRoutes() {
 		s.router.HandleFunc("/api/v1/risk/session", s.withMetrics(s.riskSessionHandler))
 	}
 
+	// Pre-trade validation endpoint (for trading-engine to validate before placing orders)
+	if s.validator != nil && s.riskManager != nil {
+		s.router.HandleFunc("/api/v1/orders/validate", s.withMetrics(s.validateOrderHandler))
+	}
+
 	s.logger.Info("HTTP routes configured", nil)
 }
 
@@ -111,6 +167,87 @@ func (s *HTTPServer) riskSessionHandler(w http.ResponseWriter, r *http.Request) 
 		"drawdown_percent":   drawdownPct,
 	}
 	s.respondJSON(w, http.StatusOK, response)
+}
+
+// validateOrderHandler handles pre-trade order validation requests.
+// Trading-engine calls this endpoint BEFORE placing orders on Bitso to ensure
+// the order passes all validation and risk checks.
+func (s *HTTPServer) validateOrderHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		s.respondError(w, http.StatusMethodNotAllowed, "Method not allowed")
+		return
+	}
+
+	var req OrderValidationRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		s.respondError(w, http.StatusBadRequest, fmt.Sprintf("Invalid request body: %v", err))
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
+	response := OrderValidationResponse{
+		Valid:       true,
+		Approved:    true,
+		ValidatedAt: time.Now().UTC().Format(time.RFC3339),
+	}
+
+	// Step 1: Validate signal fields
+	signal := &sharedModels.TradeSignalEvent{
+		EventID:   req.SignalID,
+		Book:      req.Book,
+		Signal:    req.Side,
+		Price:     req.Price,
+		Amount:    req.Amount,
+		Strategy:  req.Strategy,
+		Timestamp: time.Now().UnixMilli(),
+	}
+
+	if err := s.validator.ValidateSignal(signal); err != nil {
+		response.Valid = false
+		response.Approved = false
+		response.Errors = append(response.Errors, fmt.Sprintf("Signal validation failed: %v", err))
+	}
+
+	// Step 2: Create temporary order for risk checks
+	tempOrder := &models.Order{
+		ID:       fmt.Sprintf("validate-%d", time.Now().UnixNano()),
+		Book:     req.Book,
+		Side:     req.Side,
+		Type:     req.Type,
+		Amount:   req.Amount,
+		Price:    req.Price,
+		SignalID: req.SignalID,
+		Status:   models.OrderStatusPending,
+	}
+
+	// Step 3: Validate order structure
+	if err := s.validator.ValidateOrder(tempOrder); err != nil {
+		response.Valid = false
+		response.Approved = false
+		response.Errors = append(response.Errors, fmt.Sprintf("Order validation failed: %v", err))
+	}
+
+	// Step 4: Perform risk checks (only if basic validation passed)
+	if response.Valid {
+		if err := s.riskManager.CheckRisk(ctx, tempOrder); err != nil {
+			response.Approved = false
+			response.Errors = append(response.Errors, fmt.Sprintf("Risk check failed: %v", err))
+		}
+	}
+
+	// Log validation result
+	s.logger.Infof("Order validation: book=%s side=%s amount=%.8f price=%.8f valid=%v approved=%v errors=%v",
+		req.Book, req.Side, req.Amount, req.Price, response.Valid, response.Approved, response.Errors)
+
+	// Return appropriate status code
+	statusCode := http.StatusOK
+	if !response.Approved {
+		statusCode = http.StatusUnprocessableEntity
+	}
+
+	s.respondJSON(w, statusCode, response)
 }
 
 // Health check handlers
