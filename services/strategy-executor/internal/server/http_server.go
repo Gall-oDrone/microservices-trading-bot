@@ -14,6 +14,9 @@ import (
 	"bitso-trading-platform/strategy-executor/internal/strategies"
 )
 
+// TradeSignalPublisher publishes strategy signals to Kafka (optional; set from main when producer exists).
+type TradeSignalPublisher func(ctx context.Context, book string, signals []*strategies.Signal) error
+
 // Server represents the HTTP server
 type Server struct {
 	server    *http.Server
@@ -54,7 +57,8 @@ type IndicatorHandler struct {
 
 // StrategyHandler handles strategy management endpoints
 type StrategyHandler struct {
-	registry *strategies.EnhancedRegistry
+	registry            *strategies.EnhancedRegistry
+	publishTradeSignals TradeSignalPublisher
 }
 
 // Config holds server configuration
@@ -67,6 +71,8 @@ type Config struct {
 type ServerOptions struct {
 	IndicatorService *indicators.Service
 	StrategyRegistry *strategies.EnhancedRegistry
+	// PublishTradeSignals publishes signals to Kafka (trading.signals) so trading-engine can execute orders.
+	PublishTradeSignals TradeSignalPublisher
 }
 
 // New creates a new HTTP server
@@ -92,7 +98,11 @@ func NewWithOptions(config *Config, healthMgr *health.Manager, metrics *metrics.
 	}
 
 	if registry != nil {
-		handlers.Strategies = &StrategyHandler{registry: registry}
+		sh := &StrategyHandler{registry: registry}
+		if opts != nil && opts.PublishTradeSignals != nil {
+			sh.publishTradeSignals = opts.PublishTradeSignals
+		}
+		handlers.Strategies = sh
 	}
 
 	mux := http.NewServeMux()
@@ -702,12 +712,28 @@ func (h *StrategyHandler) ProcessTick(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	var kafkaErr string
+	if len(signals) > 0 && h.publishTradeSignals != nil {
+		pubCtx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+		kafkaErrVal := h.publishTradeSignals(pubCtx, req.Book, signals)
+		cancel()
+		if kafkaErrVal != nil {
+			kafkaErr = kafkaErrVal.Error()
+		}
+	}
+
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	resp := map[string]interface{}{
 		"signals_generated": len(signals),
 		"signals":           signals,
 		"tick":              tick,
-	})
+	}
+	if kafkaErr != "" {
+		resp["kafka_publish_error"] = kafkaErr
+	} else if len(signals) > 0 && h.publishTradeSignals != nil {
+		resp["kafka_published"] = true
+	}
+	json.NewEncoder(w).Encode(resp)
 }
 
 // GenerateTestSignals generates test signals for dashboard verification

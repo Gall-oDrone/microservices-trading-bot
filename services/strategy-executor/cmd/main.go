@@ -144,27 +144,10 @@ func main() {
 		}
 	}
 
-	serverOpts := &server.ServerOptions{
-		IndicatorService: indicatorSvc,
-		StrategyRegistry: strategyRegistry,
-	}
-
-	httpServer := server.NewWithOptions(&server.Config{
-		Host: cfg.Service.Host,
-		Port: cfg.Service.Port,
-	}, healthMgr, appMetrics, serverOpts)
-
-	go func() {
-		appLogger.Infof("Starting HTTP server on %s:%d", cfg.Service.Host, cfg.Service.Port)
-		if err := httpServer.Start(ctx); err != nil {
-			appLogger.Errorf("HTTP server error: %v", err)
-		}
-	}()
-
-	// Initialize Kafka producer for signals
+	// Initialize Kafka producer for signals (before HTTP server so /process can publish)
 	var signalProducer *kafka.Producer
 	signalPublishingEnabled := len(cfg.Kafka.Brokers) > 0 && cfg.Kafka.Brokers[0] != "localhost:9092"
-	
+
 	if signalPublishingEnabled {
 		producerCfg := &kafka.ProducerConfig{
 			Brokers:          cfg.Kafka.Brokers,
@@ -181,14 +164,71 @@ func main() {
 			signalPublishingEnabled = false
 		} else {
 			appLogger.Infof("Signal publishing enabled to topic: %s", cfg.Kafka.ProducerTopics.Signals)
-			
+
 			healthMgr.RegisterCheck(health.NewSimpleCheck("kafka_producer", func(ctx context.Context) error {
-				return nil // Producer doesn't have a ping method
+				return nil
 			}))
 		}
 	} else {
 		appLogger.Info("Signal publishing disabled (no Kafka brokers configured)")
 	}
+
+	publishTradeSignals := func(pubCtx context.Context, book string, signals []*strategies.Signal) error {
+		if !signalPublishingEnabled || signalProducer == nil {
+			return nil
+		}
+		for _, signal := range signals {
+			if signal == nil {
+				continue
+			}
+			event := &models.TradeSignalEvent{
+				EventID:   uuid.New().String(),
+				Timestamp: signal.Timestamp.UnixMilli(),
+				Book:      signal.Book,
+				Strategy:  signal.Strategy,
+				Signal:    signal.Side,
+				Price:     signal.Price,
+				Amount:    signal.Amount,
+				Metadata: map[string]interface{}{
+					"reason":     signal.Reason,
+					"confidence": signal.Confidence,
+				},
+			}
+			data, err := json.Marshal(event)
+			if err != nil {
+				return fmt.Errorf("marshal signal: %w", err)
+			}
+			cctx, cancel := context.WithTimeout(pubCtx, 5*time.Second)
+			err = signalProducer.Produce(cctx, []byte(book), data)
+			cancel()
+			if err != nil {
+				return fmt.Errorf("kafka produce: %w", err)
+			}
+			appLogger.Infof("Published %s signal for %s: price=%.2f amount=%.8f reason=%s",
+				signal.Side, book, signal.Price, signal.Amount, signal.Reason)
+		}
+		return nil
+	}
+
+	serverOpts := &server.ServerOptions{
+		IndicatorService: indicatorSvc,
+		StrategyRegistry: strategyRegistry,
+	}
+	if signalPublishingEnabled && signalProducer != nil {
+		serverOpts.PublishTradeSignals = publishTradeSignals
+	}
+
+	httpServer := server.NewWithOptions(&server.Config{
+		Host: cfg.Service.Host,
+		Port: cfg.Service.Port,
+	}, healthMgr, appMetrics, serverOpts)
+
+	go func() {
+		appLogger.Infof("Starting HTTP server on %s:%d", cfg.Service.Host, cfg.Service.Port)
+		if err := httpServer.Start(ctx); err != nil {
+			appLogger.Errorf("HTTP server error: %v", err)
+		}
+	}()
 
 	// Signal processing loop - processes market data through strategies
 	go func() {
@@ -217,44 +257,13 @@ func main() {
 						continue
 					}
 					
-					// Publish signals to Kafka
-					for _, signal := range signals {
-						if signal == nil {
-							continue
-						}
-						
-						// Convert to TradeSignalEvent for Kafka
-						event := &models.TradeSignalEvent{
-							EventID:   uuid.New().String(),
-							Timestamp: signal.Timestamp.UnixMilli(),
-							Book:      signal.Book,
-							Strategy:  signal.Strategy,
-							Signal:    signal.Side,
-							Price:     signal.Price,
-							Amount:    signal.Amount,
-							Metadata: map[string]interface{}{
-								"reason":     signal.Reason,
-								"confidence": signal.Confidence,
-							},
-						}
-						
-						if signalPublishingEnabled && signalProducer != nil {
-							data, err := json.Marshal(event)
-							if err != nil {
-								appLogger.Errorf("Failed to marshal signal: %v", err)
+					if err := publishTradeSignals(ctx, book, signals); err != nil {
+						appLogger.Errorf("Failed to publish signals: %v", err)
+					} else if len(signals) > 0 && !signalPublishingEnabled {
+						for _, signal := range signals {
+							if signal == nil {
 								continue
 							}
-							
-							pubCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
-							if err := signalProducer.Produce(pubCtx, []byte(book), data); err != nil {
-								appLogger.Errorf("Failed to publish signal to Kafka: %v", err)
-							} else {
-								appLogger.Infof("Published %s signal for %s: price=%.2f amount=%.8f reason=%s",
-									signal.Side, book, signal.Price, signal.Amount, signal.Reason)
-							}
-							cancel()
-						} else {
-							// Log signal when Kafka is not available
 							appLogger.Infof("[LOCAL] Generated %s signal for %s: price=%.2f amount=%.8f reason=%s",
 								signal.Side, book, signal.Price, signal.Amount, signal.Reason)
 						}
