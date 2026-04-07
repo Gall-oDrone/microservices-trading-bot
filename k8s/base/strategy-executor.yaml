@@ -62,8 +62,10 @@ spec:
             configMapKeyRef:
               name: trading-config
               key: redis-db
-        - name: MARKET_DATA_URL
+        - name: MARKET_DATA_BASE_URL
           value: "http://market-data:8083"
+        - name: DEFAULT_STRATEGY
+          value: "mean_reversion"
         resources:
           requests:
             memory: "256Mi"

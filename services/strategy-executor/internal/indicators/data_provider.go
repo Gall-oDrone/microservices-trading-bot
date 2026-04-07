@@ -36,7 +36,7 @@ func NewHTTPDataProviderWithClient(baseURL string, client *http.Client) *HTTPDat
 
 // GetRecentTrades fetches recent trades from market-data service
 func (p *HTTPDataProvider) GetRecentTrades(ctx context.Context, book string, limit int) ([]Trade, error) {
-	url := fmt.Sprintf("%s/api/v1/trades/%s?limit=%d", p.baseURL, book, limit)
+	url := fmt.Sprintf("%s/api/v1/trades?book=%s&limit=%d", p.baseURL, book, limit)
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
@@ -83,7 +83,7 @@ func (p *HTTPDataProvider) GetRecentTrades(ctx context.Context, book string, lim
 
 // GetRecentBars fetches recent OHLCV bars from market-data service
 func (p *HTTPDataProvider) GetRecentBars(ctx context.Context, book string, interval string, limit int) ([]OHLCV, error) {
-	url := fmt.Sprintf("%s/api/v1/bars/%s?interval=%s&limit=%d", p.baseURL, book, interval, limit)
+	url := fmt.Sprintf("%s/api/v1/bars?book=%s&interval=%s&limit=%d", p.baseURL, book, interval, limit)
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
