@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Import a Grafana dashboard by name. Use for per-service, domain, or infrastructure dashboards.
 # Dashboards live under monitoring/grafana/dashboards/ in three folders:
-#   services/     - trading-engine, order-management, api-gateway, market-data, backtesting
+#   services/     - trading-engine, order-management, api-gateway, market-data, backtesting, strategy-executor
 #   domain/       - trading-metrics (platform), data-pipeline (cross-service Kafka flow), financial-indicators
 #   infrastructure/ - kafka, redis
 #
@@ -9,11 +9,12 @@
 #
 # Usage:
 #   GRAFANA_URL=http://localhost:3001 ./scripts/grafana-import-dashboard.sh trading-engine
+#   ./scripts/grafana-import-dashboard.sh strategy-executor
 #   ./scripts/grafana-import-dashboard.sh data-pipeline
 #   ./scripts/grafana-import-dashboard.sh kafka
 #   ./scripts/grafana-import-dashboard.sh redis
 #
-# Dashboards: trading-engine | order-management | api-gateway | market-data | backtesting | trading-metrics | data-pipeline | financial-indicators | kafka | redis
+# Dashboards: trading-engine | order-management | api-gateway | market-data | backtesting | strategy-executor | trading-metrics | data-pipeline | financial-indicators | kafka | redis
 
 set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -43,15 +44,16 @@ case "$NAME" in
   order-management)  DASHBOARD_JSON="$SERVICES_DIR/order-management.json" ;;
   api-gateway)       DASHBOARD_JSON="$SERVICES_DIR/api-gateway.json" ;;
   market-data)       DASHBOARD_JSON="$SERVICES_DIR/market-data.json" ;;
-  backtesting)      DASHBOARD_JSON="$SERVICES_DIR/backtesting.json" ;;
+  backtesting)       DASHBOARD_JSON="$SERVICES_DIR/backtesting.json" ;;
+  strategy-executor) DASHBOARD_JSON="$SERVICES_DIR/strategy-executor.json" ;;
   trading-metrics)   DASHBOARD_JSON="$DOMAIN_DIR/trading-metrics.json" ;;
-  data-pipeline)    DASHBOARD_JSON="$DOMAIN_DIR/data-pipeline.json" ;;
+  data-pipeline)     DASHBOARD_JSON="$DOMAIN_DIR/data-pipeline.json" ;;
   financial-indicators) DASHBOARD_JSON="$DOMAIN_DIR/financial-indicators.json" ;;
-  kafka)            DASHBOARD_JSON="$INFRASTRUCTURE_DIR/kafka.json" ;;
-  redis)            DASHBOARD_JSON="$INFRASTRUCTURE_DIR/redis.json" ;;
+  kafka)             DASHBOARD_JSON="$INFRASTRUCTURE_DIR/kafka.json" ;;
+  redis)             DASHBOARD_JSON="$INFRASTRUCTURE_DIR/redis.json" ;;
   *)
     echo "Usage: $0 DASHBOARD_NAME"
-    echo "  DASHBOARD_NAME: trading-engine | order-management | api-gateway | market-data | backtesting | trading-metrics | data-pipeline | financial-indicators | kafka | redis"
+    echo "  DASHBOARD_NAME: trading-engine | order-management | api-gateway | market-data | backtesting | strategy-executor | trading-metrics | data-pipeline | financial-indicators | kafka | redis"
     exit 2
     ;;
 esac

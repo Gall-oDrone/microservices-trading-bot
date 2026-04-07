@@ -900,6 +900,100 @@ func (k *KillSwitch) Trigger(reason string) {
 
 ---
 
+## Next Steps Summary
+
+### Immediate Actions (Testing Phase)
+
+| Step | Status | Command/Action |
+|------|--------|----------------|
+| **Unit Tests** | ✅ Created | `go test -v ./services/strategy-executor/internal/...` |
+| **Integration Tests** | 📋 Existing | `./scripts/run-integration-tests.sh --local` |
+| **Strategy Executor Dashboard** | ✅ Created | `./scripts/grafana-import-dashboard.sh strategy-executor` |
+
+### Phase 4 Work (Next Phase)
+
+| Component | Purpose |
+|-----------|---------|
+| `BacktestDataProvider` | Unified interface for backtest/live modes |
+| `scripts/backtest-strategy.sh` | Run backtests via API |
+| `scripts/promote-strategy-to-stage.sh` | Validate backtest metrics before promotion |
+| Backtest API endpoints | `/api/v1/backtests` CRUD operations |
+
+---
+
+## Grafana Dashboards to Monitor
+
+### 1. Strategy Executor (NEW) - `services/strategy-executor.json`
+
+Import: `./scripts/grafana-import-dashboard.sh strategy-executor`
+
+Key panels:
+- Service health & active strategies count
+- Signal generation rate by strategy
+- Indicator computation health
+- Win rate, P&L per strategy
+- Consecutive losses (kill switch warning)
+- Real-time Bollinger Bands, RSI, EMA/SMA
+
+### 2. Trading Platform Metrics - `domain/trading-metrics.json`
+
+Import: `./scripts/grafana-import-dashboard.sh trading-metrics`
+
+Monitor during testing:
+- Daily Realized/Unrealized P&L
+- Drawdown % (should stay < 10%)
+- Trades today, Win Rate
+- Session risk rejections
+
+### 3. Financial Indicators - `domain/financial-indicators.json`
+
+Import: `./scripts/grafana-import-dashboard.sh financial-indicators`
+
+Verify indicator values:
+- RSI (oversold/overbought zones)
+- Bollinger Bands (upper/middle/lower)
+- VWAP deviation
+- Volume spikes
+
+### 4. Trading Engine - `services/trading-engine.json`
+
+Import: `./scripts/grafana-import-dashboard.sh trading-engine`
+
+Monitor signal flow:
+- Engine state (running)
+- Signals processed rate
+- Orders failed by reason
+
+---
+
+## Running Tests
+
+```bash
+# Unit tests (fast, local)
+cd services/strategy-executor
+go test -v ./internal/strategies/... ./internal/indicators/...
+
+# Integration tests (requires services running)
+./scripts/run-integration-tests.sh --local
+
+# Full test with race detection
+go test -race -v ./...
+```
+
+---
+
+## Key Metrics to Watch During Testing
+
+| Metric | Target | Alert If |
+|--------|--------|----------|
+| `strategy_executor_signals_generated_total` | Steady rate | Flat (no signals) |
+| `strategy_executor_strategy_win_rate` | > 45% | < 35% |
+| `strategy_executor_consecutive_losses` | < 3 | >= 5 (kill switch) |
+| `trading_drawdown_percent` | < 5% | > 10% |
+| `trading_daily_realized_pnl_currency` | Positive | Large negative |
+
+---
+
 ## References
 
 - [INTRADAY-STRATEGY-IMPLEMENTATION-PLAN.md](../INTRADAY-STRATEGY-IMPLEMENTATION-PLAN.md) - Infrastructure phases
