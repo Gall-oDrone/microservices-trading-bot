@@ -224,6 +224,27 @@ else
   warn "Stats response: $STATS_RESP"
 fi
 
+# --- Step 12.5: Generate Test Signals for Dashboard ---
+header "Step 12.5: Generate Test Signals"
+SIGNAL_RESP=$(curl -sS -X POST --max-time 10 "$STRATEGY_EXECUTOR_URL/api/v1/test/signals" \
+  -H "Content-Type: application/json" \
+  -d '{"count": 5, "strategy": "mean_reversion"}' 2>/dev/null || echo '{}')
+if echo "$SIGNAL_RESP" | jq -e '.generated' &>/dev/null; then
+  GENERATED=$(echo "$SIGNAL_RESP" | jq -r '.generated')
+  ok "Generated $GENERATED test signals for mean_reversion"
+else
+  warn "Could not generate test signals"
+fi
+
+# Generate signals for momentum strategy too
+SIGNAL_RESP2=$(curl -sS -X POST --max-time 10 "$STRATEGY_EXECUTOR_URL/api/v1/test/signals" \
+  -H "Content-Type: application/json" \
+  -d '{"count": 3, "strategy": "momentum"}' 2>/dev/null || echo '{}')
+if echo "$SIGNAL_RESP2" | jq -e '.generated' &>/dev/null; then
+  GENERATED2=$(echo "$SIGNAL_RESP2" | jq -r '.generated')
+  ok "Generated $GENERATED2 test signals for momentum"
+fi
+
 # --- Step 13: Check Prometheus Metrics Endpoint ---
 header "Step 13: Prometheus Metrics"
 PROM_METRICS=$(curl -sS --max-time 10 "$STRATEGY_EXECUTOR_URL/metrics" 2>/dev/null || echo '')

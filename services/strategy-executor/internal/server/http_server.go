@@ -110,6 +110,8 @@ func NewWithOptions(config *Config, healthMgr *health.Manager, metrics *metrics.
 		mux.HandleFunc("/api/v1/strategies/", handlers.Strategies.HandleStrategy)
 		mux.HandleFunc("/api/v1/strategies/types", handlers.Strategies.GetAvailableTypes)
 		mux.HandleFunc("/api/v1/strategies/stats", handlers.Strategies.GetStats)
+		mux.HandleFunc("/api/v1/strategies/process", handlers.Strategies.ProcessTick)
+		mux.HandleFunc("/api/v1/test/signals", handlers.Strategies.GenerateTestSignals)
 	} else {
 		mux.HandleFunc("/api/v1/strategies", handlers.API.Strategies)
 		mux.HandleFunc("/api/v1/strategies/", handlers.API.StrategyHandler)
@@ -662,4 +664,92 @@ func (h *StrategyHandler) GetStats(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(stats)
+}
+
+// ProcessTick processes a market tick through all running strategies
+func (h *StrategyHandler) ProcessTick(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req struct {
+		Book   string  `json:"book"`
+		Price  float64 `json:"price"`
+		Amount float64 `json:"amount"`
+		Side   string  `json:"side"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, fmt.Sprintf("Invalid request: %v", err), http.StatusBadRequest)
+		return
+	}
+
+	if req.Book == "" {
+		req.Book = "btc_mxn"
+	}
+
+	tick := &indicators.Trade{
+		Timestamp: time.Now(),
+		Price:     req.Price,
+		Amount:    req.Amount,
+		Side:      req.Side,
+	}
+
+	signals, err := h.registry.ProcessTick(tick, req.Book)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Process tick failed: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"signals_generated": len(signals),
+		"signals":           signals,
+		"tick":              tick,
+	})
+}
+
+// GenerateTestSignals generates test signals for dashboard verification
+func (h *StrategyHandler) GenerateTestSignals(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req struct {
+		Count    int    `json:"count"`
+		Strategy string `json:"strategy"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		req.Count = 5
+		req.Strategy = "mean_reversion"
+	}
+
+	if req.Count <= 0 {
+		req.Count = 5
+	}
+	if req.Count > 100 {
+		req.Count = 100
+	}
+	if req.Strategy == "" {
+		req.Strategy = "mean_reversion"
+	}
+
+	sides := []string{"buy", "sell"}
+	generated := 0
+
+	for i := 0; i < req.Count; i++ {
+		side := sides[i%2]
+		h.registry.UpdateMetricsForSignal(req.Strategy, side)
+		generated++
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"generated": generated,
+		"strategy":  req.Strategy,
+		"message":   "Test signals generated for dashboard verification",
+	})
 }
