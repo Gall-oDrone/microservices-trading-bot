@@ -1,0 +1,254 @@
+{
+  "id": null,
+  "title": "Strategy Executor",
+  "tags": [
+    "trading",
+    "strategies",
+    "signals"
+  ],
+  "timezone": "browser",
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
+  "refresh": "10s",
+  "panels": [
+    {
+      "id": 1,
+      "title": "Service Health",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 4, "x": 0, "y": 0 },
+      "targets": [{ "expr": "max(up{job=~\"strategy-executor.*\"}) or vector(0)", "refId": "A" }],
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "green", "value": 1 }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": 2,
+      "title": "Active Strategies",
+      "type": "stat",
+      "description": "Number of strategies currently running",
+      "gridPos": { "h": 4, "w": 4, "x": 4, "y": 0 },
+      "targets": [{ "expr": "sum(strategy_executor_active_strategies) or vector(0)", "refId": "A" }]
+    },
+    {
+      "id": 3,
+      "title": "Signals Generated (rate)",
+      "type": "timeseries",
+      "description": "Rate of signals generated per strategy",
+      "gridPos": { "h": 4, "w": 8, "x": 8, "y": 0 },
+      "targets": [
+        { "expr": "sum(rate(strategy_executor_signals_generated_total[5m])) by (strategy, side)", "refId": "A", "legendFormat": "{{strategy}} {{side}}" }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "Indicator Computation Health",
+      "type": "stat",
+      "description": "1 = indicators computing normally",
+      "gridPos": { "h": 4, "w": 4, "x": 16, "y": 0 },
+      "targets": [{ "expr": "strategy_executor_indicators_healthy or vector(0)", "refId": "A" }],
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "green", "value": 1 }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": 5,
+      "title": "Indicator Last Update Age (s)",
+      "type": "stat",
+      "description": "Seconds since last indicator update",
+      "gridPos": { "h": 4, "w": 4, "x": 20, "y": 0 },
+      "targets": [{ "expr": "time() - max(strategy_executor_indicators_last_update_timestamp)", "refId": "A" }],
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 60 },
+              { "color": "red", "value": 120 }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": 10,
+      "type": "row",
+      "title": "Strategy Performance",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 4 }
+    },
+    {
+      "id": 11,
+      "title": "Strategy State",
+      "type": "table",
+      "description": "Current state of each registered strategy",
+      "gridPos": { "h": 6, "w": 12, "x": 0, "y": 5 },
+      "targets": [
+        { "expr": "strategy_executor_strategy_running", "refId": "A", "legendFormat": "{{strategy}}", "format": "table", "instant": true }
+      ],
+      "transformations": [
+        { "id": "organize", "options": { "renameByName": { "Value": "Running (1=yes)" } } }
+      ]
+    },
+    {
+      "id": 12,
+      "title": "Signals by Strategy",
+      "type": "timeseries",
+      "gridPos": { "h": 6, "w": 12, "x": 12, "y": 5 },
+      "targets": [
+        { "expr": "sum(rate(strategy_executor_signals_generated_total[5m])) by (strategy)", "refId": "A", "legendFormat": "{{strategy}}" }
+      ]
+    },
+    {
+      "id": 13,
+      "title": "Win Rate by Strategy",
+      "type": "gauge",
+      "gridPos": { "h": 6, "w": 8, "x": 0, "y": 11 },
+      "targets": [
+        { "expr": "strategy_executor_strategy_win_rate * 100", "refId": "A", "legendFormat": "{{strategy}}" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0,
+          "max": 100,
+          "thresholds": {
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "yellow", "value": 40 },
+              { "color": "green", "value": 50 }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": 14,
+      "title": "Strategy P&L",
+      "type": "timeseries",
+      "description": "Realized P&L per strategy",
+      "gridPos": { "h": 6, "w": 8, "x": 8, "y": 11 },
+      "targets": [
+        { "expr": "strategy_executor_strategy_pnl_total", "refId": "A", "legendFormat": "{{strategy}}" }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "currencyMXN" }
+      }
+    },
+    {
+      "id": 15,
+      "title": "Consecutive Losses",
+      "type": "stat",
+      "description": "Alert when approaching max consecutive loss limit",
+      "gridPos": { "h": 6, "w": 8, "x": 16, "y": 11 },
+      "targets": [
+        { "expr": "max(strategy_executor_consecutive_losses) by (strategy)", "refId": "A", "legendFormat": "{{strategy}}" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 3 },
+              { "color": "red", "value": 5 }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": 20,
+      "type": "row",
+      "title": "Indicators (Real-time)",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 17 }
+    },
+    {
+      "id": 21,
+      "title": "Bollinger Bands",
+      "type": "timeseries",
+      "description": "Upper, middle, lower bands with current price",
+      "gridPos": { "h": 6, "w": 12, "x": 0, "y": 18 },
+      "targets": [
+        { "expr": "strategy_executor_indicator_bollinger_upper{book=\"btc_mxn\"}", "refId": "A", "legendFormat": "Upper" },
+        { "expr": "strategy_executor_indicator_bollinger_middle{book=\"btc_mxn\"}", "refId": "B", "legendFormat": "Middle (SMA)" },
+        { "expr": "strategy_executor_indicator_bollinger_lower{book=\"btc_mxn\"}", "refId": "C", "legendFormat": "Lower" },
+        { "expr": "market_data_last_price{book=\"btc_mxn\"}", "refId": "D", "legendFormat": "Price" }
+      ]
+    },
+    {
+      "id": 22,
+      "title": "RSI",
+      "type": "timeseries",
+      "description": "RSI with overbought/oversold levels",
+      "gridPos": { "h": 6, "w": 6, "x": 12, "y": 18 },
+      "targets": [
+        { "expr": "strategy_executor_indicator_rsi{book=\"btc_mxn\"}", "refId": "A", "legendFormat": "RSI" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "min": 0,
+          "max": 100,
+          "custom": {
+            "thresholdsStyle": { "mode": "line" }
+          },
+          "thresholds": {
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 30 },
+              { "color": "red", "value": 70 }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": 23,
+      "title": "EMA vs SMA",
+      "type": "timeseries",
+      "description": "Moving averages for momentum detection",
+      "gridPos": { "h": 6, "w": 6, "x": 18, "y": 18 },
+      "targets": [
+        { "expr": "strategy_executor_indicator_ema{book=\"btc_mxn\"}", "refId": "A", "legendFormat": "EMA(20)" },
+        { "expr": "strategy_executor_indicator_sma{book=\"btc_mxn\"}", "refId": "B", "legendFormat": "SMA(20)" }
+      ]
+    },
+    {
+      "id": 30,
+      "type": "row",
+      "title": "Signal Details",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 24 }
+    },
+    {
+      "id": 31,
+      "title": "Recent Signals (Log)",
+      "type": "logs",
+      "description": "Recent trading signals generated",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 25 },
+      "targets": [
+        { "expr": "{job=\"strategy-executor\"} |= \"signal\"", "refId": "A" }
+      ],
+      "options": {
+        "showTime": true,
+        "sortOrder": "Descending"
+      }
+    }
+  ]
+}
