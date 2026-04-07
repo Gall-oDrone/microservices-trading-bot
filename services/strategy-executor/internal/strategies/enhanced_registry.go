@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"bitso-trading-platform/strategy-executor/internal/indicators"
+	"bitso-trading-platform/strategy-executor/internal/metrics"
 )
 
 // EnhancedRegistry manages enhanced strategy registration and lifecycle
@@ -139,7 +140,11 @@ func (r *EnhancedRegistry) Start(ctx context.Context, name string) error {
 		return fmt.Errorf("strategy '%s' is already running", name)
 	}
 
-	return strategy.Start(ctx)
+	err := strategy.Start(ctx)
+	if err == nil {
+		r.updatePrometheusMetrics()
+	}
+	return err
 }
 
 // Stop stops a strategy by name
@@ -156,7 +161,11 @@ func (r *EnhancedRegistry) Stop(name string) error {
 		return fmt.Errorf("strategy '%s' is not running", name)
 	}
 
-	return strategy.Stop()
+	err := strategy.Stop()
+	if err == nil {
+		r.updatePrometheusMetrics()
+	}
+	return err
 }
 
 // Remove removes a strategy from the registry
@@ -175,7 +184,13 @@ func (r *EnhancedRegistry) Remove(name string) error {
 		}
 	}
 
+	strategyName := strategy.Name()
 	delete(r.strategies, name)
+
+	promMetrics := metrics.GetPrometheusMetrics()
+	promMetrics.RemoveStrategy(strategyName)
+	r.updatePrometheusMetrics()
+
 	return nil
 }
 
@@ -237,6 +252,9 @@ func (r *EnhancedRegistry) ProcessTick(tick *indicators.Trade, book string) ([]*
 
 		if signal != nil {
 			signals = append(signals, signal)
+			promMetrics := metrics.GetPrometheusMetrics()
+			promMetrics.IncSignalsGenerated(strategy.Name(), signal.Side)
+			r.updatePrometheusMetrics()
 		}
 	}
 
@@ -359,4 +377,41 @@ func (r *EnhancedRegistry) GetStats() *RegistryStats {
 		AvailableTypes:   r.GetAvailableTypes(),
 		LastUpdated:      time.Now(),
 	}
+}
+
+// updatePrometheusMetrics updates all Prometheus metrics for strategies
+// NOTE: Must be called with r.mu held (either Lock or RLock)
+func (r *EnhancedRegistry) updatePrometheusMetrics() {
+	promMetrics := metrics.GetPrometheusMetrics()
+
+	activeCount := 0
+	for _, strategy := range r.strategies {
+		strategyName := strategy.Name()
+		running := strategy.IsRunning()
+
+		promMetrics.SetStrategyRunning(strategyName, running)
+
+		if running {
+			activeCount++
+		}
+
+		state := strategy.GetState()
+		strategyMetrics := strategy.GetMetrics()
+
+		promMetrics.SetStrategyWinRate(strategyName, strategyMetrics.WinRate)
+		promMetrics.SetStrategyPnL(strategyName, strategyMetrics.TotalPnL)
+		promMetrics.SetStrategyConsecutiveLosses(strategyName, state.ConsecutiveLoss)
+	}
+
+	promMetrics.SetActiveStrategies(activeCount)
+}
+
+// UpdateMetricsForSignal updates metrics when a signal is generated
+func (r *EnhancedRegistry) UpdateMetricsForSignal(strategyName, side string) {
+	promMetrics := metrics.GetPrometheusMetrics()
+	promMetrics.IncSignalsGenerated(strategyName, side)
+
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	r.updatePrometheusMetrics()
 }

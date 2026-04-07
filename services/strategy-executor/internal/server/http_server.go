@@ -217,11 +217,8 @@ func (h *MetricsHandler) Metrics(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// This would typically use prometheus.Handler() to serve metrics
-	// For now, return a simple response
-	w.Header().Set("Content-Type", "text/plain")
-	w.WriteHeader(http.StatusOK)
-	w.Write([]byte("# Metrics endpoint - Prometheus metrics would be served here\n"))
+	promMetrics := metrics.GetPrometheusMetrics()
+	promMetrics.Handler()(w, r)
 }
 
 // API endpoint handlers

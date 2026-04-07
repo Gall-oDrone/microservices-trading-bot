@@ -6,6 +6,8 @@ import (
 	"log"
 	"sync"
 	"time"
+
+	"bitso-trading-platform/strategy-executor/internal/metrics"
 )
 
 // ServiceConfig holds configuration for the indicator service
@@ -127,8 +129,11 @@ func (s *Service) computeAllOnce(ctx context.Context, books []string) {
 
 // ComputeAndStore computes all indicators for a book and stores them
 func (s *Service) ComputeAndStore(ctx context.Context, book string) error {
+	promMetrics := metrics.GetPrometheusMetrics()
+
 	trades, err := s.dataProvider.GetRecentTrades(ctx, book, 100)
 	if err != nil {
+		promMetrics.SetIndicatorsHealthy(false)
 		return fmt.Errorf("get trades: %w", err)
 	}
 
@@ -152,6 +157,7 @@ func (s *Service) ComputeAndStore(ctx context.Context, book string) error {
 			Timestamp: now,
 			Book:      book,
 		})
+		promMetrics.SetIndicatorSMA(book, smaVal)
 	}
 
 	if emaVal, err := s.ema.Compute(prices); err == nil {
@@ -162,6 +168,7 @@ func (s *Service) ComputeAndStore(ctx context.Context, book string) error {
 			Timestamp: now,
 			Book:      book,
 		})
+		promMetrics.SetIndicatorEMA(book, emaVal)
 	}
 
 	if rsiVal, err := s.rsi.Compute(prices); err == nil {
@@ -172,6 +179,7 @@ func (s *Service) ComputeAndStore(ctx context.Context, book string) error {
 			Timestamp: now,
 			Book:      book,
 		})
+		promMetrics.SetIndicatorRSI(book, rsiVal)
 	}
 
 	if bb, err := s.bollinger.ComputeBands(prices); err == nil {
@@ -188,6 +196,7 @@ func (s *Service) ComputeAndStore(ctx context.Context, book string) error {
 				"stddev": bb.StdDev,
 			},
 		})
+		promMetrics.SetIndicatorBollinger(book, bb.Upper, bb.Middle, bb.Lower)
 	}
 
 	if vwapVal, err := s.vwap.ComputeFromTrades(trades); err == nil {
@@ -198,6 +207,7 @@ func (s *Service) ComputeAndStore(ctx context.Context, book string) error {
 			Timestamp: now,
 			Book:      book,
 		})
+		promMetrics.SetIndicatorVWAP(book, vwapVal)
 	}
 
 	bars, err := s.dataProvider.GetRecentBars(ctx, book, "1m", 30)
@@ -210,8 +220,11 @@ func (s *Service) ComputeAndStore(ctx context.Context, book string) error {
 				Timestamp: now,
 				Book:      book,
 			})
+			promMetrics.SetIndicatorATR(book, atrVal)
 		}
 	}
+
+	promMetrics.SetIndicatorsHealthy(true)
 
 	return nil
 }
