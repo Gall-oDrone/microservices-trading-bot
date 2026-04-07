@@ -168,7 +168,7 @@ func Load() (*Config, error) {
 				Signals string `json:"signals"`
 				Events  string `json:"events"`
 			}{
-				Signals: getEnv("KAFKA_TOPIC_SIGNALS", "strategy-executor.signals"),
+				Signals: getEnv("KAFKA_TOPIC_SIGNALS", "trading.signals"),
 				Events:  getEnv("KAFKA_TOPIC_EVENTS", "strategy-executor.events"),
 			},
 			AutoOffsetReset:  getEnv("KAFKA_AUTO_OFFSET_RESET", "latest"),

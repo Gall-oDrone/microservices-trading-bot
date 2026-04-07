@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"os"
@@ -9,6 +10,8 @@ import (
 	"syscall"
 	"time"
 
+	"bitso-trading-platform/shared/pkg/kafka"
+	"bitso-trading-platform/shared/pkg/models"
 	"bitso-trading-platform/strategy-executor/internal/config"
 	"bitso-trading-platform/strategy-executor/internal/health"
 	"bitso-trading-platform/strategy-executor/internal/indicators"
@@ -17,6 +20,7 @@ import (
 	"bitso-trading-platform/strategy-executor/internal/server"
 	"bitso-trading-platform/strategy-executor/internal/strategies"
 
+	"github.com/google/uuid"
 	"github.com/redis/go-redis/v9"
 )
 
@@ -157,6 +161,112 @@ func main() {
 		}
 	}()
 
+	// Initialize Kafka producer for signals
+	var signalProducer *kafka.Producer
+	signalPublishingEnabled := len(cfg.Kafka.Brokers) > 0 && cfg.Kafka.Brokers[0] != "localhost:9092"
+	
+	if signalPublishingEnabled {
+		producerCfg := &kafka.ProducerConfig{
+			Brokers:          cfg.Kafka.Brokers,
+			Topic:            cfg.Kafka.ProducerTopics.Signals,
+			BatchSize:        cfg.Kafka.BatchSize,
+			BatchTimeout:     cfg.Kafka.BatchTimeout,
+			CompressionCodec: cfg.Kafka.CompressionCodec,
+			RequiredAcks:     cfg.Kafka.RequiredAcks,
+		}
+		var err error
+		signalProducer, err = kafka.NewProducer(producerCfg)
+		if err != nil {
+			appLogger.Warnf("Failed to create Kafka producer for signals: %v", err)
+			signalPublishingEnabled = false
+		} else {
+			appLogger.Infof("Signal publishing enabled to topic: %s", cfg.Kafka.ProducerTopics.Signals)
+			
+			healthMgr.RegisterCheck(health.NewSimpleCheck("kafka_producer", func(ctx context.Context) error {
+				return nil // Producer doesn't have a ping method
+			}))
+		}
+	} else {
+		appLogger.Info("Signal publishing disabled (no Kafka brokers configured)")
+	}
+
+	// Signal processing loop - processes market data through strategies
+	go func() {
+		ticker := time.NewTicker(cfg.Indicators.UpdateInterval)
+		defer ticker.Stop()
+		
+		appLogger.Info("Starting signal processing loop...")
+		
+		for {
+			select {
+			case <-ticker.C:
+				// Get latest trades from market-data for each book
+				for _, book := range cfg.Indicators.Books {
+					trades, err := dataProvider.GetRecentTrades(ctx, book, 1)
+					if err != nil || len(trades) == 0 {
+						continue
+					}
+					
+					// Get the latest trade
+					latestTrade := &trades[0]
+					
+					// Process through all running strategies
+					signals, err := strategyRegistry.ProcessTick(latestTrade, book)
+					if err != nil {
+						appLogger.Warnf("Error processing tick for %s: %v", book, err)
+						continue
+					}
+					
+					// Publish signals to Kafka
+					for _, signal := range signals {
+						if signal == nil {
+							continue
+						}
+						
+						// Convert to TradeSignalEvent for Kafka
+						event := &models.TradeSignalEvent{
+							EventID:   uuid.New().String(),
+							Timestamp: signal.Timestamp.UnixMilli(),
+							Book:      signal.Book,
+							Strategy:  signal.Strategy,
+							Signal:    signal.Side,
+							Price:     signal.Price,
+							Amount:    signal.Amount,
+							Metadata: map[string]interface{}{
+								"reason":     signal.Reason,
+								"confidence": signal.Confidence,
+							},
+						}
+						
+						if signalPublishingEnabled && signalProducer != nil {
+							data, err := json.Marshal(event)
+							if err != nil {
+								appLogger.Errorf("Failed to marshal signal: %v", err)
+								continue
+							}
+							
+							pubCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+							if err := signalProducer.Produce(pubCtx, []byte(book), data); err != nil {
+								appLogger.Errorf("Failed to publish signal to Kafka: %v", err)
+							} else {
+								appLogger.Infof("Published %s signal for %s: price=%.2f amount=%.8f reason=%s",
+									signal.Side, book, signal.Price, signal.Amount, signal.Reason)
+							}
+							cancel()
+						} else {
+							// Log signal when Kafka is not available
+							appLogger.Infof("[LOCAL] Generated %s signal for %s: price=%.2f amount=%.8f reason=%s",
+								signal.Side, book, signal.Price, signal.Amount, signal.Reason)
+						}
+					}
+				}
+			case <-ctx.Done():
+				appLogger.Info("Signal processing loop stopping...")
+				return
+			}
+		}
+	}()
+
 	go func() {
 		ticker := time.NewTicker(30 * time.Second)
 		defer ticker.Stop()
@@ -189,6 +299,12 @@ func main() {
 	}
 
 	indicatorSvc.Stop()
+
+	if signalProducer != nil {
+		if err := signalProducer.Close(); err != nil {
+			appLogger.Errorf("Error closing Kafka producer: %v", err)
+		}
+	}
 
 	if redisClient != nil {
 		if err := redisClient.Close(); err != nil {
