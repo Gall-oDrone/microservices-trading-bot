@@ -10,9 +10,11 @@ import (
 	"syscall"
 	"time"
 
+	"bitso-trading-platform/shared/pkg/bitso"
 	"bitso-trading-platform/shared/pkg/kafka"
 	"bitso-trading-platform/shared/pkg/models"
 	"bitso-trading-platform/strategy-executor/internal/config"
+	"bitso-trading-platform/strategy-executor/internal/fees"
 	"bitso-trading-platform/strategy-executor/internal/health"
 	"bitso-trading-platform/strategy-executor/internal/indicators"
 	"bitso-trading-platform/strategy-executor/internal/logger"
@@ -108,6 +110,16 @@ func main() {
 
 	strategyRegistry := strategies.NewEnhancedRegistry(indicatorSvc)
 
+	if cfg.Bitso.FeesEnabled {
+		bc := bitso.NewClient()
+		bc.SetAuth(cfg.Bitso.APIKey, cfg.Bitso.APISecret)
+		if cfg.Bitso.APIBaseURL != "" {
+			bc.SetAPIBaseURL(cfg.Bitso.APIBaseURL)
+		}
+		strategyRegistry.SetFeeRatesProvider(fees.NewCachedBitsoFees(bc, cfg.Bitso.FeesCacheTTL))
+		appLogger.Info("Bitso fee provider registered (cached GET /fees for limit_profit thresholds)")
+	}
+
 	if cfg.Strategy.DefaultStrategy != "" && cfg.Strategy.DefaultStrategy != "none" {
 		defaultConfig := strategies.StrategyConfig{
 			Name:    fmt.Sprintf("%s_%s", cfg.Strategy.DefaultStrategy, cfg.Strategy.DefaultBook),
@@ -181,18 +193,30 @@ func main() {
 			if signal == nil {
 				continue
 			}
+			eventID := uuid.New().String()
+			if signal.Metadata != nil {
+				if v, ok := signal.Metadata["event_id"].(string); ok && v != "" {
+					eventID = v
+				}
+			}
+			meta := map[string]interface{}{
+				"reason":     signal.Reason,
+				"confidence": signal.Confidence,
+			}
+			if signal.Metadata != nil {
+				for k, v := range signal.Metadata {
+					meta[k] = v
+				}
+			}
 			event := &models.TradeSignalEvent{
-				EventID:   uuid.New().String(),
+				EventID:   eventID,
 				Timestamp: signal.Timestamp.UnixMilli(),
 				Book:      signal.Book,
 				Strategy:  signal.Strategy,
 				Signal:    signal.Side,
 				Price:     signal.Price,
 				Amount:    signal.Amount,
-				Metadata: map[string]interface{}{
-					"reason":     signal.Reason,
-					"confidence": signal.Confidence,
-				},
+				Metadata:  meta,
 			}
 			data, err := json.Marshal(event)
 			if err != nil {

@@ -50,10 +50,12 @@ LOOKBACK_PERIOD="${LOOKBACK_PERIOD:-20}"
 ENTRY_THRESHOLD="${ENTRY_THRESHOLD:-2.0}"
 EXIT_THRESHOLD="${EXIT_THRESHOLD:-0.5}"
 
-# limit_profit params — buy at reference + entry_offset; sell when last >= entry + min_profit
+# limit_profit params — buy at reference + entry_offset; sell when last >= entry + min_profit + fee_addon
 # (see docs/LIMIT-PROFIT-STRATEGY.md)
 ENTRY_OFFSET="${ENTRY_OFFSET:-500}"
 MIN_PROFIT_LP="${MIN_PROFIT_LP:-5000}"
+FEE_LP="${FEE_LP:-0}"
+FEE_BPS_LP="${FEE_BPS_LP:-0}"
 LP_REFERENCE="${LP_REFERENCE:-last_trade}"
 MIN_SIGNAL_INTERVAL="${MIN_SIGNAL_INTERVAL:-60}"
 
@@ -139,9 +141,11 @@ case "$STRATEGY_TYPE" in
       --arg ref "$LP_REFERENCE" \
       --argjson eo "$ENTRY_OFFSET" \
       --argjson mp "$MIN_PROFIT_LP" \
+      --argjson fee "$FEE_LP" \
+      --argjson fbps "$FEE_BPS_LP" \
       --argjson ps "$POSITION_SIZE" \
       --argjson msi "$MIN_SIGNAL_INTERVAL" \
-      '{name:$name, type:"limit_profit", book:$book, parameters:{reference:$ref, entry_offset:$eo, min_profit:$mp, position_size:$ps, min_signal_interval:$msi}}')
+      '{name:$name, type:"limit_profit", book:$book, parameters:{reference:$ref, entry_offset:$eo, min_profit:$mp, fee:$fee, fee_bps:$fbps, position_size:$ps, min_signal_interval:$msi}}')
     ;;
   momentum)
     CREATE_BODY=$(jq -nc \

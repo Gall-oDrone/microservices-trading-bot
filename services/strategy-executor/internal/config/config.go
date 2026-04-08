@@ -38,6 +38,18 @@ type Config struct {
 
 	// Metrics configuration
 	Metrics MetricsConfig `json:"metrics"`
+
+	// Bitso private API (optional) — used to load maker/taker fees via GET /fees for limit_profit exits.
+	Bitso BitsoConfig `json:"bitso"`
+}
+
+// BitsoConfig holds optional Bitso API credentials for fee lookups.
+type BitsoConfig struct {
+	APIKey        string
+	APISecret     string
+	APIBaseURL    string        // empty = default https://bitso.com/api
+	FeesCacheTTL  time.Duration // TTL for cached GET /fees response
+	FeesEnabled   bool          // true when key and secret are set
 }
 
 // ServiceConfig holds service-specific configuration
@@ -228,7 +240,14 @@ func Load() (*Config, error) {
 			Path:    getEnv("METRICS_PATH", "/metrics"),
 			Port:    getEnvAsInt("METRICS_PORT", 9090),
 		},
+		Bitso: BitsoConfig{
+			APIKey:       getEnv("BITSO_API_KEY", ""),
+			APISecret:    getEnv("BITSO_API_SECRET", ""),
+			APIBaseURL:   getEnv("BITSO_API_BASE_URL", ""),
+			FeesCacheTTL: getEnvAsDuration("BITSO_FEES_CACHE_TTL", time.Hour),
+		},
 	}
+	config.Bitso.FeesEnabled = config.Bitso.APIKey != "" && config.Bitso.APISecret != ""
 
 	// Validate configuration
 	if err := config.Validate(); err != nil {

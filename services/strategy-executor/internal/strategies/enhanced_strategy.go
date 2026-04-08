@@ -37,6 +37,10 @@ type StrategyState struct {
 	WinCount        int64     `json:"win_count"`
 	LossCount       int64     `json:"loss_count"`
 	ConsecutiveLoss int       `json:"consecutive_loss"`
+	// PendingBuy is true after a BUY signal was emitted but before a fill was confirmed (limit_profit).
+	PendingBuy bool `json:"pending_buy,omitempty"`
+	// PendingEventID is the TradeSignalEvent.event_id for the open BUY (used to match fill callbacks).
+	PendingEventID string `json:"pending_event_id,omitempty"`
 }
 
 // StrategyMetrics represents performance metrics for a strategy
@@ -109,6 +113,12 @@ type EnhancedStrategy interface {
 
 	IsRunning() bool
 	IsWithinSchedule() bool
+}
+
+// OrderFillAware strategies open a position only after an exchange fill is reported for the BUY signal.
+// Correlation uses the same event_id published on trading.signals (metadata.event_id).
+type OrderFillAware interface {
+	OnOrderFilled(eventID, book, side string, avgPrice, filledAmount float64)
 }
 
 // EnhancedStrategyFactory creates enhanced strategy instances

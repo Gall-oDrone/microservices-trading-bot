@@ -117,6 +117,7 @@ func NewWithOptions(config *Config, healthMgr *health.Manager, metrics *metrics.
 
 	if handlers.Strategies != nil {
 		mux.HandleFunc("/api/v1/strategies", handlers.Strategies.HandleStrategies)
+		mux.HandleFunc("/api/v1/strategies/order-fill", handlers.Strategies.HandleOrderFill)
 		mux.HandleFunc("/api/v1/strategies/", handlers.Strategies.HandleStrategy)
 		mux.HandleFunc("/api/v1/strategies/types", handlers.Strategies.GetAvailableTypes)
 		mux.HandleFunc("/api/v1/strategies/stats", handlers.Strategies.GetStats)
@@ -471,6 +472,33 @@ func (h *StrategyHandler) HandleStrategies(w http.ResponseWriter, r *http.Reques
 	default:
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 	}
+}
+
+// HandleOrderFill reports an exchange fill for strategies that wait for fills (e.g. limit_profit BUY).
+// Body JSON: event_id, book, side, average_price, filled_amount (optional).
+func (h *StrategyHandler) HandleOrderFill(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var body struct {
+		EventID      string  `json:"event_id"`
+		Book         string  `json:"book"`
+		Side         string  `json:"side"`
+		AveragePrice float64 `json:"average_price"`
+		FilledAmount float64 `json:"filled_amount"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, fmt.Sprintf("Invalid JSON: %v", err), http.StatusBadRequest)
+		return
+	}
+	if body.EventID == "" || body.Book == "" || body.Side == "" {
+		http.Error(w, "event_id, book, and side are required", http.StatusBadRequest)
+		return
+	}
+	h.registry.NotifyOrderFilled(body.EventID, body.Book, body.Side, body.AveragePrice, body.FilledAmount)
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 }
 
 // HandleStrategy handles single strategy operations

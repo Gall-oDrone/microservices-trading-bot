@@ -16,6 +16,7 @@ type EnhancedRegistry struct {
 	strategies   map[string]EnhancedStrategy
 	factories    map[string]EnhancedStrategyFactory
 	indicatorSvc *indicators.Service
+	feeRates     MakerTakerFeeProvider
 	mu           sync.RWMutex
 }
 
@@ -68,9 +69,29 @@ func (r *EnhancedRegistry) CreateAndRegister(config StrategyConfig) (EnhancedStr
 		return nil, fmt.Errorf("initialize strategy '%s': %w", config.Name, err)
 	}
 
+	if r.feeRates != nil {
+		if inj, ok := strategy.(feeRatesInjectable); ok {
+			inj.SetFeeRatesProvider(r.feeRates)
+		}
+	}
+
 	r.strategies[config.Name] = strategy
 
 	return strategy, nil
+}
+
+// SetFeeRatesProvider registers a Bitso (or compatible) fee source for strategies that support it.
+// Existing running strategy instances are updated immediately.
+func (r *EnhancedRegistry) SetFeeRatesProvider(p MakerTakerFeeProvider) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	r.feeRates = p
+	for _, strategy := range r.strategies {
+		if inj, ok := strategy.(feeRatesInjectable); ok {
+			inj.SetFeeRatesProvider(p)
+		}
+	}
 }
 
 // Get retrieves a strategy by name
@@ -417,5 +438,20 @@ func (r *EnhancedRegistry) UpdateMetricsForSignal(strategyName, side string) {
 
 	r.mu.RLock()
 	defer r.mu.RUnlock()
+	r.updatePrometheusMetrics()
+}
+
+// NotifyOrderFilled delivers a fill to strategies that implement OrderFillAware (e.g. limit_profit BUY fills).
+func (r *EnhancedRegistry) NotifyOrderFilled(eventID, book, side string, avgPrice, filledAmount float64) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	for _, strategy := range r.strategies {
+		fillAware, ok := strategy.(OrderFillAware)
+		if !ok || !strategy.IsRunning() {
+			continue
+		}
+		fillAware.OnOrderFilled(eventID, book, side, avgPrice, filledAmount)
+	}
 	r.updatePrometheusMetrics()
 }
