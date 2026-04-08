@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"bitso-trading-platform/order-management/internal/config"
@@ -183,6 +184,9 @@ func (s *HTTPServer) validateOrderHandler(w http.ResponseWriter, r *http.Request
 		s.respondError(w, http.StatusBadRequest, fmt.Sprintf("Invalid request body: %v", err))
 		return
 	}
+	// Order-management validators expect lowercase side/type (Bitso signals often use BUY/SELL).
+	req.Side = strings.ToLower(strings.TrimSpace(req.Side))
+	req.Type = strings.ToLower(strings.TrimSpace(req.Type))
 
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 	defer cancel()

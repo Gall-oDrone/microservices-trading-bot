@@ -508,7 +508,7 @@ func (te *TradingEngine) processTradeSignal(signal *models.TradeSignalEvent) err
 	if te.preTradeValidator != nil {
 		validationReq := &execution.OrderValidationRequest{
 			Book:     signal.Book,
-			Side:     signal.Signal,
+			Side:     strings.ToLower(strings.TrimSpace(signal.Signal)),
 			Type:     "limit",
 			Amount:   signal.Amount,
 			Price:    signal.Price,

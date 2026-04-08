@@ -126,7 +126,7 @@ curl -sS -X POST --max-time 10 "$STRATEGY_EXECUTOR_URL/api/v1/strategies" \
       \"lookback_period\": 5,
       \"entry_threshold\": 1.5,
       \"exit_threshold\": 0.5,
-      \"position_size\": 0.0001
+      \"position_size\": 0.001
     }
   }" | jq -e . &>/dev/null && ok "Strategy created" || warn "Create strategy failed"
 
