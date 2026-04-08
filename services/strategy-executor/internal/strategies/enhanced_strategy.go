@@ -144,6 +144,9 @@ func (s *BaseEnhancedStrategy) Version() string {
 
 func (s *BaseEnhancedStrategy) Initialize(config StrategyConfig, indicatorSvc *indicators.Service) error {
 	s.config = config
+	if config.Name != "" {
+		s.name = config.Name
+	}
 	s.indicatorSvc = indicatorSvc
 	s.state = StrategyState{Name: s.name}
 	s.metrics = StrategyMetrics{}

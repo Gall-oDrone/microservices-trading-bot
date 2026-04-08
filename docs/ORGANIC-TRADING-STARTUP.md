@@ -70,4 +70,4 @@ The script verifies pods, checks Redis in logs, port-forwards strategy-executor,
 ## Troubleshooting
 
 - **`Insufficient trades for btc_mxn: got N, need 20`** in strategy-executor logs: the indicator service needs enough recent trades from market-data before bands/SMA stabilize; wait for **N ≥ 20** or reduce indicator window in config if your deployment exposes it.
-- **GET `/api/v1/strategies/{name}` shows `parameters: null` or a generic `name`:** some builds return type-level metadata; confirm **`running: true`** and watch logs/metrics for your custom strategy name if the API lists duplicates.
+- **GET `/api/v1/strategies/{name}`** should return the **instance** `name` (the id you passed at create) and **`parameters`** from the stored config. If you still see stale behavior, ensure the running image includes the strategy-executor registry fix (instance name + parameters on `StrategyInfo`).

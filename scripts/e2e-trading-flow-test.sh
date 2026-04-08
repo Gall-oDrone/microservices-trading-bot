@@ -20,6 +20,13 @@
 #   PIPELINE_WAIT_SEC       (default 120)  — max seconds to wait
 #   PIPELINE_POLL_SEC       (default 2)    — poll interval
 #
+# Multi-replica trading-engine + /metrics:
+#   Signal messages are keyed by book (e.g. btc_mxn), so Kafka assigns them to a single partition.
+#   Only one pod in the consumer group reads that partition; Service:8080 load-balances across
+#   pods, so curling TRADING_ENGINE_URL/metrics may show signals_received_total=0 even when
+#   another replica is processing. For local checks: scale trading-engine to 1 replica, or
+#   port-forward the pod named in kafka-consumer-groups --describe for trading-engine-group.
+#
 set -euo pipefail
 
 RED='\033[0;31m'

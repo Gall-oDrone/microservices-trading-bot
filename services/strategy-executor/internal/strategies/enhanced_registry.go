@@ -293,14 +293,15 @@ func (r *EnhancedRegistry) ProcessBar(bar *indicators.OHLCV, book string) ([]*Si
 
 // StrategyInfo contains strategy status information
 type StrategyInfo struct {
-	Name      string         `json:"name"`
-	Type      string         `json:"type"`
-	Version   string         `json:"version"`
-	Book      string         `json:"book"`
-	Running   bool           `json:"running"`
-	Enabled   bool           `json:"enabled"`
-	State     StrategyState  `json:"state"`
-	Metrics   StrategyMetrics `json:"metrics"`
+	Name       string                 `json:"name"`
+	Type       string                 `json:"type"`
+	Version    string                 `json:"version"`
+	Book       string                 `json:"book"`
+	Parameters map[string]interface{} `json:"parameters,omitempty"`
+	Running    bool                   `json:"running"`
+	Enabled    bool                   `json:"enabled"`
+	State      StrategyState          `json:"state"`
+	Metrics    StrategyMetrics        `json:"metrics"`
 }
 
 // GetStrategyInfo returns information about a strategy
@@ -316,14 +317,15 @@ func (r *EnhancedRegistry) GetStrategyInfo(name string) (*StrategyInfo, error) {
 	config := strategy.GetConfig()
 
 	return &StrategyInfo{
-		Name:    strategy.Name(),
-		Type:    config.Type,
-		Version: strategy.Version(),
-		Book:    config.Book,
-		Running: strategy.IsRunning(),
-		Enabled: config.Enabled,
-		State:   strategy.GetState(),
-		Metrics: strategy.GetMetrics(),
+		Name:       strategy.Name(),
+		Type:       config.Type,
+		Version:    strategy.Version(),
+		Book:       config.Book,
+		Parameters: config.Parameters,
+		Running:    strategy.IsRunning(),
+		Enabled:    config.Enabled,
+		State:      strategy.GetState(),
+		Metrics:    strategy.GetMetrics(),
 	}, nil
 }
 
@@ -337,14 +339,15 @@ func (r *EnhancedRegistry) GetAllStrategyInfo() []*StrategyInfo {
 	for _, strategy := range r.strategies {
 		config := strategy.GetConfig()
 		infos = append(infos, &StrategyInfo{
-			Name:    strategy.Name(),
-			Type:    config.Type,
-			Version: strategy.Version(),
-			Book:    config.Book,
-			Running: strategy.IsRunning(),
-			Enabled: config.Enabled,
-			State:   strategy.GetState(),
-			Metrics: strategy.GetMetrics(),
+			Name:       strategy.Name(),
+			Type:       config.Type,
+			Version:    strategy.Version(),
+			Book:       config.Book,
+			Parameters: config.Parameters,
+			Running:    strategy.IsRunning(),
+			Enabled:    config.Enabled,
+			State:      strategy.GetState(),
+			Metrics:    strategy.GetMetrics(),
 		})
 	}
 

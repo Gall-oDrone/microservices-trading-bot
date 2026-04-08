@@ -67,8 +67,8 @@ func TestEnhancedRegistry_CreateAndRegister(t *testing.T) {
 		t.Fatal("Expected strategy, got nil")
 	}
 
-	if strategy.Name() != "mean_reversion" {
-		t.Errorf("Expected strategy name 'mean_reversion', got '%s'", strategy.Name())
+	if strategy.Name() != "test_mr_strategy" {
+		t.Errorf("Expected strategy instance name 'test_mr_strategy', got '%s'", strategy.Name())
 	}
 
 	retrieved, err := registry.Get("test_mr_strategy")
@@ -211,10 +211,10 @@ func TestEnhancedRegistry_GetAllStrategyInfo(t *testing.T) {
 
 	var strategy1Info, strategy2Info *StrategyInfo
 	for _, info := range infos {
-		if info.Name == "mean_reversion" && info.Book == "btc_mxn" {
+		if info.Name == "strategy_1" && info.Book == "btc_mxn" {
 			strategy1Info = info
 		}
-		if info.Name == "momentum" && info.Book == "eth_mxn" {
+		if info.Name == "strategy_2" && info.Book == "eth_mxn" {
 			strategy2Info = info
 		}
 	}

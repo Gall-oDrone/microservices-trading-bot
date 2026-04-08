@@ -128,8 +128,8 @@ func TestMeanReversionStrategy_OnTick_BuySignal(t *testing.T) {
 		t.Errorf("Expected signal side 'BUY', got '%s'", signal.Side)
 	}
 
-	if signal.Strategy != "mean_reversion" {
-		t.Errorf("Expected strategy 'mean_reversion', got '%s'", signal.Strategy)
+	if signal.Strategy != "test_mean_reversion" {
+		t.Errorf("Expected signal strategy id 'test_mean_reversion', got '%s'", signal.Strategy)
 	}
 
 	if signal.Book != "btc_mxn" {
