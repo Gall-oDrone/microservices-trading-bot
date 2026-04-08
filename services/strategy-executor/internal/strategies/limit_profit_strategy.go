@@ -15,37 +15,47 @@ import (
 )
 
 // LimitProfitConfig holds parameters for the limit-profit / scalp-style strategy.
-// Reference price is either the latest trade (last_trade) or VWAP (vwap).
-// Buy limit = reference + entry_offset. Exit when last >= threshold; threshold uses Bitso GET /fees
-// when enabled and configured, else entry + min_profit + manual fee_addon (see exitFeeAddon).
+// Exit threshold uses Bitso GET /fees with configurable maker/taker per leg when credentials exist;
+// otherwise entry + min_profit + manual fee_addon.
 type LimitProfitConfig struct {
-	Reference         string  // "last_trade" or "vwap"
-	EntryOffset       float64 // added to reference for BUY limit price
-	MinProfit         float64 // minimum price move above entry before SELL (strategy target, before fees)
-	Fee               float64 // extra price margin (same units as book), always added on top of threshold
-	FeeBPS            float64 // manual mode only: symmetric bps × entry / 10_000 × 2 (ignored when Bitso fees apply)
-	UseBitsoFees      bool    // use MakerTakerFeeProvider (GET /fees) when true and provider returns ok
-	PositionSize      float64
-	MinSignalInterval int // seconds between signals (entry or exit)
+	Reference            string // "last_trade" or "vwap"
+	EntryOffset          float64
+	MinProfit            float64
+	Fee                  float64 // extra margin on top of computed threshold (slippage buffer)
+	FeeBPS               float64 // manual mode only
+	UseBitsoFees         bool
+	BuyLiquidity         string // "maker" | "taker" — expected role for the buy leg (default maker)
+	SellLiquidity        string // "maker" | "taker" — expected role for the sell leg (default taker)
+	ExitPriceReference   string // "last" | "bid" | "mid" | "min_last_bid" — price vs threshold
+	PositionSize         float64
+	MinSignalInterval    int
 }
 
 // DefaultLimitProfitConfig returns conservative defaults (tune per book / liquidity).
 func DefaultLimitProfitConfig() LimitProfitConfig {
 	return LimitProfitConfig{
-		Reference:         "last_trade",
-		EntryOffset:       500,
-		MinProfit:         5000,
-		PositionSize:      0.001,
-		MinSignalInterval: 60,
+		Reference:          "last_trade",
+		EntryOffset:        500,
+		MinProfit:          5000,
+		PositionSize:       0.001,
+		MinSignalInterval:  60,
+		BuyLiquidity:       "maker",
+		SellLiquidity:      "taker",
+		ExitPriceReference: "last",
 	}
 }
 
 // LimitProfitStrategy buys at reference+offset then sells when market shows min profit vs entry.
 type LimitProfitStrategy struct {
 	*BaseEnhancedStrategy
-	lpConfig  LimitProfitConfig
-	feeRates  MakerTakerFeeProvider
-	mu        sync.RWMutex
+	lpConfig LimitProfitConfig
+	feeRates MakerTakerFeeProvider
+
+	// Filled after BUY fill notification (optional); cleared on exit.
+	positionBuyFeeRate   float64 // measured buy fee as decimal of notional; overrides API buy leg when > 0
+	positionBuyLiquidity string  // maker|taker from venue when buy fill executed
+
+	mu sync.RWMutex
 }
 
 // NewLimitProfitStrategy constructs a new instance (factory uses this).
@@ -95,6 +105,15 @@ func (s *LimitProfitStrategy) Initialize(config StrategyConfig, indicatorSvc *in
 		if v, ok := p["use_bitso_fees"].(bool); ok {
 			s.lpConfig.UseBitsoFees = v
 		}
+		if v, ok := p["buy_liquidity"].(string); ok {
+			s.lpConfig.BuyLiquidity = strings.ToLower(strings.TrimSpace(v))
+		}
+		if v, ok := p["sell_liquidity"].(string); ok {
+			s.lpConfig.SellLiquidity = strings.ToLower(strings.TrimSpace(v))
+		}
+		if v, ok := p["exit_price_reference"].(string); ok {
+			s.lpConfig.ExitPriceReference = strings.ToLower(strings.TrimSpace(v))
+		}
 	}
 	if config.Sizing.MaxPositionSize > 0 {
 		s.lpConfig.PositionSize = config.Sizing.MaxPositionSize
@@ -104,6 +123,15 @@ func (s *LimitProfitStrategy) Initialize(config StrategyConfig, indicatorSvc *in
 	}
 	if s.lpConfig.PositionSize <= 0 {
 		s.lpConfig.PositionSize = DefaultLimitProfitConfig().PositionSize
+	}
+	if s.lpConfig.BuyLiquidity == "" {
+		s.lpConfig.BuyLiquidity = "maker"
+	}
+	if s.lpConfig.SellLiquidity == "" {
+		s.lpConfig.SellLiquidity = "taker"
+	}
+	if s.lpConfig.ExitPriceReference == "" {
+		s.lpConfig.ExitPriceReference = "last"
 	}
 	return nil
 }
@@ -121,7 +149,7 @@ func (s *LimitProfitStrategy) OnTick(tick *indicators.Trade) (*Signal, error) {
 	}
 
 	state := s.GetState()
-	price := tick.Price
+	tickPrice := tick.Price
 	book := s.config.Book
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -129,13 +157,12 @@ func (s *LimitProfitStrategy) OnTick(tick *indicators.Trade) (*Signal, error) {
 
 	if !state.HasPosition {
 		if state.PendingBuy {
-			// BUY limit is working at the exchange; wait for fill notification before monitoring profit.
 			return nil, nil
 		}
 		if !s.canEmitSignal() {
 			return nil, nil
 		}
-		ref := s.referencePrice(ctx, price)
+		ref := s.referencePrice(ctx, tickPrice)
 		buyPrice := ref + s.lpConfig.EntryOffset
 
 		eventID := uuid.New().String()
@@ -165,14 +192,21 @@ func (s *LimitProfitStrategy) OnTick(tick *indicators.Trade) (*Signal, error) {
 		}, nil
 	}
 
-	// In position: exit when last >= threshold (Bitso maker/taker from GET /fees when available)
 	entry := state.EntryPrice
-	threshold, maker, taker, feeModel := s.exitPriceThreshold(ctx, entry)
+	comparePrice, refLabel := s.referenceExitPrice(ctx, tickPrice, book)
+	threshold, buyR, sellR, feeModel := s.exitPriceThreshold(ctx, entry)
 	manualAddon := s.exitFeeAddon(entry)
-	if price >= threshold {
+
+	if comparePrice >= threshold {
 		posSize := state.PositionSize
-		gross := (price - entry) * posSize
-		netQuote := bitso.NetQuotePnLPerBase(entry, price, maker, taker) * posSize
+		exitForPnL := tickPrice
+		switch refLabel {
+		case "bid", "mid", "min_last_bid":
+			exitForPnL = comparePrice
+		}
+		gross := (exitForPnL - entry) * posSize
+		netQuote := bitso.NetQuotePnLPerBase(entry, exitForPnL, buyR, sellR) * posSize
+
 		profitable := gross > 0
 		if feeModel == "bitso_api" {
 			profitable = netQuote > 0
@@ -181,20 +215,26 @@ func (s *LimitProfitStrategy) OnTick(tick *indicators.Trade) (*Signal, error) {
 		s.RecordSignal()
 		s.RecordTrade(profitable)
 		s.ClearPosition()
+		s.resetPositionFeeOverrides()
 
 		meta := map[string]interface{}{
-			"signal_type":      "exit_sell",
-			"entry_price":      entry,
-			"gross_quote_pnl":  gross,
-			"exit_threshold":   threshold,
-			"fee_model":        feeModel,
-			"min_profit":       s.lpConfig.MinProfit,
-			"extra_fee_margin": s.lpConfig.Fee,
+			"signal_type":           "exit_sell",
+			"entry_price":           entry,
+			"gross_quote_pnl":       gross,
+			"exit_threshold":        threshold,
+			"fee_model":             feeModel,
+			"min_profit":            s.lpConfig.MinProfit,
+			"extra_fee_margin":      s.lpConfig.Fee,
+			"exit_price_reference":  refLabel,
+			"compare_price":         comparePrice,
+			"tick_price":            tickPrice,
+			"buy_liquidity_effective": s.effectiveBuyLiquidity(),
+			"sell_liquidity":        s.lpConfig.SellLiquidity,
 		}
 		if feeModel == "bitso_api" {
 			meta["net_quote_pnl"] = netQuote
-			meta["maker_fee_rate"] = maker
-			meta["taker_fee_rate"] = taker
+			meta["buy_fee_rate"] = buyR
+			meta["sell_fee_rate"] = sellR
 		} else {
 			meta["fee_addon_manual"] = manualAddon
 		}
@@ -204,11 +244,11 @@ func (s *LimitProfitStrategy) OnTick(tick *indicators.Trade) (*Signal, error) {
 			Book:       book,
 			Side:       "SELL",
 			Amount:     posSize,
-			Price:      price,
+			Price:      tickPrice,
 			Confidence: 0.85,
 			Reason: fmt.Sprintf(
-				"limit_profit exit [%s]: last=%.2f >= threshold=%.2f (entry=%.2f min_profit=%.2f)",
-				feeModel, price, threshold, entry, s.lpConfig.MinProfit,
+				"limit_profit exit [%s] ref=%s: compare=%.2f >= threshold=%.2f (entry=%.2f min_profit=%.2f)",
+				feeModel, refLabel, comparePrice, threshold, entry, s.lpConfig.MinProfit,
 			),
 			Timestamp: time.Now(),
 			Metadata:  meta,
@@ -218,8 +258,8 @@ func (s *LimitProfitStrategy) OnTick(tick *indicators.Trade) (*Signal, error) {
 	return nil, nil
 }
 
-// OnOrderFilled opens the position when the BUY limit fills at the exchange. Correlates via event_id on the signal.
-func (s *LimitProfitStrategy) OnOrderFilled(eventID, book, side string, avgPrice, filledAmount float64) {
+// OnOrderFilled opens the position when the BUY limit fills at the exchange.
+func (s *LimitProfitStrategy) OnOrderFilled(fill OrderFill) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -227,25 +267,33 @@ func (s *LimitProfitStrategy) OnOrderFilled(eventID, book, side string, avgPrice
 		return
 	}
 	st := s.GetState()
-	if !st.PendingBuy || st.PendingEventID == "" || eventID != st.PendingEventID {
+	if !st.PendingBuy || st.PendingEventID == "" || fill.EventID != st.PendingEventID {
 		return
 	}
-	if book != s.config.Book {
+	if fill.Book != s.config.Book {
 		return
 	}
-	switch strings.ToLower(strings.TrimSpace(side)) {
+	switch strings.ToLower(strings.TrimSpace(fill.Side)) {
 	case "buy", "purchase":
 	default:
 		return
 	}
-	if avgPrice <= 0 {
+	if fill.AveragePrice <= 0 {
 		return
 	}
-	size := filledAmount
+	size := fill.FilledAmount
 	if size <= 0 {
 		size = s.lpConfig.PositionSize
 	}
-	s.SetPosition("LONG", size, avgPrice)
+
+	if fill.BuyFeeRate != nil && *fill.BuyFeeRate > 0 {
+		s.positionBuyFeeRate = *fill.BuyFeeRate
+	}
+	if fill.Liquidity != "" {
+		s.positionBuyLiquidity = normalizeLiquidity(fill.Liquidity)
+	}
+
+	s.SetPosition("LONG", size, fill.AveragePrice)
 	s.UpdateState(func(out *StrategyState) {
 		out.PendingBuy = false
 		out.PendingEventID = ""
@@ -259,20 +307,108 @@ func (s *LimitProfitStrategy) SetFeeRatesProvider(p MakerTakerFeeProvider) {
 	s.feeRates = p
 }
 
-// exitPriceThreshold returns the minimum last price to emit SELL. feeModel is "bitso_api" or "manual_estimate".
-func (s *LimitProfitStrategy) exitPriceThreshold(ctx context.Context, entry float64) (threshold, maker, taker float64, feeModel string) {
-	if s.lpConfig.UseBitsoFees && s.feeRates != nil {
-		if m, t, ok := s.feeRates.MakerTakerRatesForBook(ctx, s.config.Book); ok {
-			be := bitso.MinExitPriceAfterFees(entry, m, t)
-			return be + s.lpConfig.MinProfit + s.lpConfig.Fee, m, t, "bitso_api"
-		}
-	}
-	manual := s.exitFeeAddon(entry)
-	return entry + s.lpConfig.MinProfit + manual, 0, 0, "manual_estimate"
+func (s *LimitProfitStrategy) resetPositionFeeOverrides() {
+	s.positionBuyFeeRate = 0
+	s.positionBuyLiquidity = ""
 }
 
-// exitFeeAddon returns extra price margin for the exit threshold: fixed Fee plus a symmetric bps estimate on entry.
-// fee_bps is applied as 2 * entry * (fee_bps/10000), approximating buy+sell commission on notional ≈ entry × size each leg.
+func normalizeLiquidity(v string) string {
+	x := strings.ToLower(strings.TrimSpace(v))
+	switch x {
+	case "maker", "taker":
+		return x
+	default:
+		return ""
+	}
+}
+
+func (s *LimitProfitStrategy) effectiveBuyLiquidity() string {
+	if s.positionBuyLiquidity != "" {
+		return s.positionBuyLiquidity
+	}
+	if v := normalizeLiquidity(s.lpConfig.BuyLiquidity); v != "" {
+		return v
+	}
+	return "maker"
+}
+
+// referenceExitPrice maps tick/trade price to the value compared against the exit threshold.
+func (s *LimitProfitStrategy) referenceExitPrice(ctx context.Context, tickPrice float64, book string) (float64, string) {
+	ref := strings.ToLower(strings.TrimSpace(s.lpConfig.ExitPriceReference))
+	if ref == "" {
+		ref = "last"
+	}
+	switch ref {
+	case "bid", "mid", "min_last_bid":
+		ind := s.GetIndicatorService()
+		if ind == nil {
+			return tickPrice, "last_fallback_no_indicator"
+		}
+		bid, ask, last, ok := ind.GetBookTicker(ctx, book)
+		if !ok {
+			return tickPrice, "last_fallback_no_ticker"
+		}
+		_ = last
+		switch ref {
+		case "bid":
+			return bid, "bid"
+		case "mid":
+			return (bid + ask) / 2, "mid"
+		case "min_last_bid":
+			if bid < tickPrice {
+				return bid, "min_last_bid"
+			}
+			return tickPrice, "min_last_bid"
+		}
+	}
+	return tickPrice, "last"
+}
+
+func (s *LimitProfitStrategy) exitPriceThreshold(ctx context.Context, entry float64) (threshold, buyR, sellR float64, feeModel string) {
+	buyR, sellR, feeModel = s.resolveFeeRates(ctx, entry)
+	if feeModel == "bitso_api" {
+		be := bitso.MinExitPriceAfterRoundTrip(entry, buyR, sellR)
+		return be + s.lpConfig.MinProfit + s.lpConfig.Fee, buyR, sellR, feeModel
+	}
+	manual := s.exitFeeAddon(entry)
+	return entry + s.lpConfig.MinProfit + manual, buyR, sellR, "manual_estimate"
+}
+
+func (s *LimitProfitStrategy) resolveFeeRates(ctx context.Context, entry float64) (buyR, sellR float64, feeModel string) {
+	_ = entry
+	book := s.config.Book
+	buyLiq := s.effectiveBuyLiquidity()
+	sellLiq := normalizeLiquidity(s.lpConfig.SellLiquidity)
+	if sellLiq == "" {
+		sellLiq = "taker"
+	}
+
+	if !s.lpConfig.UseBitsoFees || s.feeRates == nil {
+		return 0, 0, "manual_estimate"
+	}
+
+	if ext, ok := s.feeRates.(BookFeeResolver); ok {
+		br, sr, ok2 := ext.FeeDecimalsForLegs(ctx, book, buyLiq, sellLiq)
+		if ok2 {
+			if s.positionBuyFeeRate > 0 {
+				br = s.positionBuyFeeRate
+			}
+			return br, sr, "bitso_api"
+		}
+	}
+
+	if m, t, ok := s.feeRates.MakerTakerRatesForBook(ctx, book); ok {
+		br, sr := m, t
+		if s.positionBuyFeeRate > 0 {
+			br = s.positionBuyFeeRate
+		}
+		return br, sr, "bitso_api"
+	}
+
+	return 0, 0, "manual_estimate"
+}
+
+// exitFeeAddon returns extra price margin for manual mode: fixed Fee plus symmetric bps on entry.
 func (s *LimitProfitStrategy) exitFeeAddon(entryPrice float64) float64 {
 	addon := s.lpConfig.Fee
 	if s.lpConfig.FeeBPS > 0 && entryPrice > 0 {
@@ -324,4 +460,5 @@ func (s *LimitProfitStrategy) Reset() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.BaseEnhancedStrategy.Reset()
+	s.resetPositionFeeOverrides()
 }

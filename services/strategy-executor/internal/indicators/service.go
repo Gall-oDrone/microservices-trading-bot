@@ -259,6 +259,16 @@ func (s *Service) GetVWAP(ctx context.Context, book string) (*IndicatorValue, er
 	return s.store.Get(ctx, book, "vwap", s.config.VWAPPeriod)
 }
 
+// GetBookTicker returns best bid, ask, and last from the data provider when implemented (e.g. HTTP market-data).
+func (s *Service) GetBookTicker(ctx context.Context, book string) (bid, ask, last float64, ok bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if s.dataProvider == nil {
+		return 0, 0, 0, false
+	}
+	return s.dataProvider.GetBookTicker(ctx, book)
+}
+
 // GetAllIndicators returns all indicators for a book
 func (s *Service) GetAllIndicators(ctx context.Context, book string) (map[string]*IndicatorValue, error) {
 	return s.store.GetAll(ctx, book)

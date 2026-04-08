@@ -56,6 +56,9 @@ ENTRY_OFFSET="${ENTRY_OFFSET:-500}"
 MIN_PROFIT_LP="${MIN_PROFIT_LP:-5000}"
 FEE_LP="${FEE_LP:-0}"
 FEE_BPS_LP="${FEE_BPS_LP:-0}"
+BUY_LIQUIDITY="${BUY_LIQUIDITY:-maker}"
+SELL_LIQUIDITY="${SELL_LIQUIDITY:-taker}"
+EXIT_PRICE_REF="${EXIT_PRICE_REF:-last}"
 LP_REFERENCE="${LP_REFERENCE:-last_trade}"
 MIN_SIGNAL_INTERVAL="${MIN_SIGNAL_INTERVAL:-60}"
 
@@ -139,13 +142,16 @@ case "$STRATEGY_TYPE" in
       --arg name "$STRATEGY_NAME" \
       --arg book "$BOOK" \
       --arg ref "$LP_REFERENCE" \
+      --arg buyl "$BUY_LIQUIDITY" \
+      --arg selll "$SELL_LIQUIDITY" \
+      --arg xref "$EXIT_PRICE_REF" \
       --argjson eo "$ENTRY_OFFSET" \
       --argjson mp "$MIN_PROFIT_LP" \
       --argjson fee "$FEE_LP" \
       --argjson fbps "$FEE_BPS_LP" \
       --argjson ps "$POSITION_SIZE" \
       --argjson msi "$MIN_SIGNAL_INTERVAL" \
-      '{name:$name, type:"limit_profit", book:$book, parameters:{reference:$ref, entry_offset:$eo, min_profit:$mp, fee:$fee, fee_bps:$fbps, position_size:$ps, min_signal_interval:$msi}}')
+      '{name:$name, type:"limit_profit", book:$book, parameters:{reference:$ref, entry_offset:$eo, min_profit:$mp, fee:$fee, fee_bps:$fbps, buy_liquidity:$buyl, sell_liquidity:$selll, exit_price_reference:$xref, position_size:$ps, min_signal_interval:$msi}}')
     ;;
   momentum)
     CREATE_BODY=$(jq -nc \

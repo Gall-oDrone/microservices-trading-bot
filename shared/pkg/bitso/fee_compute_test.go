@@ -5,15 +5,32 @@ import (
 	"testing"
 )
 
+func TestFeeDecimalForLiquidity(t *testing.T) {
+	const payload = `{
+		"maker_fee_decimal": "0.00500000",
+		"taker_fee_decimal": "0.00650000"
+	}`
+	var f Fee
+	if err := json.Unmarshal([]byte(payload), &f); err != nil {
+		t.Fatal(err)
+	}
+	if FeeDecimalForLiquidity(&f, "maker") != 0.005 {
+		t.Fatalf("maker decimal")
+	}
+	if FeeDecimalForLiquidity(&f, "taker") != 0.0065 {
+		t.Fatalf("taker decimal")
+	}
+}
+
 func TestMinExitPriceAfterFees_docExample(t *testing.T) {
 	// Example from Bitso docs: btc_mxn maker 0.5%, taker 0.65% as decimals 0.005 / 0.0065
 	entry := 1_000_000.0
 	maker := 0.005
 	taker := 0.0065
-	got := MinExitPriceAfterFees(entry, maker, taker)
+	got := MinExitPriceAfterRoundTrip(entry, maker, taker)
 	want := entry * (1 + maker) / (1 - taker)
 	if got != want {
-		t.Fatalf("MinExitPriceAfterFees: got %v want %v", got, want)
+		t.Fatalf("MinExitPriceAfterRoundTrip: got %v want %v", got, want)
 	}
 	// Sanity: break-even price above entry
 	if got <= entry {
@@ -25,7 +42,7 @@ func TestNetQuotePnLPerBase_breakEven(t *testing.T) {
 	entry := 1_000_000.0
 	maker := 0.005
 	taker := 0.0065
-	exit := MinExitPriceAfterFees(entry, maker, taker)
+	exit := MinExitPriceAfterRoundTrip(entry, maker, taker)
 	net := NetQuotePnLPerBase(entry, exit, maker, taker)
 	if net < -1e-6 || net > 1e-6 {
 		t.Fatalf("expected ~0 net at break-even exit, got %v", net)

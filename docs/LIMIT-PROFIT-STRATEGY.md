@@ -10,41 +10,53 @@
 
 2. **Entry (flat)** — place a **BUY** limit at  
    `reference_price + entry_offset`  
-   with size `position_size`. Each BUY signal carries a unique `event_id` in metadata; that id is published on `trading.signals` as `TradeSignalEvent.event_id` so order-management can link the Bitso order. The strategy stays **`pending_buy`** until a **fill** is reported — it does **not** treat the position as open until then.
+   with size `position_size`. Each BUY signal carries a unique `event_id` in metadata; that id is published on `trading.signals` as `TradeSignalEvent.event_id` so order-management can link the Bitso order. The strategy stays **`pending_buy`** until a **fill** is reported.
 
-3. **Fill notification** — report the exchange fill (average price and amount) so the strategy can open the tracked long and use the **fill price** as `entry_price`:
-   - **HTTP:** `POST /api/v1/strategies/order-fill` with JSON  
-     `{ "event_id": "<same as signal>", "book": "btc_mxn", "side": "buy", "average_price": ..., "filled_amount": ... }`  
-   - A future Kafka consumer (or OM webhook) can call the same path or an equivalent internal hook so fills are automatic in production.
+3. **Fill notification** — `POST /api/v1/strategies/order-fill` with JSON:
 
-4. **Exit (in position)** — after the fill, compare `last_price` to an **exit threshold**:
+   | Field | Required | Description |
+   |-------|----------|-------------|
+   | `event_id` | yes | Same as signal `metadata.event_id` |
+   | `book` | yes | e.g. `btc_mxn` |
+   | `side` | yes | `buy` for entry fill |
+   | `average_price` | yes | Fill average (entry) |
+   | `filled_amount` | yes | Base amount filled |
+   | `liquidity` | no | `maker` or `taker` — **actual** role for this fill (overrides configured buy leg when present) |
+   | `buy_fee_rate` | no | Decimal fraction of notional actually charged on the buy (e.g. from ledger); overrides API buy-leg fee when set |
 
-   - **Bitso fees (preferred):** if `use_bitso_fees` is true (default) and strategy-executor has **Bitso API credentials**, it calls **`GET /api/v3/fees`**, caches the response, and uses **`maker_fee_decimal`** and **`taker_fee_decimal`** for the book. The strategy assumes the **buy** was maker and the **sell** is taker, so the minimum exit last price for fee break-even is  
-     `entry × (1 + maker) / (1 − taker)`  
-     (see `shared/pkg/bitso.MinExitPriceAfterFees`). The exit threshold is that value **plus** `min_profit` **plus** optional extra margin `fee`.
+4. **Exit (in position)** — each tick computes:
 
-   - **Manual fallback:** if credentials are missing, `use_bitso_fees` is false, or `/fees` fails, the threshold is  
-     `entry + min_profit + fee + (entry × 2 × fee_bps / 10_000)`  
-     (same as the previous manual-only model).
+   - **Exit threshold** (minimum price to allow a SELL signal):  
+     `MinExitPriceAfterRoundTrip(entry, buy_fee_rate, sell_fee_rate) + min_profit + fee`  
+     where rates come from **`GET /api/v3/fees`** via `maker_fee_decimal` / `taker_fee_decimal` and the configured **buy/sell liquidity** roles (`buy_liquidity`, `sell_liquidity`), unless `buy_fee_rate` was supplied on the fill or `use_bitso_fees` is false (then manual `fee` + `fee_bps` model).
 
-   **Metadata** on the SELL signal includes `fee_model` (`bitso_api` vs `manual_estimate`), `gross_quote_pnl`, and when available **`net_quote_pnl`** (quote P&amp;L after maker/taker rates from `/fees`).
+   - **Compare price** — controlled by **`exit_price_reference`**:
+     - `last` (default): latest trade price from the tick.
+     - `bid`: best bid from market-data ticker (models lifting the bid when selling aggressively).
+     - `mid`: `(bid + ask) / 2`.
+     - `min_last_bid`: `min(last trade, bid)` — conservative when the book is wide.
 
-5. **Cooldown** — `min_signal_interval` (seconds) applies between **signals** (including after an exit before a new entry). Exit is **not** delayed by this interval once the profit condition is met.
+   Exit triggers when **`compare_price >= threshold`**.
+
+5. **P&amp;L metadata** — `gross_quote_pnl` and `net_quote_pnl` use the same **exit price** as the reference mode (last vs bid/mid) when computing net after fees.
+
+6. **Cooldown** — `min_signal_interval` applies between **entry** cycles; exit is not gated by it.
 
 ## Parameters (JSON `parameters`)
 
-| Field | Type | Default (code) | Description |
-|-------|------|----------------|-------------|
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
 | `reference` | string | `last_trade` | `last_trade` or `vwap` |
-| `entry_offset` | number | `500` | Added to reference for BUY limit (same units as book price) |
-| `min_profit` | number | `5000` | Added on top of fee break-even (same price units as the book) |
-| `fee` | number | `0` | Extra margin always added to the computed threshold (slippage / safety) |
-| `fee_bps` | number | `0` | **Manual mode only:** symmetric bps cushion (ignored when Bitso `/fees` is used successfully) |
-| `use_bitso_fees` | bool | `true` | Use cached GET `/fees` when credentials are configured |
-| `position_size` | number | `0.001` | Order size (major, e.g. BTC for `btc_mxn`) |
-| `min_signal_interval` | number | `60` | Seconds between signals (mainly between cycles) |
-
-Tune `entry_offset`, `min_profit`, and `position_size` for **Bitso Stage** liquidity and **order-management** minimums.
+| `entry_offset` | number | `500` | Added to reference for BUY limit |
+| `min_profit` | number | `5000` | Added on top of fee break-even threshold |
+| `fee` | number | `0` | Extra margin on the threshold (slippage / safety) |
+| `fee_bps` | number | `0` | Manual mode only: symmetric bps on entry |
+| `use_bitso_fees` | bool | `true` | Use cached GET `/fees` when credentials exist |
+| `buy_liquidity` | string | `maker` | `maker` or `taker` — fee column for the **buy** leg if not overridden by fill |
+| `sell_liquidity` | string | `taker` | `maker` or `taker` — fee column for the **sell** leg |
+| `exit_price_reference` | string | `last` | `last`, `bid`, `mid`, `min_last_bid` (needs market-data ticker) |
+| `position_size` | number | `0.001` | Order size (major) |
+| `min_signal_interval` | number | `60` | Seconds between entry signals |
 
 ## Organic startup
 
@@ -52,22 +64,19 @@ Tune `entry_offset`, `min_profit`, and `position_size` for **Bitso Stage** liqui
 STRATEGY_TYPE=limit_profit ./scripts/start-organic-trading.sh
 ```
 
-Optional env overrides: `ENTRY_OFFSET`, `MIN_PROFIT_LP`, `FEE_LP`, `FEE_BPS_LP`, `LP_REFERENCE`, `MIN_SIGNAL_INTERVAL`, `BOOK`, `STRATEGY_NAME`.
+Optional env: `ENTRY_OFFSET`, `MIN_PROFIT_LP`, `FEE_LP`, `FEE_BPS_LP`, `BUY_LIQUIDITY`, `SELL_LIQUIDITY`, `EXIT_PRICE_REF`, `LP_REFERENCE`, `MIN_SIGNAL_INTERVAL`, `BOOK`, `STRATEGY_NAME`.
 
-### Bitso API env (strategy-executor)
+## Bitso API env (strategy-executor)
 
 | Variable | Purpose |
 |----------|---------|
-| `BITSO_API_KEY` | With `BITSO_API_SECRET`, enables authenticated `GET /fees` for maker/taker rates |
-| `BITSO_API_SECRET` | HMAC secret for private API |
-| `BITSO_API_BASE_URL` | Optional; default `https://bitso.com/api` (set stage URL when testing against Bitso stage) |
-| `BITSO_FEES_CACHE_TTL` | Cache duration for the full `/fees` payload (default `1h`) |
+| `BITSO_API_KEY` | With `BITSO_API_SECRET`, enables `GET /fees` |
+| `BITSO_API_SECRET` | HMAC secret |
+| `BITSO_API_BASE_URL` | Optional (e.g. stage API prefix) |
+| `BITSO_FEES_CACHE_TTL` | Cache TTL for `/fees` payload (default `1h`) |
 
-## Remaining limitations
+## Operational notes
 
-- **Assumed roles:** exit math assumes **maker** on the entry fill and **taker** on the exit. If the buy takes liquidity or the sell rests, realized fees differ.
-- **`/fees` snapshot:** tier rates come from the API; **actual** debits on fills are in Bitso trades/ledger and can differ slightly.
-- **Manual mode `fee_bps`:** symmetric estimate on `entry` only; ignored when `/fees` succeeds.
-- **Spread / slippage:** only `last` trade price is compared; no order-book depth model.
-- **One** logical position at a time; state is in-memory (restart loses position unless you add persistence).
-- Same caveats as other strategies: pre-trade validation, `DRY_RUN`, and Kafka path must be healthy for live orders.
+- **Ticker-based exits** (`bid` / `mid` / `min_last_bid`) require market-data **`GET /api/v1/ticker/{book}`** reachable from strategy-executor (same base URL as indicators). If the ticker call fails, the strategy falls back to **last** and records `exit_price_reference` accordingly in metadata.
+- **In-memory state** — one logical position; restart clears pending/fill overrides unless you add persistence elsewhere.
+- **Sell execution** — the strategy emits a limit SELL at the **tick price**; pre-trade checks and the trading engine determine actual fill quality.

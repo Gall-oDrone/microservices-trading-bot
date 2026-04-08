@@ -28,6 +28,16 @@ func NewCachedBitsoFees(client *bitso.Client, ttl time.Duration) *CachedBitsoFee
 	return &CachedBitsoFees{client: client, ttl: ttl}
 }
 
+func (c *CachedBitsoFees) refreshLocked() {
+	if c.payload == nil || time.Since(c.fetched) > c.ttl {
+		cf, err := c.client.Fees(nil)
+		if err == nil {
+			c.payload = cf
+			c.fetched = time.Now()
+		}
+	}
+}
+
 // MakerTakerRatesForBook implements strategies.MakerTakerFeeProvider.
 func (c *CachedBitsoFees) MakerTakerRatesForBook(ctx context.Context, book string) (maker, taker float64, ok bool) {
 	_ = ctx
@@ -38,15 +48,9 @@ func (c *CachedBitsoFees) MakerTakerRatesForBook(ctx context.Context, book strin
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	needRefresh := c.payload == nil || time.Since(c.fetched) > c.ttl
-	if needRefresh {
-		cf, err := c.client.Fees(nil)
-		if err == nil {
-			c.payload = cf
-			c.fetched = time.Now()
-		} else if c.payload == nil {
-			return 0, 0, false
-		}
+	c.refreshLocked()
+	if c.payload == nil {
+		return 0, 0, false
 	}
 
 	f := bitso.LookupFeeByBook(c.payload, book)
@@ -57,4 +61,24 @@ func (c *CachedBitsoFees) MakerTakerRatesForBook(ctx context.Context, book strin
 	return m, t, true
 }
 
+// FeeDecimalsForLegs implements strategies.BookFeeResolver using maker/taker columns from GET /fees.
+func (c *CachedBitsoFees) FeeDecimalsForLegs(ctx context.Context, book, buyLiquidity, sellLiquidity string) (buyRate, sellRate float64, ok bool) {
+	_ = ctx
+	if c == nil || c.client == nil {
+		return 0, 0, false
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.refreshLocked()
+	if c.payload == nil {
+		return 0, 0, false
+	}
+	f := bitso.LookupFeeByBook(c.payload, book)
+	if f == nil {
+		return 0, 0, false
+	}
+	return bitso.FeeDecimalForLiquidity(f, buyLiquidity), bitso.FeeDecimalForLiquidity(f, sellLiquidity), true
+}
+
 var _ strategies.MakerTakerFeeProvider = (*CachedBitsoFees)(nil)
+var _ strategies.BookFeeResolver = (*CachedBitsoFees)(nil)

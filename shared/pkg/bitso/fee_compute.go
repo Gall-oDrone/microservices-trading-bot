@@ -1,22 +1,29 @@
 package bitso
 
-import "math"
+import (
+	"math"
+	"strings"
+)
 
-// MinExitPriceAfterFees returns the minimum last-trade price (minor per major, e.g. MXN per BTC)
-// at which selling the position is break-even on round-trip fees, assuming the buy filled as maker
-// and the sell executes as taker. Rates are decimal fractions of notional (e.g. maker_fee_decimal
-// from GET /api/v3/fees).
-func MinExitPriceAfterFees(entryPrice, makerRate, takerRate float64) float64 {
-	if takerRate >= 1 {
+// MinExitPriceAfterRoundTrip is the minimum exit last price for break-even given buy- and sell-leg
+// fee rates as decimal fractions of notional (e.g. from maker_fee_decimal / taker_fee_decimal).
+func MinExitPriceAfterRoundTrip(entryPrice, buyFeeRate, sellFeeRate float64) float64 {
+	if sellFeeRate >= 1 {
 		return math.Inf(1)
 	}
-	return entryPrice * (1 + makerRate) / (1 - takerRate)
+	return entryPrice * (1 + buyFeeRate) / (1 - sellFeeRate)
 }
 
-// NetQuotePnLPerBase returns quote-currency P&L for one unit of major (e.g. one BTC) after maker
-// fee on the buy and taker fee on the sell, using the same rate convention as MinExitPriceAfterFees.
-func NetQuotePnLPerBase(entryPrice, exitPrice, makerRate, takerRate float64) float64 {
-	return exitPrice*(1-takerRate) - entryPrice*(1+makerRate)
+// MinExitPriceAfterFees is equivalent to MinExitPriceAfterRoundTrip(entry, makerRate, takerRate).
+// Deprecated: prefer MinExitPriceAfterRoundTrip with explicit leg roles via FeeDecimalForLiquidity.
+func MinExitPriceAfterFees(entryPrice, makerRate, takerRate float64) float64 {
+	return MinExitPriceAfterRoundTrip(entryPrice, makerRate, takerRate)
+}
+
+// NetQuotePnLPerBase is quote-currency P&L per one unit of major after buyFeeRate on the entry leg
+// and sellFeeRate on the exit leg.
+func NetQuotePnLPerBase(entryPrice, exitPrice, buyFeeRate, sellFeeRate float64) float64 {
+	return exitPrice*(1-sellFeeRate) - entryPrice*(1+buyFeeRate)
 }
 
 // LookupFeeByBook returns the fee row for a book string such as "btc_mxn", or nil.
@@ -45,4 +52,28 @@ func (f *Fee) MakerTakerDecimalRates() (maker, taker float64) {
 		t = f.TakerFeePercent.Float64() / 100.0
 	}
 	return m, t
+}
+
+// FeeDecimalForLiquidity returns the fee decimal for "maker" or "taker" (case-insensitive).
+// Unknown values default to taker (conservative for costs).
+func FeeDecimalForLiquidity(f *Fee, liquidity string) float64 {
+	if f == nil {
+		return 0
+	}
+	switch strings.ToLower(strings.TrimSpace(liquidity)) {
+	case "maker":
+		m := f.MakerFeeDecimal.Float64()
+		if m == 0 && f.MakerFeePercent != "" {
+			m = f.MakerFeePercent.Float64() / 100.0
+		}
+		return m
+	case "taker", "":
+		t := f.TakerFeeDecimal.Float64()
+		if t == 0 && f.TakerFeePercent != "" {
+			t = f.TakerFeePercent.Float64() / 100.0
+		}
+		return t
+	default:
+		return FeeDecimalForLiquidity(f, "taker")
+	}
 }

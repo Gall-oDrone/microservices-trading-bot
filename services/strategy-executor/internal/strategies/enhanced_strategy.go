@@ -115,10 +115,22 @@ type EnhancedStrategy interface {
 	IsWithinSchedule() bool
 }
 
+// OrderFill describes an exchange fill for OrderFillAware strategies.
+// Optional fields let order-management map actual maker/taker or measured fee rates.
+type OrderFill struct {
+	EventID      string   `json:"event_id"`
+	Book         string   `json:"book"`
+	Side         string   `json:"side"`
+	AveragePrice float64  `json:"average_price"`
+	FilledAmount float64  `json:"filled_amount"`
+	Liquidity    string   `json:"liquidity,omitempty"`      // "maker" | "taker" — role when the fill executed
+	BuyFeeRate   *float64 `json:"buy_fee_rate,omitempty"` // decimal fraction of notional if known from the venue
+}
+
 // OrderFillAware strategies open a position only after an exchange fill is reported for the BUY signal.
 // Correlation uses the same event_id published on trading.signals (metadata.event_id).
 type OrderFillAware interface {
-	OnOrderFilled(eventID, book, side string, avgPrice, filledAmount float64)
+	OnOrderFilled(fill OrderFill)
 }
 
 // EnhancedStrategyFactory creates enhanced strategy instances

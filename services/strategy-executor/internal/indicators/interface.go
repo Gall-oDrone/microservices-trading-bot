@@ -64,4 +64,6 @@ type IndicatorStore interface {
 type DataProvider interface {
 	GetRecentTrades(ctx context.Context, book string, limit int) ([]Trade, error)
 	GetRecentBars(ctx context.Context, book string, interval string, limit int) ([]OHLCV, error)
+	// GetBookTicker returns best bid, ask, and last trade for spread-aware strategies. ok is false if unavailable.
+	GetBookTicker(ctx context.Context, book string) (bid, ask, last float64, ok bool)
 }

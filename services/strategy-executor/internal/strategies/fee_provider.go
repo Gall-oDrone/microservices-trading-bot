@@ -8,6 +8,11 @@ type MakerTakerFeeProvider interface {
 	MakerTakerRatesForBook(ctx context.Context, book string) (maker, taker float64, ok bool)
 }
 
+// BookFeeResolver returns fee decimals for explicit buy- and sell-leg liquidity roles (maker|taker).
+type BookFeeResolver interface {
+	FeeDecimalsForLegs(ctx context.Context, book, buyLiquidity, sellLiquidity string) (buyRate, sellRate float64, ok bool)
+}
+
 // feeRatesInjectable is implemented by strategies that consume MakerTakerFeeProvider (e.g. limit_profit).
 type feeRatesInjectable interface {
 	SetFeeRatesProvider(MakerTakerFeeProvider)

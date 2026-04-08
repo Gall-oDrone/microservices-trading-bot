@@ -442,7 +442,7 @@ func (r *EnhancedRegistry) UpdateMetricsForSignal(strategyName, side string) {
 }
 
 // NotifyOrderFilled delivers a fill to strategies that implement OrderFillAware (e.g. limit_profit BUY fills).
-func (r *EnhancedRegistry) NotifyOrderFilled(eventID, book, side string, avgPrice, filledAmount float64) {
+func (r *EnhancedRegistry) NotifyOrderFilled(fill OrderFill) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
@@ -451,7 +451,7 @@ func (r *EnhancedRegistry) NotifyOrderFilled(eventID, book, side string, avgPric
 		if !ok || !strategy.IsRunning() {
 			continue
 		}
-		fillAware.OnOrderFilled(eventID, book, side, avgPrice, filledAmount)
+		fillAware.OnOrderFilled(fill)
 	}
 	r.updatePrometheusMetrics()
 }

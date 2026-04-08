@@ -8,6 +8,8 @@ import (
 	"io"
 	"net/http"
 	"time"
+
+	"bitso-trading-platform/shared/pkg/bitso"
 )
 
 // HTTPDataProvider implements DataProvider using HTTP calls to market-data service
@@ -132,10 +134,37 @@ func (p *HTTPDataProvider) GetRecentBars(ctx context.Context, book string, inter
 	return bars, nil
 }
 
+// GetBookTicker fetches current bid/ask/last from market-data (Bitso-shaped ticker JSON).
+func (p *HTTPDataProvider) GetBookTicker(ctx context.Context, book string) (bid, ask, last float64, ok bool) {
+	url := fmt.Sprintf("%s/api/v1/ticker/%s", p.baseURL, book)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return 0, 0, 0, false
+	}
+	resp, err := p.httpClient.Do(req)
+	if err != nil {
+		return 0, 0, 0, false
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return 0, 0, 0, false
+	}
+	var t bitso.Ticker
+	if err := json.NewDecoder(resp.Body).Decode(&t); err != nil {
+		return 0, 0, 0, false
+	}
+	return t.Bid.Float64(), t.Ask.Float64(), t.Last.Float64(), true
+}
+
 // MockDataProvider implements DataProvider for testing
 type MockDataProvider struct {
 	trades []Trade
 	bars   []OHLCV
+	// Optional ticker for GetBookTicker (set via SetBookTicker).
+	tickerBid   float64
+	tickerAsk   float64
+	tickerLast  float64
+	tickerSet   bool
 }
 
 // NewMockDataProvider creates a mock data provider
@@ -180,6 +209,22 @@ func (p *MockDataProvider) GetRecentBars(ctx context.Context, book string, inter
 		return p.bars, nil
 	}
 	return p.bars[len(p.bars)-limit:], nil
+}
+
+// SetBookTicker configures bid/ask/last returned by GetBookTicker for tests.
+func (p *MockDataProvider) SetBookTicker(bid, ask, last float64) {
+	p.tickerBid, p.tickerAsk, p.tickerLast = bid, ask, last
+	p.tickerSet = true
+}
+
+// GetBookTicker returns configured values when SetBookTicker was used.
+func (p *MockDataProvider) GetBookTicker(ctx context.Context, book string) (bid, ask, last float64, ok bool) {
+	_ = ctx
+	_ = book
+	if !p.tickerSet {
+		return 0, 0, 0, false
+	}
+	return p.tickerBid, p.tickerAsk, p.tickerLast, true
 }
 
 // GenerateMockTrades generates random-ish trades for testing
