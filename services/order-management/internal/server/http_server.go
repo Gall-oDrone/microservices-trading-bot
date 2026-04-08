@@ -184,8 +184,9 @@ func (s *HTTPServer) validateOrderHandler(w http.ResponseWriter, r *http.Request
 		s.respondError(w, http.StatusBadRequest, fmt.Sprintf("Invalid request body: %v", err))
 		return
 	}
-	// Order-management validators expect lowercase side/type (Bitso signals often use BUY/SELL).
-	req.Side = strings.ToLower(strings.TrimSpace(req.Side))
+	// Order validation uses lowercase buy/sell; TradeSignalEvent validation expects BUY/SELL/HOLD.
+	incomingSide := strings.TrimSpace(req.Side)
+	req.Side = strings.ToLower(incomingSide)
 	req.Type = strings.ToLower(strings.TrimSpace(req.Type))
 
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
@@ -201,7 +202,7 @@ func (s *HTTPServer) validateOrderHandler(w http.ResponseWriter, r *http.Request
 	signal := &sharedModels.TradeSignalEvent{
 		EventID:   req.SignalID,
 		Book:      req.Book,
-		Signal:    req.Side,
+		Signal:    strings.ToUpper(incomingSide),
 		Price:     req.Price,
 		Amount:    req.Amount,
 		Strategy:  req.Strategy,
