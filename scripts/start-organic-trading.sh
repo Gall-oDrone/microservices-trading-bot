@@ -2,6 +2,7 @@
 #
 # Start organic (market-driven) strategy execution — no synthetic /process ticks.
 # Full context: docs/ORGANIC-TRADING-STARTUP.md
+# limit_profit strategy: docs/LIMIT-PROFIT-STRATEGY.md
 #
 # What this script DOES:
 #   - Verifies kubectl + namespace + core pods exist
@@ -37,7 +38,9 @@ section() { echo -e "\n${CYAN}=== $1 ===${NC}"; }
 # --- Configuration (override via env) ---
 NAMESPACE="${NAMESPACE:-bitso-trading-dev}"
 BOOK="${BOOK:-btc_mxn}"
-STRATEGY_NAME="${STRATEGY_NAME:-organic_mean_reversion_$(date +%s)}"
+# STRATEGY_TYPE: mean_reversion | limit_profit | momentum (must exist in strategy-executor)
+STRATEGY_TYPE="${STRATEGY_TYPE:-mean_reversion}"
+STRATEGY_NAME="${STRATEGY_NAME:-organic_${STRATEGY_TYPE}_$(date +%s)}"
 STRATEGY_EXECUTOR_LOCAL_PORT="${STRATEGY_EXECUTOR_LOCAL_PORT:-8084}"
 STRATEGY_EXECUTOR_SVC_PORT="${STRATEGY_EXECUTOR_SVC_PORT:-8081}"
 
@@ -46,6 +49,13 @@ POSITION_SIZE="${POSITION_SIZE:-0.001}"
 LOOKBACK_PERIOD="${LOOKBACK_PERIOD:-20}"
 ENTRY_THRESHOLD="${ENTRY_THRESHOLD:-2.0}"
 EXIT_THRESHOLD="${EXIT_THRESHOLD:-0.5}"
+
+# limit_profit params — buy at reference + entry_offset; sell when last >= entry + min_profit
+# (see docs/LIMIT-PROFIT-STRATEGY.md)
+ENTRY_OFFSET="${ENTRY_OFFSET:-500}"
+MIN_PROFIT_LP="${MIN_PROFIT_LP:-5000}"
+LP_REFERENCE="${LP_REFERENCE:-last_trade}"
+MIN_SIGNAL_INTERVAL="${MIN_SIGNAL_INTERVAL:-60}"
 
 REQUIRED_LABELS=( "service=market-data" "service=strategy-executor" "service=trading-engine" "service=order-management" "service=redis" "service=kafka" )
 
@@ -120,15 +130,37 @@ if ! curl -sS --max-time 5 "$SE_URL/health" | jq -e '.status == "healthy"' &>/de
 fi
 ok "strategy-executor healthy"
 
-info "Creating strategy: $STRATEGY_NAME (mean_reversion, book=$BOOK)"
-CREATE_BODY=$(jq -nc \
-  --arg name "$STRATEGY_NAME" \
-  --arg book "$BOOK" \
-  --argjson lp "$LOOKBACK_PERIOD" \
-  --argjson et "$ENTRY_THRESHOLD" \
-  --argjson xt "$EXIT_THRESHOLD" \
-  --argjson ps "$POSITION_SIZE" \
-  '{name:$name, type:"mean_reversion", book:$book, parameters:{lookback_period:$lp, entry_threshold:$et, exit_threshold:$xt, position_size:$ps}}')
+info "Creating strategy: $STRATEGY_NAME (type=$STRATEGY_TYPE, book=$BOOK)"
+case "$STRATEGY_TYPE" in
+  limit_profit)
+    CREATE_BODY=$(jq -nc \
+      --arg name "$STRATEGY_NAME" \
+      --arg book "$BOOK" \
+      --arg ref "$LP_REFERENCE" \
+      --argjson eo "$ENTRY_OFFSET" \
+      --argjson mp "$MIN_PROFIT_LP" \
+      --argjson ps "$POSITION_SIZE" \
+      --argjson msi "$MIN_SIGNAL_INTERVAL" \
+      '{name:$name, type:"limit_profit", book:$book, parameters:{reference:$ref, entry_offset:$eo, min_profit:$mp, position_size:$ps, min_signal_interval:$msi}}')
+    ;;
+  momentum)
+    CREATE_BODY=$(jq -nc \
+      --arg name "$STRATEGY_NAME" \
+      --arg book "$BOOK" \
+      --argjson ps "$POSITION_SIZE" \
+      '{name:$name, type:"momentum", book:$book, parameters:{position_size:$ps}}')
+    ;;
+  mean_reversion|*)
+    CREATE_BODY=$(jq -nc \
+      --arg name "$STRATEGY_NAME" \
+      --arg book "$BOOK" \
+      --argjson lp "$LOOKBACK_PERIOD" \
+      --argjson et "$ENTRY_THRESHOLD" \
+      --argjson xt "$EXIT_THRESHOLD" \
+      --argjson ps "$POSITION_SIZE" \
+      '{name:$name, type:"mean_reversion", book:$book, parameters:{lookback_period:$lp, entry_threshold:$et, exit_threshold:$xt, position_size:$ps}}')
+    ;;
+esac
 
 HTTP_CODE=$(curl -sS -o /tmp/se-create.json -w "%{http_code}" --max-time 15 -X POST "$SE_URL/api/v1/strategies" \
   -H "Content-Type: application/json" -d "$CREATE_BODY")

@@ -36,6 +36,7 @@ func NewEnhancedRegistry(indicatorSvc *indicators.Service) *EnhancedRegistry {
 func (r *EnhancedRegistry) registerBuiltInFactories() {
 	r.factories["mean_reversion"] = NewMeanReversionStrategyFactory()
 	r.factories["momentum"] = NewMomentumStrategyFactory()
+	r.factories["limit_profit"] = NewLimitProfitStrategyFactory()
 }
 
 // RegisterFactory registers a strategy factory
