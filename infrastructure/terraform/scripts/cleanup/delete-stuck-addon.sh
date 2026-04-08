@@ -1,6 +1,8 @@
 #!/bin/bash
 # Script to delete a stuck EKS addon
-# Usage: ./delete-stuck-addon.sh <addon-name> [cluster-name] [region]
+# Usage: ./delete-stuck-addon.sh <addon-name> [environment]
+#   environment = Terraform env under envs/<name> for cluster_name lookup (default: development)
+#   AWS_REGION overrides region (default: us-east-1)
 
 set -e
 

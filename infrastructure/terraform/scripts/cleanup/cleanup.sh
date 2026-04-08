@@ -28,11 +28,30 @@ print_error() {
     echo -e "${RED}[ERROR]${NC} $1"
 }
 
-# Configuration
-ENVIRONMENT=${1:-"development"}
-AWS_REGION="${AWS_REGION:-us-east-1}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TERRAFORM_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+
+# Help first — do not treat -h/--help as an environment name or run Terraform
+case "${1:-}" in
+    -h|--help)
+        echo "Usage: $0 [environment]"
+        echo ""
+        echo "  environment   Terraform env under envs/<name> (default: development)"
+        echo ""
+        echo "Environment variables:"
+        echo "  AWS_REGION              AWS region (default: us-east-1)"
+        echo "  CLEANUP_VALIDATE_ONLY=1 Run prerequisite/path checks only (no teardown)"
+        echo ""
+        echo "Examples:"
+        echo "  $0"
+        echo "  $0 development"
+        exit 0
+        ;;
+esac
+
+# Configuration
+ENVIRONMENT="${1:-development}"
+AWS_REGION="${AWS_REGION:-us-east-1}"
 TERRAFORM_DIR="$TERRAFORM_ROOT/envs/${ENVIRONMENT}"
 
 # Dynamic cluster name retrieval
@@ -52,21 +71,19 @@ get_cluster_name() {
         cd - >/dev/null 2>&1
     fi
     
-    # If terraform output failed or is empty, use fallback
+    # If terraform output failed or is empty, use fallback (log to stderr so command substitution stays clean)
     if [ -z "$cluster_name" ] || [ "$cluster_name" = "" ]; then
         cluster_name="mtb-${ENVIRONMENT}"
-        print_warning "Could not retrieve cluster name from Terraform, using fallback: $cluster_name"
+        print_warning "Could not retrieve cluster name from Terraform, using fallback: $cluster_name" >&2
     else
-        print_success "Retrieved cluster name from Terraform: $cluster_name"
+        print_success "Retrieved cluster name from Terraform: $cluster_name" >&2
     fi
     
     echo "$cluster_name"
 }
 
-# Get dynamic cluster name
+# Get dynamic cluster name (used by cleanup helpers)
 CLUSTER_NAME=$(get_cluster_name)
-
-print_info "🚀 Starting bulletproof cleanup for environment: $ENVIRONMENT"
 
 # Function to check if command exists
 command_exists() {
@@ -471,7 +488,8 @@ clean_terraform_state() {
     cd "$TERRAFORM_DIR"
     terraform init >/dev/null 2>&1 || true
     
-    # EXPANDED list of resources that commonly cause issues
+    # EXPANDED list of resources that commonly cause issues.
+    # Use REGEX: prefix for state list patterns (plain * would break: "helm_release.*" became "helm_release..*").
     local problematic_resources=(
         # Services that get stuck
         "module.application.kubernetes_service.this"
@@ -479,18 +497,18 @@ clean_terraform_state() {
         
         # CRITICAL: The namespace that gets stuck
         "module.application.kubernetes_namespace.this"
-        "kubernetes_namespace.*"
+        "REGEX:^kubernetes_namespace\\."
         
         # HPA and other app resources that can get stuck
         "module.application.kubernetes_horizontal_pod_autoscaler.this"
-        "kubernetes_horizontal_pod_autoscaler.*"
+        "REGEX:^kubernetes_horizontal_pod_autoscaler\\."
         
         # Deployments that might be stuck
         "module.application.kubernetes_deployment.this"
-        "kubernetes_deployment.*"
+        "REGEX:^kubernetes_deployment\\."
         
         # Helm releases (CRITICAL - they depend on cluster)
-        "helm_release.*"
+        "REGEX:^helm_release\\."
         
         # Data sources that reference deleted cluster (CRITICAL)
         "data.aws_eks_cluster.this"
@@ -499,20 +517,15 @@ clean_terraform_state() {
     
     print_info "Checking for stuck resources in Terraform state..."
     for resource in "${problematic_resources[@]}"; do
-        # Handle wildcard patterns
-        if [[ "$resource" == *"*"* ]]; then
+        local matching_resources=""
+        # Regex patterns (prefix REGEX:)
+        if [[ "$resource" == REGEX:* ]]; then
+            local pattern="${resource#REGEX:}"
+            matching_resources=$(terraform state list 2>/dev/null | grep -E "$pattern" || echo "")
+        # Legacy glob-style entries (contains *)
+        elif [[ "$resource" == *"*"* ]]; then
             local pattern="${resource//\*/.*}"
-            local matching_resources=$(terraform state list 2>/dev/null | grep -E "$pattern" || echo "")
-            if [ -n "$matching_resources" ]; then
-                echo "$matching_resources" | while read -r matching_resource; do
-                    if [ -n "$matching_resource" ]; then
-                        print_warning "Found problematic resource: $matching_resource"
-                        print_info "Removing $matching_resource from Terraform state"
-                        terraform state rm "$matching_resource" 2>/dev/null || true
-                        print_success "Removed $matching_resource from state"
-                    fi
-                done
-            fi
+            matching_resources=$(terraform state list 2>/dev/null | grep -E "$pattern" || echo "")
         else
             if terraform state list 2>/dev/null | grep -q "^${resource}$"; then
                 print_warning "Found problematic resource: $resource"
@@ -520,6 +533,17 @@ clean_terraform_state() {
                 terraform state rm "$resource" 2>/dev/null || true
                 print_success "Removed $resource from state"
             fi
+            continue
+        fi
+        if [ -n "$matching_resources" ]; then
+            echo "$matching_resources" | while read -r matching_resource; do
+                if [ -n "$matching_resource" ]; then
+                    print_warning "Found problematic resource: $matching_resource"
+                    print_info "Removing $matching_resource from Terraform state"
+                    terraform state rm "$matching_resource" 2>/dev/null || true
+                    print_success "Removed $matching_resource from state"
+                fi
+            done
         fi
     done
     
@@ -840,14 +864,27 @@ verify_cleanup() {
         print_success "✅ EKS cluster is gone"
     fi
     
-    # Check ECR repositories
+    # Check ECR repositories (only names managed by this Terraform stack — not entire account)
     print_info "Checking ECR repositories..."
-    local remaining_repos=$(aws ecr describe-repositories --region $AWS_REGION --query 'repositories[*].repositoryName' --output text 2>/dev/null || echo "")
-    if [ -n "$remaining_repos" ] && [ "$remaining_repos" != "" ]; then
-        print_warning "⚠️  Found remaining ECR repositories:"
+    local ecr_repo_names=(
+        "trading-engine"
+        "strategy-executor"
+        "backtesting"
+        "order-management"
+        "market-data"
+        "api-gateway"
+    )
+    local remaining_repos=""
+    for r in "${ecr_repo_names[@]}"; do
+        if aws ecr describe-repositories --repository-names "$r" --region $AWS_REGION >/dev/null 2>&1; then
+            remaining_repos="${remaining_repos}${remaining_repos:+$'\n'}$r"
+        fi
+    done
+    if [ -n "$remaining_repos" ]; then
+        print_warning "⚠️  Found remaining ECR repositories (from Terraform repo list):"
         echo "$remaining_repos"
     else
-        print_success "✅ No remaining ECR repositories"
+        print_success "✅ No remaining ECR repositories from this project list"
     fi
     
     # Check KMS keys
@@ -877,8 +914,23 @@ verify_cleanup() {
 
 # Main execution
 main() {
+    print_info "🚀 Starting bulletproof cleanup for environment: $ENVIRONMENT"
     print_info "🚀 BULLETPROOF EKS CLEANUP - ZERO MANUAL AWS CONSOLE WORK!"
     echo ""
+
+    # Validate-only mode: prerequisites + config (no AWS/K8s deletes, no terraform destroy)
+    if [ "${CLEANUP_VALIDATE_ONLY:-}" = "1" ]; then
+        print_info "CLEANUP_VALIDATE_ONLY=1 — checking prerequisites and paths only"
+        check_prerequisites
+        if [ ! -d "$TERRAFORM_DIR" ]; then
+            print_error "Terraform env directory not found: $TERRAFORM_DIR"
+            exit 1
+        fi
+        print_success "Terraform directory OK: $TERRAFORM_DIR"
+        print_info "Cluster name (resolved): $CLUSTER_NAME"
+        print_success "Validation OK — run without CLEANUP_VALIDATE_ONLY to perform full teardown"
+        exit 0
+    fi
     
     # Step 1: Prerequisites
     check_prerequisites
@@ -966,12 +1018,5 @@ main() {
     print_info "cleaned up by AWS within a few minutes. No manual action needed!"
 }
 
-# Show usage if no environment provided
-if [ $# -eq 0 ]; then
-    echo "Usage: $0 <environment>"
-    echo "Example: $0 development"
-    exit 1
-fi
-
-# Run main function
+# Run main (help handled at top of script)
 main "$@"
