@@ -1,49 +1,94 @@
 # Microservices Trading Bot
 
-A microservices-based trading bot that integrates with the [Bitso](https://bitso.com) exchange. It consumes market data, runs configurable strategies, executes orders, and supports backtesting.
+Microservices-based trading platform integrated with [Bitso](https://bitso.com). The system ingests market data, executes strategies, manages orders/positions, and supports historical backtesting.
 
-## Architecture
+## Current Architecture
 
-- **market-data** – Bitso WebSocket/REST → Kafka (trades, tickers, order book).
-- **strategy-executor** – Consumes market data, runs strategies (basic, trend, arbitrage), publishes signals to Kafka.
-- **trading-engine** – Consumes signals and places orders via the Bitso API.
-- **order-management** – Orders, positions, and risk checks.
-- **api-gateway** – HTTP API and routing to backend services.
-- **backtesting** – Historical strategy evaluation and optimization.
+### Core Services
 
-Deployment targets Kubernetes (EKS) with **Kafka** (market data and signals), **Redis** (order-management orders/positions, backtesting cache and storage), and optional **centralized logging** (e.g. Loki or CloudWatch) for observability.
+- `market-data` (`8083`) - Ingests Bitso market streams, stores short-term data, and exposes market APIs.
+- `strategy-executor` (`8082`) - Consumes market events and generates strategy signals.
+- `trading-engine` (`8080`) - Executes trading logic and Bitso order flow.
+- `order-management` (`8086` in docker-compose) - Handles order lifecycle, position tracking, and risk checks.
+- `api-gateway` (`8085` in docker-compose) - Single HTTP entrypoint for service APIs and aggregated endpoints.
+- `backtesting` (`8084`) - Runs historical strategy backtests and optimization workflows.
 
-## Bitso Testing Environment
+### Shared Infrastructure
 
-The bot supports Bitso’s **testing (stage) environment** so you can develop and test without using production. See [Bitso: Set up your testing environment](https://docs.bitso.com/bitso-api/docs/set-up-your-testing-environment).
+- **Kafka** for event streaming across services.
+- **Redis** for fast state/cache storage.
+- **Prometheus + Grafana + Alertmanager** for monitoring.
+- Optional observability/logging stack components via Docker Compose (Jaeger, Elasticsearch, Kibana, Fluentd).
 
-- **Stage API base URL:** `https://stage.bitso.com/api`
-- **Production API base URL:** `https://bitso.com/api`
+## Repository Layout
 
-The trading-engine uses **stage by default**. Set `BITSO_API_BASE_URL` to switch without code changes (see `shared/pkg/config`). Use stage credentials (`STAGE_BITSO_API_KEY`, `STAGE_BITSO_APISECRET`) with the stage URL and production keys only with the production URL.
+```text
+.
+├── services/                   # Main microservices
+├── shared/                     # Shared Go packages (config, clients, models, indicators)
+├── infrastructure/             # Terraform and deployment infra
+├── k8s/                        # Kubernetes manifests/overlays
+├── monitoring/                 # Prometheus/Grafana/Alertmanager assets
+├── testing/ and tests/         # Integration and service-level tests
+└── scripts/                    # Build/run/dev helper scripts
+```
 
-## Planning: Intraday Strategies & Metrics
+## Local Development
 
-Before running new intraday strategies live, follow the steps in:
+### Prerequisites
 
-- **[INTRADAY-STRATEGY-IMPLEMENTATION-PLAN.md](./INTRADAY-STRATEGY-IMPLEMENTATION-PLAN.md)** – Phases for Bitso env config, paper trading, position sync, daily loss/drawdown limits, intraday metrics, and backtesting.
+- Go 1.21+
+- Docker + Docker Compose
+- Bitso stage credentials for non-production testing
 
-## Documentation
+### Start with Docker Compose
+
+```bash
+docker compose up -d
+```
+
+Useful endpoints once started:
+
+- API Gateway: `http://localhost:8085`
+- Trading Engine: `http://localhost:8080`
+- Backtesting: `http://localhost:8084`
+- Strategy Executor: `http://localhost:8082`
+- Market Data: `http://localhost:8083`
+- Order Management: `http://localhost:8086`
+- Prometheus: `http://localhost:9090`
+- Grafana: `http://localhost:3000`
+
+If `docker compose build` fails due to Buildx version requirements, use:
+
+```bash
+export DOCKER_BUILDKIT=0
+docker compose build
+```
+
+### Run Services Manually
+
+Each service can also run independently:
+
+```bash
+cd services/<service-name>
+go mod download
+go run ./cmd/main.go
+```
+
+## Bitso Environments
+
+- Stage API base URL: `https://stage.bitso.com/api`
+- Production API base URL: `https://bitso.com/api`
+
+The project is designed to work with Bitso stage for validation before production. Keep stage credentials and production credentials isolated.
+
+## Key Documentation
 
 | Document | Description |
 |----------|-------------|
-| [DEVELOPMENT-ROADMAP.md](./DEVELOPMENT-ROADMAP.md) | Strategy enhancements, paper trading, position management, risk controls. |
-| [REMAINING-PHASES-CHECKLIST.md](./REMAINING-PHASES-CHECKLIST.md) | Deployment phases (1–10), centralized logging/observability, Redis deployment, and verification. |
-| [POST-DEPLOYMENT-CHECKLIST.md](./POST-DEPLOYMENT-CHECKLIST.md) | Post-deploy verification and hardening. |
-| [docs/ORDER-FLOW-AND-BITSO-TESTING.md](./docs/ORDER-FLOW-AND-BITSO-TESTING.md) | When orders go to Bitso testing, how to validate the flow, and relevant env vars. |
-| [docs/OPERATIONS-ENV-VARS.md](./docs/OPERATIONS-ENV-VARS.md) | Env vars for trading-engine, order-management, and session risk. |
-
-## Quick Start
-
-1. Set environment variables (see `.env.example` and service READMEs). For testing, use Bitso stage credentials and stage API URL.
-2. Run dependencies: **Kafka** (market data and signals) and **Redis** (required by order-management and backtesting; set `REDIS_HOST` and optionally `REDIS_PORT` / `REDIS_PASSWORD`). Then run services locally or via `k8s/` and `config/`.
-3. Use the API gateway for health, status, strategies, and backtest endpoints.
-
-**Docker Compose:** If `docker compose build` fails with "compose build requires buildx 0.17.0 or later", build the image with plain Docker instead: `./scripts/docker-build-market-data.sh`, then `docker-compose up -d market-data`.
-
-For full deployment (EKS, monitoring, centralized logging, Redis, and security), see [REMAINING-PHASES-CHECKLIST.md](./REMAINING-PHASES-CHECKLIST.md).
+| [README-NEW-STRUCTURE.md](./README-NEW-STRUCTURE.md) | Expanded repository and service structure reference. |
+| [DEVELOPMENT-ROADMAP.md](./DEVELOPMENT-ROADMAP.md) | Feature and capability roadmap. |
+| [INTRADAY-STRATEGY-IMPLEMENTATION-PLAN.md](./INTRADAY-STRATEGY-IMPLEMENTATION-PLAN.md) | Intraday rollout phases and controls. |
+| [REMAINING-PHASES-CHECKLIST.md](./REMAINING-PHASES-CHECKLIST.md) | Deployment and hardening checklist. |
+| [docs/ORDER-FLOW-AND-BITSO-TESTING.md](./docs/ORDER-FLOW-AND-BITSO-TESTING.md) | Order flow validation in Bitso testing. |
+| [docs/OPERATIONS-ENV-VARS.md](./docs/OPERATIONS-ENV-VARS.md) | Operational environment variable reference. |

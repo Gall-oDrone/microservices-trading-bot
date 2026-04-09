@@ -1,194 +1,106 @@
-# Bitso Trading Platform - Microservices Architecture
+# Repository Structure Reference
 
-This document describes the new microservices architecture for the Bitso Trading Platform.
+This file documents the **current** layout and operating model of the microservices trading platform.
 
-## Project Structure
+## Top-Level Structure
 
-```
-bitso-trading-platform/
-├── docker-compose.yml                 # Local development orchestration
-├── k8s/                               # Kubernetes manifests
-│   ├── base/                          # Base Kubernetes configurations
-│   ├── overlays/                      # Environment-specific overlays
-│   │   ├── development/
-│   │   ├── staging/
-│   │   └── production/
-│   └── helmcharts/                    # Helm charts for EKS deployment
-│
-├── services/                          # Microservices
-│   ├── trading-engine/               # Core trading engine (refactored from staging)
-│   │   ├── cmd/main.go
-│   │   ├── internal/
-│   │   ├── Dockerfile
-│   │   └── go.mod
-│   │
-│   ├── backtesting/                  # Backtesting service
-│   │   ├── cmd/main.go
-│   │   ├── internal/
-│   │   │   ├── engine/              # Backtesting engine
-│   │   │   ├── simulator/           # Market simulator
-│   │   │   └── analyzer/            # Performance analysis
-│   │   ├── Dockerfile
-│   │   └── go.mod
-│   │
-│   ├── strategy-executor/            # Strategy execution service
-│   │   ├── cmd/main.go
-│   │   ├── internal/
-│   │   │   ├── strategies/
-│   │   │   ├── signals/
-│   │   │   └── risk/
-│   │   ├── Dockerfile
-│   │   └── go.mod
-│   │
-│   ├── market-data/                  # Market data aggregation
-│   │   ├── cmd/main.go
-│   │   ├── internal/
-│   │   │   ├── websocket/
-│   │   │   ├── historical/
-│   │   │   └── cache/
-│   │   ├── Dockerfile
-│   │   └── go.mod
-│   │
-│   ├── order-management/             # Order lifecycle management
-│   │   ├── cmd/main.go
-│   │   ├── internal/
-│   │   ├── Dockerfile
-│   │   └── go.mod
-│   │
-│   └── api-gateway/                  # REST/GraphQL API gateway
-│       ├── cmd/main.go
-│       ├── internal/
-│       ├── Dockerfile
-│       └── go.mod
-│
-├── shared/                            # Shared libraries
-│   ├── pkg/
-│   │   ├── bitso/                   # Bitso client library
-│   │   ├── kafka/                   # Kafka utilities
-│   │   ├── redis/                   # Redis utilities
-│   │   └── models/                  # Shared domain models
-│   └── go.mod
-│
-├── infrastructure/                    # Infrastructure as Code
-│   ├── terraform/
-│   │   ├── eks/                     # EKS cluster configuration
-│   │   ├── rds/                     # RDS database configuration
-│   │   ├── elasticache/             # ElastiCache Redis configuration
-│   │   └── msk/                     # AWS Managed Kafka
-│   └── ansible/
-│
-└── scripts/
-    ├── deploy.sh                     # Deployment script
-    └── local-dev.sh                  # Local development setup
+```text
+microservices-trading-bot/
+├── README.md
+├── docker-compose.yml
+├── services/
+│   ├── trading-engine/
+│   ├── backtesting/
+│   ├── strategy-executor/
+│   ├── market-data/
+│   ├── order-management/
+│   └── api-gateway/
+├── shared/
+│   └── pkg/
+├── infrastructure/
+│   └── terraform/
+├── k8s/
+├── monitoring/
+├── scripts/
+├── testing/
+└── tests/
 ```
 
-## Services Overview
+## Service Matrix
 
-### Trading Engine
-- **Purpose**: Core trading logic and execution
-- **Port**: 8080
-- **Dependencies**: Kafka, Redis
-- **Refactored from**: `golang_server/staging/`
+| Service | Main Responsibility | Default Internal Port | Docker Compose Host Port |
+|---------|---------------------|------------------------|---------------------------|
+| `trading-engine` | Trading execution and Bitso integration | `8080` | `8080` |
+| `backtesting` | Historical strategy backtests and reports | `8084` | `8084` |
+| `strategy-executor` | Strategy processing and signal generation | `8080` | `8082` |
+| `market-data` | Real-time market ingestion and market APIs | `8083` | `8083` |
+| `order-management` | Orders, positions, and risk controls | `8080` | `8086` |
+| `api-gateway` | Public API entrypoint and aggregation | `8080` | `8085` |
 
-### Backtesting Service
-- **Purpose**: Historical strategy testing and performance analysis
-- **Port**: 8081
-- **Dependencies**: Kafka, Redis
-- **New Service**: Built from scratch
+Notes:
+- Several services default to `SERVICE_PORT=8080` in code, while Docker Compose maps them to unique host ports.
+- See `docker-compose.yml` for the exact runtime mapping used in local environments.
 
-### Strategy Executor
-- **Purpose**: Strategy execution and signal processing
-- **Port**: 8082
-- **Dependencies**: Kafka, Redis
-- **New Service**: Built from scratch
+## Shared Modules
 
-### Market Data Service
-- **Purpose**: Real-time and historical market data aggregation
-- **Port**: 8083
-- **Dependencies**: Kafka, Redis
-- **New Service**: Built from scratch
+The `shared` module provides reusable packages used by multiple services:
 
-### Order Management
-- **Purpose**: Order lifecycle management and tracking
-- **Port**: 8084
-- **Dependencies**: Kafka, Redis
-- **New Service**: Built from scratch
+- `shared/pkg/bitso` - Bitso API client integration
+- `shared/pkg/kafka` - Kafka producer/consumer helpers
+- `shared/pkg/redis` - Redis utilities
+- `shared/pkg/models` - Domain model definitions
+- `shared/pkg/indicators` - Trading indicator implementations
+- `shared/pkg/health`, `shared/pkg/logger`, `shared/pkg/config` - operational utilities
 
-### API Gateway
-- **Purpose**: REST/GraphQL API gateway for all services
-- **Port**: 8085
-- **Dependencies**: All other services
-- **New Service**: Built from scratch
+## Infrastructure and Operations
 
-## Development
+- `k8s/` includes Kubernetes base/overlay resources.
+- `infrastructure/terraform/envs/` contains environment-specific Terraform configs (`development`, `staging`, `production`).
+- `monitoring/` contains Prometheus/Grafana/Alertmanager assets.
+- `scripts/` contains local development and backtesting helper scripts.
 
-### Local Development
+## Local Workflow
+
+### Start full local stack
+
 ```bash
-# Start all services
-docker-compose up -d
-
-# Start specific service
-docker-compose up trading-engine
-
-# View logs
-docker-compose logs -f trading-engine
+docker compose up -d
 ```
 
-### Building Services
-```bash
-# Build all services
-docker-compose build
+### Build or run a single service
 
-# Build specific service
-docker-compose build trading-engine
+```bash
+docker compose build strategy-executor
+docker compose up -d strategy-executor
 ```
 
-## Deployment
+### Run a service directly with Go
 
-### Kubernetes
 ```bash
-# Deploy to development
+cd services/market-data
+go mod download
+go run ./cmd/main.go
+```
+
+## Kubernetes and Terraform
+
+```bash
+# K8s overlays
 kubectl apply -k k8s/overlays/development
-
-# Deploy to staging
 kubectl apply -k k8s/overlays/staging
-
-# Deploy to production
 kubectl apply -k k8s/overlays/production
 ```
 
-### AWS EKS
 ```bash
-# Deploy infrastructure
-cd infrastructure/terraform
+# Terraform (example: development env)
+cd infrastructure/terraform/envs/development
 terraform init
 terraform plan
 terraform apply
-
-# Deploy application
-./scripts/deploy.sh production
 ```
 
-## Migration Plan
+## Additional Documentation
 
-1. **Phase 1**: Create new structure (current)
-2. **Phase 2**: Migrate trading-engine from staging
-3. **Phase 3**: Implement new services
-4. **Phase 4**: Migrate shared libraries
-5. **Phase 5**: Update deployment configurations
-6. **Phase 6**: Testing and validation
-7. **Phase 7**: Production deployment
-
-## Next Steps
-
-- [ ] Migrate existing trading logic to trading-engine service
-- [ ] Implement backtesting service
-- [ ] Implement strategy executor service
-- [ ] Implement market data service
-- [ ] Implement order management service
-- [ ] Implement API gateway
-- [ ] Create shared libraries
-- [ ] Update Kubernetes configurations
-- [ ] Create deployment scripts
-- [ ] Add monitoring and logging
-- [ ] Add testing framework
+- Root docs: architecture plans, deployment checklists, implementation plans
+- Service docs: `services/*/README.md` where available
+- Integration docs: `testing/integration/**/README.md`
