@@ -10,6 +10,7 @@ patchesStrategicMerge:
 - trading-engine-balance-test-env.yaml
 - strategy-executor-replicas-dev.yaml
 - trading-engine-replicas-dev.yaml
+- order-management-dev-fill-test-env.yaml
 
 namespace: bitso-trading-dev
 

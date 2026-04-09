@@ -262,6 +262,14 @@ func NewApplication() (*Application, error) {
 		}))
 	}
 
+	// Optional dev route: same Kafka publish path as production fills (OM_DEV_ORDER_FILL_PUBLISH_TEST_ENABLED).
+	var devPublishFill server.DevOrderFillPublisher
+	if cfg.Service.DevOrderFillPublishTestEnabled {
+		devPublishFill = func(ctx context.Context, ev *sharedModels.OrderFillEvent) error {
+			return orderManager.PublishOrderFillForTest(ctx, ev)
+		}
+	}
+
 	// Initialize HTTP server with validation endpoint for pre-trade risk checks
 	httpServer := server.NewHTTPServerWithOptions(
 		&cfg.Service,
@@ -269,13 +277,18 @@ func NewApplication() (*Application, error) {
 		metricsCollector,
 		appLogger,
 		&server.HTTPServerOptions{
-			SessionAggregator: pnlRecorder,
-			Validator:         orderValidator,
-			RiskManager:       riskManager,
+			SessionAggregator:   pnlRecorder,
+			Validator:           orderValidator,
+			RiskManager:         riskManager,
+			DevPublishOrderFill: devPublishFill,
 		},
 	)
+	endpoints := []string{"/health", "/api/v1/status", "/api/v1/risk/session", "/api/v1/orders/validate"}
+	if cfg.Service.DevOrderFillPublishTestEnabled && devPublishFill != nil {
+		endpoints = append(endpoints, "/internal/v1/dev/publish-order-fill-test")
+	}
 	appLogger.Info("HTTP server initialized", map[string]interface{}{
-		"endpoints": []string{"/health", "/api/v1/status", "/api/v1/risk/session", "/api/v1/orders/validate"},
+		"endpoints": endpoints,
 	})
 
 	appLogger.Info("Configuration loaded successfully", map[string]interface{}{

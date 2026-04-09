@@ -44,6 +44,9 @@ type ServiceConfig struct {
 	Host        string `json:"host"`
 	Port        int    `json:"port"`
 	Environment string `json:"environment"`
+	// DevOrderFillPublishTestEnabled registers POST /internal/v1/dev/publish-order-fill-test (smoke-test Kafka fill publish + logs).
+	// Set OM_DEV_ORDER_FILL_PUBLISH_TEST_ENABLED=true only in non-production clusters.
+	DevOrderFillPublishTestEnabled bool `json:"dev_order_fill_publish_test_enabled"`
 }
 
 // KafkaConfig holds Kafka configuration
@@ -143,6 +146,7 @@ func Load() (*Config, error) {
 			Host:        getEnv("SERVICE_HOST", "0.0.0.0"),
 			Port:        getEnvAsInt("SERVICE_PORT", 8080),
 			Environment: getEnv("ENVIRONMENT", "development"),
+			DevOrderFillPublishTestEnabled: getEnvAsBool("OM_DEV_ORDER_FILL_PUBLISH_TEST_ENABLED", false),
 		},
 		Kafka: KafkaConfig{
 			Brokers:                     getEnvAsSlice("KAFKA_BROKERS", []string{"localhost:9092"}),

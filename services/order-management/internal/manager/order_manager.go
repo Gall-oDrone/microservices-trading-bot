@@ -111,6 +111,15 @@ func (m *Manager) SetOrderFillPublisher(fn func(context.Context, *sharedModels.O
 	m.orderFillPublisher = fn
 }
 
+// PublishOrderFillForTest invokes the configured order-fill Kafka publisher (same code path as a real fill).
+// Used only when OM_DEV_ORDER_FILL_PUBLISH_TEST_ENABLED enables the dev HTTP route.
+func (m *Manager) PublishOrderFillForTest(ctx context.Context, ev *sharedModels.OrderFillEvent) error {
+	if m.orderFillPublisher == nil {
+		return fmt.Errorf("order fill publisher not configured")
+	}
+	return m.orderFillPublisher(ctx, ev)
+}
+
 func (m *Manager) maybePublishOrderFill(ctx context.Context, order *models.Order, preStatus models.OrderStatus) {
 	if m.orderFillPublisher == nil {
 		return

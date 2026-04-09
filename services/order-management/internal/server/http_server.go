@@ -20,6 +20,9 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
+// DevOrderFillPublisher invokes the same Kafka publish path as a production fill (for smoke tests).
+type DevOrderFillPublisher func(context.Context, *sharedModels.OrderFillEvent) error
+
 // OrderValidationRequest represents a pre-trade validation request
 type OrderValidationRequest struct {
 	Book      string  `json:"book"`
@@ -49,8 +52,9 @@ type HTTPServer struct {
 	sessionAggregator *metrics.IntradayAggregator // optional: for GET /api/v1/risk/session
 	validator         validator.OrderValidator    // optional: for POST /api/v1/orders/validate
 	riskManager       risk.RiskManager            // optional: for POST /api/v1/orders/validate
-	server            *http.Server
-	router            *http.ServeMux
+	devPublishOrderFill DevOrderFillPublisher     // optional: POST /internal/v1/dev/publish-order-fill-test
+	server              *http.Server
+	router              *http.ServeMux
 }
 
 // HTTPServerOptions contains optional dependencies for HTTPServer
@@ -58,6 +62,8 @@ type HTTPServerOptions struct {
 	SessionAggregator *metrics.IntradayAggregator
 	Validator         validator.OrderValidator
 	RiskManager       risk.RiskManager
+	// DevPublishOrderFill enables POST /internal/v1/dev/publish-order-fill-test when non-nil (see OM_DEV_ORDER_FILL_PUBLISH_TEST_ENABLED).
+	DevPublishOrderFill DevOrderFillPublisher
 }
 
 // NewHTTPServer creates a new HTTP server. Options can be nil; individual fields enable specific endpoints.
@@ -102,6 +108,7 @@ func NewHTTPServerWithOptions(
 		server.sessionAggregator = opts.SessionAggregator
 		server.validator = opts.Validator
 		server.riskManager = opts.RiskManager
+		server.devPublishOrderFill = opts.DevPublishOrderFill
 	}
 
 	server.setupRoutes()
@@ -152,7 +159,44 @@ func (s *HTTPServer) setupRoutes() {
 		s.router.HandleFunc("/api/v1/orders/validate", s.withMetrics(s.validateOrderHandler))
 	}
 
+	// Dev-only: smoke-test Kafka order-fill publish + kafka_order_fill_published log (OM_DEV_ORDER_FILL_PUBLISH_TEST_ENABLED)
+	if s.config.DevOrderFillPublishTestEnabled && s.devPublishOrderFill != nil {
+		s.router.HandleFunc("/internal/v1/dev/publish-order-fill-test", s.withMetrics(s.devPublishOrderFillTestHandler))
+		s.logger.Info("HTTP dev route enabled", map[string]interface{}{"path": "/internal/v1/dev/publish-order-fill-test"})
+	}
+
 	s.logger.Info("HTTP routes configured", nil)
+}
+
+// devPublishOrderFillTestHandler POST body: OrderFillEvent JSON (event_id, order_id, book, side required).
+func (s *HTTPServer) devPublishOrderFillTestHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		s.respondError(w, http.StatusMethodNotAllowed, "Method not allowed")
+		return
+	}
+	var ev sharedModels.OrderFillEvent
+	if err := json.NewDecoder(r.Body).Decode(&ev); err != nil {
+		s.respondError(w, http.StatusBadRequest, fmt.Sprintf("Invalid JSON: %v", err))
+		return
+	}
+	if ev.EventID == "" || ev.OrderID == "" || strings.TrimSpace(ev.Book) == "" || strings.TrimSpace(ev.Side) == "" {
+		s.respondError(w, http.StatusBadRequest, "event_id, order_id, book, and side are required")
+		return
+	}
+	if ev.TimestampMs == 0 {
+		ev.TimestampMs = time.Now().UnixMilli()
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
+	defer cancel()
+	if err := s.devPublishOrderFill(ctx, &ev); err != nil {
+		s.respondError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	s.respondJSON(w, http.StatusOK, map[string]interface{}{
+		"status":   "ok",
+		"event_id": ev.EventID,
+		"order_id": ev.OrderID,
+	})
 }
 
 func (s *HTTPServer) riskSessionHandler(w http.ResponseWriter, r *http.Request) {

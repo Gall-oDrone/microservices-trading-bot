@@ -1,0 +1,13 @@
+# Enables POST /internal/v1/dev/publish-order-fill-test on order-management (dev clusters only).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: order-management
+spec:
+  template:
+    spec:
+      containers:
+      - name: order-management
+        env:
+        - name: OM_DEV_ORDER_FILL_PUBLISH_TEST_ENABLED
+          value: "true"
