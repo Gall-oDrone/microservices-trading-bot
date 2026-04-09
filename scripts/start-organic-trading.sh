@@ -83,6 +83,15 @@ if ! kubectl get namespace "$NAMESPACE" &>/dev/null; then
 fi
 ok "Namespace $NAMESPACE exists"
 
+# strategy-executor: registry + running strategies are in-memory per pod. With replicas>1,
+# API create/start lands on one pod while ticks/fills run everywhere — strategies only exist
+# on one pod; kubectl logs deploy/... may tail a different pod (zero "Published" lines);
+# Kafka order-fill may be handled by a pod that has no matching strategy (stuck pending_buy).
+SE_REPLICAS="$(kubectl get deploy strategy-executor -n "$NAMESPACE" -o jsonpath='{.spec.replicas}' 2>/dev/null || echo '')"
+if [[ -n "$SE_REPLICAS" && "$SE_REPLICAS" != "1" ]]; then
+  warn "strategy-executor replicas=$SE_REPLICAS (expected 1 for organic trading). Scale: kubectl -n $NAMESPACE scale deploy/strategy-executor --replicas=1"
+fi
+
 MISSING=0
 for spec in "${REQUIRED_LABELS[@]}"; do
   key="${spec%%=*}"

@@ -1,0 +1,10 @@
+# strategy-executor keeps strategy registry in process memory. With replicas > 1,
+# POST /api/v1/strategies hits one pod while ticks and Kafka order-fills run on all
+# pods — strategies exist only on the pod that registered them, and fills may be
+# consumed on a pod that has no matching strategy. Use a single replica for dev organic trading.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: strategy-executor
+spec:
+  replicas: 1

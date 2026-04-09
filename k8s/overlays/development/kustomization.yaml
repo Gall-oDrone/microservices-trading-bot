@@ -8,6 +8,8 @@ resources:
 patchesStrategicMerge:
 - development-patches.yaml
 - trading-engine-balance-test-env.yaml
+- strategy-executor-replicas-dev.yaml
+- trading-engine-replicas-dev.yaml
 
 namespace: bitso-trading-dev
 

@@ -1,0 +1,9 @@
+# Same rationale as strategy-executor: two consumers read trading.signals and both
+# attempt OM validation; the second sees DUPLICATE. One replica avoids noisy duplicates
+# and matches typical dev debugging.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: trading-engine
+spec:
+  replicas: 1
