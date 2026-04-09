@@ -169,6 +169,7 @@ func NewApplication() (*Application, error) {
 			appLogger.Warn("Kafka order-fills producer disabled (failed to create)", map[string]interface{}{"error": err.Error()})
 			orderFillsProducer = nil
 		} else {
+			topicOrderFills := cfg.Kafka.TopicOrderFills
 			orderManager.SetOrderFillPublisher(func(ctx context.Context, ev *sharedModels.OrderFillEvent) error {
 				b, err := json.Marshal(ev)
 				if err != nil {
@@ -178,7 +179,19 @@ func NewApplication() (*Application, error) {
 				if key == "" {
 					key = ev.OrderID
 				}
-				return orderFillsProducer.Produce(ctx, []byte(key), b)
+				if err := orderFillsProducer.Produce(ctx, []byte(key), b); err != nil {
+					return err
+				}
+				appLogger.Info("kafka_order_fill_published", map[string]interface{}{
+					"topic":          topicOrderFills,
+					"event_id":       ev.EventID,
+					"order_id":       ev.OrderID,
+					"book":           ev.Book,
+					"side":           ev.Side,
+					"average_price":  ev.AveragePrice,
+					"filled_amount":  ev.FilledAmount,
+				})
+				return nil
 			})
 			appLogger.Info("Kafka order-fills producer enabled", map[string]interface{}{"topic": cfg.Kafka.TopicOrderFills})
 		}
