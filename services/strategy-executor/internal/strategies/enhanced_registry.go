@@ -13,11 +13,12 @@ import (
 
 // EnhancedRegistry manages enhanced strategy registration and lifecycle
 type EnhancedRegistry struct {
-	strategies   map[string]EnhancedStrategy
-	factories    map[string]EnhancedStrategyFactory
-	indicatorSvc *indicators.Service
-	feeRates     MakerTakerFeeProvider
-	mu           sync.RWMutex
+	strategies       map[string]EnhancedStrategy
+	factories        map[string]EnhancedStrategyFactory
+	indicatorSvc     *indicators.Service
+	feeRates         MakerTakerFeeProvider
+	limitProfitStore LimitProfitRawStateStore
+	mu               sync.RWMutex
 }
 
 // NewEnhancedRegistry creates a new enhanced strategy registry
@@ -75,9 +76,28 @@ func (r *EnhancedRegistry) CreateAndRegister(config StrategyConfig) (EnhancedStr
 		}
 	}
 
+	if r.limitProfitStore != nil {
+		if lp, ok := strategy.(*LimitProfitStrategy); ok {
+			lp.SetLimitProfitRawStateStore(r.limitProfitStore)
+		}
+	}
+
 	r.strategies[config.Name] = strategy
 
 	return strategy, nil
+}
+
+// SetLimitProfitRawStateStore registers Redis (or compatible) persistence for limit_profit strategies.
+func (r *EnhancedRegistry) SetLimitProfitRawStateStore(store LimitProfitRawStateStore) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	r.limitProfitStore = store
+	for _, strategy := range r.strategies {
+		if lp, ok := strategy.(*LimitProfitStrategy); ok {
+			lp.SetLimitProfitRawStateStore(store)
+		}
+	}
 }
 
 // SetFeeRatesProvider registers a Bitso (or compatible) fee source for strategies that support it.
@@ -207,6 +227,10 @@ func (r *EnhancedRegistry) Remove(name string) error {
 	}
 
 	strategyName := strategy.Name()
+	cfg := strategy.GetConfig()
+	if r.limitProfitStore != nil && cfg.Type == "limit_profit" {
+		_ = r.limitProfitStore.Delete(context.Background(), strategyName)
+	}
 	delete(r.strategies, name)
 
 	promMetrics := metrics.GetPrometheusMetrics()
@@ -378,10 +402,10 @@ func (r *EnhancedRegistry) GetAllStrategyInfo() []*StrategyInfo {
 
 // RegistryStats contains registry statistics
 type RegistryStats struct {
-	TotalStrategies   int       `json:"total_strategies"`
-	ActiveStrategies  int       `json:"active_strategies"`
-	AvailableTypes    []string  `json:"available_types"`
-	LastUpdated       time.Time `json:"last_updated"`
+	TotalStrategies  int       `json:"total_strategies"`
+	ActiveStrategies int       `json:"active_strategies"`
+	AvailableTypes   []string  `json:"available_types"`
+	LastUpdated      time.Time `json:"last_updated"`
 }
 
 // GetStats returns registry statistics

@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"os"
@@ -24,6 +25,8 @@ import (
 	"bitso-trading-platform/order-management/internal/validator"
 	"bitso-trading-platform/shared/pkg/bitso"
 	"bitso-trading-platform/shared/pkg/health"
+	"bitso-trading-platform/shared/pkg/kafka"
+	sharedModels "bitso-trading-platform/shared/pkg/models"
 )
 
 const (
@@ -48,6 +51,7 @@ type Application struct {
 	ordersPlacedConsumer *consumer.OrdersPlacedConsumer
 	bitsoSyncJob         *sync.BitsoSyncJob
 	userTradesPoller     *sync.UserTradesPoller
+	orderFillsProducer   *kafka.Producer
 
 	// Redis client (non-nil when STORAGE_TYPE=redis; closed on shutdown)
 	redisClient *redis.Client
@@ -150,6 +154,36 @@ func NewApplication() (*Application, error) {
 		"active_orders_gauge_source": map[bool]string{true: "repository", false: "bitso_open_orders"}[repositoryActiveOrdersGauge],
 	})
 
+	var orderFillsProducer *kafka.Producer
+	if cfg.Kafka.OrderFillsPublishEnabled && cfg.Kafka.TopicOrderFills != "" {
+		var err error
+		orderFillsProducer, err = kafka.NewProducer(&kafka.ProducerConfig{
+			Brokers:          cfg.Kafka.Brokers,
+			Topic:            cfg.Kafka.TopicOrderFills,
+			BatchSize:        cfg.Kafka.BatchSize,
+			BatchTimeout:     cfg.Kafka.BatchTimeout,
+			CompressionCodec: cfg.Kafka.CompressionCodec,
+			RequiredAcks:     cfg.Kafka.RequiredAcks,
+		})
+		if err != nil {
+			appLogger.Warn("Kafka order-fills producer disabled (failed to create)", map[string]interface{}{"error": err.Error()})
+			orderFillsProducer = nil
+		} else {
+			orderManager.SetOrderFillPublisher(func(ctx context.Context, ev *sharedModels.OrderFillEvent) error {
+				b, err := json.Marshal(ev)
+				if err != nil {
+					return err
+				}
+				key := ev.EventID
+				if key == "" {
+					key = ev.OrderID
+				}
+				return orderFillsProducer.Produce(ctx, []byte(key), b)
+			})
+			appLogger.Info("Kafka order-fills producer enabled", map[string]interface{}{"topic": cfg.Kafka.TopicOrderFills})
+		}
+	}
+
 	// Consumer for trading.signals: creates Redis orders (event_id) before trading-engine publishes trading.orders.placed.
 	signalsConsumer, _ := consumer.NewSignalsConsumer(
 		cfg.Kafka.Brokers,
@@ -248,6 +282,7 @@ func NewApplication() (*Application, error) {
 		ordersPlacedConsumer: ordersPlacedConsumer,
 		bitsoSyncJob:         bitsoSyncJob,
 		userTradesPoller:     userTradesPoller,
+		orderFillsProducer:   orderFillsProducer,
 		redisClient:          redisClient,
 		ctx:                  ctx,
 		cancel:               cancel,
@@ -392,6 +427,13 @@ func (app *Application) Stop() error {
 			app.logger.Info("Closing orders-placed consumer...", nil)
 			if err := app.ordersPlacedConsumer.Close(); err != nil {
 				app.logger.Error("Error closing orders-placed consumer", map[string]interface{}{"error": err})
+				lastErr = err
+			}
+		}
+		if app.orderFillsProducer != nil {
+			app.logger.Info("Closing order-fills Kafka producer...", nil)
+			if err := app.orderFillsProducer.Close(); err != nil {
+				app.logger.Error("Error closing order-fills producer", map[string]interface{}{"error": err})
 				lastErr = err
 			}
 		}

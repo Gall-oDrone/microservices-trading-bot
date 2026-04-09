@@ -81,3 +81,17 @@ type OrderEvent struct {
 	Price     float64 `json:"price"`
 	Amount    float64 `json:"amount"`
 }
+
+// OrderFillEvent is published when an order reaches fully filled status (e.g. after Bitso sync).
+// strategy-executor correlates EventID with TradeSignalEvent.event_id / signal metadata event_id.
+type OrderFillEvent struct {
+	EventID      string  `json:"event_id"`
+	OrderID      string  `json:"order_id"`
+	TimestampMs  int64   `json:"timestamp_ms"`
+	Book         string  `json:"book"`
+	Side         string  `json:"side"`
+	AveragePrice float64 `json:"average_price"`
+	FilledAmount float64 `json:"filled_amount"`
+	Strategy     string  `json:"strategy"`
+	Liquidity    string  `json:"liquidity,omitempty"`
+}

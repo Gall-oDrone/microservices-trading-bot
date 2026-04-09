@@ -3,6 +3,7 @@ package strategies
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"sync"
@@ -56,6 +57,14 @@ type LimitProfitStrategy struct {
 	positionBuyLiquidity string  // maker|taker from venue when buy fill executed
 
 	mu sync.RWMutex
+
+	rawStateStore LimitProfitRawStateStore
+}
+
+type limitProfitPersisted struct {
+	State                StrategyState `json:"state"`
+	PositionBuyFeeRate   float64       `json:"position_buy_fee_rate,omitempty"`
+	PositionBuyLiquidity string        `json:"position_buy_liquidity,omitempty"`
 }
 
 // NewLimitProfitStrategy constructs a new instance (factory uses this).
@@ -136,6 +145,68 @@ func (s *LimitProfitStrategy) Initialize(config StrategyConfig, indicatorSvc *in
 	return nil
 }
 
+// SetLimitProfitRawStateStore enables Redis-backed durable state (optional).
+func (s *LimitProfitStrategy) SetLimitProfitRawStateStore(store LimitProfitRawStateStore) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.rawStateStore = store
+}
+
+// Start restores persisted state after the base marks the strategy running.
+func (s *LimitProfitStrategy) Start(ctx context.Context) error {
+	if err := s.BaseEnhancedStrategy.Start(ctx); err != nil {
+		return err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.rawStateStore == nil {
+		return nil
+	}
+	payload, err := s.rawStateStore.Load(ctx, s.Name())
+	if err != nil || len(payload) == 0 {
+		return nil
+	}
+	var p limitProfitPersisted
+	if err := json.Unmarshal(payload, &p); err != nil {
+		return nil
+	}
+	s.applyPersistedLocked(&p)
+	return nil
+}
+
+func (s *LimitProfitStrategy) applyPersistedLocked(p *limitProfitPersisted) {
+	s.ApplyPersistedState(p.State)
+	// Start() already marked the strategy running; snapshot may have Running=false from last stop.
+	s.BaseEnhancedStrategy.running = true
+	s.BaseEnhancedStrategy.state.Running = true
+	if s.GetState().HasPosition {
+		s.UpdateState(func(st *StrategyState) {
+			st.PendingBuy = false
+			st.PendingEventID = ""
+		})
+	}
+	s.positionBuyFeeRate = p.PositionBuyFeeRate
+	s.positionBuyLiquidity = p.PositionBuyLiquidity
+}
+
+func (s *LimitProfitStrategy) persistLocked(ctx context.Context) {
+	if s.rawStateStore == nil {
+		return
+	}
+	p := limitProfitPersisted{
+		State:                s.GetState(),
+		PositionBuyFeeRate:   s.positionBuyFeeRate,
+		PositionBuyLiquidity: s.positionBuyLiquidity,
+	}
+	b, err := json.Marshal(&p)
+	if err != nil {
+		return
+	}
+	cctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+	_ = s.rawStateStore.Save(cctx, s.Name(), b)
+}
+
 // OnTick evaluates latest trade price against entry / exit rules.
 func (s *LimitProfitStrategy) OnTick(tick *indicators.Trade) (*Signal, error) {
 	s.mu.Lock()
@@ -171,6 +242,7 @@ func (s *LimitProfitStrategy) OnTick(tick *indicators.Trade) (*Signal, error) {
 			st.PendingBuy = true
 			st.PendingEventID = eventID
 		})
+		s.persistLocked(ctx)
 
 		return &Signal{
 			Strategy:   s.Name(),
@@ -216,6 +288,7 @@ func (s *LimitProfitStrategy) OnTick(tick *indicators.Trade) (*Signal, error) {
 		s.RecordTrade(profitable)
 		s.ClearPosition()
 		s.resetPositionFeeOverrides()
+		s.persistLocked(ctx)
 
 		meta := map[string]interface{}{
 			"signal_type":           "exit_sell",
@@ -298,6 +371,7 @@ func (s *LimitProfitStrategy) OnOrderFilled(fill OrderFill) {
 		out.PendingBuy = false
 		out.PendingEventID = ""
 	})
+	s.persistLocked(context.Background())
 }
 
 // SetFeeRatesProvider injects the registry-wide Bitso fee source (optional).
@@ -461,4 +535,9 @@ func (s *LimitProfitStrategy) Reset() {
 	defer s.mu.Unlock()
 	s.BaseEnhancedStrategy.Reset()
 	s.resetPositionFeeOverrides()
+	if s.rawStateStore != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer cancel()
+		_ = s.rawStateStore.Delete(ctx, s.Name())
+	}
 }

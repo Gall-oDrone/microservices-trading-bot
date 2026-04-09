@@ -19,6 +19,7 @@ import (
 	"bitso-trading-platform/strategy-executor/internal/indicators"
 	"bitso-trading-platform/strategy-executor/internal/logger"
 	"bitso-trading-platform/strategy-executor/internal/metrics"
+	"bitso-trading-platform/strategy-executor/internal/persistence"
 	"bitso-trading-platform/strategy-executor/internal/server"
 	"bitso-trading-platform/strategy-executor/internal/strategies"
 
@@ -57,6 +58,7 @@ func main() {
 
 	var indicatorStore indicators.IndicatorStore
 	var redisClient *redis.Client
+	var redisUsable bool
 
 	if cfg.Redis.Enabled {
 		redisClient = redis.NewClient(&redis.Options{
@@ -69,6 +71,7 @@ func main() {
 			appLogger.Warnf("Redis connection failed, using in-memory store: %v", err)
 			indicatorStore = indicators.NewInMemoryIndicatorStore()
 		} else {
+			redisUsable = true
 			appLogger.Info("Connected to Redis")
 			indicatorStore = indicators.NewRedisIndicatorStoreWithTTL(redisClient, cfg.Redis.TTL)
 
@@ -109,6 +112,11 @@ func main() {
 	}
 
 	strategyRegistry := strategies.NewEnhancedRegistry(indicatorSvc)
+
+	if redisUsable && cfg.Redis.LimitProfitStateEnabled {
+		strategyRegistry.SetLimitProfitRawStateStore(persistence.NewRedisLimitProfitStore(redisClient))
+		appLogger.Info("Redis limit_profit durable state enabled")
+	}
 
 	if cfg.Bitso.FeesEnabled {
 		bc := bitso.NewClient()
@@ -185,6 +193,24 @@ func main() {
 		appLogger.Info("Signal publishing disabled (no Kafka brokers configured)")
 	}
 
+	var orderFillsConsumer *kafka.Consumer
+	if cfg.Kafka.OrderFillsConsumerEnabled && cfg.Kafka.TopicOrderFills != "" {
+		c, err := kafka.NewConsumer(&kafka.ConsumerConfig{
+			Brokers:         cfg.Kafka.Brokers,
+			Topic:           cfg.Kafka.TopicOrderFills,
+			GroupID:         cfg.Kafka.ConsumerGroup + "-order-fills",
+			AutoOffsetReset: cfg.Kafka.OrderFillsAutoOffsetReset,
+			CommitInterval:  cfg.Kafka.CommitInterval,
+			MaxWait:         cfg.Kafka.MaxWait,
+		})
+		if err != nil {
+			appLogger.Warnf("Order fills Kafka consumer not started: %v", err)
+		} else {
+			orderFillsConsumer = c
+			appLogger.Infof("Order fills consumer subscribed to topic: %s", cfg.Kafka.TopicOrderFills)
+		}
+	}
+
 	publishTradeSignals := func(pubCtx context.Context, book string, signals []*strategies.Signal) error {
 		if !signalPublishingEnabled || signalProducer == nil {
 			return nil
@@ -255,6 +281,37 @@ func main() {
 	}()
 
 	// Signal processing loop - processes market data through strategies
+	if orderFillsConsumer != nil {
+		go func() {
+			appLogger.Info("Order fills consumer loop started")
+			for {
+				msg, err := orderFillsConsumer.Consume(ctx)
+				if err != nil {
+					if ctx.Err() != nil {
+						return
+					}
+					appLogger.Warnf("order fills consume: %v", err)
+					time.Sleep(time.Second)
+					continue
+				}
+				var ev models.OrderFillEvent
+				if err := json.Unmarshal(msg, &ev); err != nil {
+					appLogger.Warnf("order fills unmarshal: %v", err)
+					continue
+				}
+				fill := strategies.OrderFill{
+					EventID:      ev.EventID,
+					Book:         ev.Book,
+					Side:         ev.Side,
+					AveragePrice: ev.AveragePrice,
+					FilledAmount: ev.FilledAmount,
+					Liquidity:    ev.Liquidity,
+				}
+				strategyRegistry.NotifyOrderFilled(fill)
+			}
+		}()
+	}
+
 	go func() {
 		ticker := time.NewTicker(cfg.Indicators.UpdateInterval)
 		defer ticker.Stop()
@@ -336,6 +393,12 @@ func main() {
 	if signalProducer != nil {
 		if err := signalProducer.Close(); err != nil {
 			appLogger.Errorf("Error closing Kafka producer: %v", err)
+		}
+	}
+
+	if orderFillsConsumer != nil {
+		if err := orderFillsConsumer.Close(); err != nil {
+			appLogger.Errorf("Error closing order fills Kafka consumer: %v", err)
 		}
 	}
 

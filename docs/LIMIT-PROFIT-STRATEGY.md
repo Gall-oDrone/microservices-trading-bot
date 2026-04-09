@@ -75,8 +75,14 @@ Optional env: `ENTRY_OFFSET`, `MIN_PROFIT_LP`, `FEE_LP`, `FEE_BPS_LP`, `BUY_LIQU
 | `BITSO_API_BASE_URL` | Optional (e.g. stage API prefix) |
 | `BITSO_FEES_CACHE_TTL` | Cache TTL for `/fees` payload (default `1h`) |
 
+## Durable state (Redis) and automated fills (Kafka)
+
+When Redis is **connected** and **`REDIS_LIMIT_PROFIT_STATE_ENABLED`** is true (default), strategy-executor persists `limit_profit` snapshot state under keys `strategy-executor:limit_profit:{strategyName}` (pending BUY / `event_id`, open position, entry price, measured buy fee / liquidity). Restarts reload this before ticks run; **Remove strategy** or **Reset** clears the key.
+
+**Order-management** publishes **`OrderFillEvent`** to **`KAFKA_TOPIC_ORDER_FILLS`** (default `trading.order.fills`) when an order **first** reaches fully **filled** (`signal_id` must match the original signal `event_id`). **Strategy-executor** consumes that topic (consumer group suffix `-order-fills`) and calls the same path as the HTTP fill handler. Disable the consumer with **`KAFKA_ORDER_FILLS_CONSUMER_ENABLED=false`** if you rely only on **`POST /api/v1/strategies/order-fill`**. Disable OM publishing with **`KAFKA_ORDER_FILLS_PUBLISH_ENABLED=false`**.
+
 ## Operational notes
 
 - **Ticker-based exits** (`bid` / `mid` / `min_last_bid`) require market-data **`GET /api/v1/ticker/{book}`** reachable from strategy-executor (same base URL as indicators). If the ticker call fails, the strategy falls back to **last** and records `exit_price_reference` accordingly in metadata.
-- **In-memory state** — one logical position; restart clears pending/fill overrides unless you add persistence elsewhere.
+- **Without Redis durable state** — behavior is in-memory only; restarts clear pending fills and position overrides.
 - **Sell execution** — the strategy emits a limit SELL at the **tick price**; pre-trade checks and the trading engine determine actual fill quality.

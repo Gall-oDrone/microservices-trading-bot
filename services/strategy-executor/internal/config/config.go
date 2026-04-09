@@ -45,11 +45,11 @@ type Config struct {
 
 // BitsoConfig holds optional Bitso API credentials for fee lookups.
 type BitsoConfig struct {
-	APIKey        string
-	APISecret     string
-	APIBaseURL    string        // empty = default https://bitso.com/api
-	FeesCacheTTL  time.Duration // TTL for cached GET /fees response
-	FeesEnabled   bool          // true when key and secret are set
+	APIKey       string
+	APISecret    string
+	APIBaseURL   string        // empty = default https://bitso.com/api
+	FeesCacheTTL time.Duration // TTL for cached GET /fees response
+	FeesEnabled  bool          // true when key and secret are set
 }
 
 // ServiceConfig holds service-specific configuration
@@ -78,6 +78,11 @@ type KafkaConfig struct {
 		Signals string `json:"signals"`
 		Events  string `json:"events"`
 	} `json:"producer_topics"`
+
+	// Order fills consumer (from order-management full-fill events)
+	TopicOrderFills           string `json:"topic_order_fills"`
+	OrderFillsConsumerEnabled bool   `json:"order_fills_consumer_enabled"`
+	OrderFillsAutoOffsetReset string `json:"order_fills_auto_offset_reset"`
 
 	// Consumer settings
 	AutoOffsetReset string        `json:"auto_offset_reset"`
@@ -133,12 +138,13 @@ type MetricsConfig struct {
 
 // RedisConfig holds Redis configuration
 type RedisConfig struct {
-	Host     string        `json:"host"`
-	Port     int           `json:"port"`
-	Password string        `json:"password"`
-	DB       int           `json:"db"`
-	Enabled  bool          `json:"enabled"`
-	TTL      time.Duration `json:"ttl"`
+	Host                    string        `json:"host"`
+	Port                    int           `json:"port"`
+	Password                string        `json:"password"`
+	DB                      int           `json:"db"`
+	Enabled                 bool          `json:"enabled"`
+	TTL                     time.Duration `json:"ttl"`
+	LimitProfitStateEnabled bool          `json:"limit_profit_state_enabled"`
 }
 
 // IndicatorsConfig holds indicators configuration
@@ -183,13 +189,16 @@ func Load() (*Config, error) {
 				Signals: getEnv("KAFKA_TOPIC_SIGNALS", "trading.signals"),
 				Events:  getEnv("KAFKA_TOPIC_EVENTS", "strategy-executor.events"),
 			},
-			AutoOffsetReset:  getEnv("KAFKA_AUTO_OFFSET_RESET", "latest"),
-			CommitInterval:   getEnvAsDuration("KAFKA_COMMIT_INTERVAL", 1*time.Second),
-			MaxWait:          getEnvAsDuration("KAFKA_MAX_WAIT", 500*time.Millisecond),
-			BatchSize:        getEnvAsInt("KAFKA_BATCH_SIZE", 100),
-			BatchTimeout:     getEnvAsDuration("KAFKA_BATCH_TIMEOUT", 1*time.Second),
-			CompressionCodec: getEnv("KAFKA_COMPRESSION_CODEC", "snappy"),
-			RequiredAcks:     getEnvAsInt("KAFKA_REQUIRED_ACKS", -1),
+			TopicOrderFills:           getEnv("KAFKA_TOPIC_ORDER_FILLS", "trading.order.fills"),
+			OrderFillsConsumerEnabled: getEnvAsBool("KAFKA_ORDER_FILLS_CONSUMER_ENABLED", true),
+			OrderFillsAutoOffsetReset: getEnv("KAFKA_ORDER_FILLS_AUTO_OFFSET_RESET", "earliest"),
+			AutoOffsetReset:           getEnv("KAFKA_AUTO_OFFSET_RESET", "latest"),
+			CommitInterval:            getEnvAsDuration("KAFKA_COMMIT_INTERVAL", 1*time.Second),
+			MaxWait:                   getEnvAsDuration("KAFKA_MAX_WAIT", 500*time.Millisecond),
+			BatchSize:                 getEnvAsInt("KAFKA_BATCH_SIZE", 100),
+			BatchTimeout:              getEnvAsDuration("KAFKA_BATCH_TIMEOUT", 1*time.Second),
+			CompressionCodec:          getEnv("KAFKA_COMPRESSION_CODEC", "snappy"),
+			RequiredAcks:              getEnvAsInt("KAFKA_REQUIRED_ACKS", -1),
 		},
 		MarketData: MarketDataConfig{
 			BaseURL:    getEnv("MARKET_DATA_BASE_URL", "http://localhost:8081"),
@@ -198,12 +207,13 @@ func Load() (*Config, error) {
 			RetryDelay: getEnvAsDuration("MARKET_DATA_RETRY_DELAY", 1*time.Second),
 		},
 		Redis: RedisConfig{
-			Host:     getEnv("REDIS_HOST", "localhost"),
-			Port:     getEnvAsInt("REDIS_PORT", 6379),
-			Password: getEnv("REDIS_PASSWORD", ""),
-			DB:       getEnvAsInt("REDIS_DB", 0),
-			Enabled:  getEnvAsBool("REDIS_ENABLED", true),
-			TTL:      getEnvAsDuration("REDIS_TTL", 5*time.Minute),
+			Host:                    getEnv("REDIS_HOST", "localhost"),
+			Port:                    getEnvAsInt("REDIS_PORT", 6379),
+			Password:                getEnv("REDIS_PASSWORD", ""),
+			DB:                      getEnvAsInt("REDIS_DB", 0),
+			Enabled:                 getEnvAsBool("REDIS_ENABLED", true),
+			TTL:                     getEnvAsDuration("REDIS_TTL", 5*time.Minute),
+			LimitProfitStateEnabled: getEnvAsBool("REDIS_LIMIT_PROFIT_STATE_ENABLED", true),
 		},
 		Indicators: IndicatorsConfig{
 			Enabled:         getEnvAsBool("INDICATORS_ENABLED", true),

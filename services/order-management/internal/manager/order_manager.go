@@ -67,6 +67,9 @@ type Manager struct {
 	// When false (Bitso sync enabled), orders_active is set from Bitso /open_orders only — avoids Grafana
 	// disagreeing with the Stage dashboard when OM has not ingested an order yet.
 	repositoryActiveOrdersGauge bool
+
+	// orderFillPublisher emits OrderFillEvent when an order first becomes fully filled (optional).
+	orderFillPublisher func(context.Context, *sharedModels.OrderFillEvent) error
 }
 
 // NewOrderManager creates a new order manager. pnlRecorder is optional (nil disables intraday P&L metrics).
@@ -99,6 +102,48 @@ func NewOrderManager(
 
 		lastBooksWithNonZeroActive:  make(map[string]struct{}),
 		repositoryActiveOrdersGauge: repositoryActiveOrdersGauge,
+	}
+}
+
+// SetOrderFillPublisher registers a callback to publish full fills (e.g. to Kafka for strategy-executor).
+// Call once during startup before concurrent sync traffic.
+func (m *Manager) SetOrderFillPublisher(fn func(context.Context, *sharedModels.OrderFillEvent) error) {
+	m.orderFillPublisher = fn
+}
+
+func (m *Manager) maybePublishOrderFill(ctx context.Context, order *models.Order, preStatus models.OrderStatus) {
+	if m.orderFillPublisher == nil {
+		return
+	}
+	if order.Status != models.OrderStatusFilled || preStatus == models.OrderStatusFilled {
+		return
+	}
+	if order.SignalID == "" {
+		return
+	}
+	ev := &sharedModels.OrderFillEvent{
+		EventID:      order.SignalID,
+		OrderID:      order.ID,
+		TimestampMs:  time.Now().UnixMilli(),
+		Book:         order.Book,
+		Side:         order.Side,
+		AveragePrice: order.AveragePrice,
+		FilledAmount: order.FilledAmount,
+		Strategy:     order.Strategy,
+	}
+	if order.Metadata != nil {
+		if v, ok := order.Metadata["fill_liquidity"].(string); ok && v != "" {
+			ev.Liquidity = v
+		} else if v, ok := order.Metadata["liquidity"].(string); ok && v != "" {
+			ev.Liquidity = v
+		}
+	}
+	if err := m.orderFillPublisher(ctx, ev); err != nil {
+		m.logger.Warn("order fill publish failed", map[string]interface{}{
+			"order_id":  order.ID,
+			"signal_id": order.SignalID,
+			"error":     err.Error(),
+		})
 	}
 }
 
@@ -354,12 +399,11 @@ func (m *Manager) SyncOrderFromBitso(ctx context.Context, bitsoOrderID string, f
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	// Reload for mutex
-	prevStatus := order.Status
 	order, err = m.repository.Get(ctx, order.ID)
 	if err != nil {
 		return err
 	}
+	preSyncStatus := order.Status
 	if order.IsClosed() {
 		m.logger.Debug("SyncOrderFromBitso: order closed after reload, skipping", map[string]interface{}{
 			"order_id":       order.ID,
@@ -375,7 +419,7 @@ func (m *Manager) SyncOrderFromBitso(ctx context.Context, bitsoOrderID string, f
 	m.logger.Info("SyncOrderFromBitso: processing", map[string]interface{}{
 		"order_id":         order.ID,
 		"bitso_order_id":   bitsoOrderID,
-		"prev_status":      string(prevStatus),
+		"prev_status":      string(preSyncStatus),
 		"current_status":   string(order.Status),
 		"target_status":    string(status),
 		"prev_filled":      order.FilledAmount,
@@ -419,12 +463,13 @@ func (m *Manager) SyncOrderFromBitso(ctx context.Context, bitsoOrderID string, f
 		})
 	}
 
+	preTransition := order.Status
 	if status != order.Status {
 		if err := m.stateMachine.Transition(order, status); err != nil {
 			m.logger.Warn("SyncOrderFromBitso: state transition failed", map[string]interface{}{
 				"order_id":       order.ID,
 				"bitso_order_id": bitsoOrderID,
-				"from_status":    string(order.Status),
+				"from_status":    string(preTransition),
 				"to_status":      string(status),
 				"error":          err.Error(),
 			})
@@ -433,7 +478,7 @@ func (m *Manager) SyncOrderFromBitso(ctx context.Context, bitsoOrderID string, f
 		m.logger.Info("SyncOrderFromBitso: state transitioned", map[string]interface{}{
 			"order_id":       order.ID,
 			"bitso_order_id": bitsoOrderID,
-			"from_status":    string(prevStatus),
+			"from_status":    string(preTransition),
 			"to_status":      string(status),
 		})
 	}
@@ -457,6 +502,7 @@ func (m *Manager) SyncOrderFromBitso(ctx context.Context, bitsoOrderID string, f
 		m.metrics.RecordOrderCancelled(order.Book, order.Strategy, "exchange")
 	}
 	m.updateActiveOrderMetrics(ctx)
+	m.maybePublishOrderFill(ctx, order, preSyncStatus)
 	return nil
 }
 
@@ -695,6 +741,7 @@ func (m *Manager) UpdateOrderStatus(ctx context.Context, orderID string, status 
 	if err != nil {
 		return fmt.Errorf("failed to get order: %w", err)
 	}
+	preStatus := order.Status
 
 	// Validate transition
 	if err := m.stateMachine.Transition(order, status); err != nil {
@@ -724,6 +771,7 @@ func (m *Manager) UpdateOrderStatus(ctx context.Context, orderID string, status 
 		m.metrics.RecordOrderRejected(order.Book, order.Strategy, "manual")
 	}
 	m.updateActiveOrderMetrics(ctx)
+	m.maybePublishOrderFill(ctx, order, preStatus)
 
 	m.logger.Info("Order status updated", map[string]interface{}{
 		"order_id":   orderID,

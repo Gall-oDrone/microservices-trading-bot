@@ -133,6 +133,13 @@ type OrderFillAware interface {
 	OnOrderFilled(fill OrderFill)
 }
 
+// LimitProfitRawStateStore persists limit_profit mutex-held state (e.g. Redis) as opaque JSON.
+type LimitProfitRawStateStore interface {
+	Save(ctx context.Context, strategyName string, payload []byte) error
+	Load(ctx context.Context, strategyName string) ([]byte, error)
+	Delete(ctx context.Context, strategyName string) error
+}
+
 // EnhancedStrategyFactory creates enhanced strategy instances
 type EnhancedStrategyFactory func() EnhancedStrategy
 
@@ -190,6 +197,12 @@ func (s *BaseEnhancedStrategy) Stop() error {
 func (s *BaseEnhancedStrategy) Reset() {
 	s.state = StrategyState{Name: s.name}
 	s.metrics = StrategyMetrics{}
+}
+
+// ApplyPersistedState restores strategy state from durable storage (limit_profit Redis snapshot).
+func (s *BaseEnhancedStrategy) ApplyPersistedState(st StrategyState) {
+	st.Name = s.name
+	s.state = st
 }
 
 func (s *BaseEnhancedStrategy) GetState() StrategyState {

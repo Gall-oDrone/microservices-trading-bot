@@ -52,12 +52,15 @@ type KafkaConfig struct {
 
 	// Consumer configuration
 	ConsumerGroup     string `json:"consumer_group"`
-	TopicSignals      string `json:"topic_signals"`      // Input: strategy-executor.signals
+	TopicSignals      string `json:"topic_signals"`       // Input: strategy-executor.signals
 	TopicOrdersPlaced string `json:"topic_orders_placed"` // Input: trading-engine publishes placed orders (trading.orders.placed)
 
 	// Producer configuration
-	TopicOrders string `json:"topic_orders"` // Output: order-management.orders
-	TopicEvents string `json:"topic_events"`  // Output: order-management.events
+	TopicOrders     string `json:"topic_orders"`      // Output: order-management.orders
+	TopicEvents     string `json:"topic_events"`      // Output: order-management.events
+	TopicOrderFills string `json:"topic_order_fills"` // Output: full fills for strategy-executor (e.g. trading.order.fills)
+	// OrderFillsPublishEnabled: when false, OM does not create a Kafka producer for TopicOrderFills.
+	OrderFillsPublishEnabled bool `json:"order_fills_publish_enabled"`
 
 	// Consumer settings
 	AutoOffsetReset string `json:"auto_offset_reset"`
@@ -66,7 +69,7 @@ type KafkaConfig struct {
 	// SignalsAutoOffsetReset: offset policy for trading.signals consumer (default "earliest").
 	SignalsAutoOffsetReset string        `json:"signals_auto_offset_reset"`
 	CommitInterval         time.Duration `json:"commit_interval"`
-	MaxWait                     time.Duration `json:"max_wait"`
+	MaxWait                time.Duration `json:"max_wait"`
 
 	// Producer settings
 	BatchSize        int           `json:"batch_size"`
@@ -99,11 +102,11 @@ type TradingEngineConfig struct {
 
 // BitsoConfig holds Bitso API config for the sync job (optional)
 type BitsoConfig struct {
-	APIBaseURL            string        `json:"api_base_url"`
-	APIKey                string        `json:"api_key"`
-	APISecret             string        `json:"api_secret"`
-	SyncInterval          time.Duration `json:"sync_interval"`           // Interval for polling /orders (default 10s)
-	UserTradesPollEnabled bool          `json:"user_trades_poll_enabled"` // Enable /user_trades polling for fill discovery
+	APIBaseURL             string        `json:"api_base_url"`
+	APIKey                 string        `json:"api_key"`
+	APISecret              string        `json:"api_secret"`
+	SyncInterval           time.Duration `json:"sync_interval"`             // Interval for polling /orders (default 10s)
+	UserTradesPollEnabled  bool          `json:"user_trades_poll_enabled"`  // Enable /user_trades polling for fill discovery
 	UserTradesPollInterval time.Duration `json:"user_trades_poll_interval"` // Interval for /user_trades polling (default 15s)
 }
 
@@ -142,21 +145,23 @@ func Load() (*Config, error) {
 			Environment: getEnv("ENVIRONMENT", "development"),
 		},
 		Kafka: KafkaConfig{
-			Brokers:          getEnvAsSlice("KAFKA_BROKERS", []string{"localhost:9092"}),
-			ConsumerGroup:    getEnv("KAFKA_CONSUMER_GROUP", "order-management-group"),
-			TopicSignals:      getEnv("KAFKA_TOPIC_SIGNALS", "trading.signals"),
-			TopicOrdersPlaced: getEnv("KAFKA_TOPIC_ORDERS_PLACED", "trading.orders.placed"),
-			TopicOrders:       getEnv("KAFKA_TOPIC_ORDERS", "order-management.orders"),
-			TopicEvents:       getEnv("KAFKA_TOPIC_EVENTS", "order-management.events"),
+			Brokers:                     getEnvAsSlice("KAFKA_BROKERS", []string{"localhost:9092"}),
+			ConsumerGroup:               getEnv("KAFKA_CONSUMER_GROUP", "order-management-group"),
+			TopicSignals:                getEnv("KAFKA_TOPIC_SIGNALS", "trading.signals"),
+			TopicOrdersPlaced:           getEnv("KAFKA_TOPIC_ORDERS_PLACED", "trading.orders.placed"),
+			TopicOrders:                 getEnv("KAFKA_TOPIC_ORDERS", "order-management.orders"),
+			TopicEvents:                 getEnv("KAFKA_TOPIC_EVENTS", "order-management.events"),
+			TopicOrderFills:             getEnv("KAFKA_TOPIC_ORDER_FILLS", "trading.order.fills"),
+			OrderFillsPublishEnabled:    getEnvAsBool("KAFKA_ORDER_FILLS_PUBLISH_ENABLED", true),
 			AutoOffsetReset:             getEnv("KAFKA_AUTO_OFFSET_RESET", "latest"),
 			OrdersPlacedAutoOffsetReset: getEnv("KAFKA_ORDERS_PLACED_AUTO_OFFSET_RESET", "earliest"),
 			SignalsAutoOffsetReset:      getEnv("KAFKA_SIGNALS_AUTO_OFFSET_RESET", "earliest"),
 			CommitInterval:              getEnvAsDuration("KAFKA_COMMIT_INTERVAL", 1*time.Second),
-			MaxWait:          getEnvAsDuration("KAFKA_MAX_WAIT", 500*time.Millisecond),
-			BatchSize:        getEnvAsInt("KAFKA_BATCH_SIZE", 100),
-			BatchTimeout:     getEnvAsDuration("KAFKA_BATCH_TIMEOUT", 1*time.Second),
-			CompressionCodec: getEnv("KAFKA_COMPRESSION_CODEC", "snappy"),
-			RequiredAcks:     getEnvAsInt("KAFKA_REQUIRED_ACKS", -1),
+			MaxWait:                     getEnvAsDuration("KAFKA_MAX_WAIT", 500*time.Millisecond),
+			BatchSize:                   getEnvAsInt("KAFKA_BATCH_SIZE", 100),
+			BatchTimeout:                getEnvAsDuration("KAFKA_BATCH_TIMEOUT", 1*time.Second),
+			CompressionCodec:            getEnv("KAFKA_COMPRESSION_CODEC", "snappy"),
+			RequiredAcks:                getEnvAsInt("KAFKA_REQUIRED_ACKS", -1),
 		},
 		Storage: StorageConfig{
 			Type: getEnv("STORAGE_TYPE", "memory"),
