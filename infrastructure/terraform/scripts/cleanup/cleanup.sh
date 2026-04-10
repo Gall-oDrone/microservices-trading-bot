@@ -41,6 +41,8 @@ case "${1:-}" in
         echo "Environment variables:"
         echo "  AWS_REGION              AWS region (default: us-east-1)"
         echo "  CLEANUP_VALIDATE_ONLY=1 Run prerequisite/path checks only (no teardown)"
+        echo "  CLEANUP_RUN_PREREQUISITE_SCRIPTS=1  Run cleanup-k8s-app.sh, addons.sh, cleanup-secrets.sh first (recommended)"
+        echo "  CLEANUP_AUTO_CONFIRM=yes Used by prerequisite scripts to skip confirmation prompts"
         echo ""
         echo "Examples:"
         echo "  $0"
@@ -580,7 +582,7 @@ handle_state_lock() {
     fi
     
     # If plan still fails with lock error, try to extract ID from error and force-unlock
-    local lock_info=$(terraform plan -destroy -no-color 2>&1 | grep -A 10 "Error acquiring the state lock" || echo "")
+    local lock_info=$(terraform plan -destroy -no-color -input=false 2>&1 | grep -A 10 "Error acquiring the state lock" || echo "")
     
     if [ -n "$lock_info" ]; then
         print_warning "State lock detected. Attempting to force unlock..."
@@ -616,21 +618,21 @@ terraform_destroy() {
     # Create destroy plan
     print_info "Creating destroy plan..."
     local plan_output
-    plan_output=$(terraform plan -destroy -out=destroy-plan 2>&1) || true
+    plan_output=$(terraform plan -destroy -out=destroy-plan -input=false 2>&1) || true
     if ! echo "$plan_output" | grep -q "Plan:"; then
         print_error "Failed to create destroy plan"
         print_warning "This might be due to backend configuration, state lock, or cluster already gone"
         # If EKS cluster is already deleted, data.aws_eks_cluster.this can't be refreshed - use -refresh=false
         if echo "$plan_output" | grep -q "couldn't find resource\|reading EKS Cluster"; then
             print_info "Cluster already gone; attempting destroy with -refresh=false (use cached state)..."
-            if timeout 1800 terraform destroy -auto-approve -refresh=false -lock=false; then
+            if timeout 1800 terraform destroy -auto-approve -input=false -refresh=false -lock=false; then
                 cd - >/dev/null
                 print_success "Terraform destroy completed (with -refresh=false)"
                 return 0
             fi
         fi
         print_info "Attempting direct destroy without plan..."
-        if timeout 1800 terraform destroy -auto-approve -lock=false; then
+        if timeout 1800 terraform destroy -auto-approve -input=false -lock=false; then
             cd - >/dev/null
             print_success "Terraform destroy completed (direct method)"
             return 0
@@ -642,7 +644,7 @@ terraform_destroy() {
     
     # Apply destroy with timeout
     print_info "Applying destroy plan (timeout: 30 minutes)..."
-    timeout 1800 terraform apply destroy-plan || {
+    timeout 1800 terraform apply -input=false destroy-plan || {
         print_error "Terraform destroy timed out or failed"
         print_warning "Don't worry - running cleanup again should handle remaining resources"
         rm -f destroy-plan
@@ -912,6 +914,19 @@ verify_cleanup() {
     print_success "🎉 Cleanup verification completed!"
 }
 
+# Optional: run cleanup-k8s-app.sh → addons.sh → cleanup-secrets.sh before LB/terraform teardown
+run_prerequisite_cleanups() {
+    if [ "${CLEANUP_RUN_PREREQUISITE_SCRIPTS:-}" != "1" ]; then
+        return 0
+    fi
+    print_info "CLEANUP_RUN_PREREQUISITE_SCRIPTS=1 — running cleanup-k8s-app.sh, addons.sh, cleanup-secrets.sh"
+    export CLEANUP_AUTO_CONFIRM=yes
+    ( cd "$SCRIPT_DIR" && ./cleanup-k8s-app.sh "$ENVIRONMENT" ) || print_warning "cleanup-k8s-app.sh exited nonzero (cluster may be gone or nothing to delete — continuing)"
+    ( cd "$SCRIPT_DIR" && ./addons.sh "$ENVIRONMENT" ) || print_warning "addons.sh exited nonzero — continuing"
+    ( cd "$SCRIPT_DIR" && ./cleanup-secrets.sh ) || print_warning "cleanup-secrets.sh exited nonzero — continuing"
+    print_success "Prerequisite cleanup scripts finished"
+}
+
 # Main execution
 main() {
     print_info "🚀 Starting bulletproof cleanup for environment: $ENVIRONMENT"
@@ -934,6 +949,9 @@ main() {
     
     # Step 1: Prerequisites
     check_prerequisites
+    
+    # Step 1b (optional): App namespace → Helm addons → Secrets Manager (same order as manual runbook)
+    run_prerequisite_cleanups
     
     # Step 2: Force delete LoadBalancer services (MOST CRITICAL)
     force_delete_loadbalancers
@@ -1002,7 +1020,7 @@ main() {
             
             # Try destroy one more time after manual cleanup
             print_info "Retrying destroy after manual cleanup..."
-            terraform destroy -auto-approve 2>&1 | tail -20 || true
+            terraform destroy -auto-approve -input=false 2>&1 | tail -20 || true
             
             cd - >/dev/null
         fi

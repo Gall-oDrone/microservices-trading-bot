@@ -64,7 +64,14 @@ for secret in "${SECRETS[@]}"; do
     echo "  - $secret"
 done
 echo ""
-read -p "Are you sure you want to delete these secrets? (yes/no): " CONFIRM
+if [ "${CLEANUP_AUTO_CONFIRM:-}" = "yes" ]; then
+    CONFIRM="yes"
+    print_info "CLEANUP_AUTO_CONFIRM=yes — proceeding without prompt"
+elif [ ! -t 0 ]; then
+    read -r CONFIRM
+else
+    read -p "Are you sure you want to delete these secrets? (yes/no): " CONFIRM
+fi
 
 if [ "$CONFIRM" != "yes" ]; then
     print_info "Cleanup cancelled by user"

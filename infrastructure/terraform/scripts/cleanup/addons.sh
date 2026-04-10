@@ -131,7 +131,15 @@ aws eks update-kubeconfig --region "$AWS_REGION" --name "$CLUSTER_NAME" 2>/dev/n
 print_warning "This script will remove ALL Helm addons and their resources from your cluster"
 print_warning "This includes: AWS Load Balancer Controller, Metrics Server, Prometheus Stack, Cert Manager, External Secrets, External DNS, etc."
 echo ""
-read -p "Are you sure you want to continue? Type 'yes' to proceed: " -r response
+response=""
+if [ "${CLEANUP_AUTO_CONFIRM:-}" = "yes" ]; then
+    response="yes"
+    print_info "CLEANUP_AUTO_CONFIRM=yes — proceeding without prompt"
+elif [ ! -t 0 ]; then
+    read -r response
+else
+    read -p "Are you sure you want to continue? Type 'yes' to proceed: " -r response
+fi
 if [[ ! "$response" == "yes" ]]; then
     print_info "Cleanup cancelled"
     exit 0

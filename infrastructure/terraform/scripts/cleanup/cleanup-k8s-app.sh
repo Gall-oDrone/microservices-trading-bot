@@ -455,11 +455,19 @@ main() {
     configure_kubectl "$CLUSTER_NAME"
     echo ""
     
-    # Confirm deletion
+    # Confirm deletion (skip prompt when CLEANUP_AUTO_CONFIRM=yes or non-interactive stdin)
     print_warning "⚠️  WARNING: This will delete ALL resources in namespace: $APP_NAMESPACE"
     print_warning "This includes: Ingresses, Network Policies, Deployments, Services, ConfigMaps, Secrets, ExternalSecrets, and the namespace itself"
     echo ""
-    read -p "Are you sure you want to continue? Type 'yes' to proceed: " -r response
+    local response=""
+    if [ "${CLEANUP_AUTO_CONFIRM:-}" = "yes" ]; then
+        response="yes"
+        print_info "CLEANUP_AUTO_CONFIRM=yes — proceeding without prompt"
+    elif [ ! -t 0 ]; then
+        read -r response
+    else
+        read -p "Are you sure you want to continue? Type 'yes' to proceed: " -r response
+    fi
     
     if [[ ! "$response" == "yes" ]]; then
         print_info "Cleanup cancelled by user"
