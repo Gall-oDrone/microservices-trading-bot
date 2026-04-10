@@ -12,6 +12,7 @@ import (
 )
 
 // SignalsConsumer consumes trading.signals and runs ProcessSignal so Redis has a row keyed by event_id before trading.orders.placed links Bitso OIDs.
+// Producers should partition this topic by TradeSignalEvent.EventID (see strategy-executor) so related messages keep per-signal ordering across partitions.
 type SignalsConsumer struct {
 	consumer     *kafka.Consumer
 	orderManager manager.OrderManager

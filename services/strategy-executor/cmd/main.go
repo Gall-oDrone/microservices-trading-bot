@@ -248,8 +248,13 @@ func main() {
 			if err != nil {
 				return fmt.Errorf("marshal signal: %w", err)
 			}
+			// Partition by event_id so OM + trading-engine see a stable per-signal ordering when the topic has multiple partitions.
+			partitionKey := eventID
+			if partitionKey == "" {
+				partitionKey = book
+			}
 			cctx, cancel := context.WithTimeout(pubCtx, 5*time.Second)
-			err = signalProducer.Produce(cctx, []byte(book), data)
+			err = signalProducer.Produce(cctx, []byte(partitionKey), data)
 			cancel()
 			if err != nil {
 				return fmt.Errorf("kafka produce: %w", err)

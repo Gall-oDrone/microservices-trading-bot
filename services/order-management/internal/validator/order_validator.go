@@ -18,6 +18,10 @@ import (
 type OrderValidator interface {
 	ValidateSignal(signal *sharedModels.TradeSignalEvent) error
 	ValidateOrder(order *models.Order) error
+	// PreTradeValidateOrder validates a proposed order for trading-engine pre-trade checks.
+	// When idempotentMatched is true, the signal row was already created by the trading.signals consumer
+	// with matching economics — callers should skip re-running risk (already applied at ingest).
+	PreTradeValidateOrder(order *models.Order) (idempotentMatched bool, err error)
 	ValidateOrderSize(order *models.Order) error
 	ValidateOrderValue(order *models.Order) error
 }
@@ -102,53 +106,52 @@ func (v *Validator) ValidateSignal(signal *sharedModels.TradeSignalEvent) error 
 	return nil
 }
 
-// ValidateOrder validates an order
+// validateOrderStructure runs structural/risk-bounds checks (not duplicate / pre-trade idempotency).
+func (v *Validator) validateOrderStructure(order *models.Order) *models.ValidationResult {
+	result := models.NewValidationResult()
+
+	if err := order.Validate(); err != nil {
+		result.AddFieldError("order", err.Error())
+	}
+
+	if err := v.ValidateBook(order.Book); err != nil {
+		result.AddFieldError("book", err.Error())
+	}
+
+	if err := v.ValidateSide(order.Side); err != nil {
+		result.AddFieldError("side", err.Error())
+	}
+
+	if err := v.ValidateType(order.Type); err != nil {
+		result.AddFieldError("type", err.Error())
+	}
+
+	if err := v.ValidateOrderSize(order); err != nil {
+		result.AddFieldError("amount", err.Error())
+	}
+
+	if err := v.ValidateOrderValue(order); err != nil {
+		result.AddFieldError("value", err.Error())
+	}
+
+	return result
+}
+
+// ValidateOrder validates an order (full duplicate check for non–pre-trade callers).
 func (v *Validator) ValidateOrder(order *models.Order) error {
 	start := time.Now()
 	defer func() {
 		v.metrics.RecordValidationDuration("order", time.Since(start))
 	}()
 
-	result := models.NewValidationResult()
+	result := v.validateOrderStructure(order)
 
-	// Validate order struct
-	if err := order.Validate(); err != nil {
-		result.AddFieldError("order", err.Error())
-	}
-
-	// Validate book
-	if err := v.ValidateBook(order.Book); err != nil {
-		result.AddFieldError("book", err.Error())
-	}
-
-	// Validate side
-	if err := v.ValidateSide(order.Side); err != nil {
-		result.AddFieldError("side", err.Error())
-	}
-
-	// Validate type
-	if err := v.ValidateType(order.Type); err != nil {
-		result.AddFieldError("type", err.Error())
-	}
-
-	// Validate order size
-	if err := v.ValidateOrderSize(order); err != nil {
-		result.AddFieldError("amount", err.Error())
-	}
-
-	// Validate order value
-	if err := v.ValidateOrderValue(order); err != nil {
-		result.AddFieldError("value", err.Error())
-	}
-
-	// Check for duplicates if enabled
 	if v.config.EnableDuplicateCheck {
 		if err := v.CheckDuplicates(order); err != nil {
 			result.AddError("duplicate", err.Error(), models.ErrorCodeDuplicate)
 		}
 	}
 
-	// Record metrics
 	if result.Valid {
 		v.metrics.RecordValidation("order", "success")
 	} else {
@@ -160,6 +163,46 @@ func (v *Validator) ValidateOrder(order *models.Order) error {
 	}
 
 	return nil
+}
+
+// PreTradeValidateOrder validates trading-engine pre-trade requests; allows idempotent approval when
+// the trading.signals consumer already created the canonical order row for this signal_id.
+func (v *Validator) PreTradeValidateOrder(order *models.Order) (idempotentMatched bool, err error) {
+	start := time.Now()
+	defer func() {
+		v.metrics.RecordValidationDuration("order_pre_trade", time.Since(start))
+	}()
+
+	result := v.validateOrderStructure(order)
+	if result.HasErrors() {
+		v.metrics.RecordValidation("order_pre_trade", "failed")
+		return false, fmt.Errorf("order validation failed: %w", fmt.Errorf("%s", result.Error()))
+	}
+
+	if !v.config.EnableDuplicateCheck {
+		v.metrics.RecordValidation("order_pre_trade", "success")
+		return false, nil
+	}
+
+	idemp, resolveErr := v.resolvePreTradeDuplicate(order)
+	if resolveErr != nil {
+		result.AddError("duplicate", resolveErr.Error(), models.ErrorCodeDuplicate)
+		v.metrics.RecordValidation("order_pre_trade", "failed")
+		return false, fmt.Errorf("order validation failed: %w", fmt.Errorf("%s", result.Error()))
+	}
+	if idemp {
+		v.metrics.RecordValidation("pre_trade_idempotent", "ok")
+		return true, nil
+	}
+
+	if err := v.CheckDuplicates(order); err != nil {
+		result.AddError("duplicate", err.Error(), models.ErrorCodeDuplicate)
+		v.metrics.RecordValidation("order_pre_trade", "failed")
+		return false, fmt.Errorf("order validation failed: %w", fmt.Errorf("%s", result.Error()))
+	}
+
+	v.metrics.RecordValidation("order_pre_trade", "success")
+	return false, nil
 }
 
 // ValidateOrderSize validates the order size against limits

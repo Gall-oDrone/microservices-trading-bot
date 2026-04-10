@@ -33,6 +33,8 @@ type OrderValidationResponse struct {
 	Errors      []string `json:"errors,omitempty"`
 	Warnings    []string `json:"warnings,omitempty"`
 	ValidatedAt string   `json:"validated_at"`
+	// IdempotentReplay: OM already had the signal row; risk was applied at trading.signals ingest.
+	IdempotentReplay bool `json:"idempotent_replay,omitempty"`
 }
 
 // HTTPPreTradeValidator implements PreTradeValidator using HTTP calls to order-management

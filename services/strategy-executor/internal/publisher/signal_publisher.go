@@ -161,7 +161,11 @@ func (p *Publisher) PublishSignal(signal *strategies.TradingSignal) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	if err := p.producer.Produce(ctx, []byte(signal.Book.String()), data); err != nil {
+	partitionKey := event.EventID
+	if partitionKey == "" {
+		partitionKey = signal.Book.String()
+	}
+	if err := p.producer.Produce(ctx, []byte(partitionKey), data); err != nil {
 		p.recordError("publish_error", err)
 		return fmt.Errorf("failed to publish signal: %w", err)
 	}
@@ -272,7 +276,7 @@ func (p *Publisher) convertSignalToEvent(signal *strategies.TradingSignal) *mode
 		EventID:   fmt.Sprintf("signal-%d", time.Now().UnixNano()),
 		Timestamp: signal.Timestamp,
 		Book:      signal.Book.String(),
-		Strategy:  "unknown", // Will be set by caller
+		Strategy:  "unknown", // legacy publisher path; main path uses cmd/main publishTradeSignals with real strategy name
 		Signal:    signalType,
 		Price:     signal.Price,
 		Amount:    signal.Amount,

@@ -41,6 +41,9 @@ type OrderValidationResponse struct {
 	Errors      []string `json:"errors,omitempty"`
 	Warnings    []string `json:"warnings,omitempty"`
 	ValidatedAt string   `json:"validated_at"`
+	// IdempotentReplay is true when the canonical order for this signal_id was already created
+	// by the trading.signals consumer and economics match — risk was already applied at ingest.
+	IdempotentReplay bool `json:"idempotent_replay,omitempty"`
 }
 
 // HTTPServer handles HTTP requests
@@ -268,18 +271,26 @@ func (s *HTTPServer) validateOrderHandler(w http.ResponseWriter, r *http.Request
 		Amount:   req.Amount,
 		Price:    req.Price,
 		SignalID: req.SignalID,
+		Strategy: req.Strategy,
 		Status:   models.OrderStatusPending,
 	}
 
-	// Step 3: Validate order structure
-	if err := s.validator.ValidateOrder(tempOrder); err != nil {
-		response.Valid = false
-		response.Approved = false
-		response.Errors = append(response.Errors, fmt.Sprintf("Order validation failed: %v", err))
+	// Step 3: Pre-trade validation (idempotent when trading.signals consumer created the row first)
+	var idempotent bool
+	if response.Valid {
+		var err error
+		idempotent, err = s.validator.PreTradeValidateOrder(tempOrder)
+		if err != nil {
+			response.Valid = false
+			response.Approved = false
+			response.Errors = append(response.Errors, fmt.Sprintf("Order validation failed: %v", err))
+		} else if idempotent {
+			response.IdempotentReplay = true
+		}
 	}
 
-	// Step 4: Perform risk checks (only if basic validation passed)
-	if response.Valid {
+	// Step 4: Perform risk checks (only if basic validation passed, and not idempotent replay)
+	if response.Valid && !idempotent {
 		if err := s.riskManager.CheckRisk(ctx, tempOrder); err != nil {
 			response.Approved = false
 			response.Errors = append(response.Errors, fmt.Sprintf("Risk check failed: %v", err))

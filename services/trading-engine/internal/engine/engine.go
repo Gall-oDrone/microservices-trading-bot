@@ -506,6 +506,10 @@ func (te *TradingEngine) processTradeSignal(signal *models.TradeSignalEvent) err
 
 	// Pre-trade validation: call order-management to validate before placing order on Bitso
 	if te.preTradeValidator != nil {
+		strategy := strings.TrimSpace(signal.Strategy)
+		if strategy == "" {
+			strategy = te.config.StrategyType
+		}
 		validationReq := &execution.OrderValidationRequest{
 			Book:     signal.Book,
 			Side:     strings.ToLower(strings.TrimSpace(signal.Signal)),
@@ -513,7 +517,7 @@ func (te *TradingEngine) processTradeSignal(signal *models.TradeSignalEvent) err
 			Amount:   signal.Amount,
 			Price:    signal.Price,
 			SignalID: signal.EventID,
-			Strategy: te.config.StrategyType,
+			Strategy: strategy,
 		}
 		validationCtx, validationCancel := context.WithTimeout(te.ctx, 5*time.Second)
 		validationResp, err := te.preTradeValidator.ValidateOrder(validationCtx, validationReq)

@@ -1,6 +1,7 @@
 package validator
 
 import (
+	"context"
 	"testing"
 
 	"bitso-trading-platform/order-management/internal/config"
@@ -291,6 +292,82 @@ func TestValidateType(t *testing.T) {
 				t.Errorf("ValidateType() error = %v, wantErr %v", err, tt.wantErr)
 			}
 		})
+	}
+}
+
+func TestPreTradeValidateOrder_Idempotent(t *testing.T) {
+	cfg := &config.RiskConfig{
+		MaxOpenOrders:        10,
+		MaxOrderValue:        100000.0,
+		MinOrderSize:         0.001,
+		MaxPositionSize:      1.0,
+		EnableDuplicateCheck: true,
+		MaxOrdersPerMinute:   60,
+	}
+	repo := repository.NewInMemoryOrderRepository(testValidatorLogger, testValidatorMetrics)
+	v := NewOrderValidator(cfg, testValidatorLogger, repo, testValidatorMetrics)
+
+	existing := models.NewOrder("sig-idem-1", "btc_mxn", "buy", "limit", "limit_profit", 1261960.0, 0.001)
+	if err := repo.Create(context.Background(), existing); err != nil {
+		t.Fatal(err)
+	}
+	// Simulate ProcessSignal success: validated row without Bitso placement
+	existing.Status = models.OrderStatusValidated
+	if err := repo.Update(context.Background(), existing); err != nil {
+		t.Fatal(err)
+	}
+
+	temp := &models.Order{
+		ID:       "validate-test-1",
+		Book:     "btc_mxn",
+		Side:     "buy",
+		Type:     "limit",
+		Amount:   0.001,
+		Price:    1261960.0,
+		SignalID: "sig-idem-1",
+		Strategy: "limit_profit",
+		Status:   models.OrderStatusPending,
+	}
+
+	idemp, err := v.PreTradeValidateOrder(temp)
+	if err != nil {
+		t.Fatalf("PreTradeValidateOrder: %v", err)
+	}
+	if !idemp {
+		t.Fatal("expected idempotent match")
+	}
+}
+
+func TestPreTradeValidateOrder_ConflictingPrice(t *testing.T) {
+	cfg := &config.RiskConfig{
+		MaxOpenOrders:        10,
+		MaxOrderValue:        100000.0,
+		MinOrderSize:         0.001,
+		MaxPositionSize:      1.0,
+		EnableDuplicateCheck: true,
+		MaxOrdersPerMinute:   60,
+	}
+	repo := repository.NewInMemoryOrderRepository(testValidatorLogger, testValidatorMetrics)
+	v := NewOrderValidator(cfg, testValidatorLogger, repo, testValidatorMetrics)
+
+	existing := models.NewOrder("sig-conflict", "btc_mxn", "buy", "limit", "limit_profit", 1261960.0, 0.001)
+	_ = repo.Create(context.Background(), existing)
+
+	temp := &models.Order{
+		ID:       "validate-test-2",
+		Book:     "btc_mxn",
+		Side:     "buy",
+		Type:     "limit",
+		Amount:   0.001,
+		Price:    999999.0,
+		SignalID: "sig-conflict",
+		Strategy: "limit_profit",
+		Status:   models.OrderStatusPending,
+	}
+
+	_, err := v.PreTradeValidateOrder(temp)
+	if err == nil {
+		t.Fatal("expected error for economics conflict")
 	}
 }
 
