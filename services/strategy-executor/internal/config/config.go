@@ -41,6 +41,14 @@ type Config struct {
 
 	// Bitso private API (optional) — used to load maker/taker fees via GET /fees for limit_profit exits.
 	Bitso BitsoConfig `json:"bitso"`
+
+	// OrderManagement optional — HTTP integration for pending-buy timeout cancels (see .docs/PRODUCTION_PENDING_BUY_AND_CANCEL.md).
+	OrderManagement OrderManagementConfig `json:"order_management"`
+}
+
+// OrderManagementConfig holds order-management service URL for coordinated cancels.
+type OrderManagementConfig struct {
+	BaseURL string // e.g. http://order-management:8082 — empty disables cancel RPC from strategy-executor
 }
 
 // BitsoConfig holds optional Bitso API credentials for fee lookups.
@@ -255,6 +263,9 @@ func Load() (*Config, error) {
 			APISecret:    getEnv("BITSO_API_SECRET", ""),
 			APIBaseURL:   getEnv("BITSO_API_BASE_URL", ""),
 			FeesCacheTTL: getEnvAsDuration("BITSO_FEES_CACHE_TTL", time.Hour),
+		},
+		OrderManagement: OrderManagementConfig{
+			BaseURL: getEnv("ORDER_MANAGEMENT_BASE_URL", ""),
 		},
 	}
 	config.Bitso.FeesEnabled = config.Bitso.APIKey != "" && config.Bitso.APISecret != ""

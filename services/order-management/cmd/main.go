@@ -231,6 +231,7 @@ func NewApplication() (*Application, error) {
 		bitsoClient.SetLogLevel(bitso.LogLevelInfo)
 		bitsoClient.SetAuth(cfg.Bitso.APIKey, cfg.Bitso.APISecret)
 		bitsoClient.SetAPIBaseURL(cfg.Bitso.APIBaseURL)
+		orderManager.SetBitsoClient(bitsoClient)
 		bitsoSyncJob = sync.NewBitsoSyncJob(bitsoClient, orderManager, appLogger, cfg.Bitso.SyncInterval, metricsCollector)
 		appLogger.Info("Bitso sync job configured", map[string]interface{}{"interval": cfg.Bitso.SyncInterval})
 		// User-trades poller for continuous fill discovery
@@ -281,9 +282,10 @@ func NewApplication() (*Application, error) {
 			Validator:           orderValidator,
 			RiskManager:         riskManager,
 			DevPublishOrderFill: devPublishFill,
+			SignalCanceler:      orderManager,
 		},
 	)
-	endpoints := []string{"/health", "/api/v1/status", "/api/v1/risk/session", "/api/v1/orders/validate"}
+	endpoints := []string{"/health", "/api/v1/status", "/api/v1/risk/session", "/api/v1/orders/validate", "/api/v1/orders/cancel-by-signal"}
 	if cfg.Service.DevOrderFillPublishTestEnabled && devPublishFill != nil {
 		endpoints = append(endpoints, "/internal/v1/dev/publish-order-fill-test")
 	}

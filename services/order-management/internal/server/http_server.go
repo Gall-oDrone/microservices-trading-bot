@@ -23,6 +23,11 @@ import (
 // DevOrderFillPublisher invokes the same Kafka publish path as a production fill (for smoke tests).
 type DevOrderFillPublisher func(context.Context, *sharedModels.OrderFillEvent) error
 
+// SignalCanceler cancels an order by trading signal event_id (strategy-executor pending-buy timeout).
+type SignalCanceler interface {
+	CancelOrderBySignalID(ctx context.Context, signalID string) error
+}
+
 // OrderValidationRequest represents a pre-trade validation request
 type OrderValidationRequest struct {
 	Book      string  `json:"book"`
@@ -56,6 +61,7 @@ type HTTPServer struct {
 	validator         validator.OrderValidator    // optional: for POST /api/v1/orders/validate
 	riskManager       risk.RiskManager            // optional: for POST /api/v1/orders/validate
 	devPublishOrderFill DevOrderFillPublisher     // optional: POST /internal/v1/dev/publish-order-fill-test
+	signalCanceler      SignalCanceler            // optional: POST /api/v1/orders/cancel-by-signal
 	server              *http.Server
 	router              *http.ServeMux
 }
@@ -67,6 +73,8 @@ type HTTPServerOptions struct {
 	RiskManager       risk.RiskManager
 	// DevPublishOrderFill enables POST /internal/v1/dev/publish-order-fill-test when non-nil (see OM_DEV_ORDER_FILL_PUBLISH_TEST_ENABLED).
 	DevPublishOrderFill DevOrderFillPublisher
+	// SignalCanceler enables POST /api/v1/orders/cancel-by-signal (Bitso cancel + OM row) when non-nil.
+	SignalCanceler SignalCanceler
 }
 
 // NewHTTPServer creates a new HTTP server. Options can be nil; individual fields enable specific endpoints.
@@ -112,6 +120,7 @@ func NewHTTPServerWithOptions(
 		server.validator = opts.Validator
 		server.riskManager = opts.RiskManager
 		server.devPublishOrderFill = opts.DevPublishOrderFill
+		server.signalCanceler = opts.SignalCanceler
 	}
 
 	server.setupRoutes()
@@ -162,6 +171,11 @@ func (s *HTTPServer) setupRoutes() {
 		s.router.HandleFunc("/api/v1/orders/validate", s.withMetrics(s.validateOrderHandler))
 	}
 
+	if s.signalCanceler != nil {
+		s.router.HandleFunc("/api/v1/orders/cancel-by-signal", s.withMetrics(s.cancelBySignalHandler))
+		s.logger.Info("HTTP route enabled", map[string]interface{}{"path": "/api/v1/orders/cancel-by-signal"})
+	}
+
 	// Dev-only: smoke-test Kafka order-fill publish + kafka_order_fill_published log (OM_DEV_ORDER_FILL_PUBLISH_TEST_ENABLED)
 	if s.config.DevOrderFillPublishTestEnabled && s.devPublishOrderFill != nil {
 		s.router.HandleFunc("/internal/v1/dev/publish-order-fill-test", s.withMetrics(s.devPublishOrderFillTestHandler))
@@ -199,6 +213,38 @@ func (s *HTTPServer) devPublishOrderFillTestHandler(w http.ResponseWriter, r *ht
 		"status":   "ok",
 		"event_id": ev.EventID,
 		"order_id": ev.OrderID,
+	})
+}
+
+type cancelBySignalRequest struct {
+	SignalID string `json:"signal_id"`
+}
+
+// cancelBySignalHandler POST { "signal_id": "<event_id>" } — venue cancel when possible, then OM cancel.
+func (s *HTTPServer) cancelBySignalHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		s.respondError(w, http.StatusMethodNotAllowed, "Method not allowed")
+		return
+	}
+	var req cancelBySignalRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		s.respondError(w, http.StatusBadRequest, fmt.Sprintf("Invalid JSON: %v", err))
+		return
+	}
+	req.SignalID = strings.TrimSpace(req.SignalID)
+	if req.SignalID == "" {
+		s.respondError(w, http.StatusBadRequest, "signal_id is required")
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 20*time.Second)
+	defer cancel()
+	if err := s.signalCanceler.CancelOrderBySignalID(ctx, req.SignalID); err != nil {
+		s.respondError(w, http.StatusUnprocessableEntity, err.Error())
+		return
+	}
+	s.respondJSON(w, http.StatusOK, map[string]interface{}{
+		"status":    "cancelled",
+		"signal_id": req.SignalID,
 	})
 }
 

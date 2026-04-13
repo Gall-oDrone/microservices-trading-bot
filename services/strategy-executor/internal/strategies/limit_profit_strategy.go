@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"strings"
 	"sync"
 	"time"
@@ -65,6 +66,9 @@ type LimitProfitStrategy struct {
 	mu sync.RWMutex
 
 	rawStateStore LimitProfitRawStateStore
+
+	// Optional: when pending buy times out, request OM cancel before clearing local pending state.
+	pendingBuyCancel PendingBuyCancelClient
 }
 
 type limitProfitPersisted struct {
@@ -167,6 +171,13 @@ func (s *LimitProfitStrategy) SetLimitProfitRawStateStore(store LimitProfitRawSt
 	s.rawStateStore = store
 }
 
+// SetPendingBuyCancelClient registers order-management cancel RPC for pending-buy timeout (optional).
+func (s *LimitProfitStrategy) SetPendingBuyCancelClient(c PendingBuyCancelClient) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.pendingBuyCancel = c
+}
+
 // Start restores persisted state after the base marks the strategy running.
 func (s *LimitProfitStrategy) Start(ctx context.Context) error {
 	if err := s.BaseEnhancedStrategy.Start(ctx); err != nil {
@@ -262,6 +273,16 @@ func (s *LimitProfitStrategy) OnTick(tick *indicators.Trade) (*Signal, error) {
 					since = state.LastSignalTime
 				}
 				if !since.IsZero() && time.Since(since) >= time.Duration(s.lpConfig.PendingBuyTimeoutSeconds)*time.Second {
+					eid := state.PendingEventID
+					if eid != "" && s.pendingBuyCancel != nil {
+						cctx, ccancel := context.WithTimeout(ctx, 20*time.Second)
+						err := s.pendingBuyCancel.CancelOrderBySignalID(cctx, eid)
+						ccancel()
+						if err != nil {
+							log.Printf("limit_profit: pending buy timeout cancel failed (signal_id=%s): %v", eid, err)
+							return nil, nil
+						}
+					}
 					s.UpdateState(func(st *StrategyState) {
 						st.PendingBuy = false
 						st.PendingEventID = ""

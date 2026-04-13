@@ -358,6 +358,10 @@ func TestLimitProfitStrategy_MaxHoldExit(t *testing.T) {
 	}
 }
 
+type stubPendingBuyCancelOK struct{}
+
+func (stubPendingBuyCancelOK) CancelOrderBySignalID(context.Context, string) error { return nil }
+
 func TestLimitProfitStrategy_PendingBuyTimeoutClearsState(t *testing.T) {
 	s := NewLimitProfitStrategy()
 	cfg := StrategyConfig{
@@ -382,6 +386,7 @@ func TestLimitProfitStrategy_PendingBuyTimeoutClearsState(t *testing.T) {
 	if err := s.Start(context.Background()); err != nil {
 		t.Fatal(err)
 	}
+	s.SetPendingBuyCancelClient(stubPendingBuyCancelOK{})
 	sig0, err := s.OnTick(&indicators.Trade{Price: 1_000_000})
 	if err != nil || sig0 == nil {
 		t.Fatalf("entry: err=%v sig=%v", err, sig0)

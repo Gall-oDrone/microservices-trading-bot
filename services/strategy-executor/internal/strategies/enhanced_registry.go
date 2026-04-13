@@ -18,6 +18,7 @@ type EnhancedRegistry struct {
 	indicatorSvc     *indicators.Service
 	feeRates         MakerTakerFeeProvider
 	limitProfitStore LimitProfitRawStateStore
+	pendingBuyCancel PendingBuyCancelClient
 	mu               sync.RWMutex
 }
 
@@ -81,6 +82,11 @@ func (r *EnhancedRegistry) CreateAndRegister(config StrategyConfig) (EnhancedStr
 			lp.SetLimitProfitRawStateStore(r.limitProfitStore)
 		}
 	}
+	if r.pendingBuyCancel != nil {
+		if lp, ok := strategy.(*LimitProfitStrategy); ok {
+			lp.SetPendingBuyCancelClient(r.pendingBuyCancel)
+		}
+	}
 
 	r.strategies[config.Name] = strategy
 
@@ -110,6 +116,19 @@ func (r *EnhancedRegistry) SetFeeRatesProvider(p MakerTakerFeeProvider) {
 	for _, strategy := range r.strategies {
 		if inj, ok := strategy.(feeRatesInjectable); ok {
 			inj.SetFeeRatesProvider(p)
+		}
+	}
+}
+
+// SetPendingBuyCancelClient registers order-management cancel RPC for limit_profit pending-buy timeout.
+func (r *EnhancedRegistry) SetPendingBuyCancelClient(c PendingBuyCancelClient) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	r.pendingBuyCancel = c
+	for _, strategy := range r.strategies {
+		if lp, ok := strategy.(*LimitProfitStrategy); ok {
+			lp.SetPendingBuyCancelClient(c)
 		}
 	}
 }

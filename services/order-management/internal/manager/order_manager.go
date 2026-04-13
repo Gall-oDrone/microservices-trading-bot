@@ -70,6 +70,9 @@ type Manager struct {
 
 	// orderFillPublisher emits OrderFillEvent when an order first becomes fully filled (optional).
 	orderFillPublisher func(context.Context, *sharedModels.OrderFillEvent) error
+
+	// bitsoClient optional — used to cancel resting orders on the venue (CancelOrderBySignalID).
+	bitsoClient *bitso.Client
 }
 
 // NewOrderManager creates a new order manager. pnlRecorder is optional (nil disables intraday P&L metrics).
@@ -109,6 +112,13 @@ func NewOrderManager(
 // Call once during startup before concurrent sync traffic.
 func (m *Manager) SetOrderFillPublisher(fn func(context.Context, *sharedModels.OrderFillEvent) error) {
 	m.orderFillPublisher = fn
+}
+
+// SetBitsoClient registers the Bitso API client for venue-side cancel (optional).
+func (m *Manager) SetBitsoClient(c *bitso.Client) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.bitsoClient = c
 }
 
 // PublishOrderFillForTest invokes the configured order-fill Kafka publisher (same code path as a real fill).
@@ -788,6 +798,66 @@ func (m *Manager) UpdateOrderStatus(ctx context.Context, orderID string, status 
 	})
 
 	return nil
+}
+
+// CancelOrderBySignalID cancels the order row keyed by TradeSignalEvent.event_id (signal_id).
+// When metadata contains bitso_order_id and a Bitso client is configured, cancels on the venue first.
+func (m *Manager) CancelOrderBySignalID(ctx context.Context, signalID string) error {
+	signalID = strings.TrimSpace(signalID)
+	if signalID == "" {
+		return fmt.Errorf("signal_id is required")
+	}
+	order, err := m.repository.GetBySignalID(ctx, signalID)
+	if err != nil {
+		return fmt.Errorf("lookup order by signal_id: %w", err)
+	}
+	if order == nil {
+		return fmt.Errorf("order not found for signal_id")
+	}
+	if order.IsClosed() {
+		return fmt.Errorf("order already closed (%s)", order.Status)
+	}
+	oid := ""
+	if order.Metadata != nil {
+		if s, ok := order.Metadata["bitso_order_id"].(string); ok {
+			oid = strings.TrimSpace(s)
+		}
+	}
+	if oid != "" {
+		if m.bitsoClient == nil {
+			return fmt.Errorf("bitso client not configured; cannot cancel resting order %s", oid)
+		}
+		if _, err := m.bitsoClient.CancelOrder(oid); err != nil {
+			return fmt.Errorf("bitso cancel: %w", err)
+		}
+		m.logger.Info("Cancelled order on Bitso", map[string]interface{}{
+			"bitso_order_id": oid,
+			"signal_id":      signalID,
+			"internal_id":    order.ID,
+		})
+	} else {
+		m.logger.Warn("CancelOrderBySignalID: no bitso_order_id yet; cancelling in OM only", map[string]interface{}{
+			"signal_id":   signalID,
+			"internal_id": order.ID,
+		})
+	}
+
+	fresh, err := m.repository.Get(ctx, order.ID)
+	if err != nil {
+		return fmt.Errorf("reload order: %w", err)
+	}
+	if fresh.IsClosed() {
+		return nil
+	}
+	if m.stateMachine.CanCancel(fresh.Status) {
+		return m.CancelOrder(ctx, fresh.ID)
+	}
+	if fresh.Status == models.OrderStatusPending || fresh.Status == models.OrderStatusValidated {
+		return m.UpdateOrderStatus(ctx, fresh.ID, models.OrderStatusRejected, map[string]interface{}{
+			"reason": "cancel_by_signal_early_phase",
+		})
+	}
+	return fmt.Errorf("cannot cancel or reject order in status: %s", fresh.Status)
 }
 
 // CancelOrder cancels an order

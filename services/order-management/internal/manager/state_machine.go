@@ -169,8 +169,9 @@ func (sm *StateMachine) GetNextStates(status models.OrderStatus) []models.OrderS
 
 // CanCancel returns true if an order can be cancelled from its current status
 func (sm *StateMachine) CanCancel(status models.OrderStatus) bool {
-	// Can cancel from accepted or partially filled states
+	// Includes submitted: resting exchange limits are tracked as submitted until Bitso reports accepted/filled.
 	cancelableStates := map[models.OrderStatus]bool{
+		models.OrderStatusSubmitted:       true,
 		models.OrderStatusAccepted:        true,
 		models.OrderStatusPartiallyFilled: true,
 	}

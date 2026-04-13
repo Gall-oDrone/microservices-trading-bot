@@ -116,7 +116,7 @@ func TestGetAllowedTransitions(t *testing.T) {
 		{"partially_filled", models.OrderStatusPartiallyFilled, 2}, // filled, cancelled
 		{"filled", models.OrderStatusFilled, 0},                    // final state
 		{"cancelled", models.OrderStatusCancelled, 0},              // final state
-		{"rejected", models.OrderStatusRejected, 0},                // final state
+		{"rejected", models.OrderStatusRejected, 2},                // filled, partially_filled (venue edge cases)
 	}
 
 	for _, tt := range tests {
@@ -191,7 +191,7 @@ func TestCanCancel(t *testing.T) {
 	}{
 		{models.OrderStatusPending, false},
 		{models.OrderStatusValidated, false},
-		{models.OrderStatusSubmitted, false},
+		{models.OrderStatusSubmitted, true},
 		{models.OrderStatusAccepted, true},
 		{models.OrderStatusPartiallyFilled, true},
 		{models.OrderStatusFilled, false},

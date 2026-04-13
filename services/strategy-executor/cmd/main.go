@@ -19,6 +19,7 @@ import (
 	"bitso-trading-platform/strategy-executor/internal/indicators"
 	"bitso-trading-platform/strategy-executor/internal/logger"
 	"bitso-trading-platform/strategy-executor/internal/metrics"
+	"bitso-trading-platform/strategy-executor/internal/ordermgmt"
 	"bitso-trading-platform/strategy-executor/internal/persistence"
 	"bitso-trading-platform/strategy-executor/internal/server"
 	"bitso-trading-platform/strategy-executor/internal/strategies"
@@ -112,6 +113,11 @@ func main() {
 	}
 
 	strategyRegistry := strategies.NewEnhancedRegistry(indicatorSvc)
+
+	if cfg.OrderManagement.BaseURL != "" {
+		strategyRegistry.SetPendingBuyCancelClient(ordermgmt.NewClient(cfg.OrderManagement.BaseURL))
+		appLogger.Infof("Order-management cancel client enabled (base URL: %s)", cfg.OrderManagement.BaseURL)
+	}
 
 	if redisUsable && cfg.Redis.LimitProfitStateEnabled {
 		strategyRegistry.SetLimitProfitRawStateStore(persistence.NewRedisLimitProfitStore(redisClient))

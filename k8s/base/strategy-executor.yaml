@@ -64,6 +64,8 @@ spec:
               key: redis-db
         - name: MARKET_DATA_BASE_URL
           value: "http://market-data:8083"
+        - name: ORDER_MANAGEMENT_BASE_URL
+          value: "http://order-management:8082"
         - name: DEFAULT_STRATEGY
           value: "mean_reversion"
         resources:

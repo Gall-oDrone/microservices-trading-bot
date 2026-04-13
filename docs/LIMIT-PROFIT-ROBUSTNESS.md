@@ -24,7 +24,7 @@ The following **`parameters`** keys are supported by `limit_profit`:
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
-| **`pending_buy_timeout_seconds`** | int | `0` (off) | If a BUY signal was emitted but no fill arrives within this many seconds, the strategy **clears local** `pending_buy` state (no new BUY until the next eligible tick). **Important:** this does **not** cancel a resting order on the exchange; reconcile or cancel via venue/OM if the order may still fill. |
+| **`pending_buy_timeout_seconds`** | int | `0` (off) | If a BUY signal was emitted but no fill arrives within this many seconds, the strategy attempts **`POST /api/v1/orders/cancel-by-signal`** on order-management when **`ORDER_MANAGEMENT_BASE_URL`** is set (see `.docs/PRODUCTION_PENDING_BUY_AND_CANCEL.md`); on success it **clears local** `pending_buy`. If the cancel call fails, **pending stays set**. If **`ORDER_MANAGEMENT_BASE_URL`** is empty, behavior is **local clear only** (legacy). |
 | **`max_position_hold_seconds`** | int | `0` (off) | After a position is open, emit a **SELL** if **`EntryTime`** age exceeds this (time stop). Metadata: **`exit_reason`** = `max_hold`. |
 | **`stop_loss_quote`** | float | `0` (off) | In **quote currency per 1 base** (e.g. MXN per BTC for `btc_mxn`). Emit **SELL** when **`compare_price`** ≤ **`entry - stop_loss_quote`** (uses the same compare path as other exits). Metadata: **`exit_reason`** = `stop_loss`. |
 

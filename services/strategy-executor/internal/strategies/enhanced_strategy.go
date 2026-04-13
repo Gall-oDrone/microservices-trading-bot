@@ -142,6 +142,11 @@ type LimitProfitRawStateStore interface {
 	Delete(ctx context.Context, strategyName string) error
 }
 
+// PendingBuyCancelClient requests order-management to cancel a resting entry order by signal event_id (optional).
+type PendingBuyCancelClient interface {
+	CancelOrderBySignalID(ctx context.Context, signalID string) error
+}
+
 // EnhancedStrategyFactory creates enhanced strategy instances
 type EnhancedStrategyFactory func() EnhancedStrategy
 
