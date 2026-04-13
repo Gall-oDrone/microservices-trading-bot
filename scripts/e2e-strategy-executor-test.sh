@@ -52,7 +52,7 @@ fi
 if [[ "$USE_KUBECTL" == "1" ]]; then
   command -v kubectl &>/dev/null || fail "kubectl required when USE_KUBECTL=1"
   info "Starting port-forward to strategy-executor..."
-  kubectl port-forward -n "$NAMESPACE" svc/strategy-executor 8084:8084 >/dev/null 2>&1 &
+  kubectl port-forward -n "$NAMESPACE" svc/strategy-executor 8084:8081 >/dev/null 2>&1 &
   PORT_FWD_PID=$!
   sleep 3
   STRATEGY_EXECUTOR_URL="http://127.0.0.1:8084"
