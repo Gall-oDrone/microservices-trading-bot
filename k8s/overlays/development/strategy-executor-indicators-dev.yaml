@@ -1,0 +1,14 @@
+# Faster market poll in dev so limit_profit pending_buy_timeout_seconds is evaluated
+# closer to wall time (OnTick runs on each indicators update interval).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: strategy-executor
+spec:
+  template:
+    spec:
+      containers:
+      - name: strategy-executor
+        env:
+        - name: INDICATORS_UPDATE_INTERVAL
+          value: "5s"

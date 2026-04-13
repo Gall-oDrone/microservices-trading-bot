@@ -9,6 +9,7 @@ patchesStrategicMerge:
 - development-patches.yaml
 - trading-engine-balance-test-env.yaml
 - strategy-executor-replicas-dev.yaml
+- strategy-executor-indicators-dev.yaml
 - trading-engine-replicas-dev.yaml
 - order-management-dev-fill-test-env.yaml
 

@@ -102,6 +102,43 @@
       ]
     },
     {
+      "id": 16,
+      "title": "Orders cancelled (total)",
+      "type": "stat",
+      "description": "Cumulative cancellations (orders_cancelled_total: book, strategy, reason).",
+      "gridPos": {
+        "h": 4,
+        "w": 8,
+        "x": 0,
+        "y": 4
+      },
+      "targets": [
+        {
+          "expr": "sum(orders_cancelled_total{job=~\".*order-management.*\"}) or vector(0)",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 17,
+      "title": "Orders cancelled (rate by reason)",
+      "type": "timeseries",
+      "description": "Reason examples: user_requested (cancel-by-signal and user cancel), exchange (Bitso sync), stale, manual.",
+      "gridPos": {
+        "h": 4,
+        "w": 16,
+        "x": 8,
+        "y": 4
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(orders_cancelled_total{job=~\".*order-management.*\"}[5m])) by (reason)",
+          "refId": "A",
+          "legendFormat": "{{reason}}"
+        }
+      ]
+    },
+    {
       "id": 5,
       "type": "row",
       "title": "HTTP",
@@ -109,7 +146,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 4
+        "y": 8
       }
     },
     {
@@ -120,7 +157,7 @@
         "h": 5,
         "w": 12,
         "x": 0,
-        "y": 5
+        "y": 9
       },
       "targets": [
         {
@@ -138,7 +175,7 @@
         "h": 5,
         "w": 12,
         "x": 12,
-        "y": 5
+        "y": 9
       },
       "targets": [
         {
@@ -156,7 +193,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 10
+        "y": 14
       }
     },
     {
@@ -167,7 +204,7 @@
         "h": 5,
         "w": 6,
         "x": 0,
-        "y": 11
+        "y": 15
       },
       "targets": [
         {
@@ -189,7 +226,7 @@
         "h": 5,
         "w": 6,
         "x": 6,
-        "y": 11
+        "y": 15
       },
       "targets": [
         {
@@ -211,7 +248,7 @@
         "h": 5,
         "w": 6,
         "x": 12,
-        "y": 11
+        "y": 15
       },
       "targets": [
         {
@@ -233,7 +270,7 @@
         "h": 5,
         "w": 6,
         "x": 18,
-        "y": 11
+        "y": 15
       },
       "targets": [
         {
@@ -250,7 +287,7 @@
         "h": 5,
         "w": 12,
         "x": 0,
-        "y": 16
+        "y": 20
       },
       "targets": [
         {
@@ -268,7 +305,7 @@
         "h": 5,
         "w": 6,
         "x": 12,
-        "y": 16
+        "y": 20
       },
       "targets": [
         {
@@ -285,7 +322,7 @@
         "h": 5,
         "w": 6,
         "x": 18,
-        "y": 16
+        "y": 20
       },
       "targets": [
         {
