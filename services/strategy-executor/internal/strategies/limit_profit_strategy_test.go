@@ -278,6 +278,131 @@ func TestLimitProfitStrategy_BitsoFeeProviderThreshold(t *testing.T) {
 	}
 }
 
+func TestLimitProfitStrategy_StopLossExit(t *testing.T) {
+	s := NewLimitProfitStrategy()
+	cfg := StrategyConfig{
+		Name:    "lp_sl",
+		Type:    "limit_profit",
+		Book:    "btc_mxn",
+		Enabled: true,
+		Parameters: map[string]interface{}{
+			"entry_offset":        float64(100),
+			"min_profit":          float64(1_000_000),
+			"min_signal_interval": float64(0),
+			"position_size":       float64(0.001),
+			"stop_loss_quote":     float64(500),
+		},
+	}
+	store := indicators.NewInMemoryIndicatorStore()
+	prov := indicators.NewMockDataProvider()
+	svc := indicators.NewService(nil, store, prov, nil)
+	if err := s.Initialize(cfg, svc); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	sig0, _ := s.OnTick(&indicators.Trade{Price: 1_000_000})
+	ev, _ := sig0.Metadata["event_id"].(string)
+	s.OnOrderFilled(OrderFill{EventID: ev, Book: "btc_mxn", Side: "buy", AveragePrice: 1_000_100, FilledAmount: 0.001})
+	// take_profit would need huge move; stop at entry - 500 = 999_600
+	sig, err := s.OnTick(&indicators.Trade{Price: 999_500})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sig == nil || sig.Side != "SELL" {
+		t.Fatalf("expected stop_loss SELL, got %+v", sig)
+	}
+	if sig.Metadata["exit_reason"] != "stop_loss" {
+		t.Fatalf("exit_reason: %v", sig.Metadata["exit_reason"])
+	}
+}
+
+func TestLimitProfitStrategy_MaxHoldExit(t *testing.T) {
+	s := NewLimitProfitStrategy()
+	cfg := StrategyConfig{
+		Name:    "lp_hold",
+		Type:    "limit_profit",
+		Book:    "btc_mxn",
+		Enabled: true,
+		Parameters: map[string]interface{}{
+			"entry_offset":             float64(100),
+			"min_profit":               float64(1_000_000),
+			"min_signal_interval":      float64(0),
+			"position_size":            float64(0.001),
+			"max_position_hold_seconds": float64(1),
+		},
+	}
+	store := indicators.NewInMemoryIndicatorStore()
+	prov := indicators.NewMockDataProvider()
+	svc := indicators.NewService(nil, store, prov, nil)
+	if err := s.Initialize(cfg, svc); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	sig0, _ := s.OnTick(&indicators.Trade{Price: 1_000_000})
+	ev, _ := sig0.Metadata["event_id"].(string)
+	s.OnOrderFilled(OrderFill{EventID: ev, Book: "btc_mxn", Side: "buy", AveragePrice: 1_000_100, FilledAmount: 0.001})
+	time.Sleep(1100 * time.Millisecond)
+	sig, err := s.OnTick(&indicators.Trade{Price: 1_000_150})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sig == nil || sig.Side != "SELL" {
+		t.Fatalf("expected max_hold SELL, got %+v", sig)
+	}
+	if sig.Metadata["exit_reason"] != "max_hold" {
+		t.Fatalf("exit_reason: %v", sig.Metadata["exit_reason"])
+	}
+}
+
+func TestLimitProfitStrategy_PendingBuyTimeoutClearsState(t *testing.T) {
+	s := NewLimitProfitStrategy()
+	cfg := StrategyConfig{
+		Name:    "lp_pb_to",
+		Type:    "limit_profit",
+		Book:    "btc_mxn",
+		Enabled: true,
+		Parameters: map[string]interface{}{
+			"entry_offset":               float64(100),
+			"min_profit":                 float64(500),
+			"min_signal_interval":        float64(0),
+			"position_size":              float64(0.001),
+			"pending_buy_timeout_seconds": float64(1),
+		},
+	}
+	store := indicators.NewInMemoryIndicatorStore()
+	prov := indicators.NewMockDataProvider()
+	svc := indicators.NewService(nil, store, prov, nil)
+	if err := s.Initialize(cfg, svc); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	sig0, err := s.OnTick(&indicators.Trade{Price: 1_000_000})
+	if err != nil || sig0 == nil {
+		t.Fatalf("entry: err=%v sig=%v", err, sig0)
+	}
+	if !s.GetState().PendingBuy {
+		t.Fatal("expected pending buy")
+	}
+	time.Sleep(1100 * time.Millisecond)
+	sig, err := s.OnTick(&indicators.Trade{Price: 1_000_050})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sig != nil {
+		t.Fatalf("expected no signal after timeout abandon, got %+v", sig)
+	}
+	st := s.GetState()
+	if st.PendingBuy {
+		t.Fatal("expected pending buy cleared after timeout")
+	}
+}
+
 func TestLimitProfitStrategy_MeasuredBuyFeeRateOnFill(t *testing.T) {
 	s := NewLimitProfitStrategy()
 	cfg := StrategyConfig{

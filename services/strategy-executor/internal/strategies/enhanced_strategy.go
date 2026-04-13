@@ -39,6 +39,8 @@ type StrategyState struct {
 	ConsecutiveLoss int       `json:"consecutive_loss"`
 	// PendingBuy is true after a BUY signal was emitted but before a fill was confirmed (limit_profit).
 	PendingBuy bool `json:"pending_buy,omitempty"`
+	// PendingBuySince records when the pending BUY was emitted (for pending_buy_timeout_seconds).
+	PendingBuySince time.Time `json:"pending_buy_since,omitempty"`
 	// PendingEventID is the TradeSignalEvent.event_id for the open BUY (used to match fill callbacks).
 	PendingEventID string `json:"pending_event_id,omitempty"`
 }

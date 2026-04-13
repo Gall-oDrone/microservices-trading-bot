@@ -30,6 +30,12 @@ type LimitProfitConfig struct {
 	ExitPriceReference   string // "last" | "bid" | "mid" | "min_last_bid" — price vs threshold
 	PositionSize         float64
 	MinSignalInterval    int
+	// PendingBuyTimeoutSeconds: if >0, clear local pending BUY state after this long without a fill (see docs).
+	PendingBuyTimeoutSeconds int
+	// MaxPositionHoldSeconds: if >0, emit SELL after position age exceeds this (time stop).
+	MaxPositionHoldSeconds int
+	// StopLossQuote: if >0, emit SELL when compare price <= entry - StopLossQuote (quote currency per base unit).
+	StopLossQuote float64
 }
 
 // DefaultLimitProfitConfig returns conservative defaults (tune per book / liquidity).
@@ -123,6 +129,15 @@ func (s *LimitProfitStrategy) Initialize(config StrategyConfig, indicatorSvc *in
 		if v, ok := p["exit_price_reference"].(string); ok {
 			s.lpConfig.ExitPriceReference = strings.ToLower(strings.TrimSpace(v))
 		}
+		if v, ok := p["pending_buy_timeout_seconds"].(float64); ok {
+			s.lpConfig.PendingBuyTimeoutSeconds = int(v)
+		}
+		if v, ok := p["max_position_hold_seconds"].(float64); ok {
+			s.lpConfig.MaxPositionHoldSeconds = int(v)
+		}
+		if v, ok := p["stop_loss_quote"].(float64); ok {
+			s.lpConfig.StopLossQuote = v
+		}
 	}
 	if config.Sizing.MaxPositionSize > 0 {
 		s.lpConfig.PositionSize = config.Sizing.MaxPositionSize
@@ -183,7 +198,20 @@ func (s *LimitProfitStrategy) applyPersistedLocked(p *limitProfitPersisted) {
 		s.UpdateState(func(st *StrategyState) {
 			st.PendingBuy = false
 			st.PendingEventID = ""
+			st.PendingBuySince = time.Time{}
 		})
+	} else if s.GetState().PendingBuy && s.GetState().PendingBuySince.IsZero() {
+		// Older snapshots or migrations: approximate pending start from last signal time.
+		st := s.GetState()
+		if !st.LastSignalTime.IsZero() {
+			s.UpdateState(func(out *StrategyState) {
+				out.PendingBuySince = st.LastSignalTime
+			})
+		} else {
+			s.UpdateState(func(out *StrategyState) {
+				out.PendingBuySince = time.Now()
+			})
+		}
 	}
 	s.positionBuyFeeRate = p.PositionBuyFeeRate
 	s.positionBuyLiquidity = p.PositionBuyLiquidity
@@ -228,6 +256,21 @@ func (s *LimitProfitStrategy) OnTick(tick *indicators.Trade) (*Signal, error) {
 
 	if !state.HasPosition {
 		if state.PendingBuy {
+			if s.lpConfig.PendingBuyTimeoutSeconds > 0 {
+				since := state.PendingBuySince
+				if since.IsZero() {
+					since = state.LastSignalTime
+				}
+				if !since.IsZero() && time.Since(since) >= time.Duration(s.lpConfig.PendingBuyTimeoutSeconds)*time.Second {
+					s.UpdateState(func(st *StrategyState) {
+						st.PendingBuy = false
+						st.PendingEventID = ""
+						st.PendingBuySince = time.Time{}
+					})
+					s.persistLocked(ctx)
+					return nil, nil
+				}
+			}
 			return nil, nil
 		}
 		if !s.canEmitSignal() {
@@ -237,10 +280,12 @@ func (s *LimitProfitStrategy) OnTick(tick *indicators.Trade) (*Signal, error) {
 		buyPrice := ref + s.lpConfig.EntryOffset
 
 		eventID := uuid.New().String()
+		now := time.Now()
 		s.RecordSignal()
 		s.UpdateState(func(st *StrategyState) {
 			st.PendingBuy = true
 			st.PendingEventID = eventID
+			st.PendingBuySince = now
 		})
 		s.persistLocked(ctx)
 
@@ -269,66 +314,104 @@ func (s *LimitProfitStrategy) OnTick(tick *indicators.Trade) (*Signal, error) {
 	threshold, buyR, sellR, feeModel := s.exitPriceThreshold(ctx, entry)
 	manualAddon := s.exitFeeAddon(entry)
 
+	if s.lpConfig.StopLossQuote > 0 && comparePrice <= entry-s.lpConfig.StopLossQuote {
+		return s.emitPositionExit(ctx, tickPrice, comparePrice, refLabel, entry, threshold, buyR, sellR, feeModel, manualAddon, "stop_loss"), nil
+	}
+	if s.lpConfig.MaxPositionHoldSeconds > 0 && !state.EntryTime.IsZero() {
+		if time.Since(state.EntryTime) >= time.Duration(s.lpConfig.MaxPositionHoldSeconds)*time.Second {
+			return s.emitPositionExit(ctx, tickPrice, comparePrice, refLabel, entry, threshold, buyR, sellR, feeModel, manualAddon, "max_hold"), nil
+		}
+	}
 	if comparePrice >= threshold {
-		posSize := state.PositionSize
-		exitForPnL := tickPrice
-		switch refLabel {
-		case "bid", "mid", "min_last_bid":
-			exitForPnL = comparePrice
-		}
-		gross := (exitForPnL - entry) * posSize
-		netQuote := bitso.NetQuotePnLPerBase(entry, exitForPnL, buyR, sellR) * posSize
-
-		profitable := gross > 0
-		if feeModel == "bitso_api" {
-			profitable = netQuote > 0
-		}
-
-		s.RecordSignal()
-		s.RecordTrade(profitable)
-		s.ClearPosition()
-		s.resetPositionFeeOverrides()
-		s.persistLocked(ctx)
-
-		meta := map[string]interface{}{
-			"signal_type":           "exit_sell",
-			"entry_price":           entry,
-			"gross_quote_pnl":       gross,
-			"exit_threshold":        threshold,
-			"fee_model":             feeModel,
-			"min_profit":            s.lpConfig.MinProfit,
-			"extra_fee_margin":      s.lpConfig.Fee,
-			"exit_price_reference":  refLabel,
-			"compare_price":         comparePrice,
-			"tick_price":            tickPrice,
-			"buy_liquidity_effective": s.effectiveBuyLiquidity(),
-			"sell_liquidity":        s.lpConfig.SellLiquidity,
-		}
-		if feeModel == "bitso_api" {
-			meta["net_quote_pnl"] = netQuote
-			meta["buy_fee_rate"] = buyR
-			meta["sell_fee_rate"] = sellR
-		} else {
-			meta["fee_addon_manual"] = manualAddon
-		}
-
-		return &Signal{
-			Strategy:   s.Name(),
-			Book:       book,
-			Side:       "SELL",
-			Amount:     posSize,
-			Price:      tickPrice,
-			Confidence: 0.85,
-			Reason: fmt.Sprintf(
-				"limit_profit exit [%s] ref=%s: compare=%.2f >= threshold=%.2f (entry=%.2f min_profit=%.2f)",
-				feeModel, refLabel, comparePrice, threshold, entry, s.lpConfig.MinProfit,
-			),
-			Timestamp: time.Now(),
-			Metadata:  meta,
-		}, nil
+		return s.emitPositionExit(ctx, tickPrice, comparePrice, refLabel, entry, threshold, buyR, sellR, feeModel, manualAddon, "take_profit"), nil
 	}
 
 	return nil, nil
+}
+
+// emitPositionExit builds a SELL signal and updates strategy state. Must run with s.mu held.
+func (s *LimitProfitStrategy) emitPositionExit(
+	ctx context.Context,
+	tickPrice, comparePrice float64,
+	refLabel string,
+	entry, threshold, buyR, sellR float64,
+	feeModel string,
+	manualAddon float64,
+	exitReason string,
+) *Signal {
+	state := s.GetState()
+	posSize := state.PositionSize
+	exitForPnL := tickPrice
+	switch refLabel {
+	case "bid", "mid", "min_last_bid":
+		exitForPnL = comparePrice
+	}
+	gross := (exitForPnL - entry) * posSize
+	netQuote := bitso.NetQuotePnLPerBase(entry, exitForPnL, buyR, sellR) * posSize
+
+	profitable := gross > 0
+	if feeModel == "bitso_api" {
+		profitable = netQuote > 0
+	}
+
+	s.RecordSignal()
+	s.RecordTrade(profitable)
+	s.ClearPosition()
+	s.resetPositionFeeOverrides()
+	s.persistLocked(ctx)
+
+	book := s.config.Book
+	meta := map[string]interface{}{
+		"signal_type":             "exit_sell",
+		"exit_reason":             exitReason,
+		"entry_price":             entry,
+		"gross_quote_pnl":         gross,
+		"exit_threshold":          threshold,
+		"fee_model":               feeModel,
+		"min_profit":              s.lpConfig.MinProfit,
+		"extra_fee_margin":        s.lpConfig.Fee,
+		"exit_price_reference":    refLabel,
+		"compare_price":           comparePrice,
+		"tick_price":              tickPrice,
+		"buy_liquidity_effective": s.effectiveBuyLiquidity(),
+		"sell_liquidity":          s.lpConfig.SellLiquidity,
+	}
+	if feeModel == "bitso_api" {
+		meta["net_quote_pnl"] = netQuote
+		meta["buy_fee_rate"] = buyR
+		meta["sell_fee_rate"] = sellR
+	} else {
+		meta["fee_addon_manual"] = manualAddon
+	}
+
+	reason := fmt.Sprintf(
+		"limit_profit exit [%s] ref=%s reason=%s: compare=%.2f threshold=%.2f (entry=%.2f min_profit=%.2f)",
+		feeModel, refLabel, exitReason, comparePrice, threshold, entry, s.lpConfig.MinProfit,
+	)
+	switch exitReason {
+	case "stop_loss":
+		reason = fmt.Sprintf(
+			"limit_profit stop_loss [%s] ref=%s: compare=%.2f <= entry-stop=%.2f (entry=%.2f stop_loss_quote=%.2f)",
+			feeModel, refLabel, comparePrice, entry-s.lpConfig.StopLossQuote, entry, s.lpConfig.StopLossQuote,
+		)
+	case "max_hold":
+		reason = fmt.Sprintf(
+			"limit_profit max_hold [%s] ref=%s: position age >= %ds",
+			feeModel, refLabel, s.lpConfig.MaxPositionHoldSeconds,
+		)
+	}
+
+	return &Signal{
+		Strategy:   s.Name(),
+		Book:       book,
+		Side:       "SELL",
+		Amount:     posSize,
+		Price:      tickPrice,
+		Confidence: 0.85,
+		Reason:     reason,
+		Timestamp:  time.Now(),
+		Metadata:   meta,
+	}
 }
 
 // OnOrderFilled opens the position when the BUY limit fills at the exchange.
@@ -370,6 +453,7 @@ func (s *LimitProfitStrategy) OnOrderFilled(fill OrderFill) {
 	s.UpdateState(func(out *StrategyState) {
 		out.PendingBuy = false
 		out.PendingEventID = ""
+		out.PendingBuySince = time.Time{}
 	})
 	s.persistLocked(context.Background())
 }

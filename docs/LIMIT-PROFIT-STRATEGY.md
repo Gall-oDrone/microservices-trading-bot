@@ -57,6 +57,9 @@
 | `exit_price_reference` | string | `last` | `last`, `bid`, `mid`, `min_last_bid` (needs market-data ticker) |
 | `position_size` | number | `0.001` | Order size (major) |
 | `min_signal_interval` | number | `60` | Seconds between entry signals |
+| `pending_buy_timeout_seconds` | number | `0` | Clear local pending BUY if no fill after N seconds (does not cancel exchange order; see [LIMIT-PROFIT-ROBUSTNESS.md](LIMIT-PROFIT-ROBUSTNESS.md)) |
+| `max_position_hold_seconds` | number | `0` | Time stop: SELL after position held this long |
+| `stop_loss_quote` | number | `0` | Stop: SELL when compare price ≤ entry − this amount (quote per base) |
 
 ## Organic startup
 
@@ -64,7 +67,9 @@
 STRATEGY_TYPE=limit_profit ./scripts/start-organic-trading.sh
 ```
 
-Optional env: `ENTRY_OFFSET`, `MIN_PROFIT_LP`, `FEE_LP`, `FEE_BPS_LP`, `BUY_LIQUIDITY`, `SELL_LIQUIDITY`, `EXIT_PRICE_REF`, `LP_REFERENCE`, `MIN_SIGNAL_INTERVAL`, `BOOK`, `STRATEGY_NAME`.
+Optional env: `ENTRY_OFFSET`, `MIN_PROFIT_LP`, `FEE_LP`, `FEE_BPS_LP`, `BUY_LIQUIDITY`, `SELL_LIQUIDITY`, `EXIT_PRICE_REF`, `LP_REFERENCE`, `MIN_SIGNAL_INTERVAL`, `PENDING_BUY_TIMEOUT_SEC`, `MAX_POSITION_HOLD_SEC`, `STOP_LOSS_QUOTE`, `BOOK`, `STRATEGY_NAME`.
+
+Robustness notes: [LIMIT-PROFIT-ROBUSTNESS.md](LIMIT-PROFIT-ROBUSTNESS.md).
 
 ## Bitso API env (strategy-executor)
 

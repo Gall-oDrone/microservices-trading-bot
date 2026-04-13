@@ -51,6 +51,7 @@ ENTRY_THRESHOLD="${ENTRY_THRESHOLD:-2.0}"
 EXIT_THRESHOLD="${EXIT_THRESHOLD:-0.5}"
 
 # limit_profit params — buy at reference + entry_offset; sell when last >= entry + min_profit + fee_addon
+# Optional lifecycle: PENDING_BUY_TIMEOUT_SEC, MAX_POSITION_HOLD_SEC, STOP_LOSS_QUOTE — docs/LIMIT-PROFIT-ROBUSTNESS.md
 # (see docs/LIMIT-PROFIT-STRATEGY.md)
 ENTRY_OFFSET="${ENTRY_OFFSET:-500}"
 MIN_PROFIT_LP="${MIN_PROFIT_LP:-5000}"
@@ -61,6 +62,10 @@ SELL_LIQUIDITY="${SELL_LIQUIDITY:-taker}"
 EXIT_PRICE_REF="${EXIT_PRICE_REF:-last}"
 LP_REFERENCE="${LP_REFERENCE:-last_trade}"
 MIN_SIGNAL_INTERVAL="${MIN_SIGNAL_INTERVAL:-60}"
+# Lifecycle (0 = disabled) — see docs/LIMIT-PROFIT-ROBUSTNESS.md
+PENDING_BUY_TIMEOUT_SEC="${PENDING_BUY_TIMEOUT_SEC:-0}"
+MAX_POSITION_HOLD_SEC="${MAX_POSITION_HOLD_SEC:-0}"
+STOP_LOSS_QUOTE="${STOP_LOSS_QUOTE:-0}"
 
 REQUIRED_LABELS=( "service=market-data" "service=strategy-executor" "service=trading-engine" "service=order-management" "service=redis" "service=kafka" )
 
@@ -160,7 +165,10 @@ case "$STRATEGY_TYPE" in
       --argjson fbps "$FEE_BPS_LP" \
       --argjson ps "$POSITION_SIZE" \
       --argjson msi "$MIN_SIGNAL_INTERVAL" \
-      '{name:$name, type:"limit_profit", book:$book, parameters:{reference:$ref, entry_offset:$eo, min_profit:$mp, fee:$fee, fee_bps:$fbps, buy_liquidity:$buyl, sell_liquidity:$selll, exit_price_reference:$xref, position_size:$ps, min_signal_interval:$msi}}')
+      --argjson pbto "$PENDING_BUY_TIMEOUT_SEC" \
+      --argjson mhold "$MAX_POSITION_HOLD_SEC" \
+      --argjson slq "$STOP_LOSS_QUOTE" \
+      '{name:$name, type:"limit_profit", book:$book, parameters:{reference:$ref, entry_offset:$eo, min_profit:$mp, fee:$fee, fee_bps:$fbps, buy_liquidity:$buyl, sell_liquidity:$selll, exit_price_reference:$xref, position_size:$ps, min_signal_interval:$msi, pending_buy_timeout_seconds:$pbto, max_position_hold_seconds:$mhold, stop_loss_quote:$slq}}')
     ;;
   momentum)
     CREATE_BODY=$(jq -nc \
