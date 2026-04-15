@@ -9,6 +9,7 @@ resources:
   # Remove secret.yaml from git and use External Secrets Operator for production
   - kafka.yaml
   - redis.yaml
+  - redis-exporter.yaml
   - trading-engine.yaml
   - backtesting.yaml
   - strategy-executor.yaml
