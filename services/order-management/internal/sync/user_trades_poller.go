@@ -213,9 +213,19 @@ func (p *UserTradesPoller) handleTrade(ctx context.Context, t *bitso.UserTrade) 
 	// Convert the UserTrade we already have to UserOrderTrade format.
 	// This avoids re-fetching from /order_trades/{oid} which may return 378
 	// "Order has not matched yet" due to Bitso API race conditions.
+	//
+	// Note: UserTrade.Major can be negative for SELL trades. We need absolute value
+	// since SyncOrderFromBitsoTrades expects positive fill amounts.
+	majorFloat := (&t.Major).Float64()
+	if majorFloat < 0 {
+		majorFloat = -majorFloat
+	}
+	// Create a Monetary with absolute value
+	majorAbs := bitso.ToMonetary(majorFloat)
+
 	tradeFromPoll := bitso.UserOrderTrade{
 		Book:         t.Book,
-		Major:        t.Major,
+		Major:        majorAbs,
 		CreatedAt:    t.CreatedAt,
 		Minor:        t.Minor,
 		FeesAmount:   t.FeesAmount,
@@ -230,7 +240,7 @@ func (p *UserTradesPoller) handleTrade(ctx context.Context, t *bitso.UserTrade) 
 		"tid":            uint64(t.TID),
 		"bitso_order_id": oid,
 		"order_id":       order.ID,
-		"major":          (&t.Major).Float64(),
+		"major":          majorFloat,
 		"price":          (&t.Price).Float64(),
 		"side":           t.Side.String(),
 	})
