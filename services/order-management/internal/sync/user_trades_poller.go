@@ -210,35 +210,32 @@ func (p *UserTradesPoller) handleTrade(ctx context.Context, t *bitso.UserTrade) 
 		})
 	}
 
-	// Fetch all trades for this order and sync
-	p.log.Info("handleTrade: fetching order trades", map[string]interface{}{
+	// Convert the UserTrade we already have to UserOrderTrade format.
+	// This avoids re-fetching from /order_trades/{oid} which may return 378
+	// "Order has not matched yet" due to Bitso API race conditions.
+	tradeFromPoll := bitso.UserOrderTrade{
+		Book:         t.Book,
+		Major:        t.Major,
+		CreatedAt:    t.CreatedAt,
+		Minor:        t.Minor,
+		FeesAmount:   t.FeesAmount,
+		FeesCurrency: t.FeesCurrency,
+		Price:        t.Price,
+		TID:          t.TID,
+		OID:          t.OID,
+		Side:         t.Side,
+	}
+
+	p.log.Info("handleTrade: syncing fill from user-trades poll directly", map[string]interface{}{
 		"tid":            uint64(t.TID),
 		"bitso_order_id": oid,
 		"order_id":       order.ID,
+		"major":          (&t.Major).Float64(),
+		"price":          (&t.Price).Float64(),
+		"side":           t.Side.String(),
 	})
 
-	orderTrades, err := p.bitsoClient.OrderTrades(oid, nil)
-	if err != nil {
-		p.log.Warn("OrderTrades lookup failed for discovered fill", map[string]interface{}{
-			"bitso_order_id": oid,
-			"error":          err.Error(),
-		})
-		return
-	}
-
-	if len(orderTrades) == 0 {
-		p.log.Warn("No trades returned from OrderTrades", map[string]interface{}{
-			"bitso_order_id": oid,
-		})
-		return
-	}
-
-	p.log.Info("handleTrade: calling SyncOrderFromBitsoTrades", map[string]interface{}{
-		"bitso_order_id": oid,
-		"num_trades":     len(orderTrades),
-	})
-
-	if err := p.orderManager.SyncOrderFromBitsoTrades(ctx, oid, orderTrades); err != nil {
+	if err := p.orderManager.SyncOrderFromBitsoTrades(ctx, oid, []bitso.UserOrderTrade{tradeFromPoll}); err != nil {
 		p.log.Warn("SyncOrderFromBitsoTrades failed from user-trades poll", map[string]interface{}{
 			"bitso_order_id": oid,
 			"error":          err.Error(),
@@ -264,7 +261,6 @@ func (p *UserTradesPoller) handleTrade(ctx context.Context, t *bitso.UserTrade) 
 			"order_id":       order.ID,
 			"prev_status":    string(prevStatus),
 			"new_status":     string(updatedOrder.Status),
-			"num_trades":     len(orderTrades),
 		})
 	}
 }
