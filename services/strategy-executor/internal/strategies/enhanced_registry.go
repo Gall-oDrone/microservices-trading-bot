@@ -88,6 +88,11 @@ func (r *EnhancedRegistry) CreateAndRegister(config StrategyConfig) (EnhancedStr
 		}
 	}
 
+	// Wire up limit_profit Prometheus metrics
+	if lp, ok := strategy.(*LimitProfitStrategy); ok {
+		r.wireLimitProfitMetrics(lp)
+	}
+
 	r.strategies[config.Name] = strategy
 
 	return strategy, nil
@@ -497,4 +502,33 @@ func (r *EnhancedRegistry) NotifyOrderFilled(fill OrderFill) {
 		fillAware.OnOrderFilled(fill)
 	}
 	r.updatePrometheusMetrics()
+}
+
+// wireLimitProfitMetrics injects Prometheus metric callbacks into a limit_profit strategy.
+func (r *EnhancedRegistry) wireLimitProfitMetrics(lp *LimitProfitStrategy) {
+	promMetrics := metrics.GetPrometheusMetrics()
+
+	lp.SetMetrics(&LimitProfitMetrics{
+		EntrySignals: func(strategy, book string) {
+			promMetrics.IncLimitProfitEntrySignals(strategy, book)
+		},
+		ExitSignals: func(strategy, book, reason string) {
+			promMetrics.IncLimitProfitExitSignals(strategy, book, reason)
+		},
+		PendingBuyDuration: func(strategy, book string, seconds float64) {
+			promMetrics.RecordLimitProfitPendingBuyDuration(strategy, book, seconds)
+		},
+		PositionHoldDuration: func(strategy, book string, seconds float64) {
+			promMetrics.RecordLimitProfitPositionHoldDuration(strategy, book, seconds)
+		},
+		PendingCancelFailures: func(strategy, book string) {
+			promMetrics.IncLimitProfitPendingCancelFailures(strategy, book)
+		},
+		DailyRealizedPnL: func(strategy, book string, value float64) {
+			promMetrics.SetLimitProfitDailyRealizedPnL(strategy, book, value)
+		},
+		CircuitBreakerActive: func(strategy, book string, active bool) {
+			promMetrics.SetLimitProfitCircuitBreakerActive(strategy, book, active)
+		},
+	})
 }

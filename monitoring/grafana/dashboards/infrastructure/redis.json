@@ -17,74 +17,244 @@
     },
     {
       "id": 2,
-      "title": "Connected clients",
+      "title": "Connected Clients",
       "type": "stat",
-      "description": "Requires redis_exporter. Scraping redis:6379 directly does not expose Prometheus metrics.",
+      "description": "Number of client connections (excluding connections from replicas)",
       "gridPos": { "h": 4, "w": 6, "x": 0, "y": 1 },
       "targets": [
         {
-          "expr": "redis_connected_clients or redis_connected_slaves or vector(0)",
+          "expr": "redis_connected_clients",
           "refId": "A"
         }
-      ]
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 100 },
+              { "color": "red", "value": 500 }
+            ]
+          }
+        }
+      }
     },
     {
       "id": 3,
-      "title": "Memory used (bytes)",
+      "title": "Memory Used",
       "type": "stat",
+      "description": "Total memory used by Redis",
       "gridPos": { "h": 4, "w": 6, "x": 6, "y": 1 },
       "targets": [
         {
-          "expr": "redis_memory_used_bytes or redis_memory_used_rss_bytes or vector(0)",
+          "expr": "redis_memory_used_bytes",
           "refId": "A"
         }
-      ]
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes",
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 1073741824 },
+              { "color": "red", "value": 4294967296 }
+            ]
+          }
+        }
+      }
     },
     {
       "id": 4,
-      "title": "Commands processed (rate)",
+      "title": "Commands Processed (rate)",
       "type": "timeseries",
+      "description": "Rate of commands processed per second",
       "gridPos": { "h": 5, "w": 12, "x": 12, "y": 1 },
       "targets": [
         {
-          "expr": "rate(redis_commands_processed_total[5m]) or rate(redis_commands_total[5m]) or vector(0)",
+          "expr": "rate(redis_commands_processed_total[5m])",
           "refId": "A",
           "legendFormat": "cmd/s"
         }
       ]
     },
     {
+      "id": 8,
+      "title": "Uptime",
+      "type": "stat",
+      "description": "Redis server uptime in seconds",
+      "gridPos": { "h": 4, "w": 4, "x": 0, "y": 5 },
+      "targets": [
+        {
+          "expr": "redis_uptime_in_seconds",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "yellow", "value": 3600 },
+              { "color": "green", "value": 86400 }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": 9,
+      "title": "Keys Total",
+      "type": "stat",
+      "description": "Total number of keys across all databases",
+      "gridPos": { "h": 4, "w": 4, "x": 4, "y": 5 },
+      "targets": [
+        {
+          "expr": "sum(redis_db_keys)",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 100000 },
+              { "color": "red", "value": 1000000 }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": 10,
+      "title": "Cache Hit Rate",
+      "type": "gauge",
+      "description": "Keyspace hits / (hits + misses)",
+      "gridPos": { "h": 4, "w": 4, "x": 8, "y": 5 },
+      "targets": [
+        {
+          "expr": "redis_keyspace_hits_total / (redis_keyspace_hits_total + redis_keyspace_misses_total) * 100",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0,
+          "max": 100,
+          "thresholds": {
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "yellow", "value": 80 },
+              { "color": "green", "value": 95 }
+            ]
+          }
+        }
+      }
+    },
+    {
       "id": 5,
       "type": "row",
-      "title": "Latency",
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 6 }
+      "title": "Performance",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 9 }
     },
     {
       "id": 6,
-      "title": "Redis command duration (p95)",
+      "title": "Command Latency (avg)",
       "type": "timeseries",
-      "description": "redis_exporter metric: redis_commands_duration_seconds_total or similar.",
-      "gridPos": { "h": 5, "w": 12, "x": 0, "y": 7 },
+      "description": "Average command latency by command type",
+      "gridPos": { "h": 6, "w": 12, "x": 0, "y": 10 },
       "targets": [
         {
-          "expr": "histogram_quantile(0.95, rate(redis_commands_duration_seconds_bucket[5m])) or vector(0)",
+          "expr": "rate(redis_commands_duration_seconds_total[5m]) / rate(redis_commands_total[5m])",
           "refId": "A",
-          "legendFormat": "p95"
+          "legendFormat": "avg latency"
         }
-      ]
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        }
+      }
     },
     {
       "id": 7,
-      "title": "Memory used over time",
+      "title": "Memory Usage Over Time",
       "type": "timeseries",
-      "gridPos": { "h": 5, "w": 12, "x": 12, "y": 7 },
+      "description": "Memory usage trend",
+      "gridPos": { "h": 6, "w": 12, "x": 12, "y": 10 },
       "targets": [
         {
-          "expr": "redis_memory_used_bytes or redis_memory_used_rss_bytes or vector(0)",
+          "expr": "redis_memory_used_bytes",
           "refId": "A",
-          "legendFormat": "bytes"
+          "legendFormat": "used"
+        },
+        {
+          "expr": "redis_memory_max_bytes",
+          "refId": "B",
+          "legendFormat": "max"
         }
-      ]
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes"
+        }
+      }
+    },
+    {
+      "id": 11,
+      "type": "row",
+      "title": "Network & Persistence",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 16 }
+    },
+    {
+      "id": 12,
+      "title": "Network I/O",
+      "type": "timeseries",
+      "description": "Network bytes in/out rate",
+      "gridPos": { "h": 6, "w": 12, "x": 0, "y": 17 },
+      "targets": [
+        {
+          "expr": "rate(redis_net_input_bytes_total[5m])",
+          "refId": "A",
+          "legendFormat": "input bytes/s"
+        },
+        {
+          "expr": "rate(redis_net_output_bytes_total[5m])",
+          "refId": "B",
+          "legendFormat": "output bytes/s"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "Bps"
+        }
+      }
+    },
+    {
+      "id": 13,
+      "title": "RDB/AOF Persistence",
+      "type": "stat",
+      "description": "Last save status and time",
+      "gridPos": { "h": 6, "w": 12, "x": 12, "y": 17 },
+      "targets": [
+        {
+          "expr": "redis_rdb_last_save_timestamp_seconds",
+          "refId": "A",
+          "legendFormat": "last RDB save"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "dateTimeAsIso"
+        }
+      }
     }
   ]
 }

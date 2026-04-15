@@ -249,6 +249,17 @@ services:
     networks:
       - trading-network
 
+  redis-exporter:
+    image: oliver006/redis_exporter:latest
+    ports:
+      - "9121:9121"
+    environment:
+      - REDIS_ADDR=redis://redis:6379
+    depends_on:
+      - redis
+    networks:
+      - trading-network
+
   cassandra:
     image: cassandra:4.1
     ports:

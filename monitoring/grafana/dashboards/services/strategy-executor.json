@@ -271,6 +271,179 @@
           }
         }
       }
+    },
+    {
+      "id": 40,
+      "type": "row",
+      "title": "Limit Profit Strategy",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 33 }
+    },
+    {
+      "id": 41,
+      "title": "Circuit Breaker Status",
+      "type": "stat",
+      "description": "1 = circuit breaker tripped (strategy paused)",
+      "gridPos": { "h": 4, "w": 4, "x": 0, "y": 34 },
+      "targets": [
+        { "expr": "limit_profit_circuit_breaker_active", "refId": "A", "legendFormat": "{{strategy}}" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "red", "value": 1 }
+            ]
+          },
+          "mappings": [
+            { "type": "value", "options": { "0": { "text": "OK", "color": "green" }, "1": { "text": "TRIPPED", "color": "red" } } }
+          ]
+        }
+      }
+    },
+    {
+      "id": 42,
+      "title": "Daily Realized P&L (MXN)",
+      "type": "timeseries",
+      "description": "Session P&L in quote currency (negative = loss)",
+      "gridPos": { "h": 6, "w": 8, "x": 4, "y": 34 },
+      "targets": [
+        { "expr": "limit_profit_daily_realized_pnl_quote", "refId": "A", "legendFormat": "{{strategy}} ({{book}})" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyMXN",
+          "custom": {
+            "fillOpacity": 20
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "yellow", "value": 0 },
+              { "color": "green", "value": 1000 }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": 43,
+      "title": "Entry/Exit Signals",
+      "type": "timeseries",
+      "description": "Rate of entry and exit signals",
+      "gridPos": { "h": 6, "w": 6, "x": 12, "y": 34 },
+      "targets": [
+        { "expr": "rate(limit_profit_entry_signals_total[5m])", "refId": "A", "legendFormat": "entry ({{strategy}})" },
+        { "expr": "sum(rate(limit_profit_exit_signals_total[5m])) by (strategy)", "refId": "B", "legendFormat": "exit ({{strategy}})" }
+      ]
+    },
+    {
+      "id": 44,
+      "title": "Exit Reasons Breakdown",
+      "type": "piechart",
+      "description": "Distribution of exit reasons",
+      "gridPos": { "h": 6, "w": 6, "x": 18, "y": 34 },
+      "targets": [
+        { "expr": "sum(limit_profit_exit_signals_total) by (reason)", "refId": "A", "legendFormat": "{{reason}}" }
+      ]
+    },
+    {
+      "id": 45,
+      "title": "Pending Buy Duration (avg)",
+      "type": "stat",
+      "description": "Average time from entry signal to fill",
+      "gridPos": { "h": 4, "w": 4, "x": 0, "y": 40 },
+      "targets": [
+        { "expr": "limit_profit_pending_buy_duration_seconds_sum / limit_profit_pending_buy_duration_seconds_count", "refId": "A", "legendFormat": "{{strategy}}" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "thresholds": {
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 30 },
+              { "color": "red", "value": 60 }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": 46,
+      "title": "Position Hold Duration (avg)",
+      "type": "stat",
+      "description": "Average time from fill to exit",
+      "gridPos": { "h": 4, "w": 4, "x": 4, "y": 40 },
+      "targets": [
+        { "expr": "limit_profit_position_hold_duration_seconds_sum / limit_profit_position_hold_duration_seconds_count", "refId": "A", "legendFormat": "{{strategy}}" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "thresholds": {
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 300 },
+              { "color": "red", "value": 600 }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": 47,
+      "title": "Cancel Failures",
+      "type": "stat",
+      "description": "Failed pending buy cancel attempts (after retries exhausted)",
+      "gridPos": { "h": 4, "w": 4, "x": 8, "y": 40 },
+      "targets": [
+        { "expr": "limit_profit_pending_cancel_failures_total", "refId": "A", "legendFormat": "{{strategy}}" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 1 },
+              { "color": "red", "value": 5 }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": 48,
+      "title": "Total Entry Signals",
+      "type": "stat",
+      "description": "Total BUY signals emitted",
+      "gridPos": { "h": 4, "w": 4, "x": 12, "y": 40 },
+      "targets": [
+        { "expr": "sum(limit_profit_entry_signals_total) by (strategy)", "refId": "A", "legendFormat": "{{strategy}}" }
+      ]
+    },
+    {
+      "id": 49,
+      "title": "Total Exit Signals",
+      "type": "stat",
+      "description": "Total SELL signals emitted",
+      "gridPos": { "h": 4, "w": 4, "x": 16, "y": 40 },
+      "targets": [
+        { "expr": "sum(limit_profit_exit_signals_total) by (strategy)", "refId": "A", "legendFormat": "{{strategy}}" }
+      ]
+    },
+    {
+      "id": 50,
+      "title": "Trades Count",
+      "type": "stat",
+      "description": "Number of completed round-trip trades",
+      "gridPos": { "h": 4, "w": 4, "x": 20, "y": 40 },
+      "targets": [
+        { "expr": "sum(limit_profit_exit_signals_total) by (strategy)", "refId": "A", "legendFormat": "{{strategy}}" }
+      ]
     }
   ]
 }

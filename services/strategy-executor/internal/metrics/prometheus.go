@@ -35,6 +35,15 @@ type PrometheusMetrics struct {
 	indicatorBollingerLower  map[string]float64
 	indicatorATR             map[string]float64
 	indicatorVWAP            map[string]float64
+
+	// limit_profit strategy metrics (keyed by "strategy:book")
+	lpEntrySignals          map[string]float64            // counter
+	lpExitSignals           map[string]map[string]float64 // key -> reason -> count
+	lpPendingBuyDuration    map[string][]float64          // histogram buckets
+	lpPositionHoldDuration  map[string][]float64          // histogram buckets
+	lpPendingCancelFailures map[string]float64            // counter
+	lpDailyRealizedPnL      map[string]float64            // gauge
+	lpCircuitBreakerActive  map[string]float64            // gauge (0 or 1)
 }
 
 // NewPrometheusMetrics creates a new PrometheusMetrics instance
@@ -54,6 +63,14 @@ func NewPrometheusMetrics() *PrometheusMetrics {
 		indicatorBollingerLower:  make(map[string]float64),
 		indicatorATR:             make(map[string]float64),
 		indicatorVWAP:            make(map[string]float64),
+		// limit_profit metrics
+		lpEntrySignals:          make(map[string]float64),
+		lpExitSignals:           make(map[string]map[string]float64),
+		lpPendingBuyDuration:    make(map[string][]float64),
+		lpPositionHoldDuration:  make(map[string][]float64),
+		lpPendingCancelFailures: make(map[string]float64),
+		lpDailyRealizedPnL:      make(map[string]float64),
+		lpCircuitBreakerActive:  make(map[string]float64),
 	}
 }
 
@@ -182,6 +199,83 @@ func (m *PrometheusMetrics) RemoveStrategy(strategy string) {
 	delete(m.strategyPnLTotal, strategy)
 	delete(m.strategyConsecutiveLoss, strategy)
 	delete(m.strategySignalsGenerated, strategy)
+}
+
+// limit_profit strategy metric methods
+
+func lpKey(strategy, book string) string {
+	return strategy + ":" + book
+}
+
+// IncLimitProfitEntrySignals increments the entry signals counter
+func (m *PrometheusMetrics) IncLimitProfitEntrySignals(strategy, book string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	key := lpKey(strategy, book)
+	m.lpEntrySignals[key]++
+}
+
+// IncLimitProfitExitSignals increments the exit signals counter by reason
+func (m *PrometheusMetrics) IncLimitProfitExitSignals(strategy, book, reason string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	key := lpKey(strategy, book)
+	if m.lpExitSignals[key] == nil {
+		m.lpExitSignals[key] = make(map[string]float64)
+	}
+	m.lpExitSignals[key][reason]++
+}
+
+// RecordLimitProfitPendingBuyDuration records the pending buy duration
+func (m *PrometheusMetrics) RecordLimitProfitPendingBuyDuration(strategy, book string, seconds float64) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	key := lpKey(strategy, book)
+	m.lpPendingBuyDuration[key] = append(m.lpPendingBuyDuration[key], seconds)
+	// Keep last 1000 observations
+	if len(m.lpPendingBuyDuration[key]) > 1000 {
+		m.lpPendingBuyDuration[key] = m.lpPendingBuyDuration[key][1:]
+	}
+}
+
+// RecordLimitProfitPositionHoldDuration records the position hold duration
+func (m *PrometheusMetrics) RecordLimitProfitPositionHoldDuration(strategy, book string, seconds float64) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	key := lpKey(strategy, book)
+	m.lpPositionHoldDuration[key] = append(m.lpPositionHoldDuration[key], seconds)
+	// Keep last 1000 observations
+	if len(m.lpPositionHoldDuration[key]) > 1000 {
+		m.lpPositionHoldDuration[key] = m.lpPositionHoldDuration[key][1:]
+	}
+}
+
+// IncLimitProfitPendingCancelFailures increments the pending cancel failures counter
+func (m *PrometheusMetrics) IncLimitProfitPendingCancelFailures(strategy, book string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	key := lpKey(strategy, book)
+	m.lpPendingCancelFailures[key]++
+}
+
+// SetLimitProfitDailyRealizedPnL sets the daily realized P&L gauge
+func (m *PrometheusMetrics) SetLimitProfitDailyRealizedPnL(strategy, book string, value float64) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	key := lpKey(strategy, book)
+	m.lpDailyRealizedPnL[key] = value
+}
+
+// SetLimitProfitCircuitBreakerActive sets the circuit breaker active gauge
+func (m *PrometheusMetrics) SetLimitProfitCircuitBreakerActive(strategy, book string, active bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	key := lpKey(strategy, book)
+	if active {
+		m.lpCircuitBreakerActive[key] = 1
+	} else {
+		m.lpCircuitBreakerActive[key] = 0
+	}
 }
 
 // Handler returns an HTTP handler for the /metrics endpoint
@@ -339,7 +433,100 @@ func (m *PrometheusMetrics) Export() string {
 		}
 	}
 
+	// limit_profit strategy metrics
+	if len(m.lpEntrySignals) > 0 {
+		sb.WriteString("# HELP limit_profit_entry_signals_total Total entry (BUY) signals emitted\n")
+		sb.WriteString("# TYPE limit_profit_entry_signals_total counter\n")
+		for key, value := range m.lpEntrySignals {
+			strategy, book := parseLpKey(key)
+			sb.WriteString(fmt.Sprintf("limit_profit_entry_signals_total{strategy=\"%s\",book=\"%s\"} %g\n", strategy, book, value))
+		}
+	}
+
+	if len(m.lpExitSignals) > 0 {
+		sb.WriteString("# HELP limit_profit_exit_signals_total Total exit (SELL) signals by reason\n")
+		sb.WriteString("# TYPE limit_profit_exit_signals_total counter\n")
+		for key, reasons := range m.lpExitSignals {
+			strategy, book := parseLpKey(key)
+			reasonKeys := make([]string, 0, len(reasons))
+			for reason := range reasons {
+				reasonKeys = append(reasonKeys, reason)
+			}
+			sort.Strings(reasonKeys)
+			for _, reason := range reasonKeys {
+				sb.WriteString(fmt.Sprintf("limit_profit_exit_signals_total{strategy=\"%s\",book=\"%s\",reason=\"%s\"} %g\n", strategy, book, reason, reasons[reason]))
+			}
+		}
+	}
+
+	if len(m.lpPendingBuyDuration) > 0 {
+		sb.WriteString("# HELP limit_profit_pending_buy_duration_seconds Time from entry signal to fill/timeout\n")
+		sb.WriteString("# TYPE limit_profit_pending_buy_duration_seconds summary\n")
+		for key, values := range m.lpPendingBuyDuration {
+			strategy, book := parseLpKey(key)
+			if len(values) > 0 {
+				sum, count := 0.0, float64(len(values))
+				for _, v := range values {
+					sum += v
+				}
+				sb.WriteString(fmt.Sprintf("limit_profit_pending_buy_duration_seconds_sum{strategy=\"%s\",book=\"%s\"} %g\n", strategy, book, sum))
+				sb.WriteString(fmt.Sprintf("limit_profit_pending_buy_duration_seconds_count{strategy=\"%s\",book=\"%s\"} %g\n", strategy, book, count))
+			}
+		}
+	}
+
+	if len(m.lpPositionHoldDuration) > 0 {
+		sb.WriteString("# HELP limit_profit_position_hold_duration_seconds Time from fill to exit\n")
+		sb.WriteString("# TYPE limit_profit_position_hold_duration_seconds summary\n")
+		for key, values := range m.lpPositionHoldDuration {
+			strategy, book := parseLpKey(key)
+			if len(values) > 0 {
+				sum, count := 0.0, float64(len(values))
+				for _, v := range values {
+					sum += v
+				}
+				sb.WriteString(fmt.Sprintf("limit_profit_position_hold_duration_seconds_sum{strategy=\"%s\",book=\"%s\"} %g\n", strategy, book, sum))
+				sb.WriteString(fmt.Sprintf("limit_profit_position_hold_duration_seconds_count{strategy=\"%s\",book=\"%s\"} %g\n", strategy, book, count))
+			}
+		}
+	}
+
+	if len(m.lpPendingCancelFailures) > 0 {
+		sb.WriteString("# HELP limit_profit_pending_cancel_failures_total Failed cancel attempts after retries exhausted\n")
+		sb.WriteString("# TYPE limit_profit_pending_cancel_failures_total counter\n")
+		for key, value := range m.lpPendingCancelFailures {
+			strategy, book := parseLpKey(key)
+			sb.WriteString(fmt.Sprintf("limit_profit_pending_cancel_failures_total{strategy=\"%s\",book=\"%s\"} %g\n", strategy, book, value))
+		}
+	}
+
+	if len(m.lpDailyRealizedPnL) > 0 {
+		sb.WriteString("# HELP limit_profit_daily_realized_pnl_quote Session P&L in quote currency (negative = loss)\n")
+		sb.WriteString("# TYPE limit_profit_daily_realized_pnl_quote gauge\n")
+		for key, value := range m.lpDailyRealizedPnL {
+			strategy, book := parseLpKey(key)
+			sb.WriteString(fmt.Sprintf("limit_profit_daily_realized_pnl_quote{strategy=\"%s\",book=\"%s\"} %g\n", strategy, book, value))
+		}
+	}
+
+	if len(m.lpCircuitBreakerActive) > 0 {
+		sb.WriteString("# HELP limit_profit_circuit_breaker_active Whether circuit breaker is active (1=tripped, 0=normal)\n")
+		sb.WriteString("# TYPE limit_profit_circuit_breaker_active gauge\n")
+		for key, value := range m.lpCircuitBreakerActive {
+			strategy, book := parseLpKey(key)
+			sb.WriteString(fmt.Sprintf("limit_profit_circuit_breaker_active{strategy=\"%s\",book=\"%s\"} %g\n", strategy, book, value))
+		}
+	}
+
 	return sb.String()
+}
+
+func parseLpKey(key string) (strategy, book string) {
+	parts := strings.SplitN(key, ":", 2)
+	if len(parts) == 2 {
+		return parts[0], parts[1]
+	}
+	return key, ""
 }
 
 // Global instance for convenience

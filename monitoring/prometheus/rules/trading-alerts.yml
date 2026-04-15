@@ -126,3 +126,135 @@ groups:
         annotations:
           summary: "Low available balance"
           description: "Available balance is {{ $value }} {{ $labels.currency }}"
+
+  # ============================================================================
+  # limit_profit Strategy Alerts
+  # ============================================================================
+  - name: limit-profit-alerts
+    rules:
+      # --- Circuit breaker tripped ---
+      - alert: LimitProfitCircuitBreakerTripped
+        expr: limit_profit_circuit_breaker_active == 1
+        for: 0m
+        labels:
+          severity: critical
+          service: strategy-executor
+          strategy: limit_profit
+        annotations:
+          summary: "limit_profit circuit breaker tripped"
+          description: "Strategy {{ $labels.strategy }} ({{ $labels.book }}) has hit max_daily_loss_quote limit. Trading paused until daily reset."
+
+      # --- High daily loss approaching limit ---
+      - alert: LimitProfitHighDailyLoss
+        expr: limit_profit_daily_realized_pnl_quote < -5000
+        for: 5m
+        labels:
+          severity: warning
+          service: strategy-executor
+          strategy: limit_profit
+        annotations:
+          summary: "limit_profit daily loss is high"
+          description: "Strategy {{ $labels.strategy }} ({{ $labels.book }}) has realized P&L of {{ $value }} MXN. Consider reviewing parameters or pausing."
+
+      # --- Cancel failures increasing ---
+      - alert: LimitProfitPendingCancelFailures
+        expr: increase(limit_profit_pending_cancel_failures_total[15m]) > 2
+        for: 1m
+        labels:
+          severity: warning
+          service: strategy-executor
+          strategy: limit_profit
+        annotations:
+          summary: "limit_profit pending order cancel failures"
+          description: "Strategy {{ $labels.strategy }} ({{ $labels.book }}) has {{ $value }} cancel failures in 15m. Check order-management connectivity."
+
+      # --- No entry signals for extended period (when strategy should be active) ---
+      - alert: LimitProfitNoEntrySignals
+        expr: |
+          strategy_executor_strategy_running{strategy=~".*limit_profit.*"} == 1
+          and
+          increase(limit_profit_entry_signals_total[30m]) == 0
+        for: 30m
+        labels:
+          severity: warning
+          service: strategy-executor
+          strategy: limit_profit
+        annotations:
+          summary: "limit_profit no entry signals"
+          description: "Strategy {{ $labels.strategy }} is running but no entry signals in 30m. Check market conditions, indicators, or circuit breaker."
+
+      # --- Position held too long (may indicate stuck position or fill issue) ---
+      - alert: LimitProfitLongPositionHold
+        expr: limit_profit_position_hold_duration_seconds_sum / limit_profit_position_hold_duration_seconds_count > 600
+        for: 5m
+        labels:
+          severity: warning
+          service: strategy-executor
+          strategy: limit_profit
+        annotations:
+          summary: "limit_profit average position hold time is high"
+          description: "Strategy {{ $labels.strategy }} ({{ $labels.book }}) average position hold is {{ $value }}s. May indicate market conditions or configuration issue."
+
+      # --- Strategy stopped unexpectedly ---
+      - alert: LimitProfitStrategyStopped
+        expr: |
+          strategy_executor_strategy_running{strategy=~".*limit_profit.*"} == 0
+          and
+          (time() - strategy_executor_indicators_last_update_timestamp) < 120
+        for: 5m
+        labels:
+          severity: warning
+          service: strategy-executor
+          strategy: limit_profit
+        annotations:
+          summary: "limit_profit strategy stopped"
+          description: "Strategy {{ $labels.strategy }} is not running. Verify if intentional or restart needed."
+
+  # ============================================================================
+  # Infrastructure Alerts (Redis, Kafka)
+  # ============================================================================
+  - name: infrastructure-alerts
+    rules:
+      # --- Redis down ---
+      - alert: RedisDown
+        expr: redis_up == 0
+        for: 1m
+        labels:
+          severity: critical
+          service: redis
+        annotations:
+          summary: "Redis is down"
+          description: "Redis exporter reports Redis is not responding. Strategy state persistence and indicators may be affected."
+
+      # --- Redis memory high ---
+      - alert: RedisMemoryHigh
+        expr: redis_memory_used_bytes / redis_memory_max_bytes > 0.9
+        for: 5m
+        labels:
+          severity: warning
+          service: redis
+        annotations:
+          summary: "Redis memory usage is high"
+          description: "Redis memory usage is {{ $value | humanizePercentage }}. Consider cleanup or increasing maxmemory."
+
+      # --- Redis connected clients high ---
+      - alert: RedisConnectedClientsHigh
+        expr: redis_connected_clients > 100
+        for: 5m
+        labels:
+          severity: warning
+          service: redis
+        annotations:
+          summary: "Redis connected clients is high"
+          description: "Redis has {{ $value }} connected clients. Check for connection leaks."
+
+      # --- Kafka consumer lag (if metric available) ---
+      - alert: KafkaConsumerLagHigh
+        expr: kafka_consumer_group_lag > 1000
+        for: 5m
+        labels:
+          severity: warning
+          service: kafka
+        annotations:
+          summary: "Kafka consumer lag is high"
+          description: "Consumer group {{ $labels.group }} has lag of {{ $value }} messages on topic {{ $labels.topic }}."
