@@ -47,8 +47,10 @@
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
 | `reference` | string | `last_trade` | `last_trade` or `vwap` |
-| `entry_offset` | number | `500` | Added to reference for BUY limit |
-| `min_profit` | number | `5000` | Added on top of fee break-even threshold |
+| `entry_offset` | number | `500` | Added to reference for BUY limit (absolute quote currency) |
+| `entry_offset_bps` | number | `0` | If >0, `entry_offset = reference * bps / 10000` (takes precedence over absolute) |
+| `min_profit` | number | `5000` | Added on top of fee break-even threshold (absolute quote currency) |
+| `min_profit_bps` | number | `0` | If >0, `min_profit = entry * bps / 10000` (takes precedence over absolute) |
 | `fee` | number | `0` | Extra margin on the threshold (slippage / safety) |
 | `fee_bps` | number | `0` | Manual mode only: symmetric bps on entry |
 | `use_bitso_fees` | bool | `true` | Use cached GET `/fees` when credentials exist |
@@ -57,9 +59,20 @@
 | `exit_price_reference` | string | `last` | `last`, `bid`, `mid`, `min_last_bid` (needs market-data ticker) |
 | `position_size` | number | `0.001` | Order size (major) |
 | `min_signal_interval` | number | `60` | Seconds between entry signals |
-| `pending_buy_timeout_seconds` | number | `0` | Clear local pending BUY if no fill after N seconds (does not cancel exchange order; see [LIMIT-PROFIT-ROBUSTNESS.md](LIMIT-PROFIT-ROBUSTNESS.md)) |
+| `pending_buy_timeout_seconds` | number | `0` | Cancel + clear local pending BUY if no fill after N seconds (with retry logic) |
+| `pending_cancel_max_retries` | number | `3` | Max cancel attempts before giving up |
 | `max_position_hold_seconds` | number | `0` | Time stop: SELL after position held this long |
 | `stop_loss_quote` | number | `0` | Stop: SELL when compare price ≤ entry − this amount (quote per base) |
+| `max_daily_loss_quote` | number | `0` | Circuit breaker: pause strategy when cumulative session loss exceeds this |
+| `daily_loss_reset_hour_utc` | number | `0` | Hour (0-23 UTC) when daily loss counter resets |
+| `trailing_stop_quote` | number | `0` | Exit when price drops this much below high-water mark (after activation) |
+| `trailing_stop_activation_quote` | number | `0` | Minimum unrealized profit before trailing stop activates |
+| `max_pending_orders` | number | `1` | Maximum concurrent pending BUY orders |
+| `sizing_mode` | string | `fixed` | `fixed` or `atr_scaled` for volatility-adjusted sizing |
+| `target_risk_quote` | number | `0` | Target quote-currency risk per trade (for `atr_scaled` mode) |
+| `atr_multiplier` | number | `1.0` | Multiplier for ATR when computing position size |
+| `atr_period` | number | `14` | Period for ATR indicator (uses service default) |
+| `dry_run` | bool | `false` | If true, signals include `metadata.dry_run=true` (trading-engine should skip execution) |
 
 ## Organic startup
 
@@ -67,9 +80,41 @@
 STRATEGY_TYPE=limit_profit ./scripts/start-organic-trading.sh
 ```
 
-Optional env: `ENTRY_OFFSET`, `MIN_PROFIT_LP`, `FEE_LP`, `FEE_BPS_LP`, `BUY_LIQUIDITY`, `SELL_LIQUIDITY`, `EXIT_PRICE_REF`, `LP_REFERENCE`, `MIN_SIGNAL_INTERVAL`, `PENDING_BUY_TIMEOUT_SEC`, `MAX_POSITION_HOLD_SEC`, `STOP_LOSS_QUOTE`, `BOOK`, `STRATEGY_NAME`.
+Optional env variables:
 
-Robustness notes: [LIMIT-PROFIT-ROBUSTNESS.md](LIMIT-PROFIT-ROBUSTNESS.md).
+| Variable | Maps to parameter |
+|----------|-------------------|
+| `ENTRY_OFFSET` | `entry_offset` |
+| `ENTRY_OFFSET_BPS` | `entry_offset_bps` |
+| `MIN_PROFIT_LP` | `min_profit` |
+| `MIN_PROFIT_BPS` | `min_profit_bps` |
+| `FEE_LP` | `fee` |
+| `FEE_BPS_LP` | `fee_bps` |
+| `BUY_LIQUIDITY` | `buy_liquidity` |
+| `SELL_LIQUIDITY` | `sell_liquidity` |
+| `EXIT_PRICE_REF` | `exit_price_reference` |
+| `LP_REFERENCE` | `reference` |
+| `MIN_SIGNAL_INTERVAL` | `min_signal_interval` |
+| `PENDING_BUY_TIMEOUT_SEC` | `pending_buy_timeout_seconds` |
+| `PENDING_CANCEL_MAX_RETRIES` | `pending_cancel_max_retries` |
+| `MAX_POSITION_HOLD_SEC` | `max_position_hold_seconds` |
+| `STOP_LOSS_QUOTE` | `stop_loss_quote` |
+| `MAX_DAILY_LOSS_QUOTE` | `max_daily_loss_quote` |
+| `DAILY_LOSS_RESET_HOUR_UTC` | `daily_loss_reset_hour_utc` |
+| `TRAILING_STOP_QUOTE` | `trailing_stop_quote` |
+| `TRAILING_STOP_ACTIVATION_QUOTE` | `trailing_stop_activation_quote` |
+| `MAX_PENDING_ORDERS` | `max_pending_orders` |
+| `SIZING_MODE` | `sizing_mode` |
+| `TARGET_RISK_QUOTE` | `target_risk_quote` |
+| `ATR_MULTIPLIER` | `atr_multiplier` |
+| `ATR_PERIOD` | `atr_period` |
+| `DRY_RUN` | `dry_run` |
+| `CLEANUP_ON_EXIT` | (script-only) delete strategy on exit |
+| `BOOK` | book |
+| `STRATEGY_NAME` | strategy name |
+
+Robustness notes: [LIMIT-PROFIT-ROBUSTNESS.md](LIMIT-PROFIT-ROBUSTNESS.md).  
+Improvements roadmap: [LIMIT-PROFIT-IMPROVEMENTS.md](LIMIT-PROFIT-IMPROVEMENTS.md).
 
 ## Bitso API env (strategy-executor)
 
@@ -89,5 +134,21 @@ When Redis is **connected** and **`REDIS_LIMIT_PROFIT_STATE_ENABLED`** is true (
 ## Operational notes
 
 - **Ticker-based exits** (`bid` / `mid` / `min_last_bid`) require market-data **`GET /api/v1/ticker/{book}`** reachable from strategy-executor (same base URL as indicators). If the ticker call fails, the strategy falls back to **last** and records `exit_price_reference` accordingly in metadata.
-- **Without Redis durable state** — behavior is in-memory only; restarts clear pending fills and position overrides.
-- **Sell execution** — the strategy emits a limit SELL at the **tick price**; pre-trade checks and the trading engine determine actual fill quality.
+- **SELL price alignment** — when `exit_price_reference` is `bid`, `mid`, or `min_last_bid`, the SELL signal `Price` field uses `compare_price` (not `tick_price`) for execution consistency with the profitability evaluation.
+- **Circuit breaker** — when `max_daily_loss_quote` is set and cumulative realized losses exceed it, the strategy stops emitting entry signals. If a position is open when the breaker trips, it will exit immediately with `exit_reason: circuit_breaker`. The counter resets at `daily_loss_reset_hour_utc` (default midnight UTC).
+- **Pending buy cancel retry** — when `pending_buy_timeout_seconds` fires, the strategy attempts to cancel the order via order-management with retries (up to `pending_cancel_max_retries`). Only on successful cancel (or exhausted retries) does it clear local pending state.
+- **Without Redis durable state** — behavior is in-memory only; restarts clear pending fills, position overrides, and daily loss counters.
+
+## Prometheus metrics
+
+The strategy exposes the following metrics (when `LimitProfitMetrics` is wired):
+
+| Metric | Type | Description |
+|--------|------|-------------|
+| `limit_profit_entry_signals_total` | counter | Entry (BUY) signals emitted |
+| `limit_profit_exit_signals_total` | counter | Exit (SELL) signals by reason label |
+| `limit_profit_pending_buy_duration_seconds` | histogram | Time from entry signal to fill/timeout |
+| `limit_profit_position_hold_duration_seconds` | histogram | Time from fill to exit |
+| `limit_profit_pending_cancel_failures_total` | counter | Failed cancel attempts after retries exhausted |
+| `limit_profit_daily_realized_pnl_quote` | gauge | Session P&L (negative = loss) |
+| `limit_profit_circuit_breaker_active` | gauge | 1 if circuit breaker is tripped |

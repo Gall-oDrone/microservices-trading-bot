@@ -52,9 +52,11 @@ EXIT_THRESHOLD="${EXIT_THRESHOLD:-0.5}"
 
 # limit_profit params — buy at reference + entry_offset; sell when last >= entry + min_profit + fee_addon
 # Optional lifecycle: PENDING_BUY_TIMEOUT_SEC, MAX_POSITION_HOLD_SEC, STOP_LOSS_QUOTE — docs/LIMIT-PROFIT-ROBUSTNESS.md
-# (see docs/LIMIT-PROFIT-STRATEGY.md)
+# (see docs/LIMIT-PROFIT-STRATEGY.md, docs/LIMIT-PROFIT-IMPROVEMENTS.md)
 ENTRY_OFFSET="${ENTRY_OFFSET:-500}"
+ENTRY_OFFSET_BPS="${ENTRY_OFFSET_BPS:-0}"          # if >0, offset = reference * bps / 10000 (takes precedence)
 MIN_PROFIT_LP="${MIN_PROFIT_LP:-5000}"
+MIN_PROFIT_BPS="${MIN_PROFIT_BPS:-0}"              # if >0, min_profit = entry * bps / 10000 (takes precedence)
 FEE_LP="${FEE_LP:-0}"
 FEE_BPS_LP="${FEE_BPS_LP:-0}"
 BUY_LIQUIDITY="${BUY_LIQUIDITY:-maker}"
@@ -64,8 +66,26 @@ LP_REFERENCE="${LP_REFERENCE:-last_trade}"
 MIN_SIGNAL_INTERVAL="${MIN_SIGNAL_INTERVAL:-60}"
 # Lifecycle (0 = disabled) — see docs/LIMIT-PROFIT-ROBUSTNESS.md
 PENDING_BUY_TIMEOUT_SEC="${PENDING_BUY_TIMEOUT_SEC:-0}"
+PENDING_CANCEL_MAX_RETRIES="${PENDING_CANCEL_MAX_RETRIES:-3}"
 MAX_POSITION_HOLD_SEC="${MAX_POSITION_HOLD_SEC:-0}"
 STOP_LOSS_QUOTE="${STOP_LOSS_QUOTE:-0}"
+# Circuit breaker (0 = disabled)
+MAX_DAILY_LOSS_QUOTE="${MAX_DAILY_LOSS_QUOTE:-0}"
+DAILY_LOSS_RESET_HOUR_UTC="${DAILY_LOSS_RESET_HOUR_UTC:-0}"
+# Trailing stop (0 = disabled)
+TRAILING_STOP_QUOTE="${TRAILING_STOP_QUOTE:-0}"
+TRAILING_STOP_ACTIVATION_QUOTE="${TRAILING_STOP_ACTIVATION_QUOTE:-0}"
+# Max pending orders (default 1)
+MAX_PENDING_ORDERS="${MAX_PENDING_ORDERS:-1}"
+# ATR-scaled sizing (sizing_mode: fixed or atr_scaled)
+SIZING_MODE="${SIZING_MODE:-fixed}"
+TARGET_RISK_QUOTE="${TARGET_RISK_QUOTE:-0}"
+ATR_MULTIPLIER="${ATR_MULTIPLIER:-1.0}"
+ATR_PERIOD="${ATR_PERIOD:-14}"
+# Dry run mode (true = emit signals with dry_run=true, trading-engine should skip execution)
+DRY_RUN="${DRY_RUN:-false}"
+# Cleanup on exit (true = delete strategy when script exits)
+CLEANUP_ON_EXIT="${CLEANUP_ON_EXIT:-false}"
 
 REQUIRED_LABELS=( "service=market-data" "service=strategy-executor" "service=trading-engine" "service=order-management" "service=redis" "service=kafka" )
 
@@ -138,9 +158,37 @@ if ! kill -0 "$PF_PID" 2>/dev/null; then
   exit 1
 fi
 ok "port-forward PID $PF_PID → http://127.0.0.1:${STRATEGY_EXECUTOR_LOCAL_PORT}"
-trap 'kill $PF_PID 2>/dev/null || true' EXIT
 
 SE_URL="http://127.0.0.1:${STRATEGY_EXECUTOR_LOCAL_PORT}"
+
+# Cleanup function for trap
+cleanup() {
+  local exit_code=$?
+  if [[ "$CLEANUP_ON_EXIT" == "true" ]] && [[ -n "${STRATEGY_NAME:-}" ]]; then
+    info "Cleaning up: deleting strategy $STRATEGY_NAME..."
+    curl -sS --max-time 10 -X DELETE "$SE_URL/api/v1/strategies/$STRATEGY_NAME" >/dev/null 2>&1 || true
+    ok "Strategy $STRATEGY_NAME deleted"
+  fi
+  kill $PF_PID 2>/dev/null || true
+  exit $exit_code
+}
+trap cleanup EXIT INT TERM
+
+section "3.5. Indicator warm-up check"
+INDICATOR_RESP=$(curl -sS --max-time 10 "$SE_URL/api/v1/indicators/$BOOK/snapshot" 2>/dev/null || echo '{}')
+INDICATOR_COUNT=$(echo "$INDICATOR_RESP" | jq 'if type == "object" then (keys | length) else 0 end' 2>/dev/null || echo "0")
+if [[ "$INDICATOR_COUNT" -eq 0 ]] || echo "$INDICATOR_RESP" | jq -e '.error' &>/dev/null; then
+  warn "Indicator snapshot for $BOOK is empty or errored. Strategy may not emit signals until indicators warm up."
+  warn "  Response: $(echo "$INDICATOR_RESP" | head -c 200)"
+  warn "  Ensure market-data is ingesting trades for $BOOK and wait for indicator computation."
+else
+  ok "Indicator snapshot has $INDICATOR_COUNT indicators for $BOOK"
+  # Show key indicators if available
+  SMA=$(echo "$INDICATOR_RESP" | jq -r '.sma_20.value // "N/A"' 2>/dev/null)
+  RSI=$(echo "$INDICATOR_RESP" | jq -r '.rsi_14.value // "N/A"' 2>/dev/null)
+  VWAP=$(echo "$INDICATOR_RESP" | jq -r '.vwap.value // "N/A"' 2>/dev/null)
+  info "  SMA(20)=$SMA  RSI(14)=$RSI  VWAP=$VWAP"
+fi
 
 section "4. Health + create + start strategy (organic path — no /process)"
 if ! curl -sS --max-time 5 "$SE_URL/health" | jq -e '.status == "healthy"' &>/dev/null; then
@@ -152,6 +200,9 @@ ok "strategy-executor healthy"
 info "Creating strategy: $STRATEGY_NAME (type=$STRATEGY_TYPE, book=$BOOK)"
 case "$STRATEGY_TYPE" in
   limit_profit)
+    # Convert DRY_RUN string to boolean for jq
+    DRY_RUN_BOOL="false"
+    [[ "$DRY_RUN" == "true" ]] && DRY_RUN_BOOL="true"
     CREATE_BODY=$(jq -nc \
       --arg name "$STRATEGY_NAME" \
       --arg book "$BOOK" \
@@ -159,16 +210,29 @@ case "$STRATEGY_TYPE" in
       --arg buyl "$BUY_LIQUIDITY" \
       --arg selll "$SELL_LIQUIDITY" \
       --arg xref "$EXIT_PRICE_REF" \
+      --arg smode "$SIZING_MODE" \
       --argjson eo "$ENTRY_OFFSET" \
+      --argjson eobps "$ENTRY_OFFSET_BPS" \
       --argjson mp "$MIN_PROFIT_LP" \
+      --argjson mpbps "$MIN_PROFIT_BPS" \
       --argjson fee "$FEE_LP" \
       --argjson fbps "$FEE_BPS_LP" \
       --argjson ps "$POSITION_SIZE" \
       --argjson msi "$MIN_SIGNAL_INTERVAL" \
       --argjson pbto "$PENDING_BUY_TIMEOUT_SEC" \
+      --argjson pcmr "$PENDING_CANCEL_MAX_RETRIES" \
       --argjson mhold "$MAX_POSITION_HOLD_SEC" \
       --argjson slq "$STOP_LOSS_QUOTE" \
-      '{name:$name, type:"limit_profit", book:$book, parameters:{reference:$ref, entry_offset:$eo, min_profit:$mp, fee:$fee, fee_bps:$fbps, buy_liquidity:$buyl, sell_liquidity:$selll, exit_price_reference:$xref, position_size:$ps, min_signal_interval:$msi, pending_buy_timeout_seconds:$pbto, max_position_hold_seconds:$mhold, stop_loss_quote:$slq}}')
+      --argjson mdlq "$MAX_DAILY_LOSS_QUOTE" \
+      --argjson dlrh "$DAILY_LOSS_RESET_HOUR_UTC" \
+      --argjson tsq "$TRAILING_STOP_QUOTE" \
+      --argjson tsaq "$TRAILING_STOP_ACTIVATION_QUOTE" \
+      --argjson mpo "$MAX_PENDING_ORDERS" \
+      --argjson trq "$TARGET_RISK_QUOTE" \
+      --argjson atrm "$ATR_MULTIPLIER" \
+      --argjson atrp "$ATR_PERIOD" \
+      --argjson dryrun "$DRY_RUN_BOOL" \
+      '{name:$name, type:"limit_profit", book:$book, parameters:{reference:$ref, entry_offset:$eo, entry_offset_bps:$eobps, min_profit:$mp, min_profit_bps:$mpbps, fee:$fee, fee_bps:$fbps, buy_liquidity:$buyl, sell_liquidity:$selll, exit_price_reference:$xref, position_size:$ps, min_signal_interval:$msi, pending_buy_timeout_seconds:$pbto, pending_cancel_max_retries:$pcmr, max_position_hold_seconds:$mhold, stop_loss_quote:$slq, max_daily_loss_quote:$mdlq, daily_loss_reset_hour_utc:$dlrh, trailing_stop_quote:$tsq, trailing_stop_activation_quote:$tsaq, max_pending_orders:$mpo, sizing_mode:$smode, target_risk_quote:$trq, atr_multiplier:$atrm, atr_period:$atrp, dry_run:$dryrun}}')
     ;;
   momentum)
     CREATE_BODY=$(jq -nc \
@@ -210,6 +274,12 @@ info "Strategy detail:"
 curl -sS --max-time 10 "$SE_URL/api/v1/strategies/$STRATEGY_NAME" | jq '{name, type, book, running, parameters}' 2>/dev/null || curl -sS "$SE_URL/api/v1/strategies/$STRATEGY_NAME"
 
 section "5. Done — organic loop is active if strategy shows running"
+if [[ "$DRY_RUN" == "true" ]]; then
+  warn "DRY_RUN=true: signals will have metadata.dry_run=true — trading-engine should skip execution."
+fi
+if [[ "$CLEANUP_ON_EXIT" == "true" ]]; then
+  info "CLEANUP_ON_EXIT=true: strategy will be deleted when this script exits (Ctrl+C or termination)."
+fi
 info "Do NOT call POST /api/v1/strategies/process unless you intentionally want a synthetic tick (E2E)."
 echo ""
 echo "Verify manually:"

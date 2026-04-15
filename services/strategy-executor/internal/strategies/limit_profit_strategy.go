@@ -5,13 +5,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
 	"strings"
 	"sync"
 	"time"
 
 	"bitso-trading-platform/shared/pkg/bitso"
 	"bitso-trading-platform/strategy-executor/internal/indicators"
+	"bitso-trading-platform/strategy-executor/internal/logger"
 
 	"github.com/google/uuid"
 )
@@ -20,9 +20,11 @@ import (
 // Exit threshold uses Bitso GET /fees with configurable maker/taker per leg when credentials exist;
 // otherwise entry + min_profit + manual fee_addon.
 type LimitProfitConfig struct {
-	Reference            string // "last_trade" or "vwap"
-	EntryOffset          float64
-	MinProfit            float64
+	Reference            string  // "last_trade" or "vwap"
+	EntryOffset          float64 // absolute quote-currency offset added to reference for BUY limit
+	EntryOffsetBPS       float64 // if >0, entry_offset = reference * EntryOffsetBPS / 10000 (takes precedence)
+	MinProfit            float64 // absolute quote-currency profit target above break-even
+	MinProfitBPS         float64 // if >0, min_profit = entry * MinProfitBPS / 10000 (takes precedence)
 	Fee                  float64 // extra margin on top of computed threshold (slippage buffer)
 	FeeBPS               float64 // manual mode only
 	UseBitsoFees         bool
@@ -33,23 +35,54 @@ type LimitProfitConfig struct {
 	MinSignalInterval    int
 	// PendingBuyTimeoutSeconds: if >0, clear local pending BUY state after this long without a fill (see docs).
 	PendingBuyTimeoutSeconds int
+	// PendingCancelMaxRetries: max cancel attempts before giving up (default 3).
+	PendingCancelMaxRetries int
 	// MaxPositionHoldSeconds: if >0, emit SELL after position age exceeds this (time stop).
 	MaxPositionHoldSeconds int
 	// StopLossQuote: if >0, emit SELL when compare price <= entry - StopLossQuote (quote currency per base unit).
 	StopLossQuote float64
+	// MaxDailyLossQuote: if >0, pause strategy when cumulative daily realized loss exceeds this (circuit breaker).
+	MaxDailyLossQuote float64
+	// DailyLossResetHourUTC: hour (0-23) when daily loss counter resets (default 0 = midnight UTC).
+	DailyLossResetHourUTC int
+	// TrailingStopQuote: if >0, once unrealized P&L exceeds TrailingStopActivationQuote, exit if price
+	// drops this many quote units below the high-water mark (trailing stop).
+	TrailingStopQuote float64
+	// TrailingStopActivationQuote: minimum unrealized profit (quote) before trailing stop activates.
+	TrailingStopActivationQuote float64
+	// MaxPendingOrders: if >0, reject new entry signals if this many pending BUYs are already active.
+	MaxPendingOrders int
+	// SizingMode: "fixed" (default) or "atr_scaled" for volatility-adjusted sizing.
+	SizingMode string
+	// TargetRiskQuote: target quote-currency risk per trade (used with atr_scaled sizing).
+	TargetRiskQuote float64
+	// ATRMultiplier: multiplier for ATR when computing position size (default 1.0).
+	ATRMultiplier float64
+	// ATRPeriod: period for ATR indicator (default 14).
+	ATRPeriod int
+	// DryRun: if true, emit signals with metadata.dry_run=true (trading-engine should skip execution).
+	DryRun bool
 }
 
 // DefaultLimitProfitConfig returns conservative defaults (tune per book / liquidity).
 func DefaultLimitProfitConfig() LimitProfitConfig {
 	return LimitProfitConfig{
-		Reference:          "last_trade",
-		EntryOffset:        500,
-		MinProfit:          5000,
-		PositionSize:       0.001,
-		MinSignalInterval:  60,
-		BuyLiquidity:       "maker",
-		SellLiquidity:      "taker",
-		ExitPriceReference: "last",
+		Reference:               "last_trade",
+		EntryOffset:             500,
+		EntryOffsetBPS:          0,
+		MinProfit:               5000,
+		MinProfitBPS:            0,
+		PositionSize:            0.001,
+		MinSignalInterval:       60,
+		BuyLiquidity:            "maker",
+		SellLiquidity:           "taker",
+		ExitPriceReference:      "last",
+		PendingCancelMaxRetries: 3,
+		DailyLossResetHourUTC:   0,
+		MaxPendingOrders:        1,
+		SizingMode:              "fixed",
+		ATRMultiplier:           1.0,
+		ATRPeriod:               14,
 	}
 }
 
@@ -63,18 +96,62 @@ type LimitProfitStrategy struct {
 	positionBuyFeeRate   float64 // measured buy fee as decimal of notional; overrides API buy leg when > 0
 	positionBuyLiquidity string  // maker|taker from venue when buy fill executed
 
+	// Partial fill tracking.
+	targetOrderSize    float64 // original order size from entry signal
+	cumulativeFilledAmt float64 // sum of partial fills received
+
+	// Trailing stop tracking.
+	trailingStopActive bool    // true once profit exceeds activation threshold
+	trailingHighWater  float64 // highest compare_price seen since activation
+
+	// Pending order tracking.
+	pendingOrderCount int // number of active pending BUY orders
+
+	// Session-level tracking for circuit breaker.
+	dailyRealizedLoss     float64   // cumulative realized loss (positive = loss) for current session
+	dailyLossResetTime    time.Time // when daily loss was last reset
+	circuitBreakerTripped bool      // true = paused due to max daily loss
+
 	mu sync.RWMutex
 
 	rawStateStore LimitProfitRawStateStore
 
 	// Optional: when pending buy times out, request OM cancel before clearing local pending state.
 	pendingBuyCancel PendingBuyCancelClient
+
+	// Prometheus metrics (optional, set via SetMetrics).
+	metrics *LimitProfitMetrics
+
+	// Structured logger (optional, set via SetLogger).
+	log *logger.Logger
 }
 
 type limitProfitPersisted struct {
-	State                StrategyState `json:"state"`
-	PositionBuyFeeRate   float64       `json:"position_buy_fee_rate,omitempty"`
-	PositionBuyLiquidity string        `json:"position_buy_liquidity,omitempty"`
+	State                 StrategyState `json:"state"`
+	PositionBuyFeeRate    float64       `json:"position_buy_fee_rate,omitempty"`
+	PositionBuyLiquidity  string        `json:"position_buy_liquidity,omitempty"`
+	DailyRealizedLoss     float64       `json:"daily_realized_loss,omitempty"`
+	DailyLossResetTime    time.Time     `json:"daily_loss_reset_time,omitempty"`
+	CircuitBreakerTripped bool          `json:"circuit_breaker_tripped,omitempty"`
+	// Partial fill tracking
+	TargetOrderSize     float64 `json:"target_order_size,omitempty"`
+	CumulativeFilledAmt float64 `json:"cumulative_filled_amt,omitempty"`
+	// Trailing stop tracking
+	TrailingStopActive bool    `json:"trailing_stop_active,omitempty"`
+	TrailingHighWater  float64 `json:"trailing_high_water,omitempty"`
+	// Pending order tracking
+	PendingOrderCount int `json:"pending_order_count,omitempty"`
+}
+
+// LimitProfitMetrics holds Prometheus metrics for the limit_profit strategy.
+type LimitProfitMetrics struct {
+	EntrySignals          func(strategy, book string)
+	ExitSignals           func(strategy, book, reason string)
+	PendingBuyDuration    func(strategy, book string, seconds float64)
+	PositionHoldDuration  func(strategy, book string, seconds float64)
+	PendingCancelFailures func(strategy, book string)
+	DailyRealizedPnL      func(strategy, book string, value float64)
+	CircuitBreakerActive  func(strategy, book string, active bool)
 }
 
 // NewLimitProfitStrategy constructs a new instance (factory uses this).
@@ -92,6 +169,28 @@ func NewLimitProfitStrategyFactory() func() EnhancedStrategy {
 	}
 }
 
+// SetMetrics injects Prometheus metric callbacks (optional).
+func (s *LimitProfitStrategy) SetMetrics(m *LimitProfitMetrics) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.metrics = m
+}
+
+// SetLogger injects a structured logger (optional).
+func (s *LimitProfitStrategy) SetLogger(l *logger.Logger) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.log = l
+}
+
+// logger returns the strategy's logger with common fields, or a default logger.
+func (s *LimitProfitStrategy) logger() *logger.Logger {
+	if s.log != nil {
+		return s.log.WithStr("strategy", s.Name()).WithStr("book", s.config.Book)
+	}
+	return logger.NewDefault().WithStr("strategy", s.Name()).WithStr("book", s.config.Book)
+}
+
 // Initialize parses StrategyConfig into lpConfig.
 func (s *LimitProfitStrategy) Initialize(config StrategyConfig, indicatorSvc *indicators.Service) error {
 	if err := s.BaseEnhancedStrategy.Initialize(config, indicatorSvc); err != nil {
@@ -103,8 +202,14 @@ func (s *LimitProfitStrategy) Initialize(config StrategyConfig, indicatorSvc *in
 		if v, ok := p["entry_offset"].(float64); ok {
 			s.lpConfig.EntryOffset = v
 		}
+		if v, ok := p["entry_offset_bps"].(float64); ok {
+			s.lpConfig.EntryOffsetBPS = v
+		}
 		if v, ok := p["min_profit"].(float64); ok {
 			s.lpConfig.MinProfit = v
+		}
+		if v, ok := p["min_profit_bps"].(float64); ok {
+			s.lpConfig.MinProfitBPS = v
 		}
 		if v, ok := p["fee"].(float64); ok {
 			s.lpConfig.Fee = v
@@ -136,11 +241,44 @@ func (s *LimitProfitStrategy) Initialize(config StrategyConfig, indicatorSvc *in
 		if v, ok := p["pending_buy_timeout_seconds"].(float64); ok {
 			s.lpConfig.PendingBuyTimeoutSeconds = int(v)
 		}
+		if v, ok := p["pending_cancel_max_retries"].(float64); ok {
+			s.lpConfig.PendingCancelMaxRetries = int(v)
+		}
 		if v, ok := p["max_position_hold_seconds"].(float64); ok {
 			s.lpConfig.MaxPositionHoldSeconds = int(v)
 		}
 		if v, ok := p["stop_loss_quote"].(float64); ok {
 			s.lpConfig.StopLossQuote = v
+		}
+		if v, ok := p["max_daily_loss_quote"].(float64); ok {
+			s.lpConfig.MaxDailyLossQuote = v
+		}
+		if v, ok := p["daily_loss_reset_hour_utc"].(float64); ok {
+			s.lpConfig.DailyLossResetHourUTC = int(v)
+		}
+		if v, ok := p["trailing_stop_quote"].(float64); ok {
+			s.lpConfig.TrailingStopQuote = v
+		}
+		if v, ok := p["trailing_stop_activation_quote"].(float64); ok {
+			s.lpConfig.TrailingStopActivationQuote = v
+		}
+		if v, ok := p["max_pending_orders"].(float64); ok {
+			s.lpConfig.MaxPendingOrders = int(v)
+		}
+		if v, ok := p["sizing_mode"].(string); ok {
+			s.lpConfig.SizingMode = strings.ToLower(strings.TrimSpace(v))
+		}
+		if v, ok := p["target_risk_quote"].(float64); ok {
+			s.lpConfig.TargetRiskQuote = v
+		}
+		if v, ok := p["atr_multiplier"].(float64); ok {
+			s.lpConfig.ATRMultiplier = v
+		}
+		if v, ok := p["atr_period"].(float64); ok {
+			s.lpConfig.ATRPeriod = int(v)
+		}
+		if v, ok := p["dry_run"].(bool); ok {
+			s.lpConfig.DryRun = v
 		}
 	}
 	if config.Sizing.MaxPositionSize > 0 {
@@ -160,6 +298,9 @@ func (s *LimitProfitStrategy) Initialize(config StrategyConfig, indicatorSvc *in
 	}
 	if s.lpConfig.ExitPriceReference == "" {
 		s.lpConfig.ExitPriceReference = "last"
+	}
+	if s.lpConfig.PendingCancelMaxRetries <= 0 {
+		s.lpConfig.PendingCancelMaxRetries = 3
 	}
 	return nil
 }
@@ -226,6 +367,28 @@ func (s *LimitProfitStrategy) applyPersistedLocked(p *limitProfitPersisted) {
 	}
 	s.positionBuyFeeRate = p.PositionBuyFeeRate
 	s.positionBuyLiquidity = p.PositionBuyLiquidity
+
+	// Restore partial fill tracking.
+	s.targetOrderSize = p.TargetOrderSize
+	s.cumulativeFilledAmt = p.CumulativeFilledAmt
+
+	// Restore trailing stop tracking.
+	s.trailingStopActive = p.TrailingStopActive
+	s.trailingHighWater = p.TrailingHighWater
+
+	// Restore pending order tracking.
+	s.pendingOrderCount = p.PendingOrderCount
+
+	// Restore daily loss state, but check if it should reset based on time.
+	s.dailyLossResetTime = p.DailyLossResetTime
+	if s.shouldResetDailyLoss() {
+		s.dailyRealizedLoss = 0
+		s.circuitBreakerTripped = false
+		s.dailyLossResetTime = s.nextDailyResetTime()
+	} else {
+		s.dailyRealizedLoss = p.DailyRealizedLoss
+		s.circuitBreakerTripped = p.CircuitBreakerTripped
+	}
 }
 
 func (s *LimitProfitStrategy) persistLocked(ctx context.Context) {
@@ -233,9 +396,17 @@ func (s *LimitProfitStrategy) persistLocked(ctx context.Context) {
 		return
 	}
 	p := limitProfitPersisted{
-		State:                s.GetState(),
-		PositionBuyFeeRate:   s.positionBuyFeeRate,
-		PositionBuyLiquidity: s.positionBuyLiquidity,
+		State:                 s.GetState(),
+		PositionBuyFeeRate:    s.positionBuyFeeRate,
+		PositionBuyLiquidity:  s.positionBuyLiquidity,
+		DailyRealizedLoss:     s.dailyRealizedLoss,
+		DailyLossResetTime:    s.dailyLossResetTime,
+		CircuitBreakerTripped: s.circuitBreakerTripped,
+		TargetOrderSize:       s.targetOrderSize,
+		CumulativeFilledAmt:   s.cumulativeFilledAmt,
+		TrailingStopActive:    s.trailingStopActive,
+		TrailingHighWater:     s.trailingHighWater,
+		PendingOrderCount:     s.pendingOrderCount,
 	}
 	b, err := json.Marshal(&p)
 	if err != nil {
@@ -244,6 +415,64 @@ func (s *LimitProfitStrategy) persistLocked(ctx context.Context) {
 	cctx, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
 	_ = s.rawStateStore.Save(cctx, s.Name(), b)
+}
+
+// shouldResetDailyLoss returns true if current time is past the next reset boundary.
+func (s *LimitProfitStrategy) shouldResetDailyLoss() bool {
+	if s.dailyLossResetTime.IsZero() {
+		return true
+	}
+	return time.Now().UTC().After(s.dailyLossResetTime)
+}
+
+// nextDailyResetTime calculates the next reset time based on DailyLossResetHourUTC.
+func (s *LimitProfitStrategy) nextDailyResetTime() time.Time {
+	now := time.Now().UTC()
+	resetHour := s.lpConfig.DailyLossResetHourUTC
+	if resetHour < 0 || resetHour > 23 {
+		resetHour = 0
+	}
+	next := time.Date(now.Year(), now.Month(), now.Day(), resetHour, 0, 0, 0, time.UTC)
+	if now.After(next) {
+		next = next.Add(24 * time.Hour)
+	}
+	return next
+}
+
+// checkAndResetDailyLoss resets counters if past reset time, and updates metrics.
+func (s *LimitProfitStrategy) checkAndResetDailyLoss() {
+	if s.shouldResetDailyLoss() {
+		s.dailyRealizedLoss = 0
+		s.circuitBreakerTripped = false
+		s.dailyLossResetTime = s.nextDailyResetTime()
+		if s.metrics != nil && s.metrics.CircuitBreakerActive != nil {
+			s.metrics.CircuitBreakerActive(s.Name(), s.config.Book, false)
+		}
+		if s.metrics != nil && s.metrics.DailyRealizedPnL != nil {
+			s.metrics.DailyRealizedPnL(s.Name(), s.config.Book, 0)
+		}
+	}
+}
+
+// recordRealizedLoss adds a loss to daily total and checks circuit breaker.
+func (s *LimitProfitStrategy) recordRealizedLoss(loss float64) {
+	if loss <= 0 {
+		return
+	}
+	s.dailyRealizedLoss += loss
+	if s.metrics != nil && s.metrics.DailyRealizedPnL != nil {
+		s.metrics.DailyRealizedPnL(s.Name(), s.config.Book, -s.dailyRealizedLoss)
+	}
+	if s.lpConfig.MaxDailyLossQuote > 0 && s.dailyRealizedLoss >= s.lpConfig.MaxDailyLossQuote {
+		s.circuitBreakerTripped = true
+		if s.metrics != nil && s.metrics.CircuitBreakerActive != nil {
+			s.metrics.CircuitBreakerActive(s.Name(), s.config.Book, true)
+		}
+		s.logger().
+			WithFloat64("daily_loss", s.dailyRealizedLoss).
+			WithFloat64("limit", s.lpConfig.MaxDailyLossQuote).
+			Warn("circuit breaker tripped")
+	}
 }
 
 // OnTick evaluates latest trade price against entry / exit rules.
@@ -255,6 +484,12 @@ func (s *LimitProfitStrategy) OnTick(tick *indicators.Trade) (*Signal, error) {
 		return nil, nil
 	}
 	if tick == nil {
+		return nil, nil
+	}
+
+	// Check for daily reset and circuit breaker.
+	s.checkAndResetDailyLoss()
+	if s.circuitBreakerTripped {
 		return nil, nil
 	}
 
@@ -274,21 +509,26 @@ func (s *LimitProfitStrategy) OnTick(tick *indicators.Trade) (*Signal, error) {
 				}
 				if !since.IsZero() && time.Since(since) >= time.Duration(s.lpConfig.PendingBuyTimeoutSeconds)*time.Second {
 					eid := state.PendingEventID
+					cancelSuccess := true
 					if eid != "" && s.pendingBuyCancel != nil {
-						cctx, ccancel := context.WithTimeout(ctx, 20*time.Second)
-						err := s.pendingBuyCancel.CancelOrderBySignalID(cctx, eid)
-						ccancel()
-						if err != nil {
-							log.Printf("limit_profit: pending buy timeout cancel failed (signal_id=%s): %v", eid, err)
-							return nil, nil
-						}
+						cancelSuccess = s.cancelPendingBuyWithRetry(ctx, eid)
 					}
-					s.UpdateState(func(st *StrategyState) {
-						st.PendingBuy = false
-						st.PendingEventID = ""
-						st.PendingBuySince = time.Time{}
-					})
-					s.persistLocked(ctx)
+					if cancelSuccess {
+						// Record pending buy duration metric.
+						if s.metrics != nil && s.metrics.PendingBuyDuration != nil {
+							s.metrics.PendingBuyDuration(s.Name(), book, time.Since(since).Seconds())
+						}
+						s.UpdateState(func(st *StrategyState) {
+							st.PendingBuy = false
+							st.PendingEventID = ""
+							st.PendingBuySince = time.Time{}
+						})
+						s.pendingOrderCount--
+						if s.pendingOrderCount < 0 {
+							s.pendingOrderCount = 0
+						}
+						s.persistLocked(ctx)
+					}
 					return nil, nil
 				}
 			}
@@ -297,8 +537,21 @@ func (s *LimitProfitStrategy) OnTick(tick *indicators.Trade) (*Signal, error) {
 		if !s.canEmitSignal() {
 			return nil, nil
 		}
+		// Check max pending orders limit.
+		maxPending := s.lpConfig.MaxPendingOrders
+		if maxPending <= 0 {
+			maxPending = 1
+		}
+		if s.pendingOrderCount >= maxPending {
+			return nil, nil
+		}
+
 		ref := s.referencePrice(ctx, tickPrice)
-		buyPrice := ref + s.lpConfig.EntryOffset
+		entryOffset := s.computeEntryOffset(ref)
+		buyPrice := ref + entryOffset
+
+		// Compute position size (fixed or ATR-scaled).
+		posSize := s.computePositionSize(ctx, book)
 
 		eventID := uuid.New().String()
 		now := time.Now()
@@ -308,25 +561,44 @@ func (s *LimitProfitStrategy) OnTick(tick *indicators.Trade) (*Signal, error) {
 			st.PendingEventID = eventID
 			st.PendingBuySince = now
 		})
+		s.pendingOrderCount++
+		s.targetOrderSize = posSize
+		s.cumulativeFilledAmt = 0
 		s.persistLocked(ctx)
+
+		// Record entry signal metric.
+		if s.metrics != nil && s.metrics.EntrySignals != nil {
+			s.metrics.EntrySignals(s.Name(), book)
+		}
+
+		meta := map[string]interface{}{
+			"signal_type":            "entry_buy",
+			"reference":              ref,
+			"event_id":               eventID,
+			"entry_offset":           entryOffset,
+			"entry_offset_bps":       s.lpConfig.EntryOffsetBPS,
+			"buy_liquidity_expected": s.lpConfig.BuyLiquidity,
+			"fee_model":              s.feeModelLabel(),
+			"use_bitso_fees":         s.lpConfig.UseBitsoFees,
+			"sizing_mode":            s.lpConfig.SizingMode,
+		}
+		if s.lpConfig.DryRun {
+			meta["dry_run"] = true
+		}
 
 		return &Signal{
 			Strategy:   s.Name(),
 			Book:       book,
 			Side:       "BUY",
-			Amount:     s.lpConfig.PositionSize,
+			Amount:     posSize,
 			Price:      buyPrice,
 			Confidence: 0.75,
 			Reason: fmt.Sprintf(
-				"limit_profit entry: ref=%.2f (%s) + offset=%.2f → buy limit %.2f",
-				ref, s.lpConfig.Reference, s.lpConfig.EntryOffset, buyPrice,
+				"limit_profit entry: ref=%.2f (%s) + offset=%.2f → buy limit %.2f (size=%.6f)",
+				ref, s.lpConfig.Reference, entryOffset, buyPrice, posSize,
 			),
 			Timestamp: time.Now(),
-			Metadata: map[string]interface{}{
-				"signal_type": "entry_buy",
-				"reference":   ref,
-				"event_id":    eventID,
-			},
+			Metadata:  meta,
 		}, nil
 	}
 
@@ -335,14 +607,48 @@ func (s *LimitProfitStrategy) OnTick(tick *indicators.Trade) (*Signal, error) {
 	threshold, buyR, sellR, feeModel := s.exitPriceThreshold(ctx, entry)
 	manualAddon := s.exitFeeAddon(entry)
 
+	// Circuit breaker exit: if tripped mid-position, close immediately.
+	if s.circuitBreakerTripped {
+		return s.emitPositionExit(ctx, tickPrice, comparePrice, refLabel, entry, threshold, buyR, sellR, feeModel, manualAddon, "circuit_breaker"), nil
+	}
+
+	// Stop loss check (hard stop).
 	if s.lpConfig.StopLossQuote > 0 && comparePrice <= entry-s.lpConfig.StopLossQuote {
 		return s.emitPositionExit(ctx, tickPrice, comparePrice, refLabel, entry, threshold, buyR, sellR, feeModel, manualAddon, "stop_loss"), nil
 	}
+
+	// Trailing stop logic.
+	if s.lpConfig.TrailingStopQuote > 0 {
+		unrealizedPnL := (comparePrice - entry) * state.PositionSize
+		activationThreshold := s.lpConfig.TrailingStopActivationQuote
+		if activationThreshold <= 0 {
+			activationThreshold = s.lpConfig.TrailingStopQuote // Default: activate when profit >= trailing amount
+		}
+		if !s.trailingStopActive && unrealizedPnL >= activationThreshold {
+			s.trailingStopActive = true
+			s.trailingHighWater = comparePrice
+			s.persistLocked(ctx)
+		}
+		if s.trailingStopActive {
+			if comparePrice > s.trailingHighWater {
+				s.trailingHighWater = comparePrice
+				s.persistLocked(ctx)
+			}
+			trailingStopPrice := s.trailingHighWater - s.lpConfig.TrailingStopQuote
+			if comparePrice <= trailingStopPrice {
+				return s.emitPositionExit(ctx, tickPrice, comparePrice, refLabel, entry, threshold, buyR, sellR, feeModel, manualAddon, "trailing_stop"), nil
+			}
+		}
+	}
+
+	// Max position hold time check.
 	if s.lpConfig.MaxPositionHoldSeconds > 0 && !state.EntryTime.IsZero() {
 		if time.Since(state.EntryTime) >= time.Duration(s.lpConfig.MaxPositionHoldSeconds)*time.Second {
 			return s.emitPositionExit(ctx, tickPrice, comparePrice, refLabel, entry, threshold, buyR, sellR, feeModel, manualAddon, "max_hold"), nil
 		}
 	}
+
+	// Take profit check.
 	if comparePrice >= threshold {
 		return s.emitPositionExit(ctx, tickPrice, comparePrice, refLabel, entry, threshold, buyR, sellR, feeModel, manualAddon, "take_profit"), nil
 	}
@@ -362,11 +668,18 @@ func (s *LimitProfitStrategy) emitPositionExit(
 ) *Signal {
 	state := s.GetState()
 	posSize := state.PositionSize
+	book := s.config.Book
+
+	// Determine exit price for P&L and signal.
+	// When using bid/mid references, use comparePrice for both calculation and execution.
 	exitForPnL := tickPrice
+	signalPrice := tickPrice
 	switch refLabel {
 	case "bid", "mid", "min_last_bid":
 		exitForPnL = comparePrice
+		signalPrice = comparePrice // Align signal price with compare price for execution consistency.
 	}
+
 	gross := (exitForPnL - entry) * posSize
 	netQuote := bitso.NetQuotePnLPerBase(entry, exitForPnL, buyR, sellR) * posSize
 
@@ -375,13 +688,44 @@ func (s *LimitProfitStrategy) emitPositionExit(
 		profitable = netQuote > 0
 	}
 
+	// Record position hold duration metric.
+	if s.metrics != nil && s.metrics.PositionHoldDuration != nil && !state.EntryTime.IsZero() {
+		s.metrics.PositionHoldDuration(s.Name(), book, time.Since(state.EntryTime).Seconds())
+	}
+
+	// Record exit signal metric.
+	if s.metrics != nil && s.metrics.ExitSignals != nil {
+		s.metrics.ExitSignals(s.Name(), book, exitReason)
+	}
+
+	// Track realized loss for circuit breaker.
+	if !profitable {
+		loss := -gross
+		if feeModel == "bitso_api" && netQuote < 0 {
+			loss = -netQuote
+		}
+		s.recordRealizedLoss(loss)
+	} else {
+		// Profitable trade: update daily P&L gauge (reduce loss or add profit).
+		if s.metrics != nil && s.metrics.DailyRealizedPnL != nil {
+			pnl := gross
+			if feeModel == "bitso_api" {
+				pnl = netQuote
+			}
+			// For simplicity, we only track losses towards circuit breaker, but report net P&L.
+			currentPnL := -s.dailyRealizedLoss + pnl
+			s.metrics.DailyRealizedPnL(s.Name(), book, currentPnL)
+		}
+	}
+
 	s.RecordSignal()
 	s.RecordTrade(profitable)
 	s.ClearPosition()
 	s.resetPositionFeeOverrides()
+	s.resetTrailingStop()
 	s.persistLocked(ctx)
 
-	book := s.config.Book
+	minProfit := s.computeMinProfit(entry)
 	meta := map[string]interface{}{
 		"signal_type":             "exit_sell",
 		"exit_reason":             exitReason,
@@ -389,11 +733,13 @@ func (s *LimitProfitStrategy) emitPositionExit(
 		"gross_quote_pnl":         gross,
 		"exit_threshold":          threshold,
 		"fee_model":               feeModel,
-		"min_profit":              s.lpConfig.MinProfit,
+		"min_profit":              minProfit,
+		"min_profit_bps":          s.lpConfig.MinProfitBPS,
 		"extra_fee_margin":        s.lpConfig.Fee,
 		"exit_price_reference":    refLabel,
 		"compare_price":           comparePrice,
 		"tick_price":              tickPrice,
+		"signal_price":            signalPrice,
 		"buy_liquidity_effective": s.effectiveBuyLiquidity(),
 		"sell_liquidity":          s.lpConfig.SellLiquidity,
 	}
@@ -405,9 +751,18 @@ func (s *LimitProfitStrategy) emitPositionExit(
 		meta["fee_addon_manual"] = manualAddon
 	}
 
+	// Add trailing stop info to metadata if active.
+	if s.trailingStopActive {
+		meta["trailing_stop_active"] = true
+		meta["trailing_high_water"] = s.trailingHighWater
+	}
+	if s.lpConfig.DryRun {
+		meta["dry_run"] = true
+	}
+
 	reason := fmt.Sprintf(
 		"limit_profit exit [%s] ref=%s reason=%s: compare=%.2f threshold=%.2f (entry=%.2f min_profit=%.2f)",
-		feeModel, refLabel, exitReason, comparePrice, threshold, entry, s.lpConfig.MinProfit,
+		feeModel, refLabel, exitReason, comparePrice, threshold, entry, minProfit,
 	)
 	switch exitReason {
 	case "stop_loss":
@@ -415,10 +770,20 @@ func (s *LimitProfitStrategy) emitPositionExit(
 			"limit_profit stop_loss [%s] ref=%s: compare=%.2f <= entry-stop=%.2f (entry=%.2f stop_loss_quote=%.2f)",
 			feeModel, refLabel, comparePrice, entry-s.lpConfig.StopLossQuote, entry, s.lpConfig.StopLossQuote,
 		)
+	case "trailing_stop":
+		reason = fmt.Sprintf(
+			"limit_profit trailing_stop [%s] ref=%s: compare=%.2f <= high_water %.2f - trail %.2f (entry=%.2f)",
+			feeModel, refLabel, comparePrice, s.trailingHighWater, s.lpConfig.TrailingStopQuote, entry,
+		)
 	case "max_hold":
 		reason = fmt.Sprintf(
 			"limit_profit max_hold [%s] ref=%s: position age >= %ds",
 			feeModel, refLabel, s.lpConfig.MaxPositionHoldSeconds,
+		)
+	case "circuit_breaker":
+		reason = fmt.Sprintf(
+			"limit_profit circuit_breaker [%s] ref=%s: daily loss %.2f >= limit %.2f",
+			feeModel, refLabel, s.dailyRealizedLoss, s.lpConfig.MaxDailyLossQuote,
 		)
 	}
 
@@ -427,7 +792,7 @@ func (s *LimitProfitStrategy) emitPositionExit(
 		Book:       book,
 		Side:       "SELL",
 		Amount:     posSize,
-		Price:      tickPrice,
+		Price:      signalPrice, // Use compare price when exit ref is bid/mid for execution alignment.
 		Confidence: 0.85,
 		Reason:     reason,
 		Timestamp:  time.Now(),
@@ -435,7 +800,7 @@ func (s *LimitProfitStrategy) emitPositionExit(
 	}
 }
 
-// OnOrderFilled opens the position when the BUY limit fills at the exchange.
+// OnOrderFilled opens or updates the position when BUY fills arrive (supports partial fills).
 func (s *LimitProfitStrategy) OnOrderFilled(fill OrderFill) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -458,9 +823,9 @@ func (s *LimitProfitStrategy) OnOrderFilled(fill OrderFill) {
 	if fill.AveragePrice <= 0 {
 		return
 	}
-	size := fill.FilledAmount
-	if size <= 0 {
-		size = s.lpConfig.PositionSize
+	fillSize := fill.FilledAmount
+	if fillSize <= 0 {
+		return
 	}
 
 	if fill.BuyFeeRate != nil && *fill.BuyFeeRate > 0 {
@@ -470,12 +835,48 @@ func (s *LimitProfitStrategy) OnOrderFilled(fill OrderFill) {
 		s.positionBuyLiquidity = normalizeLiquidity(fill.Liquidity)
 	}
 
-	s.SetPosition("LONG", size, fill.AveragePrice)
-	s.UpdateState(func(out *StrategyState) {
-		out.PendingBuy = false
-		out.PendingEventID = ""
-		out.PendingBuySince = time.Time{}
-	})
+	// Handle partial fill: accumulate filled amount and compute weighted average entry.
+	prevFilled := s.cumulativeFilledAmt
+	prevEntry := st.EntryPrice
+	newFilled := prevFilled + fillSize
+	s.cumulativeFilledAmt = newFilled
+
+	// Weighted average entry price.
+	var avgEntry float64
+	if prevFilled > 0 && prevEntry > 0 {
+		avgEntry = (prevEntry*prevFilled + fill.AveragePrice*fillSize) / newFilled
+	} else {
+		avgEntry = fill.AveragePrice
+	}
+
+	// Check if fully filled (cumulative >= target).
+	isFullyFilled := s.targetOrderSize > 0 && newFilled >= s.targetOrderSize*0.999 // 0.1% tolerance for rounding
+	if s.targetOrderSize <= 0 {
+		// Fallback: treat any fill as full if target not set.
+		isFullyFilled = true
+	}
+
+	// Always update position with current cumulative amount.
+	s.SetPosition("LONG", newFilled, avgEntry)
+
+	if isFullyFilled {
+		// Fully filled: clear pending state.
+		s.UpdateState(func(out *StrategyState) {
+			out.PendingBuy = false
+			out.PendingEventID = ""
+			out.PendingBuySince = time.Time{}
+		})
+		s.pendingOrderCount--
+		if s.pendingOrderCount < 0 {
+			s.pendingOrderCount = 0
+		}
+		// Record pending buy duration metric.
+		if s.metrics != nil && s.metrics.PendingBuyDuration != nil && !st.PendingBuySince.IsZero() {
+			s.metrics.PendingBuyDuration(s.Name(), s.config.Book, time.Since(st.PendingBuySince).Seconds())
+		}
+	}
+	// Note: if partial fill, we keep PendingBuy=true until fully filled or timeout.
+
 	s.persistLocked(context.Background())
 }
 
@@ -489,6 +890,52 @@ func (s *LimitProfitStrategy) SetFeeRatesProvider(p MakerTakerFeeProvider) {
 func (s *LimitProfitStrategy) resetPositionFeeOverrides() {
 	s.positionBuyFeeRate = 0
 	s.positionBuyLiquidity = ""
+}
+
+func (s *LimitProfitStrategy) resetTrailingStop() {
+	s.trailingStopActive = false
+	s.trailingHighWater = 0
+}
+
+// computePositionSize returns the position size based on sizing mode.
+func (s *LimitProfitStrategy) computePositionSize(ctx context.Context, book string) float64 {
+	if s.lpConfig.SizingMode != "atr_scaled" {
+		return s.lpConfig.PositionSize
+	}
+
+	// ATR-scaled sizing: position_size = target_risk_quote / (ATR * multiplier)
+	if s.lpConfig.TargetRiskQuote <= 0 {
+		return s.lpConfig.PositionSize
+	}
+
+	ind := s.GetIndicatorService()
+	if ind == nil {
+		return s.lpConfig.PositionSize
+	}
+
+	// Note: ATRPeriod is stored for documentation/future use; current indicator service
+	// uses a fixed period configured at service level.
+	atr, err := ind.GetATR(ctx, book)
+	if err != nil || atr == nil || atr.Value <= 0 {
+		return s.lpConfig.PositionSize
+	}
+
+	mult := s.lpConfig.ATRMultiplier
+	if mult <= 0 {
+		mult = 1.0
+	}
+
+	computedSize := s.lpConfig.TargetRiskQuote / (atr.Value * mult)
+	if computedSize <= 0 {
+		return s.lpConfig.PositionSize
+	}
+
+	// Cap at configured max position size if set.
+	if s.lpConfig.PositionSize > 0 && computedSize > s.lpConfig.PositionSize {
+		return s.lpConfig.PositionSize
+	}
+
+	return computedSize
 }
 
 func normalizeLiquidity(v string) string {
@@ -545,12 +992,13 @@ func (s *LimitProfitStrategy) referenceExitPrice(ctx context.Context, tickPrice 
 
 func (s *LimitProfitStrategy) exitPriceThreshold(ctx context.Context, entry float64) (threshold, buyR, sellR float64, feeModel string) {
 	buyR, sellR, feeModel = s.resolveFeeRates(ctx, entry)
+	minProfit := s.computeMinProfit(entry)
 	if feeModel == "bitso_api" {
 		be := bitso.MinExitPriceAfterRoundTrip(entry, buyR, sellR)
-		return be + s.lpConfig.MinProfit + s.lpConfig.Fee, buyR, sellR, feeModel
+		return be + minProfit + s.lpConfig.Fee, buyR, sellR, feeModel
 	}
 	manual := s.exitFeeAddon(entry)
-	return entry + s.lpConfig.MinProfit + manual, buyR, sellR, "manual_estimate"
+	return entry + minProfit + manual, buyR, sellR, "manual_estimate"
 }
 
 func (s *LimitProfitStrategy) resolveFeeRates(ctx context.Context, entry float64) (buyR, sellR float64, feeModel string) {
@@ -594,6 +1042,68 @@ func (s *LimitProfitStrategy) exitFeeAddon(entryPrice float64) float64 {
 		addon += entryPrice * 2.0 * s.lpConfig.FeeBPS / 10000.0
 	}
 	return addon
+}
+
+// computeEntryOffset returns the entry offset, using BPS if configured.
+func (s *LimitProfitStrategy) computeEntryOffset(referencePrice float64) float64 {
+	if s.lpConfig.EntryOffsetBPS > 0 && referencePrice > 0 {
+		return referencePrice * s.lpConfig.EntryOffsetBPS / 10000.0
+	}
+	return s.lpConfig.EntryOffset
+}
+
+// computeMinProfit returns the min profit target, using BPS if configured.
+func (s *LimitProfitStrategy) computeMinProfit(entryPrice float64) float64 {
+	if s.lpConfig.MinProfitBPS > 0 && entryPrice > 0 {
+		return entryPrice * s.lpConfig.MinProfitBPS / 10000.0
+	}
+	return s.lpConfig.MinProfit
+}
+
+// feeModelLabel returns a string describing the current fee model.
+func (s *LimitProfitStrategy) feeModelLabel() string {
+	if s.lpConfig.UseBitsoFees && s.feeRates != nil {
+		return "bitso_api"
+	}
+	return "manual_estimate"
+}
+
+// cancelPendingBuyWithRetry attempts to cancel a pending buy order with retries.
+func (s *LimitProfitStrategy) cancelPendingBuyWithRetry(ctx context.Context, eventID string) bool {
+	maxRetries := s.lpConfig.PendingCancelMaxRetries
+	if maxRetries <= 0 {
+		maxRetries = 3
+	}
+	book := s.config.Book
+	log := s.logger().WithStr("event_id", eventID)
+
+	for attempt := 1; attempt <= maxRetries; attempt++ {
+		cctx, ccancel := context.WithTimeout(ctx, 20*time.Second)
+		err := s.pendingBuyCancel.CancelOrderBySignalID(cctx, eventID)
+		ccancel()
+
+		if err == nil {
+			log.WithInt("attempt", attempt).Info("pending buy cancel succeeded")
+			return true
+		}
+
+		log.WithInt("attempt", attempt).
+			WithInt("max_retries", maxRetries).
+			WithError(err).
+			Warn("pending buy cancel attempt failed")
+
+		if attempt < maxRetries {
+			backoff := time.Duration(attempt*attempt) * time.Second
+			time.Sleep(backoff)
+		}
+	}
+
+	// All retries failed — record metric.
+	if s.metrics != nil && s.metrics.PendingCancelFailures != nil {
+		s.metrics.PendingCancelFailures(s.Name(), book)
+	}
+	log.Error("pending buy cancel exhausted retries, leaving pending state set")
+	return false
 }
 
 func (s *LimitProfitStrategy) referencePrice(ctx context.Context, lastTrade float64) float64 {
@@ -640,9 +1150,33 @@ func (s *LimitProfitStrategy) Reset() {
 	defer s.mu.Unlock()
 	s.BaseEnhancedStrategy.Reset()
 	s.resetPositionFeeOverrides()
+	s.resetTrailingStop()
+	s.dailyRealizedLoss = 0
+	s.dailyLossResetTime = time.Time{}
+	s.circuitBreakerTripped = false
+	s.targetOrderSize = 0
+	s.cumulativeFilledAmt = 0
+	s.pendingOrderCount = 0
+	if s.metrics != nil && s.metrics.CircuitBreakerActive != nil {
+		s.metrics.CircuitBreakerActive(s.Name(), s.config.Book, false)
+	}
 	if s.rawStateStore != nil {
 		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 		defer cancel()
 		_ = s.rawStateStore.Delete(ctx, s.Name())
 	}
+}
+
+// IsCircuitBreakerTripped returns true if the strategy is paused due to daily loss limit.
+func (s *LimitProfitStrategy) IsCircuitBreakerTripped() bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.circuitBreakerTripped
+}
+
+// GetDailyRealizedLoss returns the current session's cumulative realized loss.
+func (s *LimitProfitStrategy) GetDailyRealizedLoss() float64 {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.dailyRealizedLoss
 }
