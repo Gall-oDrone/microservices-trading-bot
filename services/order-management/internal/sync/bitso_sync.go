@@ -2,6 +2,7 @@ package sync
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"time"
 
@@ -36,7 +37,7 @@ type BitsoSyncJob struct {
 	staleOrderRetries map[string]int
 }
 
-const maxStaleRetries = 3
+const maxStaleRetries = 10
 
 // OrderManagerSync is the subset of order-manager needed for sync
 type OrderManagerSync interface {
@@ -126,8 +127,24 @@ func (j *BitsoSyncJob) syncOnce(ctx context.Context) {
 		
 		trades, err := j.bitsoClient.OrderTrades(oid, nil)
 		if err != nil {
-			// Track this failure for stale order cleanup
+			// Check if error is Bitso code 378 "Order has not matched yet" - this means
+			// the order is still valid and pending on the book, NOT stale.
+			var bitsoErr *bitso.Error
+			if errors.As(err, &bitsoErr) && bitsoErr.Code() == 378 {
+				j.log.Debug("Order has not matched yet (code 378), keeping active", map[string]interface{}{
+					"bitso_order_id": oid,
+				})
+				j.clearStaleRetry(oid)
+				continue
+			}
+			
+			// Track this failure for stale order cleanup (true lookup failures only)
 			retries := j.incrementStaleRetry(oid)
+			j.log.Debug("OrderTrades lookup failed", map[string]interface{}{
+				"bitso_order_id": oid,
+				"error":          err.Error(),
+				"retry_count":    retries,
+			})
 			if retries >= maxStaleRetries {
 				j.log.Info("Marking order as stale after max retries", map[string]interface{}{
 					"bitso_order_id": oid,
