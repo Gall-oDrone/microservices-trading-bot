@@ -126,8 +126,109 @@ func TestLimitProfitStrategy_ExitSignal(t *testing.T) {
 	if sig == nil || sig.Side != "SELL" {
 		t.Fatalf("expected SELL, got %+v", sig)
 	}
-	if s.GetState().HasPosition {
-		t.Error("position should clear after exit")
+	// New lifecycle: position stays open until the SELL fill is confirmed via OnOrderFilled.
+	stSig := s.GetState()
+	if !stSig.HasPosition {
+		t.Fatal("position should remain open until SELL fill is confirmed")
+	}
+	if !stSig.PendingSell {
+		t.Fatal("expected pending_sell after SELL signal emission")
+	}
+	sellEV, _ := sig.Metadata["event_id"].(string)
+	if sellEV == "" {
+		t.Fatal("expected event_id on SELL signal metadata")
+	}
+
+	// Simulate exchange reporting the SELL fill at 1_000_500 (gross profit per base = 400).
+	s.OnOrderFilled(OrderFill{EventID: sellEV, Book: "btc_mxn", Side: "sell", AveragePrice: 1_000_500, FilledAmount: 0.001})
+	stAfter := s.GetState()
+	if stAfter.HasPosition {
+		t.Error("position should clear after SELL fill")
+	}
+	if stAfter.PendingSell {
+		t.Error("pending_sell should clear after SELL fill")
+	}
+	if stAfter.TradeCount != 1 || stAfter.WinCount != 1 {
+		t.Errorf("expected 1 win trade, got trade_count=%d win_count=%d", stAfter.TradeCount, stAfter.WinCount)
+	}
+	// manual_estimate fee model: realizedPnL == gross == (1_000_500 - 1_000_100) * 0.001 = 0.4
+	m := s.GetMetrics()
+	wantPnL := (1_000_500.0 - 1_000_100.0) * 0.001
+	if m.TotalPnL < wantPnL-1e-9 || m.TotalPnL > wantPnL+1e-9 {
+		t.Errorf("total_pnl: want %v got %v", wantPnL, m.TotalPnL)
+	}
+	if m.DailyPnL < wantPnL-1e-9 || m.DailyPnL > wantPnL+1e-9 {
+		t.Errorf("daily_pnl: want %v got %v", wantPnL, m.DailyPnL)
+	}
+}
+
+// TestLimitProfitStrategy_NoRestackWhilePendingSell verifies that while a SELL is resting on
+// the exchange (PendingSell=true), OnTick does NOT emit additional BUY or SELL signals even if
+// take-profit / stop-loss conditions recur. Guards the over-trading bug where the old code
+// cleared the position on signal emission and re-entered on the next tick.
+func TestLimitProfitStrategy_NoRestackWhilePendingSell(t *testing.T) {
+	s := NewLimitProfitStrategy()
+	cfg := StrategyConfig{
+		Name:    "lp_no_restack",
+		Type:    "limit_profit",
+		Book:    "btc_mxn",
+		Enabled: true,
+		Parameters: map[string]interface{}{
+			"entry_offset":        float64(100),
+			"min_profit":          float64(200),
+			"min_signal_interval": float64(0),
+			"position_size":       float64(0.001),
+		},
+	}
+	store := indicators.NewInMemoryIndicatorStore()
+	prov := indicators.NewMockDataProvider()
+	svc := indicators.NewService(nil, store, prov, nil)
+	ctx := context.Background()
+	if err := s.Initialize(cfg, svc); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Start(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	sig0, _ := s.OnTick(&indicators.Trade{Price: 1_000_000})
+	if sig0 == nil {
+		t.Fatal("expected entry BUY signal")
+	}
+	ev, _ := sig0.Metadata["event_id"].(string)
+	s.OnOrderFilled(OrderFill{EventID: ev, Book: "btc_mxn", Side: "buy", AveragePrice: 1_000_100, FilledAmount: 0.001})
+
+	sig, _ := s.OnTick(&indicators.Trade{Price: 1_000_400})
+	if sig == nil || sig.Side != "SELL" {
+		t.Fatalf("expected SELL, got %+v", sig)
+	}
+	if !s.GetState().PendingSell {
+		t.Fatal("expected pending_sell after SELL emission")
+	}
+
+	// Subsequent ticks must not produce any new signals while pending_sell is true.
+	for _, px := range []float64{1_000_500, 1_000_700, 1_001_000, 999_900} {
+		got, err := s.OnTick(&indicators.Trade{Price: px})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got != nil {
+			t.Fatalf("no new signal expected while pending_sell=true (tick=%v, got %+v)", px, got)
+		}
+	}
+
+	st := s.GetState()
+	if !st.HasPosition {
+		t.Error("position should remain open while SELL is pending")
+	}
+	if !st.PendingSell {
+		t.Error("pending_sell should remain true until fill")
+	}
+	if st.TradeCount != 0 {
+		t.Errorf("trade_count must not increment before SELL fill, got %d", st.TradeCount)
+	}
+	if st.SignalCount != 2 { // 1 BUY + 1 SELL
+		t.Errorf("signal_count: want 2 (entry + exit), got %d", st.SignalCount)
 	}
 }
 
@@ -326,10 +427,10 @@ func TestLimitProfitStrategy_MaxHoldExit(t *testing.T) {
 		Book:    "btc_mxn",
 		Enabled: true,
 		Parameters: map[string]interface{}{
-			"entry_offset":             float64(100),
-			"min_profit":               float64(1_000_000),
-			"min_signal_interval":      float64(0),
-			"position_size":            float64(0.001),
+			"entry_offset":              float64(100),
+			"min_profit":                float64(1_000_000),
+			"min_signal_interval":       float64(0),
+			"position_size":             float64(0.001),
 			"max_position_hold_seconds": float64(1),
 		},
 	}
@@ -370,10 +471,10 @@ func TestLimitProfitStrategy_PendingBuyTimeoutClearsState(t *testing.T) {
 		Book:    "btc_mxn",
 		Enabled: true,
 		Parameters: map[string]interface{}{
-			"entry_offset":               float64(100),
-			"min_profit":                 float64(500),
-			"min_signal_interval":        float64(0),
-			"position_size":              float64(0.001),
+			"entry_offset":                float64(100),
+			"min_profit":                  float64(500),
+			"min_signal_interval":         float64(0),
+			"position_size":               float64(0.001),
 			"pending_buy_timeout_seconds": float64(1),
 		},
 	}

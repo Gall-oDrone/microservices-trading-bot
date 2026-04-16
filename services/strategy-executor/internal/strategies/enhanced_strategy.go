@@ -43,6 +43,13 @@ type StrategyState struct {
 	PendingBuySince time.Time `json:"pending_buy_since,omitempty"`
 	// PendingEventID is the TradeSignalEvent.event_id for the open BUY (used to match fill callbacks).
 	PendingEventID string `json:"pending_event_id,omitempty"`
+	// PendingSell is true after a SELL signal was emitted but before the exchange fill is confirmed.
+	// While true, OnTick must not emit new signals (prevents order stacking).
+	PendingSell bool `json:"pending_sell,omitempty"`
+	// PendingSellSince records when the pending SELL was emitted (for pending_sell_timeout_seconds).
+	PendingSellSince time.Time `json:"pending_sell_since,omitempty"`
+	// PendingSellEventID is the TradeSignalEvent.event_id for the open SELL (used to match fill callbacks).
+	PendingSellEventID string `json:"pending_sell_event_id,omitempty"`
 }
 
 // StrategyMetrics represents performance metrics for a strategy
@@ -249,8 +256,16 @@ func (s *BaseEnhancedStrategy) RecordSignal() {
 	s.state.LastSignalTime = time.Now()
 }
 
-// RecordTrade records a trade
+// RecordTrade records a trade without updating P&L metrics (kept for backward compatibility).
+// New call sites should use RecordTradeWithPnL to ensure TotalPnL/DailyPnL reflect realized results.
 func (s *BaseEnhancedStrategy) RecordTrade(profitable bool) {
+	s.RecordTradeWithPnL(profitable, 0)
+}
+
+// RecordTradeWithPnL records a trade and accumulates realizedPnL into TotalPnL/DailyPnL.
+// realizedPnL is in quote currency: positive = profit, negative = loss. May be 0 for signal-only
+// pipelines where P&L is tracked elsewhere.
+func (s *BaseEnhancedStrategy) RecordTradeWithPnL(profitable bool, realizedPnL float64) {
 	s.state.TradeCount++
 	if profitable {
 		s.state.WinCount++
@@ -263,6 +278,10 @@ func (s *BaseEnhancedStrategy) RecordTrade(profitable bool) {
 	if s.state.TradeCount > 0 {
 		s.metrics.WinRate = float64(s.state.WinCount) / float64(s.state.TradeCount)
 	}
+
+	s.metrics.TotalPnL += realizedPnL
+	s.metrics.DailyPnL += realizedPnL
+	s.metrics.LastUpdated = time.Now()
 }
 
 // SetPosition sets the current position

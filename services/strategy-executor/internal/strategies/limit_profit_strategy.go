@@ -35,6 +35,9 @@ type LimitProfitConfig struct {
 	MinSignalInterval    int
 	// PendingBuyTimeoutSeconds: if >0, clear local pending BUY state after this long without a fill (see docs).
 	PendingBuyTimeoutSeconds int
+	// PendingSellTimeoutSeconds: if >0, attempt to cancel a stale resting SELL and clear pending-sell
+	// state after this long without a fill. Position stays open until the next tick re-emits.
+	PendingSellTimeoutSeconds int
 	// PendingCancelMaxRetries: max cancel attempts before giving up (default 3).
 	PendingCancelMaxRetries int
 	// MaxPositionHoldSeconds: if >0, emit SELL after position age exceeds this (time stop).
@@ -240,6 +243,9 @@ func (s *LimitProfitStrategy) Initialize(config StrategyConfig, indicatorSvc *in
 		}
 		if v, ok := p["pending_buy_timeout_seconds"].(float64); ok {
 			s.lpConfig.PendingBuyTimeoutSeconds = int(v)
+		}
+		if v, ok := p["pending_sell_timeout_seconds"].(float64); ok {
+			s.lpConfig.PendingSellTimeoutSeconds = int(v)
 		}
 		if v, ok := p["pending_cancel_max_retries"].(float64); ok {
 			s.lpConfig.PendingCancelMaxRetries = int(v)
@@ -602,6 +608,14 @@ func (s *LimitProfitStrategy) OnTick(tick *indicators.Trade) (*Signal, error) {
 		}, nil
 	}
 
+	// If a SELL is already resting on the exchange, do NOT emit another signal.
+	// This prevents the "stacked orders" bug where the old code cleared the position on
+	// signal emission and re-entered on the next tick while the original SELL was still open.
+	if state.PendingSell {
+		s.handlePendingSellTimeoutLocked(ctx, state)
+		return nil, nil
+	}
+
 	entry := state.EntryPrice
 	comparePrice, refLabel := s.referenceExitPrice(ctx, tickPrice, book)
 	threshold, buyR, sellR, feeModel := s.exitPriceThreshold(ctx, entry)
@@ -698,31 +712,22 @@ func (s *LimitProfitStrategy) emitPositionExit(
 		s.metrics.ExitSignals(s.Name(), book, exitReason)
 	}
 
-	// Track realized loss for circuit breaker.
-	if !profitable {
-		loss := -gross
-		if feeModel == "bitso_api" && netQuote < 0 {
-			loss = -netQuote
-		}
-		s.recordRealizedLoss(loss)
-	} else {
-		// Profitable trade: update daily P&L gauge (reduce loss or add profit).
-		if s.metrics != nil && s.metrics.DailyRealizedPnL != nil {
-			pnl := gross
-			if feeModel == "bitso_api" {
-				pnl = netQuote
-			}
-			// For simplicity, we only track losses towards circuit breaker, but report net P&L.
-			currentPnL := -s.dailyRealizedLoss + pnl
-			s.metrics.DailyRealizedPnL(s.Name(), book, currentPnL)
-		}
-	}
+	// NOTE: `profitable`, gross and netQuote are estimates for logging/metadata only.
+	// Realized P&L (including circuit-breaker bookkeeping and TotalPnL/DailyPnL metric updates)
+	// is computed in handleSellFillLocked once the exchange confirms the SELL fill price.
+	_ = profitable
 
+	// Record exit-signal timestamp + mark pending SELL so OnTick suppresses further signals
+	// until the exchange reports the fill. Position state, trailing stop, buy-fee overrides,
+	// and the RecordTradeWithPnL call are deferred to handleSellFillLocked.
+	eventID := uuid.New().String()
+	now := time.Now()
 	s.RecordSignal()
-	s.RecordTrade(profitable)
-	s.ClearPosition()
-	s.resetPositionFeeOverrides()
-	s.resetTrailingStop()
+	s.UpdateState(func(st *StrategyState) {
+		st.PendingSell = true
+		st.PendingSellEventID = eventID
+		st.PendingSellSince = now
+	})
 	s.persistLocked(ctx)
 
 	minProfit := s.computeMinProfit(entry)
@@ -730,7 +735,9 @@ func (s *LimitProfitStrategy) emitPositionExit(
 		"signal_type":             "exit_sell",
 		"exit_reason":             exitReason,
 		"entry_price":             entry,
+		"event_id":                eventID,
 		"gross_quote_pnl":         gross,
+		"net_quote_pnl_estimate":  netQuote,
 		"exit_threshold":          threshold,
 		"fee_model":               feeModel,
 		"min_profit":              minProfit,
@@ -800,7 +807,8 @@ func (s *LimitProfitStrategy) emitPositionExit(
 	}
 }
 
-// OnOrderFilled opens or updates the position when BUY fills arrive (supports partial fills).
+// OnOrderFilled is the single fill callback for both BUY (entry) and SELL (exit) orders.
+// Dispatches by side: BUY fills open/grow the position, SELL fills close it and realize P&L.
 func (s *LimitProfitStrategy) OnOrderFilled(fill OrderFill) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -808,16 +816,23 @@ func (s *LimitProfitStrategy) OnOrderFilled(fill OrderFill) {
 	if !s.IsRunning() {
 		return
 	}
-	st := s.GetState()
-	if !st.PendingBuy || st.PendingEventID == "" || fill.EventID != st.PendingEventID {
-		return
-	}
 	if fill.Book != s.config.Book {
 		return
 	}
-	switch strings.ToLower(strings.TrimSpace(fill.Side)) {
+	side := strings.ToLower(strings.TrimSpace(fill.Side))
+	switch side {
 	case "buy", "purchase":
-	default:
+		s.handleBuyFillLocked(fill)
+	case "sell":
+		s.handleSellFillLocked(fill)
+	}
+}
+
+// handleBuyFillLocked opens or grows a LONG position on a BUY fill and clears pending-buy
+// state once the target order size has been filled. Must run with s.mu held.
+func (s *LimitProfitStrategy) handleBuyFillLocked(fill OrderFill) {
+	st := s.GetState()
+	if !st.PendingBuy || st.PendingEventID == "" || fill.EventID != st.PendingEventID {
 		return
 	}
 	if fill.AveragePrice <= 0 {
@@ -841,7 +856,6 @@ func (s *LimitProfitStrategy) OnOrderFilled(fill OrderFill) {
 	newFilled := prevFilled + fillSize
 	s.cumulativeFilledAmt = newFilled
 
-	// Weighted average entry price.
 	var avgEntry float64
 	if prevFilled > 0 && prevEntry > 0 {
 		avgEntry = (prevEntry*prevFilled + fill.AveragePrice*fillSize) / newFilled
@@ -849,18 +863,14 @@ func (s *LimitProfitStrategy) OnOrderFilled(fill OrderFill) {
 		avgEntry = fill.AveragePrice
 	}
 
-	// Check if fully filled (cumulative >= target).
 	isFullyFilled := s.targetOrderSize > 0 && newFilled >= s.targetOrderSize*0.999 // 0.1% tolerance for rounding
 	if s.targetOrderSize <= 0 {
-		// Fallback: treat any fill as full if target not set.
 		isFullyFilled = true
 	}
 
-	// Always update position with current cumulative amount.
 	s.SetPosition("LONG", newFilled, avgEntry)
 
 	if isFullyFilled {
-		// Fully filled: clear pending state.
 		s.UpdateState(func(out *StrategyState) {
 			out.PendingBuy = false
 			out.PendingEventID = ""
@@ -870,14 +880,127 @@ func (s *LimitProfitStrategy) OnOrderFilled(fill OrderFill) {
 		if s.pendingOrderCount < 0 {
 			s.pendingOrderCount = 0
 		}
-		// Record pending buy duration metric.
 		if s.metrics != nil && s.metrics.PendingBuyDuration != nil && !st.PendingBuySince.IsZero() {
 			s.metrics.PendingBuyDuration(s.Name(), s.config.Book, time.Since(st.PendingBuySince).Seconds())
 		}
 	}
-	// Note: if partial fill, we keep PendingBuy=true until fully filled or timeout.
 
 	s.persistLocked(context.Background())
+}
+
+// handleSellFillLocked closes the position on a SELL fill, computes realized P&L using the
+// actual exchange fill price, updates TotalPnL/DailyPnL via RecordTradeWithPnL, feeds the
+// circuit breaker when appropriate, and clears all position + pending-sell state.
+// Must run with s.mu held.
+func (s *LimitProfitStrategy) handleSellFillLocked(fill OrderFill) {
+	st := s.GetState()
+	if !st.PendingSell || st.PendingSellEventID == "" || fill.EventID != st.PendingSellEventID {
+		return
+	}
+	if !st.HasPosition {
+		return
+	}
+	if fill.AveragePrice <= 0 || fill.FilledAmount <= 0 {
+		return
+	}
+
+	entry := st.EntryPrice
+	exitPrice := fill.AveragePrice
+	posSize := st.PositionSize
+	if posSize <= 0 {
+		posSize = fill.FilledAmount
+	}
+	book := s.config.Book
+
+	ctx := context.Background()
+	_, buyR, sellR, feeModel := s.exitPriceThreshold(ctx, entry)
+
+	gross := (exitPrice - entry) * posSize
+	netQuote := gross
+	if feeModel == "bitso_api" {
+		netQuote = bitso.NetQuotePnLPerBase(entry, exitPrice, buyR, sellR) * posSize
+	}
+
+	profitable := gross > 0
+	if feeModel == "bitso_api" {
+		profitable = netQuote > 0
+	}
+	realizedPnL := gross
+	if feeModel == "bitso_api" {
+		realizedPnL = netQuote
+	}
+
+	s.RecordTradeWithPnL(profitable, realizedPnL)
+
+	if !profitable {
+		loss := -realizedPnL
+		if loss > 0 {
+			s.recordRealizedLoss(loss)
+		}
+	} else if s.metrics != nil && s.metrics.DailyRealizedPnL != nil {
+		currentPnL := -s.dailyRealizedLoss + realizedPnL
+		s.metrics.DailyRealizedPnL(s.Name(), book, currentPnL)
+	}
+
+	s.logger().
+		WithStr("event_id", fill.EventID).
+		WithFloat64("entry_price", entry).
+		WithFloat64("exit_price", exitPrice).
+		WithFloat64("position_size", posSize).
+		WithFloat64("gross_pnl", gross).
+		WithFloat64("net_pnl", netQuote).
+		WithStr("fee_model", feeModel).
+		Info("sell fill processed; realized pnl accumulated")
+
+	s.ClearPosition()
+	s.resetPositionFeeOverrides()
+	s.resetTrailingStop()
+	s.targetOrderSize = 0
+	s.cumulativeFilledAmt = 0
+	s.UpdateState(func(out *StrategyState) {
+		out.PendingSell = false
+		out.PendingSellEventID = ""
+		out.PendingSellSince = time.Time{}
+	})
+	s.persistLocked(ctx)
+}
+
+// handlePendingSellTimeoutLocked cancels a stale resting SELL and clears the pending-sell
+// flag so the next tick can re-emit a fresh exit. The position itself stays open; the caller
+// still returns nil this tick. Must run with s.mu held.
+func (s *LimitProfitStrategy) handlePendingSellTimeoutLocked(ctx context.Context, state StrategyState) {
+	if s.lpConfig.PendingSellTimeoutSeconds <= 0 {
+		return
+	}
+	since := state.PendingSellSince
+	if since.IsZero() {
+		since = state.LastSignalTime
+	}
+	if since.IsZero() {
+		return
+	}
+	if time.Since(since) < time.Duration(s.lpConfig.PendingSellTimeoutSeconds)*time.Second {
+		return
+	}
+
+	eid := state.PendingSellEventID
+	cancelSuccess := true
+	if eid != "" && s.pendingBuyCancel != nil {
+		cancelSuccess = s.cancelPendingBuyWithRetry(ctx, eid)
+	}
+	if !cancelSuccess {
+		return
+	}
+	s.logger().
+		WithStr("event_id", eid).
+		WithFloat64("age_seconds", time.Since(since).Seconds()).
+		Warn("pending sell timed out; cleared local state to allow re-emit")
+	s.UpdateState(func(out *StrategyState) {
+		out.PendingSell = false
+		out.PendingSellEventID = ""
+		out.PendingSellSince = time.Time{}
+	})
+	s.persistLocked(ctx)
 }
 
 // SetFeeRatesProvider injects the registry-wide Bitso fee source (optional).
