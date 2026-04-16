@@ -10,15 +10,26 @@ import (
 	"bitso-trading-platform/strategy-executor/internal/indicators"
 )
 
-// MomentumConfig holds configuration for the momentum strategy
+// MomentumConfig holds configuration for the momentum strategy.
+//
+// Note on RSIPeriod / EMAPeriod: the strategy reads indicator values via
+// indicator service helpers (GetRSI / GetEMA) which currently use the
+// service-wide configured periods. The fields below are accepted for
+// future per-strategy period selection and surfaced in metadata so config
+// drift is auditable.
 type MomentumConfig struct {
-	RSIPeriod          int     `json:"rsi_period" yaml:"rsi_period"`
-	OverboughtLevel    float64 `json:"overbought_level" yaml:"overbought_level"`
-	OversoldLevel      float64 `json:"oversold_level" yaml:"oversold_level"`
-	EMAPeriod          int     `json:"ema_period" yaml:"ema_period"`
-	MinSignalInterval  int     `json:"min_signal_interval" yaml:"min_signal_interval"`
-	PositionSize       float64 `json:"position_size" yaml:"position_size"`
-	MaxPositionValue   float64 `json:"max_position_value" yaml:"max_position_value"`
+	RSIPeriod         int     `json:"rsi_period" yaml:"rsi_period"`
+	OverboughtLevel   float64 `json:"overbought_level" yaml:"overbought_level"`
+	OversoldLevel     float64 `json:"oversold_level" yaml:"oversold_level"`
+	EMAPeriod         int     `json:"ema_period" yaml:"ema_period"`
+	MinSignalInterval int     `json:"min_signal_interval" yaml:"min_signal_interval"`
+	PositionSize      float64 `json:"position_size" yaml:"position_size"`
+	MaxPositionValue  float64 `json:"max_position_value" yaml:"max_position_value"`
+	// MinConfidence gates signal emission: signals below this score are dropped.
+	MinConfidence float64 `json:"min_confidence" yaml:"min_confidence"`
+	// DryRun, when true, tags every emitted signal with metadata.dry_run=true so
+	// trading-engine should skip execution. Mirrors limit_profit semantics.
+	DryRun bool `json:"dry_run" yaml:"dry_run"`
 }
 
 // DefaultMomentumConfig returns default configuration
@@ -31,6 +42,8 @@ func DefaultMomentumConfig() MomentumConfig {
 		MinSignalInterval: 60,
 		PositionSize:      0.001,
 		MaxPositionValue:  15000,
+		MinConfidence:     0.0,
+		DryRun:            false,
 	}
 }
 
@@ -82,6 +95,12 @@ func (s *MomentumStrategy) Initialize(config StrategyConfig, indicatorSvc *indic
 		}
 		if v, ok := params["position_size"].(float64); ok {
 			s.momConfig.PositionSize = v
+		}
+		if v, ok := params["min_confidence"].(float64); ok {
+			s.momConfig.MinConfidence = v
+		}
+		if v, ok := params["dry_run"].(bool); ok {
+			s.momConfig.DryRun = v
 		}
 	}
 
@@ -170,6 +189,9 @@ func (s *MomentumStrategy) canGenerateSignal() bool {
 func (s *MomentumStrategy) generateEntrySignal(price, rsi, ema float64) (*Signal, error) {
 	if rsi < s.momConfig.OversoldLevel && price > ema {
 		confidence := s.calculateConfidence(rsi, price, ema, "BUY")
+		if confidence < s.momConfig.MinConfidence {
+			return nil, nil
+		}
 		s.RecordSignal()
 
 		return &Signal{
@@ -181,16 +203,15 @@ func (s *MomentumStrategy) generateEntrySignal(price, rsi, ema float64) (*Signal
 			Confidence: confidence,
 			Reason:     fmt.Sprintf("RSI oversold (%.2f) with price above EMA (%.2f > %.2f)", rsi, price, ema),
 			Timestamp:  time.Now(),
-			Metadata: map[string]interface{}{
-				"rsi":         rsi,
-				"ema":         ema,
-				"signal_type": "entry_long",
-			},
+			Metadata:   s.signalMetadata(rsi, ema, "entry_long"),
 		}, nil
 	}
 
 	if rsi > s.momConfig.OverboughtLevel && price < ema {
 		confidence := s.calculateConfidence(rsi, price, ema, "SELL")
+		if confidence < s.momConfig.MinConfidence {
+			return nil, nil
+		}
 		s.RecordSignal()
 
 		return &Signal{
@@ -202,15 +223,28 @@ func (s *MomentumStrategy) generateEntrySignal(price, rsi, ema float64) (*Signal
 			Confidence: confidence,
 			Reason:     fmt.Sprintf("RSI overbought (%.2f) with price below EMA (%.2f < %.2f)", rsi, price, ema),
 			Timestamp:  time.Now(),
-			Metadata: map[string]interface{}{
-				"rsi":         rsi,
-				"ema":         ema,
-				"signal_type": "entry_short",
-			},
+			Metadata:   s.signalMetadata(rsi, ema, "entry_short"),
 		}, nil
 	}
 
 	return nil, nil
+}
+
+// signalMetadata builds the metadata payload for a momentum signal. The
+// rsi_period / ema_period values are surfaced for audit; dry_run is set when
+// the strategy was started in simulation mode.
+func (s *MomentumStrategy) signalMetadata(rsi, ema float64, signalType string) map[string]interface{} {
+	meta := map[string]interface{}{
+		"rsi":         rsi,
+		"ema":         ema,
+		"signal_type": signalType,
+		"rsi_period":  s.momConfig.RSIPeriod,
+		"ema_period":  s.momConfig.EMAPeriod,
+	}
+	if s.momConfig.DryRun {
+		meta["dry_run"] = true
+	}
+	return meta
 }
 
 // generateExitSignal generates exit signals when RSI returns to neutral
@@ -239,6 +273,19 @@ func (s *MomentumStrategy) generateExitSignal(price, rsi, ema float64, state *St
 	s.RecordTrade(profitable)
 	s.ClearPosition()
 
+	meta := map[string]interface{}{
+		"rsi":            rsi,
+		"ema":            ema,
+		"entry_price":    state.EntryPrice,
+		"unrealized_pnl": pnl,
+		"signal_type":    "exit",
+		"rsi_period":     s.momConfig.RSIPeriod,
+		"ema_period":     s.momConfig.EMAPeriod,
+	}
+	if s.momConfig.DryRun {
+		meta["dry_run"] = true
+	}
+
 	return &Signal{
 		Strategy:   s.Name(),
 		Book:       s.config.Book,
@@ -248,13 +295,7 @@ func (s *MomentumStrategy) generateExitSignal(price, rsi, ema float64, state *St
 		Confidence: 0.75,
 		Reason:     reason,
 		Timestamp:  time.Now(),
-		Metadata: map[string]interface{}{
-			"rsi":            rsi,
-			"ema":            ema,
-			"entry_price":    state.EntryPrice,
-			"unrealized_pnl": pnl,
-			"signal_type":    "exit",
-		},
+		Metadata:   meta,
 	}, nil
 }
 

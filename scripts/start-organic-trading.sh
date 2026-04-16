@@ -3,11 +3,13 @@
 # Start organic (market-driven) strategy execution — no synthetic /process ticks.
 # Full context: docs/ORGANIC-TRADING-STARTUP.md
 # limit_profit strategy: docs/LIMIT-PROFIT-STRATEGY.md
+# momentum strategy:    docs/MOMENTUM-STRATEGY.md
 #
 # What this script DOES:
 #   - Verifies kubectl + namespace + core pods exist
 #   - Checks strategy-executor logs for Redis (Connected vs in-memory fallback)
-#   - Port-forwards strategy-executor, POSTs create + start for mean_reversion
+#   - Port-forwards strategy-executor, POSTs create + start for the configured strategy
+#     types (single via STRATEGY_TYPE, or multiple via STRATEGY_TYPES=a,b,c)
 #
 # What you MUST verify outside this script (manual / cluster-specific):
 #   - kubectl context is the intended EKS/cluster
@@ -39,7 +41,11 @@ section() { echo -e "\n${CYAN}=== $1 ===${NC}"; }
 NAMESPACE="${NAMESPACE:-bitso-trading-dev}"
 BOOK="${BOOK:-btc_mxn}"
 # STRATEGY_TYPE: mean_reversion | limit_profit | momentum (must exist in strategy-executor)
+# STRATEGY_TYPES: comma-separated list to register more than one in a single run
+#   (e.g. STRATEGY_TYPES=mean_reversion,momentum). When set, takes precedence
+#   over STRATEGY_TYPE; STRATEGY_NAME is ignored and per-type names are derived.
 STRATEGY_TYPE="${STRATEGY_TYPE:-mean_reversion}"
+STRATEGY_TYPES="${STRATEGY_TYPES:-}"
 STRATEGY_NAME="${STRATEGY_NAME:-organic_${STRATEGY_TYPE}_$(date +%s)}"
 STRATEGY_EXECUTOR_LOCAL_PORT="${STRATEGY_EXECUTOR_LOCAL_PORT:-8084}"
 STRATEGY_EXECUTOR_SVC_PORT="${STRATEGY_EXECUTOR_SVC_PORT:-8081}"
@@ -49,6 +55,16 @@ POSITION_SIZE="${POSITION_SIZE:-0.001}"
 LOOKBACK_PERIOD="${LOOKBACK_PERIOD:-20}"
 ENTRY_THRESHOLD="${ENTRY_THRESHOLD:-2.0}"
 EXIT_THRESHOLD="${EXIT_THRESHOLD:-0.5}"
+
+# Momentum params (RSI + EMA cross) — see docs/MOMENTUM-STRATEGY.md
+# RSI_PERIOD/EMA_PERIOD are surfaced for audit; the indicator service uses its
+# own configured periods (cfg.Indicators.RSIPeriod / EMAPeriod) at read time.
+RSI_PERIOD="${RSI_PERIOD:-14}"
+OVERBOUGHT_LEVEL="${OVERBOUGHT_LEVEL:-70}"
+OVERSOLD_LEVEL="${OVERSOLD_LEVEL:-30}"
+EMA_PERIOD="${EMA_PERIOD:-20}"
+MOMENTUM_MIN_SIGNAL_INTERVAL="${MOMENTUM_MIN_SIGNAL_INTERVAL:-60}"
+MOMENTUM_MIN_CONFIDENCE="${MOMENTUM_MIN_CONFIDENCE:-0}"
 
 # limit_profit params — buy at reference + entry_offset; sell when last >= entry + min_profit + fee_addon
 # Optional lifecycle: PENDING_BUY_TIMEOUT_SEC, MAX_POSITION_HOLD_SEC, STOP_LOSS_QUOTE — docs/LIMIT-PROFIT-ROBUSTNESS.md
@@ -161,13 +177,18 @@ ok "port-forward PID $PF_PID → http://127.0.0.1:${STRATEGY_EXECUTOR_LOCAL_PORT
 
 SE_URL="http://127.0.0.1:${STRATEGY_EXECUTOR_LOCAL_PORT}"
 
-# Cleanup function for trap
+# Cleanup function for trap. CLEANUP_NAMES is appended after each successful
+# create_and_start so multi-strategy runs (STRATEGY_TYPES) clean up everything.
+declare -a CLEANUP_NAMES=()
 cleanup() {
   local exit_code=$?
-  if [[ "$CLEANUP_ON_EXIT" == "true" ]] && [[ -n "${STRATEGY_NAME:-}" ]]; then
-    info "Cleaning up: deleting strategy $STRATEGY_NAME..."
-    curl -sS --max-time 10 -X DELETE "$SE_URL/api/v1/strategies/$STRATEGY_NAME" >/dev/null 2>&1 || true
-    ok "Strategy $STRATEGY_NAME deleted"
+  if [[ "$CLEANUP_ON_EXIT" == "true" ]]; then
+    for sname in "${CLEANUP_NAMES[@]}"; do
+      [[ -z "$sname" ]] && continue
+      info "Cleaning up: deleting strategy $sname..."
+      curl -sS --max-time 10 -X DELETE "$SE_URL/api/v1/strategies/$sname" >/dev/null 2>&1 || true
+      ok "Strategy $sname deleted"
+    done
   fi
   kill $PF_PID 2>/dev/null || true
   exit $exit_code
@@ -197,88 +218,143 @@ if ! curl -sS --max-time 5 "$SE_URL/health" | jq -e '.status == "healthy"' &>/de
 fi
 ok "strategy-executor healthy"
 
-info "Creating strategy: $STRATEGY_NAME (type=$STRATEGY_TYPE, book=$BOOK)"
-case "$STRATEGY_TYPE" in
-  limit_profit)
-    # Convert DRY_RUN string to boolean for jq
-    DRY_RUN_BOOL="false"
-    [[ "$DRY_RUN" == "true" ]] && DRY_RUN_BOOL="true"
-    CREATE_BODY=$(jq -nc \
-      --arg name "$STRATEGY_NAME" \
-      --arg book "$BOOK" \
-      --arg ref "$LP_REFERENCE" \
-      --arg buyl "$BUY_LIQUIDITY" \
-      --arg selll "$SELL_LIQUIDITY" \
-      --arg xref "$EXIT_PRICE_REF" \
-      --arg smode "$SIZING_MODE" \
-      --argjson eo "$ENTRY_OFFSET" \
-      --argjson eobps "$ENTRY_OFFSET_BPS" \
-      --argjson mp "$MIN_PROFIT_LP" \
-      --argjson mpbps "$MIN_PROFIT_BPS" \
-      --argjson fee "$FEE_LP" \
-      --argjson fbps "$FEE_BPS_LP" \
-      --argjson ps "$POSITION_SIZE" \
-      --argjson msi "$MIN_SIGNAL_INTERVAL" \
-      --argjson pbto "$PENDING_BUY_TIMEOUT_SEC" \
-      --argjson pcmr "$PENDING_CANCEL_MAX_RETRIES" \
-      --argjson mhold "$MAX_POSITION_HOLD_SEC" \
-      --argjson slq "$STOP_LOSS_QUOTE" \
-      --argjson mdlq "$MAX_DAILY_LOSS_QUOTE" \
-      --argjson dlrh "$DAILY_LOSS_RESET_HOUR_UTC" \
-      --argjson tsq "$TRAILING_STOP_QUOTE" \
-      --argjson tsaq "$TRAILING_STOP_ACTIVATION_QUOTE" \
-      --argjson mpo "$MAX_PENDING_ORDERS" \
-      --argjson trq "$TARGET_RISK_QUOTE" \
-      --argjson atrm "$ATR_MULTIPLIER" \
-      --argjson atrp "$ATR_PERIOD" \
-      --argjson dryrun "$DRY_RUN_BOOL" \
-      '{name:$name, type:"limit_profit", book:$book, parameters:{reference:$ref, entry_offset:$eo, entry_offset_bps:$eobps, min_profit:$mp, min_profit_bps:$mpbps, fee:$fee, fee_bps:$fbps, buy_liquidity:$buyl, sell_liquidity:$selll, exit_price_reference:$xref, position_size:$ps, min_signal_interval:$msi, pending_buy_timeout_seconds:$pbto, pending_cancel_max_retries:$pcmr, max_position_hold_seconds:$mhold, stop_loss_quote:$slq, max_daily_loss_quote:$mdlq, daily_loss_reset_hour_utc:$dlrh, trailing_stop_quote:$tsq, trailing_stop_activation_quote:$tsaq, max_pending_orders:$mpo, sizing_mode:$smode, target_risk_quote:$trq, atr_multiplier:$atrm, atr_period:$atrp, dry_run:$dryrun}}')
-    ;;
-  momentum)
-    CREATE_BODY=$(jq -nc \
-      --arg name "$STRATEGY_NAME" \
-      --arg book "$BOOK" \
-      --argjson ps "$POSITION_SIZE" \
-      '{name:$name, type:"momentum", book:$book, parameters:{position_size:$ps}}')
-    ;;
-  mean_reversion|*)
-    CREATE_BODY=$(jq -nc \
-      --arg name "$STRATEGY_NAME" \
-      --arg book "$BOOK" \
-      --argjson lp "$LOOKBACK_PERIOD" \
-      --argjson et "$ENTRY_THRESHOLD" \
-      --argjson xt "$EXIT_THRESHOLD" \
-      --argjson ps "$POSITION_SIZE" \
-      '{name:$name, type:"mean_reversion", book:$book, parameters:{lookback_period:$lp, entry_threshold:$et, exit_threshold:$xt, position_size:$ps}}')
-    ;;
-esac
+# Convert DRY_RUN string to boolean for jq
+DRY_RUN_BOOL="false"
+[[ "$DRY_RUN" == "true" ]] && DRY_RUN_BOOL="true"
 
-HTTP_CODE=$(curl -sS -o /tmp/se-create.json -w "%{http_code}" --max-time 15 -X POST "$SE_URL/api/v1/strategies" \
-  -H "Content-Type: application/json" -d "$CREATE_BODY")
-if [[ "$HTTP_CODE" != "200" && "$HTTP_CODE" != "201" ]]; then
-  err "Create strategy failed HTTP $HTTP_CODE — response:"
-  cat /tmp/se-create.json 2>/dev/null || true
+# build_create_body <type> <name> — emits JSON body for POST /api/v1/strategies
+build_create_body() {
+  local stype="$1"
+  local sname="$2"
+  case "$stype" in
+    limit_profit)
+      jq -nc \
+        --arg name "$sname" \
+        --arg book "$BOOK" \
+        --arg ref "$LP_REFERENCE" \
+        --arg buyl "$BUY_LIQUIDITY" \
+        --arg selll "$SELL_LIQUIDITY" \
+        --arg xref "$EXIT_PRICE_REF" \
+        --arg smode "$SIZING_MODE" \
+        --argjson eo "$ENTRY_OFFSET" \
+        --argjson eobps "$ENTRY_OFFSET_BPS" \
+        --argjson mp "$MIN_PROFIT_LP" \
+        --argjson mpbps "$MIN_PROFIT_BPS" \
+        --argjson fee "$FEE_LP" \
+        --argjson fbps "$FEE_BPS_LP" \
+        --argjson ps "$POSITION_SIZE" \
+        --argjson msi "$MIN_SIGNAL_INTERVAL" \
+        --argjson pbto "$PENDING_BUY_TIMEOUT_SEC" \
+        --argjson pcmr "$PENDING_CANCEL_MAX_RETRIES" \
+        --argjson mhold "$MAX_POSITION_HOLD_SEC" \
+        --argjson slq "$STOP_LOSS_QUOTE" \
+        --argjson mdlq "$MAX_DAILY_LOSS_QUOTE" \
+        --argjson dlrh "$DAILY_LOSS_RESET_HOUR_UTC" \
+        --argjson tsq "$TRAILING_STOP_QUOTE" \
+        --argjson tsaq "$TRAILING_STOP_ACTIVATION_QUOTE" \
+        --argjson mpo "$MAX_PENDING_ORDERS" \
+        --argjson trq "$TARGET_RISK_QUOTE" \
+        --argjson atrm "$ATR_MULTIPLIER" \
+        --argjson atrp "$ATR_PERIOD" \
+        --argjson dryrun "$DRY_RUN_BOOL" \
+        '{name:$name, type:"limit_profit", book:$book, parameters:{reference:$ref, entry_offset:$eo, entry_offset_bps:$eobps, min_profit:$mp, min_profit_bps:$mpbps, fee:$fee, fee_bps:$fbps, buy_liquidity:$buyl, sell_liquidity:$selll, exit_price_reference:$xref, position_size:$ps, min_signal_interval:$msi, pending_buy_timeout_seconds:$pbto, pending_cancel_max_retries:$pcmr, max_position_hold_seconds:$mhold, stop_loss_quote:$slq, max_daily_loss_quote:$mdlq, daily_loss_reset_hour_utc:$dlrh, trailing_stop_quote:$tsq, trailing_stop_activation_quote:$tsaq, max_pending_orders:$mpo, sizing_mode:$smode, target_risk_quote:$trq, atr_multiplier:$atrm, atr_period:$atrp, dry_run:$dryrun}}'
+      ;;
+    momentum)
+      jq -nc \
+        --arg name "$sname" \
+        --arg book "$BOOK" \
+        --argjson rsip "$RSI_PERIOD" \
+        --argjson ob "$OVERBOUGHT_LEVEL" \
+        --argjson os "$OVERSOLD_LEVEL" \
+        --argjson emap "$EMA_PERIOD" \
+        --argjson msi "$MOMENTUM_MIN_SIGNAL_INTERVAL" \
+        --argjson mc "$MOMENTUM_MIN_CONFIDENCE" \
+        --argjson ps "$POSITION_SIZE" \
+        --argjson dryrun "$DRY_RUN_BOOL" \
+        '{name:$name, type:"momentum", book:$book, parameters:{rsi_period:$rsip, overbought_level:$ob, oversold_level:$os, ema_period:$emap, min_signal_interval:$msi, min_confidence:$mc, position_size:$ps, dry_run:$dryrun}}'
+      ;;
+    mean_reversion|*)
+      jq -nc \
+        --arg name "$sname" \
+        --arg book "$BOOK" \
+        --argjson lp "$LOOKBACK_PERIOD" \
+        --argjson et "$ENTRY_THRESHOLD" \
+        --argjson xt "$EXIT_THRESHOLD" \
+        --argjson ps "$POSITION_SIZE" \
+        '{name:$name, type:"mean_reversion", book:$book, parameters:{lookback_period:$lp, entry_threshold:$et, exit_threshold:$xt, position_size:$ps}}'
+      ;;
+  esac
+}
+
+# create_and_start <type> <name> — POSTs create + start; returns 0 on success.
+create_and_start() {
+  local stype="$1"
+  local sname="$2"
+  info "Creating strategy: $sname (type=$stype, book=$BOOK)"
+  local body
+  body=$(build_create_body "$stype" "$sname")
+
+  local code
+  code=$(curl -sS -o /tmp/se-create.json -w "%{http_code}" --max-time 15 -X POST "$SE_URL/api/v1/strategies" \
+    -H "Content-Type: application/json" -d "$body")
+  if [[ "$code" != "200" && "$code" != "201" ]]; then
+    err "Create strategy '$sname' failed HTTP $code — response:"
+    cat /tmp/se-create.json 2>/dev/null || true
+    return 1
+  fi
+  ok "Strategy '$sname' created (HTTP $code)"
+
+  code=$(curl -sS -o /tmp/se-start.json -w "%{http_code}" --max-time 15 -X POST "$SE_URL/api/v1/strategies/$sname/start")
+  if [[ "$code" != "200" && "$code" != "201" ]]; then
+    err "Start strategy '$sname' failed HTTP $code — response:"
+    cat /tmp/se-start.json 2>/dev/null || true
+    return 1
+  fi
+  ok "Strategy '$sname' start requested (HTTP $code)"
+
+  info "Strategy detail ($sname):"
+  curl -sS --max-time 10 "$SE_URL/api/v1/strategies/$sname" | jq '{name, type, book, running, parameters}' 2>/dev/null \
+    || curl -sS "$SE_URL/api/v1/strategies/$sname"
+  return 0
+}
+
+# Resolve which strategy types to register: STRATEGY_TYPES wins when set,
+# otherwise fall back to single STRATEGY_TYPE (preserves prior behavior).
+declare -a TYPES_TO_RUN=()
+declare -a NAMES_TO_RUN=()
+if [[ -n "$STRATEGY_TYPES" ]]; then
+  IFS=',' read -ra TYPES_TO_RUN <<< "$STRATEGY_TYPES"
+  TS="$(date +%s)"
+  for t in "${TYPES_TO_RUN[@]}"; do
+    t="$(echo "$t" | xargs)"
+    NAMES_TO_RUN+=("organic_${t}_${TS}")
+  done
+else
+  TYPES_TO_RUN=("$STRATEGY_TYPE")
+  NAMES_TO_RUN=("$STRATEGY_NAME")
+fi
+
+REGISTERED=()
+for i in "${!TYPES_TO_RUN[@]}"; do
+  stype="$(echo "${TYPES_TO_RUN[$i]}" | xargs)"
+  sname="${NAMES_TO_RUN[$i]}"
+  if create_and_start "$stype" "$sname"; then
+    REGISTERED+=("$sname")
+    CLEANUP_NAMES+=("$sname")
+  fi
+done
+
+if [[ "${#REGISTERED[@]}" -eq 0 ]]; then
+  err "No strategies were registered successfully."
   exit 1
 fi
-ok "Strategy created (HTTP $HTTP_CODE)"
 
-HTTP_CODE=$(curl -sS -o /tmp/se-start.json -w "%{http_code}" --max-time 15 -X POST "$SE_URL/api/v1/strategies/$STRATEGY_NAME/start")
-if [[ "$HTTP_CODE" != "200" && "$HTTP_CODE" != "201" ]]; then
-  err "Start strategy failed HTTP $HTTP_CODE — response:"
-  cat /tmp/se-start.json 2>/dev/null || true
-  exit 1
-fi
-ok "Strategy start requested (HTTP $HTTP_CODE)"
-
-info "Strategy detail:"
-curl -sS --max-time 10 "$SE_URL/api/v1/strategies/$STRATEGY_NAME" | jq '{name, type, book, running, parameters}' 2>/dev/null || curl -sS "$SE_URL/api/v1/strategies/$STRATEGY_NAME"
-
-section "5. Done — organic loop is active if strategy shows running"
+section "5. Done — organic loop is active if strategies show running"
 if [[ "$DRY_RUN" == "true" ]]; then
   warn "DRY_RUN=true: signals will have metadata.dry_run=true — trading-engine should skip execution."
 fi
 if [[ "$CLEANUP_ON_EXIT" == "true" ]]; then
-  info "CLEANUP_ON_EXIT=true: strategy will be deleted when this script exits (Ctrl+C or termination)."
+  info "CLEANUP_ON_EXIT=true: strategies will be deleted when this script exits (Ctrl+C or termination)."
 fi
 info "Do NOT call POST /api/v1/strategies/process unless you intentionally want a synthetic tick (E2E)."
 echo ""
@@ -287,6 +363,9 @@ echo "  kubectl -n $NAMESPACE logs -f deploy/strategy-executor   # watch for pub
 echo "  kubectl -n $NAMESPACE logs -f deploy/trading-engine     # consume trading.signals, validate, Bitso"
 echo "  Grafana: strategy-executor + trading-engine dashboards"
 echo ""
-echo "Strategy name: $STRATEGY_NAME"
+echo "Registered strategies:"
+for sname in "${REGISTERED[@]}"; do
+  echo "  - $sname"
+done
 echo "To stop port-forward when finished: kill $PF_PID"
 ok "start-organic-trading.sh finished."
