@@ -154,6 +154,25 @@ func NewApplication() (*Application, error) {
 		"active_orders_gauge_source": map[bool]string{true: "repository", false: "bitso_open_orders"}[repositoryActiveOrdersGauge],
 	})
 
+	// Pre-create required Kafka topics. Avoids a kafka-go race where consumers join
+	// a group before the topic exists and end up with 0 partition assignments.
+	if len(cfg.Kafka.Brokers) > 0 {
+		topics := []kafka.TopicSpec{
+			{Name: cfg.Kafka.TopicSignals, NumPartitions: 1, ReplicationFactor: 1},
+			{Name: cfg.Kafka.TopicOrdersPlaced, NumPartitions: 1, ReplicationFactor: 1},
+			{Name: cfg.Kafka.TopicOrderFills, NumPartitions: 1, ReplicationFactor: 1},
+		}
+		ensureCtx, ensureCancel := context.WithTimeout(ctx, 15*time.Second)
+		if err := kafka.EnsureTopics(ensureCtx, cfg.Kafka.Brokers, topics); err != nil {
+			appLogger.Warn("EnsureTopics best-effort failed (continuing; auto-create may apply)", map[string]interface{}{"error": err.Error()})
+		} else {
+			appLogger.Info("Kafka topics ensured", map[string]interface{}{
+				"topics": []string{cfg.Kafka.TopicSignals, cfg.Kafka.TopicOrdersPlaced, cfg.Kafka.TopicOrderFills},
+			})
+		}
+		ensureCancel()
+	}
+
 	var orderFillsProducer *kafka.Producer
 	if cfg.Kafka.OrderFillsPublishEnabled && cfg.Kafka.TopicOrderFills != "" {
 		var err error

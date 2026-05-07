@@ -170,6 +170,22 @@ func main() {
 		}
 	}
 
+	// Pre-create required Kafka topics. Avoids a kafka-go race where the consumer joins
+	// a group before the topic exists and ends up with 0 partition assignments.
+	if len(cfg.Kafka.Brokers) > 0 && cfg.Kafka.Brokers[0] != "localhost:9092" {
+		topics := []kafka.TopicSpec{
+			{Name: cfg.Kafka.ProducerTopics.Signals, NumPartitions: 1, ReplicationFactor: 1},
+			{Name: cfg.Kafka.TopicOrderFills, NumPartitions: 1, ReplicationFactor: 1},
+		}
+		ensureCtx, ensureCancel := context.WithTimeout(ctx, 15*time.Second)
+		if err := kafka.EnsureTopics(ensureCtx, cfg.Kafka.Brokers, topics); err != nil {
+			appLogger.Warnf("EnsureTopics best-effort failed (continuing): %v", err)
+		} else {
+			appLogger.Infof("Kafka topics ensured: %s, %s", cfg.Kafka.ProducerTopics.Signals, cfg.Kafka.TopicOrderFills)
+		}
+		ensureCancel()
+	}
+
 	// Initialize Kafka producer for signals (before HTTP server so /process can publish)
 	var signalProducer *kafka.Producer
 	signalPublishingEnabled := len(cfg.Kafka.Brokers) > 0 && cfg.Kafka.Brokers[0] != "localhost:9092"

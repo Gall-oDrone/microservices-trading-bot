@@ -78,6 +78,22 @@ func NewApplication() (*Application, error) {
 	}
 	logger.Println("✓ Redis client connected")
 
+	// Pre-create required Kafka topics. Avoids a kafka-go race where the consumer joins
+	// a group before the topic exists and ends up with 0 partition assignments.
+	if cfg.KafkaBrokers != "" {
+		topics := []kafka.TopicSpec{
+			{Name: cfg.KafkaTopicSignals, NumPartitions: 1, ReplicationFactor: 1},
+			{Name: cfg.KafkaTopicOrdersPlaced, NumPartitions: 1, ReplicationFactor: 1},
+		}
+		ensureCtx, ensureCancel := context.WithTimeout(ctx, 15*time.Second)
+		if err := kafka.EnsureTopics(ensureCtx, []string{cfg.KafkaBrokers}, topics); err != nil {
+			logger.Printf("EnsureTopics best-effort failed (continuing): %v", err)
+		} else {
+			logger.Printf("✓ Kafka topics ensured: %s, %s", cfg.KafkaTopicSignals, cfg.KafkaTopicOrdersPlaced)
+		}
+		ensureCancel()
+	}
+
 	// Initialize Kafka consumer for trade signals
 	kafkaConsumer, err := initializeKafkaConsumer(cfg, logger)
 	if err != nil {
