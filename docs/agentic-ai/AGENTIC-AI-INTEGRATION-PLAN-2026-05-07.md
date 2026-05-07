@@ -172,29 +172,59 @@ Two viable options:
 
 ## Phase 0 - Foundations (1 week)
 
-- Define interfaces in `shared/pkg/agent`
-- Implement provider adapters skeleton (`anthropic`, `openai`)
-- Add policy engine, budget model, and audit schema
-- Add feature flags and kill-switch
+- [x] Define interfaces in `shared/pkg/agent`
+- [x] Implement provider adapters skeleton (`anthropic`, `openai`)
+- [x] Add policy engine and budget model
+- [x] Add feature flags and kill-switch
+- [ ] Add audit schema
 
 Exit criteria:
 
-- Unit tests pass for provider contracts and policy checks
-- Can switch provider by config only
+- [x] Unit tests pass for provider contracts and policy checks
+- [x] Can switch provider by config only
+
+Status: **Completed (2026-05-07)**  
+Notes:
+- Implemented in:
+  - `shared/pkg/agent/types.go`
+  - `shared/pkg/agent/policy.go`
+  - `shared/pkg/agent/config.go`
+  - `shared/pkg/agent/providers/anthropic/provider.go`
+  - `shared/pkg/agent/providers/openai/provider.go`
+  - `shared/pkg/agent/policy_test.go`
+  - `shared/pkg/agent/config_test.go`
+- Verification run:
+  - `cd shared && go test ./...` (pass)
 
 ## Phase 1 - Read-only Ops Agent (2 weeks)
 
-- Build `services/ops-agent`
-- Integrate Alertmanager webhook intake
-- Integrate read-only tool adapters
-- Generate incident report payloads
-- Add metrics (`agent_runs_total`, `agent_run_latency_ms`, `agent_failures_total`)
+- [x] Build `services/ops-agent`
+- [x] Integrate Alertmanager webhook intake
+- [x] Integrate read-only tool adapters
+- [x] Generate incident report payloads
+- [x] Add metrics (`agent_runs_total`, `agent_run_latency_ms`, `agent_failures_total`)
+- [ ] Add persistent audit logs (currently in-memory report store)
 
 Exit criteria:
 
-- Produces useful triage reports for known failure scenarios
-- No write operations enabled
-- Audit logs complete
+- [x] Produces initial triage reports with deterministic recommendations
+- [x] No write operations enabled
+- [ ] Audit logs complete
+
+Status: **In Progress (2026-05-07)**  
+Notes:
+- Added new service/module:
+  - `services/ops-agent/cmd/main.go`
+  - `services/ops-agent/internal/config/config.go`
+  - `services/ops-agent/internal/server/http_server.go`
+  - `services/ops-agent/internal/agent/ops_agent.go`
+  - `services/ops-agent/internal/tools/healthcheck.go`
+  - `services/ops-agent/internal/tools/prometheus_query.go`
+- Added tests:
+  - `services/ops-agent/internal/agent/ops_agent_test.go`
+  - `services/ops-agent/internal/config/config_test.go`
+- Verification run:
+  - `cd services/ops-agent && go test ./...` (pass)
 
 ## Phase 2 - Assisted Remediation (2 weeks)
 
