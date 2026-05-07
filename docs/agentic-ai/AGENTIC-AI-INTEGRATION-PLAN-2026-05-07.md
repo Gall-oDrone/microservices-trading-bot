@@ -78,6 +78,12 @@ This avoids brittle visual checks and improves determinism and explainability.
   - `http_healthcheck`
   - `runbook_lookup`
 
+- `services/agent-coordinator` (new, not yet implemented)
+  - Dispatches incidents to specialized agents
+  - Applies global policy and cross-agent budget limits
+  - Aggregates sub-agent outputs into a single operator report
+  - Handles escalation routing and operator handoff
+
 ## 5.2 Data flow
 
 1. Alertmanager event or scheduled checker triggers `ops-agent`.
@@ -90,6 +96,28 @@ This avoids brittle visual checks and improves determinism and explainability.
    - recommended next actions,
    - escalation target.
 5. All inputs/outputs are persisted to an audit store and exposed via API.
+
+## 5.3 Coordinator agent design
+
+Coordinator role:
+
+- Entry point for all incident workflows in multi-agent mode
+- Selects execution strategy (single-agent fast path vs multi-agent fan-out)
+- Calls specialized agents (`ops-agent`, `kafka-agent`, `execution-agent`) using standard `Agent` interface
+- Merges hypotheses, scores confidence, and resolves conflicting recommendations
+- Emits final incident report with explicit traceability to each sub-agent run
+
+Coordinator constraints:
+
+- Read-only by default in phase 1 and 2
+- Requires approval gate before forwarding any write-capable remediation action
+- Enforces global run budgets (tokens/cost/time) across all child agents
+
+Status:
+
+- [x] Coordinator service scaffold implemented (`services/agent-coordinator`)
+- [x] Planned in architecture and phased roadmap
+- [ ] Full LangSmith client integration pending (currently trace interface + noop hook)
 
 ## 6) OOP-style Interface Design (Go)
 
@@ -168,6 +196,18 @@ Two viable options:
    - Add LangChain only where high-value (evaluation/retrieval).
    - Lower operational complexity but less out-of-the-box orchestration convenience.
 
+## 7.4 LangChain + LangSmith for coordinator workflows
+
+- Use `langchaingo` agent executor as coordinator workflow engine for:
+  - routing to specialized agents/tools
+  - iterative planning with bounded loops
+  - structured output generation for final incident report
+- Use LangSmith client/runs APIs for:
+  - end-to-end tracing of coordinator and child-agent runs
+  - run-level observability (latency, errors, token usage)
+  - evaluation datasets for regression testing coordinator decisions
+- Keep policy/RBAC enforcement in Go service layer, outside LangChain runtime.
+
 ## 8) Phased Delivery Roadmap
 
 ## Phase 0 - Foundations (1 week)
@@ -243,13 +283,30 @@ Exit criteria:
   - monitoring triage
   - Kafka/event pipeline triage
   - strategy/execution diagnostics
-- Add supervisor/dispatcher
+- [x] Add coordinator agent (`services/agent-coordinator`) as supervisor/dispatcher (scaffold)
 - Standardize inter-agent contracts
 
 Exit criteria:
 
 - Better MTTR than single agent
 - No increase in false-positive action recommendations
+- Coordinator traces available in LangSmith for all multi-agent incidents
+
+Status: **In Progress (2026-05-07)**  
+Notes:
+- Added coordinator service/module:
+  - `services/agent-coordinator/cmd/main.go`
+  - `services/agent-coordinator/internal/config/config.go`
+  - `services/agent-coordinator/internal/coordinator/coordinator.go`
+  - `services/agent-coordinator/internal/coordinator/clients.go`
+  - `services/agent-coordinator/internal/coordinator/types.go`
+  - `services/agent-coordinator/internal/server/http_server.go`
+- Added shared trace abstraction:
+  - `shared/pkg/agent/trace.go`
+- Added tests:
+  - `services/agent-coordinator/internal/config/config_test.go`
+  - `services/agent-coordinator/internal/coordinator/coordinator_test.go`
+  - `shared/pkg/agent/trace_test.go`
 
 ## 9) Security and Compliance Requirements
 
