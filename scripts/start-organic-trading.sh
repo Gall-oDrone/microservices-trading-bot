@@ -369,3 +369,34 @@ for sname in "${REGISTERED[@]}"; do
 done
 echo "To stop port-forward when finished: kill $PF_PID"
 ok "start-organic-trading.sh finished."
+
+# Optional: after strategies are running, snapshot registry + indicators to S3 (paper-trading-reporter).
+# Requires AWS_REGION, AWS credentials, and Go. Set EXPORT_PAPER_SNAPSHOT_TO_S3=1 to enable.
+if [[ "${EXPORT_PAPER_SNAPSHOT_TO_S3:-}" == "1" ]]; then
+  section "6. Optional: export paper snapshot to S3"
+  if [[ -z "${AWS_REGION:-}" ]]; then
+    warn "EXPORT_PAPER_SNAPSHOT_TO_S3=1 but AWS_REGION is unset; skipping snapshot export."
+  elif ! command -v go &>/dev/null; then
+    warn "go not found; skipping snapshot export."
+  else
+    REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+    PT_FLAGS=()
+    if [[ "${PAPER_TRADING_ENSURE_BUCKET:-}" == "0" ]]; then
+      PT_FLAGS+=( -ensure-bucket=false )
+    fi
+    if (
+      cd "$REPO_ROOT/services/paper-trading-reporter" &&
+      go run ./cmd/paper-trading-reporter \
+        -strategy-executor-url "$SE_URL" \
+        -region "$AWS_REGION" \
+        -environment "${PAPER_TRADING_ENV:-paper}" \
+        ${PAPER_TRADING_S3_BUCKET:+-bucket "$PAPER_TRADING_S3_BUCKET"} \
+        ${PAPER_TRADING_S3_PREFIX:+-s3-prefix "$PAPER_TRADING_S3_PREFIX"} \
+        "${PT_FLAGS[@]}"
+    ); then
+      ok "Paper snapshot uploaded to S3."
+    else
+      warn "Paper snapshot export failed (non-fatal)."
+    fi
+  fi
+fi
