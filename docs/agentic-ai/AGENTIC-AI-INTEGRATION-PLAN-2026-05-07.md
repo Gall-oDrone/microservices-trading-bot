@@ -14,6 +14,8 @@ Introduce agentic AI capabilities safely into the trading platform with:
 
 The primary goal is operational intelligence (incident triage and runbook assistance), not direct autonomous trading decisions in phase 1.
 
+**See also:** `docs/agentic-ai/AGENTIC-AI-PRODUCTION-STRATEGY-2026-05-13.md` — production strategy for reconciliation artifacts, PnL truth versus agent narration, and cold-path research agents.
+
 ## 2) Guiding Principles
 
 - Safety first: read-only agents before write-capable agents
