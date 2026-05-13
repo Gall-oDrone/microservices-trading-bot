@@ -389,6 +389,13 @@ if [[ "${EXPORT_PAPER_SNAPSHOT_TO_S3:-}" == "1" ]]; then
     if [[ "${PAPER_TRADING_ENSURE_BUCKET:-}" == "0" ]]; then
       PT_FLAGS+=( -ensure-bucket=false )
     fi
+    # Optional: Bitso GET /fees for limit_profit_pnl_estimates in snapshot (same env as strategy-executor).
+    [[ -n "${BITSO_API_BASE_URL:-}" ]] && PT_FLAGS+=( -bitso-api-base-url "$BITSO_API_BASE_URL" )
+    [[ -n "${BITSO_API_KEY:-}" ]] && PT_FLAGS+=( -bitso-api-key "$BITSO_API_KEY" )
+    [[ -n "${BITSO_API_SECRET:-}" ]] && PT_FLAGS+=( -bitso-api-secret "$BITSO_API_SECRET" )
+    # Optional: static fee decimals (skip Bitso fetch when both set), e.g. stage snapshot without mounting secrets here.
+    [[ -n "${PAPER_LP_ESTIMATE_BUY_FEE_DECIMAL:-}" ]] && PT_FLAGS+=( -lp-estimate-buy-fee-decimal "$PAPER_LP_ESTIMATE_BUY_FEE_DECIMAL" )
+    [[ -n "${PAPER_LP_ESTIMATE_SELL_FEE_DECIMAL:-}" ]] && PT_FLAGS+=( -lp-estimate-sell-fee-decimal "$PAPER_LP_ESTIMATE_SELL_FEE_DECIMAL" )
     if (
       cd "$REPO_ROOT/services/paper-trading-reporter" &&
       go run ./cmd/paper-trading-reporter \

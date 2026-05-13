@@ -16,6 +16,8 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"strconv"
+	"strings"
 	"time"
 
 	"bitso-trading-platform/paper-trading-reporter/internal/collector"
@@ -38,6 +40,11 @@ func run() int {
 	environment := flag.String("environment", getenv("PAPER_TRADING_ENV", "paper"), "label stored in snapshot JSON, e.g. paper or stage")
 	ensureBucket := flag.Bool("ensure-bucket", getenvBool("PAPER_TRADING_ENSURE_BUCKET", true), "create bucket if missing (needs iam:CreateBucket)")
 	skipUpload := flag.Bool("dry-run", false, "collect only; print JSON to stdout; no S3 calls")
+	bitsoBase := flag.String("bitso-api-base-url", getenv("BITSO_API_BASE_URL", ""), "optional; Bitso API prefix for GET /fees (e.g. https://stage.bitso.com/api)")
+	bitsoKey := flag.String("bitso-api-key", getenv("BITSO_API_KEY", ""), "optional; Bitso key for GET /fees when estimating limit_profit thresholds")
+	bitsoSecret := flag.String("bitso-api-secret", getenv("BITSO_API_SECRET", ""), "optional; Bitso secret for GET /fees")
+	lpEstBuy := flag.Float64("lp-estimate-buy-fee-decimal", getenvFloat("PAPER_LP_ESTIMATE_BUY_FEE_DECIMAL", 0), "optional global override buy-leg fee decimal (e.g. 0.0057); skips Bitso fetch when both overrides > 0")
+	lpEstSell := flag.Float64("lp-estimate-sell-fee-decimal", getenvFloat("PAPER_LP_ESTIMATE_SELL_FEE_DECIMAL", 0), "optional global override sell-leg fee decimal (e.g. 0.00741)")
 	flag.Parse()
 
 	if *region == "" && !*skipUpload {
@@ -48,7 +55,14 @@ func run() int {
 	ctx := context.Background()
 	httpClient := &http.Client{Timeout: 45 * time.Second}
 
-	snap, err := collector.Collect(ctx, httpClient, *baseURL, *environment)
+	feeOpts := collector.FeeEstimateOptions{
+		BitsoBaseURL:           strings.TrimSpace(*bitsoBase),
+		BitsoKey:               strings.TrimSpace(*bitsoKey),
+		BitsoSecret:            strings.TrimSpace(*bitsoSecret),
+		OverrideBuyFeeDecimal:  *lpEstBuy,
+		OverrideSellFeeDecimal: *lpEstSell,
+	}
+	snap, err := collector.Collect(ctx, httpClient, *baseURL, *environment, feeOpts)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "collect: %v\n", err)
 		return 1
@@ -103,4 +117,16 @@ func getenvBool(k string, def bool) bool {
 		return def
 	}
 	return v == "1" || v == "true" || v == "yes"
+}
+
+func getenvFloat(k string, def float64) float64 {
+	v := strings.TrimSpace(os.Getenv(k))
+	if v == "" {
+		return def
+	}
+	f, err := strconv.ParseFloat(v, 64)
+	if err != nil {
+		return def
+	}
+	return f
 }

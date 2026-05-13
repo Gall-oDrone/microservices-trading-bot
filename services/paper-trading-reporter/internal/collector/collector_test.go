@@ -27,7 +27,7 @@ func TestCollect_success(t *testing.T) {
 	srv := httptest.NewServer(mux)
 	defer srv.Close()
 
-	snap, err := Collect(context.Background(), srv.Client(), srv.URL, "paper")
+	snap, err := Collect(context.Background(), srv.Client(), srv.URL, "paper", FeeEstimateOptions{})
 	require.NoError(t, err)
 	require.Empty(t, snap.CollectionErrors)
 	require.Len(t, snap.Strategies, 1)
@@ -43,7 +43,7 @@ func TestCollect_strategiesHTTPError(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	snap, err := Collect(context.Background(), srv.Client(), srv.URL, "paper")
+	snap, err := Collect(context.Background(), srv.Client(), srv.URL, "paper", FeeEstimateOptions{})
 	require.NoError(t, err)
 	require.Contains(t, snap.CollectionErrors["strategies"], "500")
 }
@@ -63,7 +63,7 @@ func TestCollect_indicatorErrorStillReturnsSnapshot(t *testing.T) {
 	srv := httptest.NewServer(mux)
 	defer srv.Close()
 
-	snap, err := Collect(context.Background(), srv.Client(), srv.URL, "paper")
+	snap, err := Collect(context.Background(), srv.Client(), srv.URL, "paper", FeeEstimateOptions{})
 	require.NoError(t, err)
 	require.Contains(t, snap.CollectionErrors, "indicators:eth_mxn")
 	require.Len(t, snap.Strategies, 1)

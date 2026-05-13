@@ -17,8 +17,9 @@ type HTTPDoer interface {
 	Do(req *http.Request) (*http.Response, error)
 }
 
-// Collect gathers strategy registry data and per-book indicator snapshots from strategy-executor.
-func Collect(ctx context.Context, client HTTPDoer, baseURL string, env string) (*models.PaperTradingSnapshot, error) {
+// Collect gathers strategy registry data and per-book indicator snapshots from strategy-executor,
+// and attaches limit_profit_pnl_estimates for limit_profit strategies (open positions and skips).
+func Collect(ctx context.Context, client HTTPDoer, baseURL string, env string, feeOpts FeeEstimateOptions) (*models.PaperTradingSnapshot, error) {
 	base := strings.TrimRight(strings.TrimSpace(baseURL), "/")
 	if base == "" {
 		return nil, fmt.Errorf("strategy executor base URL is empty")
@@ -30,6 +31,8 @@ func Collect(ctx context.Context, client HTTPDoer, baseURL string, env string) (
 		snap.CollectionErrors["strategies"] = err.Error()
 		return snap, nil
 	}
+
+	enrichLimitProfitEstimates(snap, feeOpts)
 
 	books := uniqueBooks(snap.Strategies)
 	for _, book := range books {
@@ -67,7 +70,7 @@ func fetchStrategies(ctx context.Context, client HTTPDoer, base string, snap *mo
 
 	var parsed struct {
 		Strategies []map[string]interface{} `json:"strategies"`
-		Count      int                        `json:"count"`
+		Count      int                      `json:"count"`
 	}
 	if err := json.Unmarshal(body, &parsed); err != nil {
 		return fmt.Errorf("decode strategies: %w", err)
