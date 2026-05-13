@@ -66,6 +66,20 @@ spec:
           value: "http://market-data:8083"
         - name: ORDER_MANAGEMENT_BASE_URL
           value: "http://order-management:8082"
+        # Authenticated GET /fees for limit_profit exit thresholds (same keys as order-management).
+        - name: BITSO_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: trading-secrets
+              key: bitso-api-key
+        - name: BITSO_API_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: trading-secrets
+              key: bitso-api-secret
+        # Must match trading-engine / order venue (stage vs prod) so fee decimals align with executed orders.
+        - name: BITSO_API_BASE_URL
+          value: "https://stage.bitso.com/api"
         - name: DEFAULT_STRATEGY
           value: "mean_reversion"
         resources:

@@ -100,6 +100,8 @@ ATR_MULTIPLIER="${ATR_MULTIPLIER:-1.0}"
 ATR_PERIOD="${ATR_PERIOD:-14}"
 # Dry run mode (true = emit signals with dry_run=true, trading-engine should skip execution)
 DRY_RUN="${DRY_RUN:-false}"
+# Bitso GET /fees for limit_profit exit thresholds (requires BITSO_API_* on strategy-executor)
+USE_BITSO_FEES_LP="${USE_BITSO_FEES_LP:-true}"
 # Cleanup on exit (true = delete strategy when script exits)
 CLEANUP_ON_EXIT="${CLEANUP_ON_EXIT:-false}"
 
@@ -218,9 +220,11 @@ if ! curl -sS --max-time 5 "$SE_URL/health" | jq -e '.status == "healthy"' &>/de
 fi
 ok "strategy-executor healthy"
 
-# Convert DRY_RUN string to boolean for jq
+# Convert DRY_RUN / USE_BITSO_FEES_LP strings to booleans for jq
 DRY_RUN_BOOL="false"
 [[ "$DRY_RUN" == "true" ]] && DRY_RUN_BOOL="true"
+USE_BITSO_FEES_BOOL="true"
+[[ "$USE_BITSO_FEES_LP" == "false" ]] && USE_BITSO_FEES_BOOL="false"
 
 # build_create_body <type> <name> — emits JSON body for POST /api/v1/strategies
 build_create_body() {
@@ -257,7 +261,8 @@ build_create_body() {
         --argjson atrm "$ATR_MULTIPLIER" \
         --argjson atrp "$ATR_PERIOD" \
         --argjson dryrun "$DRY_RUN_BOOL" \
-        '{name:$name, type:"limit_profit", book:$book, parameters:{reference:$ref, entry_offset:$eo, entry_offset_bps:$eobps, min_profit:$mp, min_profit_bps:$mpbps, fee:$fee, fee_bps:$fbps, buy_liquidity:$buyl, sell_liquidity:$selll, exit_price_reference:$xref, position_size:$ps, min_signal_interval:$msi, pending_buy_timeout_seconds:$pbto, pending_cancel_max_retries:$pcmr, max_position_hold_seconds:$mhold, stop_loss_quote:$slq, max_daily_loss_quote:$mdlq, daily_loss_reset_hour_utc:$dlrh, trailing_stop_quote:$tsq, trailing_stop_activation_quote:$tsaq, max_pending_orders:$mpo, sizing_mode:$smode, target_risk_quote:$trq, atr_multiplier:$atrm, atr_period:$atrp, dry_run:$dryrun}}'
+        --argjson usebf "$USE_BITSO_FEES_BOOL" \
+        '{name:$name, type:"limit_profit", book:$book, parameters:{reference:$ref, entry_offset:$eo, entry_offset_bps:$eobps, min_profit:$mp, min_profit_bps:$mpbps, fee:$fee, fee_bps:$fbps, use_bitso_fees:$usebf, buy_liquidity:$buyl, sell_liquidity:$selll, exit_price_reference:$xref, position_size:$ps, min_signal_interval:$msi, pending_buy_timeout_seconds:$pbto, pending_cancel_max_retries:$pcmr, max_position_hold_seconds:$mhold, stop_loss_quote:$slq, max_daily_loss_quote:$mdlq, daily_loss_reset_hour_utc:$dlrh, trailing_stop_quote:$tsq, trailing_stop_activation_quote:$tsaq, max_pending_orders:$mpo, sizing_mode:$smode, target_risk_quote:$trq, atr_multiplier:$atrm, atr_period:$atrp, dry_run:$dryrun}}'
       ;;
     momentum)
       jq -nc \
