@@ -6,7 +6,10 @@
 //	AWS_REGION=us-east-1 go run ./cmd/paper-trading-reporter \
 //	  -strategy-executor-url http://127.0.0.1:8084 \
 //	  -bucket microservices-trading-bot \
-//	  -environment paper
+//	  -environment paper \
+//	  -bitso-api-base-url https://stage.bitso.com/api \
+//	  -bitso-api-key "$BITSO_API_KEY" \
+//	  -bitso-api-secret "$BITSO_API_SECRET"
 package main
 
 import (
