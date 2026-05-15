@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math"
 	"strings"
 	"sync"
 	"time"
@@ -127,6 +128,9 @@ type LimitProfitStrategy struct {
 
 	// Structured logger (optional, set via SetLogger).
 	log *logger.Logger
+
+	// lastHoldDiagLog rate-limits "why no exit yet" logs while a position is open.
+	lastHoldDiagLog time.Time
 }
 
 type limitProfitPersisted struct {
@@ -667,6 +671,28 @@ func (s *LimitProfitStrategy) OnTick(tick *indicators.Trade) (*Signal, error) {
 		return s.emitPositionExit(ctx, tickPrice, comparePrice, refLabel, entry, threshold, buyR, sellR, feeModel, manualAddon, "take_profit"), nil
 	}
 
+	// Periodic observability: last trade (or chosen exit ref) vs thresholds. No SELL is emitted
+	// until take-profit, stop-loss, trailing, max-hold, or circuit-breaker fires — this is expected.
+	if s.lastHoldDiagLog.IsZero() || time.Since(s.lastHoldDiagLog) >= 60*time.Second {
+		s.lastHoldDiagLog = time.Now()
+		logTh := threshold
+		if math.IsInf(logTh, 0) {
+			logTh = 0
+		}
+		chained := s.logger().
+			WithFloat64("entry", entry).
+			WithFloat64("compare_price", comparePrice).
+			WithFloat64("take_profit_threshold", logTh).
+			WithStr("exit_price_ref", refLabel).
+			WithStr("fee_model", feeModel).
+			WithFloat64("buy_fee_r", buyR).
+			WithFloat64("sell_fee_r", sellR)
+		if s.lpConfig.StopLossQuote > 0 {
+			chained = chained.WithFloat64("stop_loss_trigger_level", entry-s.lpConfig.StopLossQuote)
+		}
+		chained.Info("limit_profit holding: exit not triggered (compare vs take_profit_threshold)")
+	}
+
 	return nil, nil
 }
 
@@ -962,6 +988,7 @@ func (s *LimitProfitStrategy) handleSellFillLocked(fill OrderFill) {
 		out.PendingSellEventID = ""
 		out.PendingSellSince = time.Time{}
 	})
+	s.lastHoldDiagLog = time.Time{}
 	s.persistLocked(ctx)
 }
 
@@ -1000,6 +1027,7 @@ func (s *LimitProfitStrategy) handlePendingSellTimeoutLocked(ctx context.Context
 		out.PendingSellEventID = ""
 		out.PendingSellSince = time.Time{}
 	})
+	s.lastHoldDiagLog = time.Time{}
 	s.persistLocked(ctx)
 }
 
@@ -1117,7 +1145,24 @@ func (s *LimitProfitStrategy) exitPriceThreshold(ctx context.Context, entry floa
 	buyR, sellR, feeModel = s.resolveFeeRates(ctx, entry)
 	minProfit := s.computeMinProfit(entry)
 	if feeModel == "bitso_api" {
+		if sellR >= 1 || buyR < 0 || sellR < 0 || buyR >= 1 {
+			s.logger().
+				WithFloat64("buy_fee_r", buyR).
+				WithFloat64("sell_fee_r", sellR).
+				Warn("invalid Bitso fee decimals for round-trip; using manual exit threshold")
+			manual := s.exitFeeAddon(entry)
+			return entry + minProfit + manual, 0, 0, "manual_estimate"
+		}
 		be := bitso.MinExitPriceAfterRoundTrip(entry, buyR, sellR)
+		if math.IsInf(be, 1) || math.IsNaN(be) {
+			s.logger().
+				WithFloat64("buy_fee_r", buyR).
+				WithFloat64("sell_fee_r", sellR).
+				WithFloat64("break_even_raw", be).
+				Warn("MinExitPriceAfterRoundTrip unusable; using manual exit threshold")
+			manual := s.exitFeeAddon(entry)
+			return entry + minProfit + manual, 0, 0, "manual_estimate"
+		}
 		return be + minProfit + s.lpConfig.Fee, buyR, sellR, feeModel
 	}
 	manual := s.exitFeeAddon(entry)
@@ -1280,6 +1325,7 @@ func (s *LimitProfitStrategy) Reset() {
 	s.targetOrderSize = 0
 	s.cumulativeFilledAmt = 0
 	s.pendingOrderCount = 0
+	s.lastHoldDiagLog = time.Time{}
 	if s.metrics != nil && s.metrics.CircuitBreakerActive != nil {
 		s.metrics.CircuitBreakerActive(s.Name(), s.config.Book, false)
 	}
