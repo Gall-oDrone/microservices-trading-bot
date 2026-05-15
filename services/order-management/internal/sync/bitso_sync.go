@@ -3,6 +3,7 @@ package sync
 import (
 	"context"
 	"errors"
+	"net/url"
 	"sync"
 	"time"
 
@@ -20,9 +21,17 @@ type BitsoSyncMetrics interface {
 	SetActiveOrders(book string, count float64)
 }
 
+// BitsoSyncClient is the subset of *bitso.Client used by BitsoSyncJob.
+// Defined as an interface so tests can substitute a fake implementation.
+type BitsoSyncClient interface {
+	LookupOrders(oids []string) ([]bitso.UserOrder, error)
+	OrderTrades(oid string, params url.Values) ([]bitso.UserOrderTrade, error)
+	MyOpenOrders(params url.Values) ([]bitso.UserOrder, error)
+}
+
 // BitsoSyncJob polls Bitso for active orders and updates order-management (status, fills)
 type BitsoSyncJob struct {
-	bitsoClient  *bitso.Client
+	bitsoClient  BitsoSyncClient
 	orderManager OrderManagerSync
 	log          *logger.Logger
 	interval     time.Duration
@@ -49,7 +58,7 @@ type OrderManagerSync interface {
 }
 
 // NewBitsoSyncJob creates a sync job that polls Bitso every interval. metrics is optional (Phase 2).
-func NewBitsoSyncJob(bitsoClient *bitso.Client, orderManager OrderManagerSync, log *logger.Logger, interval time.Duration, metrics BitsoSyncMetrics) *BitsoSyncJob {
+func NewBitsoSyncJob(bitsoClient BitsoSyncClient, orderManager OrderManagerSync, log *logger.Logger, interval time.Duration, metrics BitsoSyncMetrics) *BitsoSyncJob {
 	if interval <= 0 {
 		interval = 60 * time.Second
 	}
@@ -225,18 +234,48 @@ func (j *BitsoSyncJob) applyBitsoUserOrder(ctx context.Context, uo *bitso.UserOr
 	original := (&uo.OriginalAmount).Float64()
 	unfilled := (&uo.UnfilledAmount).Float64()
 	filledAmount := original - unfilled
-	price := (&uo.Price).Float64()
-	avgPrice := price
-	if filledAmount > 0 && original > 0 {
-		avgPrice = price
-	}
 	status := bitsoOrderStatusToModel(uo.Status)
-	if err := j.orderManager.SyncOrderFromBitso(ctx, bitsoOID, filledAmount, avgPrice, status); err != nil {
+
+	// Bitso /orders only returns the submitted limit price, not the executed VWAP.
+	// When there are fills we must read /order_trades to compute the real average fill price.
+	// Routing through SyncOrderFromBitsoTrades guarantees position/P&L use the actual fill price.
+	if filledAmount > 0 {
+		trades, err := j.bitsoClient.OrderTrades(bitsoOID, nil)
+		if err == nil && len(trades) > 0 {
+			if err := j.orderManager.SyncOrderFromBitsoTrades(ctx, bitsoOID, trades); err != nil {
+				j.log.Debug("SyncOrderFromBitsoTrades failed (fast path)", map[string]interface{}{
+					"bitso_order_id": bitsoOID,
+					"error":          err.Error(),
+				})
+			}
+			return
+		}
+		// Trades not yet visible (e.g. Bitso 378 right after fill). Skip status update so we do not
+		// lock in the limit price as avg_price. Next sync tick (or user-trades poll) will reconcile.
+		j.log.Debug("OrderTrades unavailable for filled order; deferring sync to avoid wrong avg_price", map[string]interface{}{
+			"bitso_order_id": bitsoOID,
+			"filled_amount":  filledAmount,
+			"error":          errString(err),
+		})
+		return
+	}
+
+	// No fills yet (open / cancelled with zero fills). It is safe to forward status with the
+	// limit price as a placeholder — SyncOrderFromBitso skips the fill path when filled==0.
+	price := (&uo.Price).Float64()
+	if err := j.orderManager.SyncOrderFromBitso(ctx, bitsoOID, filledAmount, price, status); err != nil {
 		j.log.Debug("SyncOrderFromBitso failed", map[string]interface{}{
 			"bitso_order_id": bitsoOID,
 			"error":          err.Error(),
 		})
 	}
+}
+
+func errString(err error) string {
+	if err == nil {
+		return ""
+	}
+	return err.Error()
 }
 
 func bitsoOrderStatusToModel(s bitso.OrderStatus) models.OrderStatus {
