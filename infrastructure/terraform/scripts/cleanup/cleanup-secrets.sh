@@ -38,6 +38,8 @@ SECRETS=(
     "${SECRET_PREFIX}/bitso-api-key"
     "${SECRET_PREFIX}/bitso-api-secret"
     "${SECRET_PREFIX}/redis-password"
+    "${SECRET_PREFIX}/etoro-api-key"
+    "${SECRET_PREFIX}/etoro-user-key"
 )
 
 print_info "🗑️  Cleaning up secrets in AWS Secrets Manager..."

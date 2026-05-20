@@ -82,6 +82,8 @@ CLAUDE_KEY=""
 CLAUDE_SECRET=""
 OPENAI_KEY=""
 OPENAI_SECRET=""
+ETORO_API_KEY=""
+ETORO_USER_KEY=""
 
 # AWS Configuration
 AWS_REGION="${AWS_REGION:-us-east-1}"
@@ -199,6 +201,30 @@ else
     print_info "Using OpenAI API Secret from script variables"
 fi
 
+# Prompt for ETORO_API_KEY if not set (optional; x-api-key / public API key)
+if [ -z "$ETORO_API_KEY" ]; then
+    print_info "eToro API Key not set in script variables (optional)."
+    read -sp "Enter eToro API Key (press Enter to skip): " ETORO_API_KEY
+    echo
+    if [ -z "$ETORO_API_KEY" ]; then
+        print_warning "eToro API Key will be left empty (secret not created)"
+    fi
+else
+    print_info "Using eToro API Key from script variables"
+fi
+
+# Prompt for ETORO_USER_KEY if not set (optional; x-user-key)
+if [ -z "$ETORO_USER_KEY" ]; then
+    print_info "eToro User Key not set in script variables (optional)."
+    read -sp "Enter eToro User Key (press Enter to skip): " ETORO_USER_KEY
+    echo
+    if [ -z "$ETORO_USER_KEY" ]; then
+        print_warning "eToro User Key will be left empty (secret not created)"
+    fi
+else
+    print_info "Using eToro User Key from script variables"
+fi
+
 # Function to create or update secret
 create_or_update_secret() {
     local secret_name=$1
@@ -314,6 +340,32 @@ if ! create_or_update_secret \
     exit 1
 fi
 
+# Create eToro API Key secret (only if provided)
+if [ -n "$ETORO_API_KEY" ]; then
+    if ! create_or_update_secret \
+        "${SECRET_PREFIX}/etoro-api-key" \
+        "$ETORO_API_KEY" \
+        "eToro public API key (x-api-key) for trading bot"; then
+        print_error "Failed to create/update eToro API Key secret"
+        exit 1
+    fi
+else
+    print_info "Skipping eToro API Key secret (not provided)"
+fi
+
+# Create eToro User Key secret (only if provided)
+if [ -n "$ETORO_USER_KEY" ]; then
+    if ! create_or_update_secret \
+        "${SECRET_PREFIX}/etoro-user-key" \
+        "$ETORO_USER_KEY" \
+        "eToro user key (x-user-key) for trading bot"; then
+        print_error "Failed to create/update eToro User Key secret"
+        exit 1
+    fi
+else
+    print_info "Skipping eToro User Key secret (not provided)"
+fi
+
 # Verify secrets were created
 print_info "📋 Verifying secrets..."
 SECRETS_CREATED=0
@@ -348,6 +400,30 @@ if [ -n "$REDIS_PASSWORD" ]; then
         # Show the actual error
         print_error "Verification error details:"
         aws secretsmanager describe-secret --secret-id "${SECRET_PREFIX}/redis-password" --region "$AWS_REGION" 2>&1 | sed 's/^/  /' || true
+    fi
+fi
+
+if [ -n "$ETORO_API_KEY" ]; then
+    if aws secretsmanager describe-secret --secret-id "${SECRET_PREFIX}/etoro-api-key" --region "$AWS_REGION" 1>/dev/null 2>&1; then
+        print_success "✅ Verified: ${SECRET_PREFIX}/etoro-api-key"
+        SECRETS_CREATED=$((SECRETS_CREATED + 1))
+    else
+        print_error "❌ Failed to verify: ${SECRET_PREFIX}/etoro-api-key"
+        VERIFICATION_FAILED=1
+        print_error "Verification error details:"
+        aws secretsmanager describe-secret --secret-id "${SECRET_PREFIX}/etoro-api-key" --region "$AWS_REGION" 2>&1 | sed 's/^/  /' || true
+    fi
+fi
+
+if [ -n "$ETORO_USER_KEY" ]; then
+    if aws secretsmanager describe-secret --secret-id "${SECRET_PREFIX}/etoro-user-key" --region "$AWS_REGION" 1>/dev/null 2>&1; then
+        print_success "✅ Verified: ${SECRET_PREFIX}/etoro-user-key"
+        SECRETS_CREATED=$((SECRETS_CREATED + 1))
+    else
+        print_error "❌ Failed to verify: ${SECRET_PREFIX}/etoro-user-key"
+        VERIFICATION_FAILED=1
+        print_error "Verification error details:"
+        aws secretsmanager describe-secret --secret-id "${SECRET_PREFIX}/etoro-user-key" --region "$AWS_REGION" 2>&1 | sed 's/^/  /' || true
     fi
 fi
 
