@@ -6,6 +6,53 @@ provider "aws" {
   region = var.region
 }
 
+data "aws_caller_identity" "current" {}
+
+# EKS CreateCluster requires kms:CreateGrant on the CMK for the cluster IAM role and
+# eks.amazonaws.com. The upstream module only adds the role to key_users (encrypt/decrypt),
+# not key_service_users (CreateGrant). GrantIsForAWSResource must not be used for CreateCluster.
+data "aws_iam_policy_document" "eks_kms_extra" {
+  statement {
+    sid    = "AllowEKSClusterRoleKMSGrants"
+    effect = "Allow"
+    principals {
+      type        = "AWS"
+      identifiers = ["*"]
+    }
+    actions = [
+      "kms:CreateGrant",
+      "kms:ListGrants",
+      "kms:RevokeGrant",
+      "kms:DescribeKey",
+      "kms:Encrypt",
+      "kms:Decrypt",
+    ]
+    resources = ["*"]
+    condition {
+      test     = "StringLike"
+      variable = "aws:PrincipalArn"
+      values = [
+        "arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/${var.cluster_name}-cluster-*",
+      ]
+    }
+  }
+
+  statement {
+    sid    = "AllowEKSServiceKMS"
+    effect = "Allow"
+    principals {
+      type        = "Service"
+      identifiers = ["eks.amazonaws.com"]
+    }
+    actions = [
+      "kms:CreateGrant",
+      "kms:DescribeKey",
+      "kms:Decrypt",
+    ]
+    resources = ["*"]
+  }
+}
+
 module "eks" {
   source  = "terraform-aws-modules/eks/aws"
   version = "~> 20.8"
@@ -29,6 +76,7 @@ module "eks" {
 
   # KMS key is created by default for cluster encryption
   # The deletion window (7 days) is set when scheduling deletion via cleanup script
+  kms_key_source_policy_documents = [data.aws_iam_policy_document.eks_kms_extra.json]
 
   eks_managed_node_groups = {
     default = {
