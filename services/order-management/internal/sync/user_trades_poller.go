@@ -24,6 +24,10 @@ type OrderManagerUserTrades interface {
 	GetOrderByBitsoOrderID(ctx context.Context, bitsoOrderID string) (*models.Order, error)
 	// SyncOrderFromBitsoTrades updates order state from a slice of UserOrderTrade.
 	SyncOrderFromBitsoTrades(ctx context.Context, bitsoOrderID string, trades []bitso.UserOrderTrade) error
+	// RecordFillObservation stamps the order metadata with the realized liquidity / fee data
+	// extracted from a Bitso UserTrade so the next published OrderFillEvent carries them.
+	// Optional; safe to call before SyncOrderFromBitsoTrades.
+	RecordFillObservation(ctx context.Context, bitsoOrderID string, obs models.FillObservation) error
 }
 
 // UserTradesPoller continuously polls GET /v3/user_trades to discover fills
@@ -236,6 +240,20 @@ func (p *UserTradesPoller) handleTrade(ctx context.Context, t *bitso.UserTrade) 
 		Side:         t.Side,
 	}
 
+	// Derive realized liquidity + fee rate from the UserTrade *before* we drop MakerSide on the
+	// conversion to UserOrderTrade. Stamp them on order.Metadata so the next published
+	// OrderFillEvent carries them (see shared/pkg/models/events.go and docs/strategy-fee-accuracy/).
+	obs := buildFillObservation(t, majorFloat)
+	if obs.Liquidity != "" || obs.FeeAmount > 0 {
+		if err := p.orderManager.RecordFillObservation(ctx, oid, obs); err != nil {
+			// Non-fatal: the sync below will still publish the fill, just without realized fees.
+			p.log.Warn("RecordFillObservation failed", map[string]interface{}{
+				"bitso_order_id": oid,
+				"error":          err.Error(),
+			})
+		}
+	}
+
 	p.log.Info("handleTrade: syncing fill from user-trades poll directly", map[string]interface{}{
 		"tid":            uint64(t.TID),
 		"bitso_order_id": oid,
@@ -243,6 +261,10 @@ func (p *UserTradesPoller) handleTrade(ctx context.Context, t *bitso.UserTrade) 
 		"major":          majorFloat,
 		"price":          (&t.Price).Float64(),
 		"side":           t.Side.String(),
+		"liquidity":      obs.Liquidity,
+		"fee_rate":       obs.FeeRate,
+		"fee_amount":     obs.FeeAmount,
+		"fee_currency":   string(obs.FeeCurrency),
 	})
 
 	if err := p.orderManager.SyncOrderFromBitsoTrades(ctx, oid, []bitso.UserOrderTrade{tradeFromPoll}); err != nil {
@@ -273,4 +295,27 @@ func (p *UserTradesPoller) handleTrade(ctx context.Context, t *bitso.UserTrade) 
 			"new_status":     string(updatedOrder.Status),
 		})
 	}
+}
+
+// buildFillObservation computes the realized maker/taker role + fee rate for a Bitso UserTrade.
+// majorAbs is the absolute base amount we already extracted from t.Major (negative for SELL trades).
+//
+// Maker/taker derivation: Bitso `MakerSide` carries the side of the trade that rested on the book;
+// when it matches our `Side`, we were the maker.
+//
+// Fee derivation: Bitso bills BUY fees in the base currency and SELL fees in the quote currency.
+// `bitso.IsBaseCurrencyForBook` resolves the right denominator.
+func buildFillObservation(t *bitso.UserTrade, majorAbs float64) models.FillObservation {
+	obs := models.FillObservation{
+		Liquidity:   bitso.DeriveFillLiquidity(t.Side, t.MakerSide),
+		FeeAmount:   (&t.FeesAmount).Float64(),
+		FeeCurrency: string(t.FeesCurrency),
+	}
+	minorAbs := (&t.Minor).Float64()
+	if minorAbs < 0 {
+		minorAbs = -minorAbs
+	}
+	feeIsBase := bitso.IsBaseCurrencyForBook(t.FeesCurrency, t.Book.String())
+	obs.FeeRate = bitso.DeriveFillFeeRate(obs.FeeAmount, majorAbs, minorAbs, feeIsBase)
+	return obs
 }

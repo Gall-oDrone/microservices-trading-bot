@@ -333,6 +333,13 @@ func main() {
 					AveragePrice: ev.AveragePrice,
 					FilledAmount: ev.FilledAmount,
 					Liquidity:    ev.Liquidity,
+					FeeRate:      ev.FeeRate,
+				}
+				// Back-compat: populate BuyFeeRate pointer when the fill is a BUY and we have a rate.
+				// Documented in docs/strategy-fee-accuracy/.
+				if ev.FeeRate > 0 && ev.Side == "buy" {
+					rate := ev.FeeRate
+					fill.BuyFeeRate = &rate
 				}
 				strategyRegistry.NotifyOrderFilled(fill)
 			}

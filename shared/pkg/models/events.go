@@ -84,6 +84,11 @@ type OrderEvent struct {
 
 // OrderFillEvent is published when an order reaches fully filled status (e.g. after Bitso sync).
 // strategy-executor correlates EventID with TradeSignalEvent.event_id / signal metadata event_id.
+//
+// Liquidity, FeeRate, FeeAmount, FeeCurrency are populated by order-management when the Bitso
+// `UserTrade` payload carries `maker_side` and `fees_amount` (see services/order-management/internal/sync/user_trades_poller.go).
+// Consumers (e.g. limit_profit) should prefer FeeRate over their configured assumption — that is
+// the "actual realized fee" path documented in docs/strategy-fee-accuracy/.
 type OrderFillEvent struct {
 	EventID      string  `json:"event_id"`
 	OrderID      string  `json:"order_id"`
@@ -94,4 +99,9 @@ type OrderFillEvent struct {
 	FilledAmount float64 `json:"filled_amount"`
 	Strategy     string  `json:"strategy"`
 	Liquidity    string  `json:"liquidity,omitempty"`
+	// FeeRate is the realized decimal fraction of notional charged for this fill (e.g. 0.00741 = 0.741%).
+	// Omitted when order-management cannot derive it (Bitso payload missing fees_amount or currency).
+	FeeRate     float64 `json:"fee_rate,omitempty"`
+	FeeAmount   float64 `json:"fee_amount,omitempty"`
+	FeeCurrency string  `json:"fee_currency,omitempty"`
 }

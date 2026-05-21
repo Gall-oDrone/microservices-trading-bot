@@ -254,6 +254,32 @@ This document tracks improvements to the `limit_profit` strategy for production 
 
 ---
 
+## Priority 7: Fee Honesty & Regime Routing
+
+### 7.1 Use Bitso's actual realized fees, not assumptions ✅
+
+**Problem:** Exit-threshold and realized P&L both used the strategy's configured `buy_liquidity` / `sell_liquidity` to look up fees, so the chosen rates often didn't match what Bitso actually billed (e.g. the May 2026 Stage run paid a 0.741% taker BUY fee while the strategy assumed a 0.57% maker BUY).
+
+**Fix:**
+- `services/order-management/internal/sync/user_trades_poller.go` derives `liquidity` and `fee_rate` from each `UserTrade` and stamps them onto order metadata via the new `RecordFillObservation` method.
+- `shared/pkg/models.OrderFillEvent` carries `Liquidity`, `FeeRate`, `FeeAmount`, `FeeCurrency`.
+- `services/strategy-executor` consumes them; `LimitProfitStrategy` honors realized BUY fee in `exitPriceThreshold` and realized SELL fee in `handleSellFillLocked` realized-P&L.
+- New helpers in `shared/pkg/bitso/fee_compute.go` with unit tests against the May 2026 Stage fills.
+
+**Status:** Implemented. Full design in `docs/strategy-fee-accuracy/POINT-9-REALIZED-FEES.md`.
+
+---
+
+### 7.2 Regime-driven strategy selection ✅
+
+**Problem:** Operators decided at deploy time whether to run `limit_profit`, `mean_reversion`, or `momentum`. On a high-fee venue, `limit_profit` is a structural loser unless fees are low and spreads are tight — but there was no mechanism to *avoid* it when conditions are wrong.
+
+**Fix:** `scripts/strategy-regime-router.sh` polls `GET /api/v1/indicators/{book}/snapshot`, classifies the current regime (low_vol_range / trending_up / trending_down / high_vol / neutral), and uses the existing `start`/`stop` endpoints to converge on the preferred strategy. Refuses to switch when the active strategy still holds a position; cooldown gates thrash.
+
+**Status:** Implemented. Full design in `docs/strategy-fee-accuracy/POINT-10-STRATEGY-REGIME-ROUTER.md`.
+
+---
+
 ## Implementation Checklist
 
 | Item | Priority | Status | PR/Commit |
@@ -275,6 +301,8 @@ This document tracks improvements to the `limit_profit` strategy for production 
 | Cleanup on Ctrl-C | P5 | ✅ | — |
 | BacktestDataProvider | P6 | ✅ | — |
 | Promotion gate script | P6 | ✅ | — |
+| Realized fees from Bitso (P9) | P7 | ✅ | docs/strategy-fee-accuracy/POINT-9-REALIZED-FEES.md |
+| Regime-driven strategy router (P10) | P7 | ✅ | docs/strategy-fee-accuracy/POINT-10-STRATEGY-REGIME-ROUTER.md |
 
 ---
 

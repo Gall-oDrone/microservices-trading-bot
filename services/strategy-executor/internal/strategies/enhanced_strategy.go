@@ -132,8 +132,12 @@ type OrderFill struct {
 	Side         string   `json:"side"`
 	AveragePrice float64  `json:"average_price"`
 	FilledAmount float64  `json:"filled_amount"`
-	Liquidity    string   `json:"liquidity,omitempty"`      // "maker" | "taker" — role when the fill executed
-	BuyFeeRate   *float64 `json:"buy_fee_rate,omitempty"` // decimal fraction of notional if known from the venue
+	Liquidity    string   `json:"liquidity,omitempty"`    // "maker" | "taker" — role when the fill executed
+	BuyFeeRate   *float64 `json:"buy_fee_rate,omitempty"` // legacy BUY-leg override; prefer FeeRate
+	// FeeRate is the realized decimal fraction of notional for *this fill leg* (e.g. 0.00741 = 0.741%).
+	// Populated by order-management from Bitso UserTrade. Strategies that track per-leg fees
+	// should prefer this over the configured maker/taker assumption. See docs/strategy-fee-accuracy/.
+	FeeRate float64 `json:"fee_rate,omitempty"`
 }
 
 // OrderFillAware strategies open a position only after an exchange fill is reported for the BUY signal.

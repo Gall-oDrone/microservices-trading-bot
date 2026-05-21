@@ -156,6 +156,13 @@ func (m *Manager) maybePublishOrderFill(ctx context.Context, order *models.Order
 		} else if v, ok := order.Metadata["liquidity"].(string); ok && v != "" {
 			ev.Liquidity = v
 		}
+		// Realized fee fields, stamped by UserTradesPoller via RecordFillObservation. See
+		// docs/strategy-fee-accuracy/ for the contract.
+		ev.FeeRate = metaFloat(order.Metadata, "fill_fee_rate")
+		ev.FeeAmount = metaFloat(order.Metadata, "fill_fee_amount")
+		if v, ok := order.Metadata["fill_fee_currency"].(string); ok && v != "" {
+			ev.FeeCurrency = v
+		}
 	}
 	if err := m.orderFillPublisher(ctx, ev); err != nil {
 		m.logger.Warn("order fill publish failed", map[string]interface{}{
@@ -164,6 +171,45 @@ func (m *Manager) maybePublishOrderFill(ctx context.Context, order *models.Order
 			"error":     err.Error(),
 		})
 	}
+}
+
+// RecordFillObservation stamps a Bitso UserTrade-derived liquidity + fee observation onto an
+// order's metadata so the next OrderFillEvent emission carries it. Idempotent; safe to call once
+// per fill. Returns nil if the order is unknown (the poll path may race the order creation).
+// Documented in docs/strategy-fee-accuracy/.
+func (m *Manager) RecordFillObservation(ctx context.Context, bitsoOrderID string, obs models.FillObservation) error {
+	if bitsoOrderID == "" {
+		return nil
+	}
+	order, err := m.repository.GetByBitsoOrderID(ctx, bitsoOrderID)
+	if err != nil {
+		return err
+	}
+	if order == nil {
+		return nil
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	order, err = m.repository.Get(ctx, order.ID)
+	if err != nil {
+		return err
+	}
+	if order.Metadata == nil {
+		order.Metadata = make(map[string]interface{})
+	}
+	if obs.Liquidity != "" {
+		order.Metadata["fill_liquidity"] = obs.Liquidity
+	}
+	if obs.FeeRate > 0 {
+		setMetaFloat(order.Metadata, "fill_fee_rate", obs.FeeRate)
+	}
+	if obs.FeeAmount > 0 {
+		setMetaFloat(order.Metadata, "fill_fee_amount", obs.FeeAmount)
+	}
+	if obs.FeeCurrency != "" {
+		order.Metadata["fill_fee_currency"] = obs.FeeCurrency
+	}
+	return m.repository.Update(ctx, order)
 }
 
 // Start starts the order manager

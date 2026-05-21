@@ -99,6 +99,9 @@ type LimitProfitStrategy struct {
 	// Filled after BUY fill notification (optional); cleared on exit.
 	positionBuyFeeRate   float64 // measured buy fee as decimal of notional; overrides API buy leg when > 0
 	positionBuyLiquidity string  // maker|taker from venue when buy fill executed
+	// Filled after SELL fill notification (optional); used for realized P&L only (not threshold).
+	// See docs/strategy-fee-accuracy/.
+	positionSellFeeRate float64
 
 	// Partial fill tracking.
 	targetOrderSize    float64 // original order size from entry signal
@@ -869,7 +872,11 @@ func (s *LimitProfitStrategy) handleBuyFillLocked(fill OrderFill) {
 		return
 	}
 
-	if fill.BuyFeeRate != nil && *fill.BuyFeeRate > 0 {
+	// Prefer realized FeeRate (Bitso UserTrade-derived) over legacy BuyFeeRate pointer; both
+	// describe the BUY leg's actual fee rate. See docs/strategy-fee-accuracy/.
+	if fill.FeeRate > 0 {
+		s.positionBuyFeeRate = fill.FeeRate
+	} else if fill.BuyFeeRate != nil && *fill.BuyFeeRate > 0 {
 		s.positionBuyFeeRate = *fill.BuyFeeRate
 	}
 	if fill.Liquidity != "" {
@@ -938,8 +945,20 @@ func (s *LimitProfitStrategy) handleSellFillLocked(fill OrderFill) {
 	}
 	book := s.config.Book
 
+	// Capture realized SELL fee rate (Bitso UserTrade-derived) for accurate net P&L below.
+	// See docs/strategy-fee-accuracy/.
+	if fill.FeeRate > 0 {
+		s.positionSellFeeRate = fill.FeeRate
+	}
+
 	ctx := context.Background()
 	_, buyR, sellR, feeModel := s.exitPriceThreshold(ctx, entry)
+	// Prefer the realized SELL leg fee rate over the configured assumption (only the SELL
+	// leg can be known at this point; the BUY leg was already realized into positionBuyFeeRate).
+	if s.positionSellFeeRate > 0 {
+		sellR = s.positionSellFeeRate
+		feeModel = "bitso_api"
+	}
 
 	gross := (exitPrice - entry) * posSize
 	netQuote := gross
@@ -1041,6 +1060,7 @@ func (s *LimitProfitStrategy) SetFeeRatesProvider(p MakerTakerFeeProvider) {
 func (s *LimitProfitStrategy) resetPositionFeeOverrides() {
 	s.positionBuyFeeRate = 0
 	s.positionBuyLiquidity = ""
+	s.positionSellFeeRate = 0
 }
 
 func (s *LimitProfitStrategy) resetTrailingStop() {

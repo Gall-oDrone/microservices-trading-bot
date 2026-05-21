@@ -5,6 +5,67 @@ import (
 	"strings"
 )
 
+// LiquidityMaker / LiquidityTaker label the role of a fill on the venue.
+const (
+	LiquidityMaker = "maker"
+	LiquidityTaker = "taker"
+)
+
+// DeriveFillLiquidity returns "maker" when our `side` matches Bitso's `makerSide` for the same trade,
+// otherwise "taker". On Bitso, `MakerSide` indicates which side of the trade rested on the book;
+// if that matches our order's side, we were the maker.
+//
+// Returns "" when either side is OrderSideNone (caller should fall back to configured assumption).
+func DeriveFillLiquidity(side, makerSide OrderSide) string {
+	if side == OrderSideNone || makerSide == OrderSideNone {
+		return ""
+	}
+	if side == makerSide {
+		return LiquidityMaker
+	}
+	return LiquidityTaker
+}
+
+// DeriveFillFeeRate computes the actual decimal fee rate (fraction of notional) for a single fill,
+// given the absolute base amount (`majorAbs`), the absolute quote amount (`minorAbs`), the fee
+// charged (`feesAmount`) and whether Bitso billed the fee in the base currency. Returns 0 when
+// inputs are unusable.
+//
+// Bitso bills BUY fees in the base currency (e.g. BTC for btc_mxn) and SELL fees in the quote
+// currency (e.g. MXN for btc_mxn). Both representations collapse to the same decimal:
+//
+//	feeIsBase  → rate = feesAmount / majorAbs (both base units → unitless ratio)
+//	!feeIsBase → rate = feesAmount / minorAbs (both quote units → unitless ratio)
+func DeriveFillFeeRate(feesAmount, majorAbs, minorAbs float64, feeIsBase bool) float64 {
+	if feesAmount <= 0 {
+		return 0
+	}
+	if feeIsBase {
+		if majorAbs <= 0 {
+			return 0
+		}
+		return feesAmount / majorAbs
+	}
+	if minorAbs <= 0 {
+		return 0
+	}
+	return feesAmount / minorAbs
+}
+
+// IsBaseCurrencyForBook returns true when `feeCurrency` matches the base (major) currency of a
+// book formatted as "<base>_<quote>" (e.g. "btc_mxn" → base "btc"). Returns false on unknown
+// formats; callers should default to false (quote).
+func IsBaseCurrencyForBook(feeCurrency Currency, book string) bool {
+	if feeCurrency == CurrencyNone || book == "" {
+		return false
+	}
+	parts := strings.SplitN(strings.ToLower(book), "_", 2)
+	if len(parts) != 2 || parts[0] == "" {
+		return false
+	}
+	return strings.EqualFold(string(feeCurrency), parts[0])
+}
+
 // MinExitPriceAfterRoundTrip is the minimum exit last price for break-even given buy- and sell-leg
 // fee rates as decimal fractions of notional (e.g. from maker_fee_decimal / taker_fee_decimal).
 func MinExitPriceAfterRoundTrip(entryPrice, buyFeeRate, sellFeeRate float64) float64 {
