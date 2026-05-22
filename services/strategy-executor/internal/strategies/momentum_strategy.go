@@ -4,10 +4,12 @@ package strategies
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
 	"bitso-trading-platform/strategy-executor/internal/indicators"
+	"github.com/google/uuid"
 )
 
 // MomentumConfig holds configuration for the momentum strategy.
@@ -30,6 +32,11 @@ type MomentumConfig struct {
 	// DryRun, when true, tags every emitted signal with metadata.dry_run=true so
 	// trading-engine should skip execution. Mirrors limit_profit semantics.
 	DryRun bool `json:"dry_run" yaml:"dry_run"`
+	// Lifecycle controls (0 = disabled) — see docs/LIMIT-PROFIT-ROBUSTNESS.md.
+	StopLossQuote           float64 `json:"stop_loss_quote" yaml:"stop_loss_quote"`
+	MaxPositionHoldSeconds  int     `json:"max_position_hold_seconds" yaml:"max_position_hold_seconds"`
+	MaxDailyLossQuote       float64 `json:"max_daily_loss_quote" yaml:"max_daily_loss_quote"`
+	DailyLossResetHourUTC   int     `json:"daily_loss_reset_hour_utc" yaml:"daily_loss_reset_hour_utc"`
 }
 
 // DefaultMomentumConfig returns default configuration
@@ -47,13 +54,17 @@ func DefaultMomentumConfig() MomentumConfig {
 	}
 }
 
-// MomentumStrategy implements an RSI + EMA momentum strategy
+// MomentumStrategy implements an RSI + EMA momentum strategy.
+// Implements OrderFillAware for realized-fee P&L (POINT-11).
 type MomentumStrategy struct {
 	*BaseEnhancedStrategy
-	momConfig MomentumConfig
-	lastRSI   float64
-	lastEMA   float64
-	mu        sync.RWMutex
+	momConfig           MomentumConfig
+	fees                PositionFeeRates
+	dailyRealizedLoss   float64
+	circuitBreakerTripped bool
+	lastRSI             float64
+	lastEMA             float64
+	mu                  sync.RWMutex
 }
 
 // NewMomentumStrategy creates a new momentum strategy
@@ -101,6 +112,18 @@ func (s *MomentumStrategy) Initialize(config StrategyConfig, indicatorSvc *indic
 		}
 		if v, ok := params["dry_run"].(bool); ok {
 			s.momConfig.DryRun = v
+		}
+		if v, ok := params["stop_loss_quote"].(float64); ok {
+			s.momConfig.StopLossQuote = v
+		}
+		if v, ok := params["max_position_hold_seconds"].(float64); ok {
+			s.momConfig.MaxPositionHoldSeconds = int(v)
+		}
+		if v, ok := params["max_daily_loss_quote"].(float64); ok {
+			s.momConfig.MaxDailyLossQuote = v
+		}
+		if v, ok := params["daily_loss_reset_hour_utc"].(float64); ok {
+			s.momConfig.DailyLossResetHourUTC = int(v)
 		}
 	}
 
@@ -157,8 +180,31 @@ func (s *MomentumStrategy) OnTick(tick *indicators.Trade) (*Signal, error) {
 	s.lastRSI = rsi
 	s.lastEMA = ema
 
+	if state.PendingSell {
+		return nil, nil
+	}
+
 	if !state.HasPosition {
+		if s.circuitBreakerTripped {
+			return nil, nil
+		}
 		return s.generateEntrySignal(price, rsi, ema)
+	}
+
+	if s.circuitBreakerTripped {
+		return s.emitExit(price, rsi, ema, &state, "circuit_breaker")
+	}
+
+	if s.momConfig.StopLossQuote > 0 {
+		if s.stopLossTriggered(price, &state) {
+			return s.emitExit(price, rsi, ema, &state, "stop_loss")
+		}
+	}
+
+	if s.momConfig.MaxPositionHoldSeconds > 0 && !state.EntryTime.IsZero() {
+		if time.Since(state.EntryTime) >= time.Duration(s.momConfig.MaxPositionHoldSeconds)*time.Second {
+			return s.emitExit(price, rsi, ema, &state, "max_hold")
+		}
 	}
 
 	return s.generateExitSignal(price, rsi, ema, &state)
@@ -193,6 +239,9 @@ func (s *MomentumStrategy) generateEntrySignal(price, rsi, ema float64) (*Signal
 			return nil, nil
 		}
 		s.RecordSignal()
+		eventID := uuid.New().String()
+		meta := s.signalMetadata(rsi, ema, "entry_long")
+		meta["event_id"] = eventID
 
 		return &Signal{
 			Strategy:   s.Name(),
@@ -203,7 +252,7 @@ func (s *MomentumStrategy) generateEntrySignal(price, rsi, ema float64) (*Signal
 			Confidence: confidence,
 			Reason:     fmt.Sprintf("RSI oversold (%.2f) with price above EMA (%.2f > %.2f)", rsi, price, ema),
 			Timestamp:  time.Now(),
-			Metadata:   s.signalMetadata(rsi, ema, "entry_long"),
+			Metadata:   meta,
 		}, nil
 	}
 
@@ -213,6 +262,9 @@ func (s *MomentumStrategy) generateEntrySignal(price, rsi, ema float64) (*Signal
 			return nil, nil
 		}
 		s.RecordSignal()
+		eventID := uuid.New().String()
+		meta := s.signalMetadata(rsi, ema, "entry_short")
+		meta["event_id"] = eventID
 
 		return &Signal{
 			Strategy:   s.Name(),
@@ -223,7 +275,7 @@ func (s *MomentumStrategy) generateEntrySignal(price, rsi, ema float64) (*Signal
 			Confidence: confidence,
 			Reason:     fmt.Sprintf("RSI overbought (%.2f) with price below EMA (%.2f < %.2f)", rsi, price, ema),
 			Timestamp:  time.Now(),
-			Metadata:   s.signalMetadata(rsi, ema, "entry_short"),
+			Metadata:   meta,
 		}, nil
 	}
 
@@ -247,31 +299,35 @@ func (s *MomentumStrategy) signalMetadata(rsi, ema float64, signalType string) m
 	return meta
 }
 
-// generateExitSignal generates exit signals when RSI returns to neutral
+// generateExitSignal emits an exit when RSI returns to neutral.
 func (s *MomentumStrategy) generateExitSignal(price, rsi, ema float64, state *StrategyState) (*Signal, error) {
 	rsiNeutral := rsi > s.momConfig.OversoldLevel && rsi < s.momConfig.OverboughtLevel
-
 	if !rsiNeutral {
 		return nil, nil
 	}
+	return s.emitExit(price, rsi, ema, state, "take_profit")
+}
 
+func (s *MomentumStrategy) emitExit(price, rsi, ema float64, state *StrategyState, exitReason string) (*Signal, error) {
 	var side string
 	var reason string
 
 	if state.PositionSide == "BUY" || state.PositionSide == "LONG" {
 		side = "SELL"
-		reason = fmt.Sprintf("RSI returned to neutral (%.2f) - closing long", rsi)
+		reason = fmt.Sprintf("momentum %s: closing long (rsi=%.2f)", exitReason, rsi)
 	} else {
 		side = "BUY"
-		reason = fmt.Sprintf("RSI returned to neutral (%.2f) - closing short", rsi)
+		reason = fmt.Sprintf("momentum %s: closing short (rsi=%.2f)", exitReason, rsi)
 	}
 
 	pnl := s.calculateUnrealizedPnL(price, state)
-	profitable := pnl > 0
-
+	eventID := uuid.New().String()
 	s.RecordSignal()
-	s.RecordTrade(profitable)
-	s.ClearPosition()
+	s.UpdateState(func(st *StrategyState) {
+		st.PendingSell = true
+		st.PendingSellSince = time.Now()
+		st.PendingSellEventID = eventID
+	})
 
 	meta := map[string]interface{}{
 		"rsi":            rsi,
@@ -279,8 +335,10 @@ func (s *MomentumStrategy) generateExitSignal(price, rsi, ema float64, state *St
 		"entry_price":    state.EntryPrice,
 		"unrealized_pnl": pnl,
 		"signal_type":    "exit",
+		"exit_reason":    exitReason,
 		"rsi_period":     s.momConfig.RSIPeriod,
 		"ema_period":     s.momConfig.EMAPeriod,
+		"event_id":       eventID,
 	}
 	if s.momConfig.DryRun {
 		meta["dry_run"] = true
@@ -297,6 +355,112 @@ func (s *MomentumStrategy) generateExitSignal(price, rsi, ema float64, state *St
 		Timestamp:  time.Now(),
 		Metadata:   meta,
 	}, nil
+}
+
+func (s *MomentumStrategy) stopLossTriggered(price float64, state *StrategyState) bool {
+	if state.EntryPrice == 0 {
+		return false
+	}
+	if state.PositionSide == "BUY" || state.PositionSide == "LONG" {
+		return price <= state.EntryPrice-s.momConfig.StopLossQuote
+	}
+	return price >= state.EntryPrice+s.momConfig.StopLossQuote
+}
+
+// OnOrderFilled records realized fees and position state from exchange fills.
+func (s *MomentumStrategy) OnOrderFilled(fill OrderFill) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.maybeResetDailyLossLocked()
+
+	side := strings.ToLower(strings.TrimSpace(fill.Side))
+	switch side {
+	case "buy":
+		s.handleBuyFillLocked(fill)
+	case "sell":
+		s.handleSellFillLocked(fill)
+	}
+}
+
+func (s *MomentumStrategy) handleBuyFillLocked(fill OrderFill) {
+	st := s.GetState()
+	if st.PendingSell && st.PendingSellEventID != "" && fill.EventID == st.PendingSellEventID {
+		s.finalizeExitFillLocked(fill)
+		return
+	}
+	if fill.AveragePrice <= 0 || fill.FilledAmount <= 0 {
+		return
+	}
+	ApplyBuyFillFee(fill, &s.fees)
+	s.SetPosition("LONG", fill.FilledAmount, fill.AveragePrice)
+}
+
+func (s *MomentumStrategy) handleSellFillLocked(fill OrderFill) {
+	st := s.GetState()
+	if !st.PendingSell || st.PendingSellEventID == "" || fill.EventID != st.PendingSellEventID {
+		return
+	}
+	s.finalizeExitFillLocked(fill)
+}
+
+func (s *MomentumStrategy) finalizeExitFillLocked(fill OrderFill) {
+	st := s.GetState()
+	if !st.HasPosition || fill.AveragePrice <= 0 {
+		return
+	}
+	ApplySellFillFee(fill, &s.fees)
+
+	entry := st.EntryPrice
+	exit := fill.AveragePrice
+	size := st.PositionSize
+	if size <= 0 {
+		size = fill.FilledAmount
+	}
+
+	_, net, feeModel := RealizedQuotePnL(entry, exit, size, s.fees.BuyFeeRate, s.fees.SellFeeRate)
+	profitable := net > 0
+	if s.fees.BuyFeeRate == 0 || s.fees.SellFeeRate == 0 {
+		gross := (exit - entry) * size
+		if st.PositionSide != "BUY" && st.PositionSide != "LONG" {
+			gross = (entry - exit) * size
+		}
+		profitable = gross > 0
+		net = gross
+	} else if st.PositionSide != "BUY" && st.PositionSide != "LONG" {
+		net = (entry - exit) * size
+		if s.fees.BuyFeeRate > 0 && s.fees.SellFeeRate > 0 {
+			_, net, _ = RealizedQuotePnL(entry, exit, size, s.fees.SellFeeRate, s.fees.BuyFeeRate)
+		}
+	}
+
+	s.RecordTradeWithPnL(profitable, net)
+	if !profitable && net < 0 {
+		s.dailyRealizedLoss += -net
+		if s.momConfig.MaxDailyLossQuote > 0 && s.dailyRealizedLoss >= s.momConfig.MaxDailyLossQuote {
+			s.circuitBreakerTripped = true
+		}
+	}
+
+	s.fees = PositionFeeRates{}
+	s.ClearPosition()
+	s.UpdateState(func(st *StrategyState) {
+		st.PendingSell = false
+		st.PendingSellEventID = ""
+		st.PendingSellSince = time.Time{}
+	})
+	_ = feeModel
+}
+
+func (s *MomentumStrategy) maybeResetDailyLossLocked() {
+	if s.momConfig.MaxDailyLossQuote <= 0 {
+		return
+	}
+	now := time.Now().UTC()
+	if now.Hour() == s.momConfig.DailyLossResetHourUTC && now.Minute() < 2 {
+		s.dailyRealizedLoss = 0
+		s.circuitBreakerTripped = false
+	}
 }
 
 // calculateConfidence calculates signal confidence based on RSI extremity
@@ -353,6 +517,9 @@ func (s *MomentumStrategy) Reset() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.BaseEnhancedStrategy.Reset()
+	s.fees = PositionFeeRates{}
+	s.dailyRealizedLoss = 0
+	s.circuitBreakerTripped = false
 	s.lastRSI = 0
 	s.lastEMA = 0
 }

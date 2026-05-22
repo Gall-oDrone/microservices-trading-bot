@@ -32,6 +32,7 @@ func (realClock) Now() time.Time { return time.Now() }
 // Decision is the user-facing record of a single evaluation cycle.
 type Decision struct {
 	Timestamp time.Time          `json:"timestamp"`
+	Book      string             `json:"book"`
 	Regime    string             `json:"regime"`
 	Preferred string             `json:"preferred"`
 	Current   string             `json:"current"`
@@ -121,23 +122,25 @@ func (e *Engine) RecentDecisions() []Decision {
 // itself (Action="noop"/"blocked", Reason explains why).
 func (e *Engine) RunOnce(ctx context.Context) (Decision, error) {
 	start := e.clock.Now()
+	book := e.cfg.Book
 	if e.metrics != nil {
-		e.metrics.EvaluationsTotal.Inc()
+		e.metrics.EvaluationsTotal.WithLabelValues(book).Inc()
 	}
 
 	defer func() {
 		if e.metrics != nil {
-			e.metrics.EvaluationLatency.Observe(float64(time.Since(start).Milliseconds()))
+			e.metrics.EvaluationLatency.WithLabelValues(book).Observe(float64(time.Since(start).Milliseconds()))
 		}
 	}()
 
-	snap, err := e.client.GetSnapshot(ctx, e.cfg.Book)
+	snap, err := e.client.GetSnapshot(ctx, book)
 	if err != nil {
 		if e.metrics != nil {
-			e.metrics.EvaluationErrors.Inc()
+			e.metrics.EvaluationErrors.WithLabelValues(book).Inc()
 		}
 		return e.record(Decision{
 			Timestamp: start,
+			Book:      book,
 			Regime:    "neutral",
 			Action:    "noop",
 			Reason:    fmt.Sprintf("snapshot fetch failed: %v", err),
@@ -146,7 +149,7 @@ func (e *Engine) RunOnce(ctx context.Context) (Decision, error) {
 
 	cdec := classifier.Classify(snap, e.thresholds())
 	if e.metrics != nil {
-		e.metrics.SetRegime(cdec.Regime)
+		e.metrics.SetRegime(book, cdec.Regime)
 	}
 
 	preferred := e.cfg.Routes.Resolve(cdec.Regime)
@@ -154,10 +157,11 @@ func (e *Engine) RunOnce(ctx context.Context) (Decision, error) {
 	strategies, err := e.client.ListStrategies(ctx)
 	if err != nil {
 		if e.metrics != nil {
-			e.metrics.EvaluationErrors.Inc()
+			e.metrics.EvaluationErrors.WithLabelValues(book).Inc()
 		}
 		return e.record(Decision{
 			Timestamp: start,
+			Book:      book,
 			Regime:    cdec.Regime,
 			Preferred: preferred,
 			Action:    "noop",
@@ -165,10 +169,11 @@ func (e *Engine) RunOnce(ctx context.Context) (Decision, error) {
 			Snapshot:  cdec,
 		}), nil
 	}
-	current := firstRunning(strategies)
+	current := firstRunningForBook(strategies, book)
 
 	d := Decision{
 		Timestamp: start,
+		Book:      book,
 		Regime:    cdec.Regime,
 		Preferred: preferred,
 		Current:   current,
@@ -313,7 +318,7 @@ func (e *Engine) record(d Decision) Decision {
 	e.mu.Unlock()
 
 	if e.metrics != nil && (d.Action == "switched" || d.Action == "started" || d.Action == "paused") {
-		e.metrics.SetActiveStrategy(prev, active)
+		e.metrics.SetActiveStrategy(e.cfg.Book, prev, active)
 	}
 
 	_ = e.audit.WriteDecision(d)
@@ -325,13 +330,13 @@ func (e *Engine) markSwitch(from, to, regime string) {
 	e.lastSwitchAt = e.clock.Now()
 	e.mu.Unlock()
 	if e.metrics != nil {
-		e.metrics.SwitchesTotal.WithLabelValues(display(from), display(to), regime).Inc()
+		e.metrics.SwitchesTotal.WithLabelValues(e.cfg.Book, display(from), display(to), regime).Inc()
 	}
 }
 
 func (e *Engine) bumpBlocked(reason string) {
 	if e.metrics != nil {
-		e.metrics.BlockedTotal.WithLabelValues(reason).Inc()
+		e.metrics.BlockedTotal.WithLabelValues(e.cfg.Book, reason).Inc()
 	}
 }
 
@@ -361,8 +366,16 @@ func (e *Engine) cooldownRemaining(now time.Time) int {
 }
 
 func firstRunning(list []clients.StrategyInfo) string {
+	return firstRunningForBook(list, "")
+}
+
+// firstRunningForBook returns the running strategy for the book when Book is set on entries.
+func firstRunningForBook(list []clients.StrategyInfo, book string) string {
 	for _, s := range list {
-		if s.Running {
+		if !s.Running {
+			continue
+		}
+		if book == "" || s.Book == "" || s.Book == book {
 			return s.Name
 		}
 	}

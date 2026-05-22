@@ -18,7 +18,9 @@ type Config struct {
 	Host        string
 	Port        int
 
-	// Target market and dependency URLs.
+	// Books is the list of markets to route (comma-separated in STRATEGY_ROUTER_BOOK).
+	Books []string
+	// Book is the primary book (first entry in Books); kept for backward-compatible logging.
 	Book                string
 	StrategyExecutorURL string
 
@@ -62,15 +64,14 @@ type RouteTable struct {
 
 // Load builds a Config from environment variables.
 func Load() *Config {
-	book := getenv("STRATEGY_ROUTER_BOOK", "btc_mxn")
-
-	defaultMR := fmt.Sprintf("mean_reversion_%s", book)
-	defaultMomentum := fmt.Sprintf("momentum_%s", book)
+	books := ParseBooks(getenv("STRATEGY_ROUTER_BOOK", "btc_mxn"))
+	book := books[0]
 
 	return &Config{
 		ServiceName:         getenv("STRATEGY_ROUTER_SERVICE_NAME", "strategy-router"),
 		Host:                getenv("STRATEGY_ROUTER_HOST", "0.0.0.0"),
 		Port:                getenvInt("STRATEGY_ROUTER_PORT", 8092),
+		Books:               books,
 		Book:                book,
 		StrategyExecutorURL: getenv("STRATEGY_EXECUTOR_URL", "http://strategy-executor:8081"),
 
@@ -86,13 +87,7 @@ func Load() *Config {
 		BBLower:       getenvFloat("BB_PB_LOWER", 0.15),
 		EMADistEntry:  getenvFloat("EMA_DIST_ENTRY_PCT", 0.10),
 
-		Routes: RouteTable{
-			LowVolRange:  getenv("ROUTE_LOW_VOL", defaultMR),
-			TrendingUp:   getenv("ROUTE_TRENDING_UP", defaultMomentum),
-			TrendingDown: getenv("ROUTE_TRENDING_DOWN", defaultMomentum),
-			HighVol:      getenv("ROUTE_HIGH_VOL", "none"),
-			Neutral:      getenv("ROUTE_NEUTRAL", defaultMR),
-		},
+		Routes: defaultRoutesForBook(book),
 
 		AuditLogPath: getenv("ROUTER_AUDIT_LOG_PATH", "/tmp/strategy-regime-router.log"),
 		HTTPTimeout:  time.Duration(getenvInt("STRATEGY_ROUTER_HTTP_TIMEOUT_MS", 5000)) * time.Millisecond,
@@ -114,6 +109,41 @@ func (rt RouteTable) Resolve(regime string) string {
 		return rt.HighVol
 	default:
 		return rt.Neutral
+	}
+}
+
+// ParseBooks splits a comma-separated book list (e.g. "btc_mxn,eth_mxn").
+func ParseBooks(raw string) []string {
+	parts := strings.Split(raw, ",")
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if p != "" {
+			out = append(out, p)
+		}
+	}
+	if len(out) == 0 {
+		return []string{"btc_mxn"}
+	}
+	return out
+}
+
+// ForBook returns a copy of cfg scoped to a single book with default route names.
+func (c *Config) ForBook(book string) *Config {
+	cp := *c
+	cp.Book = book
+	cp.Books = []string{book}
+	cp.Routes = defaultRoutesForBook(book)
+	return &cp
+}
+
+func defaultRoutesForBook(book string) RouteTable {
+	return RouteTable{
+		LowVolRange:  getenv("ROUTE_LOW_VOL", fmt.Sprintf("mean_reversion_%s", book)),
+		TrendingUp:   getenv("ROUTE_TRENDING_UP", fmt.Sprintf("momentum_%s", book)),
+		TrendingDown: getenv("ROUTE_TRENDING_DOWN", fmt.Sprintf("momentum_%s", book)),
+		HighVol:      getenv("ROUTE_HIGH_VOL", "none"),
+		Neutral:      getenv("ROUTE_NEUTRAL", fmt.Sprintf("mean_reversion_%s", book)),
 	}
 }
 

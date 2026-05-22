@@ -10,11 +10,12 @@
 # Usage:
 #   GRAFANA_URL=http://localhost:3001 ./scripts/grafana-import-dashboard.sh trading-engine
 #   ./scripts/grafana-import-dashboard.sh strategy-executor
+#   ./scripts/grafana-import-dashboard.sh strategy-router
 #   ./scripts/grafana-import-dashboard.sh data-pipeline
 #   ./scripts/grafana-import-dashboard.sh kafka
 #   ./scripts/grafana-import-dashboard.sh redis
 #
-# Dashboards: trading-engine | order-management | api-gateway | market-data | backtesting | strategy-executor | trading-metrics | data-pipeline | financial-indicators | kafka | redis
+# Dashboards: trading-engine | order-management | api-gateway | market-data | backtesting | strategy-executor | strategy-router | trading-metrics | data-pipeline | financial-indicators | kafka | redis
 
 set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -46,6 +47,7 @@ case "$NAME" in
   market-data)       DASHBOARD_JSON="$SERVICES_DIR/market-data.json" ;;
   backtesting)       DASHBOARD_JSON="$SERVICES_DIR/backtesting.json" ;;
   strategy-executor) DASHBOARD_JSON="$SERVICES_DIR/strategy-executor.json" ;;
+  strategy-router)   DASHBOARD_JSON="$SERVICES_DIR/strategy-router.json" ;;
   trading-metrics)   DASHBOARD_JSON="$DOMAIN_DIR/trading-metrics.json" ;;
   data-pipeline)     DASHBOARD_JSON="$DOMAIN_DIR/data-pipeline.json" ;;
   financial-indicators) DASHBOARD_JSON="$DOMAIN_DIR/financial-indicators.json" ;;
@@ -53,7 +55,7 @@ case "$NAME" in
   redis)             DASHBOARD_JSON="$INFRASTRUCTURE_DIR/redis.json" ;;
   *)
     echo "Usage: $0 DASHBOARD_NAME"
-    echo "  DASHBOARD_NAME: trading-engine | order-management | api-gateway | market-data | backtesting | strategy-executor | trading-metrics | data-pipeline | financial-indicators | kafka | redis"
+    echo "  DASHBOARD_NAME: trading-engine | order-management | api-gateway | market-data | backtesting | strategy-executor | strategy-router | trading-metrics | data-pipeline | financial-indicators | kafka | redis"
     exit 2
     ;;
 esac

@@ -70,7 +70,7 @@ spec:
         # position at the default 30 s polling interval (~2× headroom
         # over a normal max-hold exit).
         - alert: RouterBlockedHasPositionStuck
-          expr: increase(strategy_router_blocked_total{reason="has_position"}[30m]) > 60
+          expr: sum(increase(strategy_router_blocked_total{reason="has_position"}[30m])) > 60
           for: 10m
           labels:
             severity: warning
@@ -81,7 +81,7 @@ spec:
 
         # strategy-executor unreachable / snapshot fetch errors.
         - alert: RouterEvaluationsFailing
-          expr: increase(strategy_router_evaluation_errors_total[5m]) > 5
+          expr: sum(increase(strategy_router_evaluation_errors_total[5m])) > 5
           for: 2m
           labels:
             severity: warning
@@ -92,7 +92,7 @@ spec:
 
         # Router loop died (process crashed, AutoStart=false, ticker stalled).
         - alert: RouterNotEvaluating
-          expr: rate(strategy_router_evaluations_total[5m]) == 0
+          expr: sum(rate(strategy_router_evaluations_total[5m])) == 0
           for: 5m
           labels:
             severity: critical

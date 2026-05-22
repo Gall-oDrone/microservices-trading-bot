@@ -100,6 +100,14 @@ ATR_MULTIPLIER="${ATR_MULTIPLIER:-1.0}"
 ATR_PERIOD="${ATR_PERIOD:-14}"
 # Dry run mode (true = emit signals with dry_run=true, trading-engine should skip execution)
 DRY_RUN="${DRY_RUN:-false}"
+# Router-managed mode: register strategies but do not start — strategy-router picks the active one.
+# When true, defaults STRATEGY_TYPES to mean_reversion,limit_profit,momentum unless overridden.
+ROUTER_MANAGED="${ROUTER_MANAGED:-false}"
+# Momentum lifecycle (0 = disabled) — parity with limit_profit; see docs/MOMENTUM-STRATEGY.md §7
+MOMENTUM_MAX_POSITION_HOLD_SEC="${MOMENTUM_MAX_POSITION_HOLD_SEC:-0}"
+MOMENTUM_STOP_LOSS_QUOTE="${MOMENTUM_STOP_LOSS_QUOTE:-0}"
+MOMENTUM_MAX_DAILY_LOSS_QUOTE="${MOMENTUM_MAX_DAILY_LOSS_QUOTE:-0}"
+MOMENTUM_DAILY_LOSS_RESET_HOUR_UTC="${MOMENTUM_DAILY_LOSS_RESET_HOUR_UTC:-0}"
 # Bitso GET /fees for limit_profit exit thresholds (requires BITSO_API_* on strategy-executor)
 USE_BITSO_FEES_LP="${USE_BITSO_FEES_LP:-true}"
 # Cleanup on exit (true = delete strategy when script exits)
@@ -275,8 +283,12 @@ build_create_body() {
         --argjson msi "$MOMENTUM_MIN_SIGNAL_INTERVAL" \
         --argjson mc "$MOMENTUM_MIN_CONFIDENCE" \
         --argjson ps "$POSITION_SIZE" \
+        --argjson mhold "$MOMENTUM_MAX_POSITION_HOLD_SEC" \
+        --argjson slq "$MOMENTUM_STOP_LOSS_QUOTE" \
+        --argjson mdlq "$MOMENTUM_MAX_DAILY_LOSS_QUOTE" \
+        --argjson dlrh "$MOMENTUM_DAILY_LOSS_RESET_HOUR_UTC" \
         --argjson dryrun "$DRY_RUN_BOOL" \
-        '{name:$name, type:"momentum", book:$book, parameters:{rsi_period:$rsip, overbought_level:$ob, oversold_level:$os, ema_period:$emap, min_signal_interval:$msi, min_confidence:$mc, position_size:$ps, dry_run:$dryrun}}'
+        '{name:$name, type:"momentum", book:$book, parameters:{rsi_period:$rsip, overbought_level:$ob, oversold_level:$os, ema_period:$emap, min_signal_interval:$msi, min_confidence:$mc, position_size:$ps, max_position_hold_seconds:$mhold, stop_loss_quote:$slq, max_daily_loss_quote:$mdlq, daily_loss_reset_hour_utc:$dlrh, dry_run:$dryrun}}'
       ;;
     mean_reversion|*)
       jq -nc \
@@ -291,8 +303,8 @@ build_create_body() {
   esac
 }
 
-# create_and_start <type> <name> — POSTs create + start; returns 0 on success.
-create_and_start() {
+# create_strategy <type> <name> — POSTs create; returns 0 on success.
+create_strategy() {
   local stype="$1"
   local sname="$2"
   info "Creating strategy: $sname (type=$stype, book=$BOOK)"
@@ -308,7 +320,13 @@ create_and_start() {
     return 1
   fi
   ok "Strategy '$sname' created (HTTP $code)"
+  return 0
+}
 
+# start_strategy <name> — POSTs start; returns 0 on success.
+start_strategy() {
+  local sname="$1"
+  local code
   code=$(curl -sS -o /tmp/se-start.json -w "%{http_code}" --max-time 15 -X POST "$SE_URL/api/v1/strategies/$sname/start")
   if [[ "$code" != "200" && "$code" != "201" ]]; then
     err "Start strategy '$sname' failed HTTP $code — response:"
@@ -316,7 +334,21 @@ create_and_start() {
     return 1
   fi
   ok "Strategy '$sname' start requested (HTTP $code)"
+  return 0
+}
 
+# create_and_start <type> <name> — POSTs create + start; returns 0 on success.
+create_and_start() {
+  local stype="$1"
+  local sname="$2"
+  create_strategy "$stype" "$sname" || return 1
+  if [[ "$ROUTER_MANAGED" == "true" ]]; then
+    info "ROUTER_MANAGED=true: '$sname' registered but not started (strategy-router will start the active strategy)."
+    curl -sS --max-time 10 "$SE_URL/api/v1/strategies/$sname" | jq '{name, type, book, running, parameters}' 2>/dev/null \
+      || curl -sS "$SE_URL/api/v1/strategies/$sname"
+    return 0
+  fi
+  start_strategy "$sname" || return 1
   info "Strategy detail ($sname):"
   curl -sS --max-time 10 "$SE_URL/api/v1/strategies/$sname" | jq '{name, type, book, running, parameters}' 2>/dev/null \
     || curl -sS "$SE_URL/api/v1/strategies/$sname"
@@ -325,8 +357,13 @@ create_and_start() {
 
 # Resolve which strategy types to register: STRATEGY_TYPES wins when set,
 # otherwise fall back to single STRATEGY_TYPE (preserves prior behavior).
+# ROUTER_MANAGED defaults to all router-eligible types when STRATEGY_TYPES is unset.
 declare -a TYPES_TO_RUN=()
 declare -a NAMES_TO_RUN=()
+if [[ "$ROUTER_MANAGED" == "true" && -z "$STRATEGY_TYPES" ]]; then
+  STRATEGY_TYPES="mean_reversion,limit_profit,momentum"
+  info "ROUTER_MANAGED=true: registering $STRATEGY_TYPES (override with STRATEGY_TYPES=...)"
+fi
 if [[ -n "$STRATEGY_TYPES" ]]; then
   IFS=',' read -ra TYPES_TO_RUN <<< "$STRATEGY_TYPES"
   TS="$(date +%s)"
@@ -355,6 +392,9 @@ if [[ "${#REGISTERED[@]}" -eq 0 ]]; then
 fi
 
 section "5. Done — organic loop is active if strategies show running"
+if [[ "$ROUTER_MANAGED" == "true" ]]; then
+  warn "ROUTER_MANAGED=true: strategies are registered but stopped — start strategy-router (or POST /api/v1/router/run) to pick the active strategy."
+fi
 if [[ "$DRY_RUN" == "true" ]]; then
   warn "DRY_RUN=true: signals will have metadata.dry_run=true — trading-engine should skip execution."
 fi

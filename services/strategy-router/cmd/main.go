@@ -1,13 +1,5 @@
-// Command strategy-router is the Phase 2 in-cluster implementation of the
-// regime-driven strategy routing described in
-// docs/strategy-fee-accuracy/POINT-10-STRATEGY-REGIME-ROUTER.md.
-//
-// It periodically asks strategy-executor for an indicator snapshot,
-// classifies the current market regime, and uses the existing strategy
-// lifecycle API (POST /api/v1/strategies/{name}/start|stop) to converge
-// on the preferred strategy. All decisions and switches are exposed via
-// Prometheus metrics and an audit log so operators can monitor them in
-// Grafana — see docs/strategy-fee-accuracy/STRATEGY-REGIME-ROUTER-SERVICE-2026-05-22.md.
+// Command strategy-router is the Phase 2 in-cluster regime router.
+// See docs/strategy-fee-accuracy/STRATEGY-REGIME-ROUTER-SERVICE-2026-05-22.md.
 package main
 
 import (
@@ -33,26 +25,32 @@ func main() {
 	httpClient := clients.NewHTTPClient(cfg.StrategyExecutorURL, cfg.HTTPTimeout)
 	m := metrics.Get()
 	audit := router.NewFileAudit(cfg.AuditLogPath)
-	engine := router.New(cfg, httpClient, audit, m)
+
+	engines := make([]*router.Engine, 0, len(cfg.Books))
+	for _, book := range cfg.Books {
+		bookCfg := cfg.ForBook(book)
+		engines = append(engines, router.New(bookCfg, httpClient, audit, m))
+	}
+	coord := router.NewBookCoordinator(engines)
 
 	addr := net.JoinHostPort(cfg.Host, strconv.Itoa(cfg.Port))
-	srv := server.New(addr, cfg, engine)
+	srv := server.New(addr, cfg, coord)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	go func() {
-		log.Printf("strategy-router starting on %s (book=%s interval=%s cooldown=%ds dry_run=%t)",
-			addr, cfg.Book, cfg.EvaluationInterval, cfg.CooldownSeconds, cfg.DryRun)
+		log.Printf("strategy-router starting on %s (books=%v interval=%s cooldown=%ds dry_run=%t)",
+			addr, cfg.Books, cfg.EvaluationInterval, cfg.CooldownSeconds, cfg.DryRun)
 		if err := srv.Start(); err != nil && err.Error() != "http: Server closed" {
 			log.Fatalf("strategy-router server error: %v", err)
 		}
 	}()
 
 	if cfg.AutoStart {
-		go engine.Run(ctx)
+		go coord.Run(ctx)
 	} else {
-		log.Printf("ROUTER_AUTOSTART=false: evaluation loop disabled; trigger manually via POST /api/v1/router/run")
+		log.Printf("ROUTER_AUTOSTART=false: trigger via POST /api/v1/router/run")
 	}
 
 	waitForSignal()

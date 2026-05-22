@@ -1,11 +1,4 @@
 // Package server exposes the HTTP control surface for strategy-router.
-//
-// Endpoints:
-//
-//	GET  /health                  — liveness probe
-//	GET  /metrics                 — Prometheus exposition
-//	GET  /api/v1/router/state     — current regime + active strategy + recent decisions
-//	POST /api/v1/router/run       — run one evaluation cycle on demand
 package server
 
 import (
@@ -20,19 +13,16 @@ import (
 	"bitso-trading-platform/strategy-router/internal/router"
 )
 
-// Server is the HTTP frontend for the router engine.
+// Server is the HTTP frontend for the router.
 type Server struct {
 	cfg        *config.Config
-	engine     *router.Engine
+	coord      router.Coordinator
 	httpServer *http.Server
 }
 
 // New builds a Server bound to addr.
-func New(addr string, cfg *config.Config, engine *router.Engine) *Server {
-	s := &Server{
-		cfg:    cfg,
-		engine: engine,
-	}
+func New(addr string, cfg *config.Config, coord router.Coordinator) *Server {
+	s := &Server{cfg: cfg, coord: coord}
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", s.handleHealth)
@@ -59,26 +49,26 @@ func (s *Server) Stop(ctx context.Context) error {
 }
 
 type healthResponse struct {
-	Status  string `json:"status"`
-	Service string `json:"service"`
-	Book    string `json:"book"`
+	Status  string   `json:"status"`
+	Service string   `json:"service"`
+	Books   []string `json:"books"`
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, healthResponse{
 		Status:  "healthy",
 		Service: s.cfg.ServiceName,
-		Book:    s.cfg.Book,
+		Books:   s.cfg.Books,
 	})
 }
 
 type stateResponse struct {
-	Book            string             `json:"book"`
-	DryRun          bool               `json:"dry_run"`
-	Routes          config.RouteTable  `json:"routes"`
-	Last            router.Decision    `json:"last_decision"`
-	Recent          []router.Decision  `json:"recent_decisions"`
-	CooldownSeconds int                `json:"cooldown_seconds"`
+	Books           []string            `json:"books"`
+	DryRun          bool                `json:"dry_run"`
+	Routes          config.RouteTable   `json:"routes"`
+	LastByBook      []router.Decision   `json:"last_decisions"`
+	Recent          []router.Decision   `json:"recent_decisions"`
+	CooldownSeconds int                 `json:"cooldown_seconds"`
 }
 
 func (s *Server) handleState(w http.ResponseWriter, r *http.Request) {
@@ -87,11 +77,11 @@ func (s *Server) handleState(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, stateResponse{
-		Book:            s.cfg.Book,
+		Books:           s.cfg.Books,
 		DryRun:          s.cfg.DryRun,
 		Routes:          s.cfg.Routes,
-		Last:            s.engine.LastDecision(),
-		Recent:          s.engine.RecentDecisions(),
+		LastByBook:      s.coord.LastDecisions(),
+		Recent:          s.coord.RecentDecisions(),
 		CooldownSeconds: s.cfg.CooldownSeconds,
 	})
 }
@@ -101,12 +91,12 @@ func (s *Server) handleRunOnce(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	d, err := s.engine.RunOnce(r.Context())
+	decisions, err := s.coord.RunOnce(r.Context())
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	writeJSON(w, http.StatusOK, d)
+	writeJSON(w, http.StatusOK, map[string]any{"decisions": decisions})
 }
 
 func writeJSON(w http.ResponseWriter, status int, payload any) {

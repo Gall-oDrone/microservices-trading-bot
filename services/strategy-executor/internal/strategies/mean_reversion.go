@@ -5,10 +5,12 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"strings"
 	"sync"
 	"time"
 
 	"bitso-trading-platform/strategy-executor/internal/indicators"
+	"github.com/google/uuid"
 )
 
 // MeanReversionConfig holds configuration for the mean reversion strategy
@@ -33,10 +35,12 @@ func DefaultMeanReversionConfig() MeanReversionConfig {
 	}
 }
 
-// MeanReversionStrategy implements a Bollinger Bands mean reversion strategy
+// MeanReversionStrategy implements a Bollinger Bands mean reversion strategy.
+// Implements OrderFillAware for realized-fee P&L (POINT-11).
 type MeanReversionStrategy struct {
 	*BaseEnhancedStrategy
 	mrConfig MeanReversionConfig
+	fees     PositionFeeRates
 	mu       sync.RWMutex
 }
 
@@ -125,6 +129,10 @@ func (s *MeanReversionStrategy) OnTick(tick *indicators.Trade) (*Signal, error) 
 	price := tick.Price
 	state := s.GetState()
 
+	if state.PendingSell {
+		return nil, nil
+	}
+
 	if !state.HasPosition {
 		return s.generateEntrySignal(price, bb)
 	}
@@ -158,6 +166,7 @@ func (s *MeanReversionStrategy) generateEntrySignal(price float64, bb *indicator
 	if price < bb.Lower {
 		confidence := s.calculateConfidence(price, bb)
 		s.RecordSignal()
+		eventID := uuid.New().String()
 
 		return &Signal{
 			Strategy:   s.Name(),
@@ -174,6 +183,7 @@ func (s *MeanReversionStrategy) generateEntrySignal(price float64, bb *indicator
 				"lower_band":  bb.Lower,
 				"std_dev":     bb.StdDev,
 				"signal_type": "entry_long",
+				"event_id":    eventID,
 			},
 		}, nil
 	}
@@ -181,6 +191,7 @@ func (s *MeanReversionStrategy) generateEntrySignal(price float64, bb *indicator
 	if price > bb.Upper {
 		confidence := s.calculateConfidence(price, bb)
 		s.RecordSignal()
+		eventID := uuid.New().String()
 
 		return &Signal{
 			Strategy:   s.Name(),
@@ -197,6 +208,7 @@ func (s *MeanReversionStrategy) generateEntrySignal(price float64, bb *indicator
 				"lower_band":  bb.Lower,
 				"std_dev":     bb.StdDev,
 				"signal_type": "entry_short",
+				"event_id":    eventID,
 			},
 		}, nil
 	}
@@ -217,11 +229,13 @@ func (s *MeanReversionStrategy) generateExitSignal(price float64, bb *indicators
 		}
 
 		pnl := s.calculateUnrealizedPnL(price, state)
-		profitable := pnl > 0
-
+		eventID := uuid.New().String()
 		s.RecordSignal()
-		s.RecordTrade(profitable)
-		s.ClearPosition()
+		s.UpdateState(func(st *StrategyState) {
+			st.PendingSell = true
+			st.PendingSellSince = time.Now()
+			st.PendingSellEventID = eventID
+		})
 
 		return &Signal{
 			Strategy:   s.Name(),
@@ -239,11 +253,83 @@ func (s *MeanReversionStrategy) generateExitSignal(price float64, bb *indicators
 				"entry_price":    state.EntryPrice,
 				"unrealized_pnl": pnl,
 				"signal_type":    "exit",
+				"exit_reason":    "take_profit",
+				"event_id":       eventID,
 			},
 		}, nil
 	}
 
 	return nil, nil
+}
+
+// OnOrderFilled applies realized fees and updates position from exchange fills.
+func (s *MeanReversionStrategy) OnOrderFilled(fill OrderFill) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	side := strings.ToLower(strings.TrimSpace(fill.Side))
+	switch side {
+	case "buy":
+		s.handleBuyFillLocked(fill)
+	case "sell":
+		s.handleSellFillLocked(fill)
+	}
+}
+
+func (s *MeanReversionStrategy) handleBuyFillLocked(fill OrderFill) {
+	st := s.GetState()
+	if st.PendingSell && st.PendingSellEventID != "" && fill.EventID == st.PendingSellEventID {
+		s.finalizeExitFillLocked(fill)
+		return
+	}
+	if fill.AveragePrice <= 0 || fill.FilledAmount <= 0 {
+		return
+	}
+	ApplyBuyFillFee(fill, &s.fees)
+	s.SetPosition("LONG", fill.FilledAmount, fill.AveragePrice)
+}
+
+func (s *MeanReversionStrategy) handleSellFillLocked(fill OrderFill) {
+	st := s.GetState()
+	if !st.PendingSell || st.PendingSellEventID == "" || fill.EventID != st.PendingSellEventID {
+		return
+	}
+	s.finalizeExitFillLocked(fill)
+}
+
+func (s *MeanReversionStrategy) finalizeExitFillLocked(fill OrderFill) {
+	st := s.GetState()
+	if !st.HasPosition || fill.AveragePrice <= 0 {
+		return
+	}
+	ApplySellFillFee(fill, &s.fees)
+
+	entry := st.EntryPrice
+	exit := fill.AveragePrice
+	size := st.PositionSize
+	if size <= 0 {
+		size = fill.FilledAmount
+	}
+
+	_, net, _ := RealizedQuotePnL(entry, exit, size, s.fees.BuyFeeRate, s.fees.SellFeeRate)
+	profitable := net > 0
+	if s.fees.BuyFeeRate == 0 || s.fees.SellFeeRate == 0 {
+		gross := (exit - entry) * size
+		if st.PositionSide != "BUY" && st.PositionSide != "LONG" {
+			gross = (entry - exit) * size
+		}
+		profitable = gross > 0
+		net = gross
+	}
+
+	s.RecordTradeWithPnL(profitable, net)
+	s.fees = PositionFeeRates{}
+	s.ClearPosition()
+	s.UpdateState(func(st *StrategyState) {
+		st.PendingSell = false
+		st.PendingSellEventID = ""
+		st.PendingSellSince = time.Time{}
+	})
 }
 
 // getDeviations returns how many standard deviations price is from middle band
@@ -303,6 +389,7 @@ func (s *MeanReversionStrategy) Reset() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.BaseEnhancedStrategy.Reset()
+	s.fees = PositionFeeRates{}
 }
 
 // IsWithinSchedule checks if current time is within trading schedule

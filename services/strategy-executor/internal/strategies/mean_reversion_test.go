@@ -298,8 +298,11 @@ func TestMeanReversionStrategy_ExitSignal(t *testing.T) {
 	}
 
 	state := strategy.GetState()
-	if state.HasPosition {
-		t.Error("Expected position to be cleared after exit signal")
+	if !state.HasPosition {
+		t.Error("Expected position to remain until SELL fill is confirmed")
+	}
+	if !state.PendingSell {
+		t.Error("Expected PendingSell after exit signal")
 	}
 }
 
