@@ -25,6 +25,9 @@ images:
   - name: ECR_REGISTRY_PLACEHOLDER/strategy-executor
     newName: ECR_REGISTRY_PLACEHOLDER/strategy-executor
     newTag: latest
+  - name: ECR_REGISTRY_PLACEHOLDER/strategy-router
+    newName: ECR_REGISTRY_PLACEHOLDER/strategy-router
+    newTag: latest
   - name: ECR_REGISTRY_PLACEHOLDER/order-management
     newName: ECR_REGISTRY_PLACEHOLDER/order-management
     newTag: latest

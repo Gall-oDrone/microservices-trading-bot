@@ -59,3 +59,44 @@ spec:
           annotations:
             summary: "High memory usage on {{ $labels.container }}"
             description: "Memory usage is at {{ $value | humanizePercentage }}"
+
+    # Strategy router alerts — wrap the most common failure modes of the
+    # regime-driven router (services/strategy-router). See
+    # docs/strategy-fee-accuracy/POST-POINT-10-ROADMAP-2026-05-22.md §3.
+    - name: strategy-router-alerts
+      rules:
+        # Active strategy is stuck with an open position and the router
+        # can't switch out. 60 blocked cycles in 30 m ≈ 30 m of stuck
+        # position at the default 30 s polling interval (~2× headroom
+        # over a normal max-hold exit).
+        - alert: RouterBlockedHasPositionStuck
+          expr: increase(strategy_router_blocked_total{reason="has_position"}[30m]) > 60
+          for: 10m
+          labels:
+            severity: warning
+            service: strategy-router
+          annotations:
+            summary: "strategy-router blocked by open position for > 30m"
+            description: "Active strategy has held an open position for >30m; router has refused {{ $value }} switches in the last 30m. Inspect: kubectl -n bitso-trading-dev port-forward svc/strategy-router 8092:8092 && curl localhost:8092/api/v1/router/state"
+
+        # strategy-executor unreachable / snapshot fetch errors.
+        - alert: RouterEvaluationsFailing
+          expr: increase(strategy_router_evaluation_errors_total[5m]) > 5
+          for: 2m
+          labels:
+            severity: warning
+            service: strategy-router
+          annotations:
+            summary: "strategy-router evaluations failing"
+            description: "{{ $value }} evaluation errors in the last 5m — likely strategy-executor connectivity or snapshot fetch issues."
+
+        # Router loop died (process crashed, AutoStart=false, ticker stalled).
+        - alert: RouterNotEvaluating
+          expr: rate(strategy_router_evaluations_total[5m]) == 0
+          for: 5m
+          labels:
+            severity: critical
+            service: strategy-router
+          annotations:
+            summary: "strategy-router has stopped evaluating"
+            description: "No evaluation cycles in the last 5m. Router loop may be dead, ROUTER_AUTOSTART may be false, or the ticker stalled."

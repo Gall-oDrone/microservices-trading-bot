@@ -33,6 +33,9 @@ images:
 - name: ECR_REGISTRY_PLACEHOLDER/strategy-executor
   newName: 326105557351.dkr.ecr.us-east-1.amazonaws.com/strategy-executor
   newTag: latest
+- name: ECR_REGISTRY_PLACEHOLDER/strategy-router
+  newName: 326105557351.dkr.ecr.us-east-1.amazonaws.com/strategy-router
+  newTag: latest
 - name: ECR_REGISTRY_PLACEHOLDER/trading-engine
   newName: 326105557351.dkr.ecr.us-east-1.amazonaws.com/trading-engine
   newTag: latest
