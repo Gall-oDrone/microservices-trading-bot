@@ -13,6 +13,7 @@ resources:
   - trading-engine.yaml
   - backtesting.yaml
   - strategy-executor.yaml
+  - strategy-router.yaml
   - market-data.yaml
   - order-management.yaml
   - api-gateway.yaml
@@ -29,6 +30,8 @@ images:
     newName: ECR_REGISTRY_PLACEHOLDER/api-gateway
   - name: strategy-executor
     newName: ECR_REGISTRY_PLACEHOLDER/strategy-executor
+  - name: strategy-router
+    newName: ECR_REGISTRY_PLACEHOLDER/strategy-router
   - name: order-management
     newName: ECR_REGISTRY_PLACEHOLDER/order-management
   - name: backtesting

@@ -3,6 +3,8 @@
 Date: 2026-05-21  
 Repository: `microservices-trading-bot`
 
+> **Status update (2026-05-22):** Phase 1 (this document, external bash script) shipped on 2026-05-21. Phase 2 — the in-cluster Go service with Prometheus metrics and an HTTP control surface — landed on 2026-05-22 and is the recommended way to run the router 24/7 on Stage and Production. See [`STRATEGY-REGIME-ROUTER-SERVICE-2026-05-22.md`](STRATEGY-REGIME-ROUTER-SERVICE-2026-05-22.md). The bash script remains the reference implementation and is still useful for local sessions and threshold tuning.
+
 ## 1) Problem
 
 `limit_profit` is essentially a **scalping** framework. To earn its keep it needs:
@@ -131,15 +133,18 @@ We deliberately ship Phase 1 (external) and document the in-process design as a 
 
 ## 6) Future Work
 
-- Replace the bash classifier with a Go binary in `services/strategy-router/` that reuses `indicators.GetVolatilityLevel` directly and exposes its own Prometheus metrics.
+- ✅ **(Phase 2, 2026-05-22)** Bash classifier ported to a Go service in `services/strategy-router/`. Same env-var surface as the bash script, plus Prometheus metrics (`strategy_router_regime`, `strategy_router_switches_total{from,to,regime}`, `strategy_router_blocked_total{reason}`, `strategy_router_evaluation_latency_ms`) and an HTTP control surface (`GET /api/v1/router/state`, `POST /api/v1/router/run`). See [`STRATEGY-REGIME-ROUTER-SERVICE-2026-05-22.md`](STRATEGY-REGIME-ROUTER-SERVICE-2026-05-22.md).
 - Introduce a `meta_router` strategy type in `strategy-executor` once the external router has demonstrated stable regime classification for several weeks (see `FEATURES-ROADMAP.md` "Strategy Composition Framework").
-- Add a Grafana panel showing the regime label over time, plotted against the strategy currently running and the per-strategy P&L. The audit log file is already structured for this.
+- Add a Grafana panel showing the regime label over time, plotted against the strategy currently running and the per-strategy P&L. With Phase 2 deployed this can be built on top of `strategy_router_regime` and `strategy_router_active_strategy` instead of grepping the audit log.
 - Hook into `services/agent-coordinator` so an LLM agent can *recommend* regime threshold changes off-line, while the router itself remains deterministic.
 
 ## 7) Related Files
 
-- `scripts/strategy-regime-router.sh` — the router.
+- `scripts/strategy-regime-router.sh` — the Phase 1 router (reference + local sessions).
+- `services/strategy-router/` — the Phase 2 in-cluster Go service.
+- `docs/strategy-fee-accuracy/STRATEGY-REGIME-ROUTER-SERVICE-2026-05-22.md` — Phase 2 design, metrics, and operations notes.
 - `scripts/start-organic-trading.sh` — pre-registers strategies the router can choose from.
 - `services/strategy-executor/internal/server/http_server.go` — endpoints consumed.
 - `services/strategy-executor/internal/indicators/service.go` — `Snapshot` schema (`atr`, `ema`, `rsi`, `bollinger`).
 - `services/strategy-executor/FEATURES-ROADMAP.md` — long-term "Strategy Composition Framework".
+- `k8s/base/strategy-router.yaml` — Kubernetes manifest for the Phase 2 service.
