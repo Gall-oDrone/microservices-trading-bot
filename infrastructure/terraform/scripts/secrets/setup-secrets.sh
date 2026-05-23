@@ -1,7 +1,8 @@
 #!/bin/bash
 # Setup script for creating secrets in AWS Secrets Manager
 # Run AFTER Terraform is deployed. Creates secrets that External Secrets Operator syncs to Kubernetes.
-# Required for k8s ExternalSecret: trading-bot/bitso-api-key, trading-bot/bitso-api-secret, trading-bot/redis-password
+# Required for k8s ExternalSecret: trading-bot/bitso-api-key, trading-bot/bitso-api-secret,
+# trading-bot/redis-password, trading-bot/etoro-public-key, trading-bot/etoro-private-key
 # (redis-password is always created so ESO sync succeeds; use empty string if not using Redis auth)
 
 set -e
@@ -39,6 +40,8 @@ validate_secret_value() {
 # ---------------------------------------------------------------------------
 BITSO_KEY=""
 BITSO_SECRET=""
+ETORO_PUBLIC_KEY=""
+ETORO_PRIVATE_KEY=""
 REDIS_PASSWORD=""
 AWS_REGION="${AWS_REGION:-us-east-1}"
 SECRET_PREFIX="trading-bot"
@@ -65,6 +68,12 @@ fi
 if [ -z "$BITSO_SECRET" ]; then
   read -sp "Enter Bitso API Secret: " BITSO_SECRET; echo
   if [ -z "$BITSO_SECRET" ]; then print_error "Bitso API Secret cannot be empty"; exit 1; fi
+fi
+if [ -z "$ETORO_PUBLIC_KEY" ]; then
+  read -sp "Enter eToro Public API Key (ETORO_PUBLIC_KEY / x-api-key, Enter to skip): " ETORO_PUBLIC_KEY; echo
+fi
+if [ -z "$ETORO_PRIVATE_KEY" ]; then
+  read -sp "Enter eToro Private User Key (ETORO_PRIVATE_KEY / x-user-key, Enter to skip): " ETORO_PRIVATE_KEY; echo
 fi
 if [ -z "$REDIS_PASSWORD" ]; then
   read -sp "Enter Redis Password (press Enter to leave empty for ESO sync): " REDIS_PASSWORD; echo
@@ -107,6 +116,18 @@ create_or_update_secret "${SECRET_PREFIX}/bitso-api-secret" "$BITSO_SECRET" "Bit
 
 # Required for ExternalSecret sync: always create redis-password (empty ok)
 create_or_update_secret "${SECRET_PREFIX}/redis-password"  "${REDIS_PASSWORD:-}" "Redis password for trading bot (empty if none)" "true" || exit 1
+
+# eToro keys (optional at setup time; required when BROKER=etoro in cluster)
+if [ -n "$ETORO_PUBLIC_KEY" ]; then
+  create_or_update_secret "${SECRET_PREFIX}/etoro-public-key" "$ETORO_PUBLIC_KEY" "eToro partner API key (x-api-key)" || exit 1
+else
+  print_warning "Skipping etoro-public-key (set ETORO_PUBLIC_KEY env var to create)"
+fi
+if [ -n "$ETORO_PRIVATE_KEY" ]; then
+  create_or_update_secret "${SECRET_PREFIX}/etoro-private-key" "$ETORO_PRIVATE_KEY" "eToro user API key (x-user-key)" || exit 1
+else
+  print_warning "Skipping etoro-private-key (set ETORO_PRIVATE_KEY env var to create)"
+fi
 
 # ---------------------------------------------------------------------------
 # Verify

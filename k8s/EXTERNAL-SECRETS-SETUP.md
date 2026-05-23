@@ -33,6 +33,8 @@ Create the secrets that ESO syncs (names must match `k8s/base/external-secret.ya
 - `trading-bot/bitso-api-key`
 - `trading-bot/bitso-api-secret`
 - `trading-bot/redis-password` (required for sync; may be empty)
+- `trading-bot/etoro-public-key` → `ETORO_PUBLIC_KEY` (x-api-key)
+- `trading-bot/etoro-private-key` → `ETORO_PRIVATE_KEY` (x-user-key)
 
 Run the script (after Terraform and AWS CLI are configured):
 

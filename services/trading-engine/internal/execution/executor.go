@@ -23,6 +23,8 @@ const (
 type TradingSignal struct {
 	Type      SignalType
 	Book      *bitso.Book
+	Symbol        string  // eToro ticker (e.g. AAPL) when Book is not a Bitso pair
+	InstrumentID  int64   // optional resolved eToro instrument ID
 	Amount    float64
 	Price     float64
 	Reason    string

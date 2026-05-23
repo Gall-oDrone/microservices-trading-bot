@@ -24,3 +24,8 @@ data:
   bitso-books: "btc_mxn"
   bitso-channels: "trades"
 
+  # Broker: bitso (default) or etoro
+  broker: "bitso"
+  # eToro trading environment when BROKER=etoro (demo|real)
+  etoro-env: "demo"
+

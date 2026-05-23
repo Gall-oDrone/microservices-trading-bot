@@ -14,6 +14,7 @@ import (
 
 	"bitso-trading-platform/shared/pkg/bitso"
 	"bitso-trading-platform/shared/pkg/config"
+	"bitso-trading-platform/shared/pkg/etoro"
 	"bitso-trading-platform/shared/pkg/database"
 	"bitso-trading-platform/shared/pkg/kafka"
 	"bitso-trading-platform/shared/pkg/models"
@@ -35,7 +36,9 @@ const (
 type Application struct {
 	logger              *log.Logger
 	config              *config.Config
+	broker              config.Broker
 	bitsoClient         *bitso.Client
+	etoroClient         *etoro.Client
 	redisClient         *database.RedisClient
 	kafkaConsumer       *kafka.Consumer
 	orderPlacedProducer *kafka.Producer
@@ -62,13 +65,30 @@ func NewApplication() (*Application, error) {
 	}
 	logger.Println("✓ Configuration loaded successfully")
 
-	// Initialize Bitso API client (required: STAGE_BITSO_API_KEY / STAGE_BITSO_API_SECRET from AWS Secrets Manager)
-	bitsoClient := initializeBitsoClient(cfg, logger)
-	if bitsoClient == nil {
-		cancel()
-		return nil, fmt.Errorf("Bitso client is nil: set STAGE_BITSO_API_KEY and STAGE_BITSO_API_SECRET (e.g. from trading-secrets / AWS Secrets Manager)")
+	broker := cfg.Broker
+	var bitsoClient *bitso.Client
+	var etoroClient *etoro.Client
+
+	if broker.IsEtoro() {
+		if err := cfg.ValidateEtoro(); err != nil {
+			cancel()
+			return nil, err
+		}
+		var err error
+		etoroClient, err = initializeEtoroClient(cfg, logger)
+		if err != nil {
+			cancel()
+			return nil, err
+		}
+		logger.Printf("✓ eToro API client initialized (env=%s)", etoroClient.Environment())
+	} else {
+		bitsoClient = initializeBitsoClient(cfg, logger)
+		if bitsoClient == nil {
+			cancel()
+			return nil, fmt.Errorf("Bitso client is nil: set STAGE_BITSO_API_KEY and STAGE_BITSO_API_SECRET (e.g. from trading-secrets / AWS Secrets Manager)")
+		}
+		logger.Println("✓ Bitso API client initialized")
 	}
-	logger.Println("✓ Bitso API client initialized")
 
 	// Initialize Redis client
 	redisClient, err := initializeRedisClient(cfg, logger)
@@ -103,10 +123,16 @@ func NewApplication() (*Application, error) {
 	}
 	logger.Println("✓ Kafka consumer initialized")
 
-	// Create trading configuration
-	tradingConfig := createTradingConfig()
-	logger.Printf("✓ Trading configuration: Book=%s, Strategy=%s",
-		tradingConfig.Book.String(), tradingConfig.StrategyType)
+	tradingConfig := createTradingConfig(broker)
+	bookLabel := tradingConfig.Book.String()
+	if broker.IsEtoro() {
+		bookLabel = os.Getenv("ETORO_DEFAULT_SYMBOL")
+		if bookLabel == "" {
+			bookLabel = "AAPL"
+		}
+	}
+	logger.Printf("✓ Trading configuration: broker=%s book=%s strategy=%s",
+		broker, bookLabel, tradingConfig.StrategyType)
 
 	// Optional: Kafka producer for order-placed events (order-management sync)
 	orderPlacedProducer, _ := initializeOrderPlacedProducer(cfg, logger)
@@ -132,7 +158,11 @@ func NewApplication() (*Application, error) {
 	tradingEngine, err := engine.NewTradingEngine(
 		tradingConfig,
 		cfg,
-		bitsoClient,
+		engine.EngineClients{
+			Broker:      broker,
+			BitsoClient: bitsoClient,
+			EtoroClient: etoroClient,
+		},
 		redisClient,
 		kafkaConsumer,
 		sessionRiskProvider,
@@ -154,7 +184,9 @@ func NewApplication() (*Application, error) {
 	return &Application{
 		logger:              logger,
 		config:              cfg,
+		broker:              broker,
 		bitsoClient:         bitsoClient,
+		etoroClient:         etoroClient,
 		redisClient:         redisClient,
 		kafkaConsumer:       kafkaConsumer,
 		orderPlacedProducer: orderPlacedProducer,
@@ -184,6 +216,23 @@ func initializeBitsoClient(cfg *config.Config, logger *log.Logger) *bitso.Client
 	client.SetBurstRate(100 * time.Millisecond)
 
 	return client
+}
+
+func initializeEtoroClient(cfg *config.Config, logger *log.Logger) (*etoro.Client, error) {
+	env, err := etoro.ParseEnvironment(cfg.EtoroEnv)
+	if err != nil {
+		return nil, err
+	}
+	client, err := etoro.NewClient(etoro.Config{
+		PublicKey:  cfg.EtoroPublicKey,
+		PrivateKey: cfg.EtoroPrivateKey,
+		Env:        env,
+	})
+	if err != nil {
+		logger.Printf("eToro credentials missing (ETORO_PUBLIC_KEY / ETORO_PRIVATE_KEY). Ensure trading-secrets syncs etoro-public-key and etoro-private-key from AWS Secrets Manager.")
+		return nil, err
+	}
+	return client, nil
 }
 
 // initializeRedisClient creates and connects to Redis
@@ -257,9 +306,14 @@ func initializeOrderPlacedProducer(cfg *config.Config, logger *log.Logger) (*kaf
 }
 
 // createTradingConfig creates the trading configuration
-func createTradingConfig() *models.TradingConfig {
+func createTradingConfig(broker config.Broker) *models.TradingConfig {
+	book := bitso.NewBook(bitso.BTC, bitso.MXN)
+	if broker.IsEtoro() {
+		// Book is unused for execution; signals carry symbol in the book field (e.g. AAPL).
+		book = bitso.NewBook(bitso.BTC, bitso.USD)
+	}
 	return &models.TradingConfig{
-		Book:              bitso.NewBook(bitso.BTC, bitso.MXN),
+		Book:              book,
 		MinTradeAmount:    0.001,          // 0.001 BTC minimum
 		MaxTradeAmount:    0.1,            // 0.1 BTC maximum
 		MaxTradeValue:     10000.0,        // 10,000 MXN maximum
