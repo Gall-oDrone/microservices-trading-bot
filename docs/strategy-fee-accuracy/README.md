@@ -13,6 +13,7 @@ The two documents below cover the work-streams independently — each is shippab
 | `POINT-10-STRATEGY-REGIME-ROUTER.md` | An external orchestrator that picks the right strategy (`mean_reversion`, `momentum`, `limit_profit`, or pause) for the current market regime so we stop using `limit_profit` on the high-fee / wide-spread regime where it is structurally a loser. Phase 1 — bash script. |
 | `STRATEGY-REGIME-ROUTER-SERVICE-2026-05-22.md` | Phase 2 of POINT-10: in-cluster Go service (`services/strategy-router/`) that re-implements the same routing logic with Prometheus metrics, an HTTP control surface (`GET /api/v1/router/state`, `POST /api/v1/router/run`), and a Kubernetes manifest. |
 | `POST-POINT-10-ROADMAP-2026-05-22.md` | Prioritized follow-up roadmap after POINT-10 Phase 2 — Stage soak (operator), plus completed K8s/CI/monitoring, Grafana dashboard, POINT-11, momentum stop-loss, `ROUTER_MANAGED`, classifier backtest, and per-book routing. |
+| `POST-POINT-10-IMPLEMENTATION-STATUS-2026-05-25.md` | Closure status for roadmap items 2–10: verification, Stage workflow, milestone gate, operator next steps. |
 | `POINT-11-FEE-HONESTY-MEAN-REVERSION-MOMENTUM-2026-05-22.md` | Extends POINT-9 realized-fee P&L and fill-confirmed exits to `mean_reversion` and `momentum`; momentum lifecycle parity with `limit_profit`. |
 
 ## TL;DR

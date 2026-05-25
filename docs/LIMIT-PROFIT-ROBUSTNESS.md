@@ -52,10 +52,12 @@ The following **`parameters`** keys are supported by `limit_profit`:
 | **bps-based entry offset** | ✅ Added | `entry_offset_bps` parameter available. See improvements doc §3.2. |
 | **Session circuit breaker** | ✅ Added | `max_daily_loss_quote` pauses strategy on cumulative loss. See improvements doc §2.1. |
 | **Prometheus metrics** | ✅ Added | Entry/exit counters, durations, circuit breaker gauge. See improvements doc §4.1. |
-| **Cooldown semantics** | Pending | `min_signal_interval` gates off `LastSignalTime` (both entry and exit). Separate entry-only timestamp is future work. |
-| **Partial fill handling** | Pending | Track cumulative fills for correct position size. See improvements doc §1.3. |
-| **Trailing stop** | Pending | Lock in gains once profitable. See improvements doc §2.2. |
-| **ATR-scaled sizing** | Pending | Volatility-adjusted position sizing. See improvements doc §3.3. |
+| **Cooldown semantics** | ✅ | `min_signal_interval` applies to **entry only** (`canEmitSignal` when flat); exits are not gated. See [LIMIT-PROFIT-STRATEGY.md](LIMIT-PROFIT-STRATEGY.md). |
+| **Partial fill handling** | ✅ | Cumulative fills + weighted average entry until target size. See improvements doc §1.3. |
+| **Trailing stop** | ✅ | `trailing_stop_quote` + `trailing_stop_activation_quote`. See improvements doc §2.2. |
+| **ATR-scaled sizing** | ✅ | `sizing_mode=atr_scaled`. See improvements doc §3.3. |
+| **Realized fees (POINT-9)** | ✅ | Buy/sell `fee_rate` from `OrderFillEvent`. See [`strategy-fee-accuracy/POINT-9-REALIZED-FEES.md`](strategy-fee-accuracy/POINT-9-REALIZED-FEES.md). |
+| **Regime routing (POINT-10)** | ✅ | External bash router + in-cluster `strategy-router`. See [`strategy-fee-accuracy/`](strategy-fee-accuracy/). |
 
 ---
 

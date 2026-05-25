@@ -56,14 +56,26 @@ Environment overrides:
 |----------|---------|-------------|
 | `NAMESPACE` | `bitso-trading-dev` | Kubernetes namespace |
 | `BOOK` | `btc_mxn` | Trading book |
-| `STRATEGY_NAME` | `organic_mean_reversion_<timestamp>` | Strategy name |
+| `STRATEGY_TYPE` | `mean_reversion` | Single strategy: `mean_reversion`, `momentum`, or `limit_profit` |
+| `STRATEGY_TYPES` | (unset) | Comma-separated list for multi-strategy registration |
+| `STRATEGY_NAME` | `organic_<type>_<timestamp>` | Strategy name (single-type mode) |
+| `ROUTER_MANAGED` | `false` | When `true`, register strategies but do **not** start — `strategy-router` picks the active one |
 | `STRATEGY_EXECUTOR_LOCAL_PORT` | `8084` | Local port for port-forward |
 | `POSITION_SIZE` | `0.001` | Must meet OM / exchange minimums |
-| `LOOKBACK_PERIOD` | `20` | Mean reversion lookback |
-| `ENTRY_THRESHOLD` | `2.0` | Bollinger entry sensitivity |
-| `EXIT_THRESHOLD` | `0.5` | Exit vs mean |
+| `DRY_RUN` | `false` | Tag signals with `metadata.dry_run=true` (engine should skip execution) |
 
-The script verifies pods, checks Redis in logs, port-forwards strategy-executor, creates and starts the strategy, then prints follow-up commands.
+Strategy-specific variables are documented in [LIMIT-PROFIT-STRATEGY.md](LIMIT-PROFIT-STRATEGY.md), [MOMENTUM-STRATEGY.md](MOMENTUM-STRATEGY.md), and [strategy-fee-accuracy/POST-POINT-10-IMPLEMENTATION-STATUS-2026-05-25.md](strategy-fee-accuracy/POST-POINT-10-IMPLEMENTATION-STATUS-2026-05-25.md).
+
+### Router-managed organic trading
+
+When using the in-cluster regime router ([`strategy-fee-accuracy/STRATEGY-REGIME-ROUTER-SERVICE-2026-05-22.md`](strategy-fee-accuracy/STRATEGY-REGIME-ROUTER-SERVICE-2026-05-22.md)):
+
+```bash
+ROUTER_MANAGED=true BOOK=btc_mxn ./scripts/start-organic-trading.sh
+# Then ensure strategy-router is running in the cluster (DRY_RUN=true for first soak).
+```
+
+The script verifies pods, checks Redis in logs, port-forwards strategy-executor, creates (and usually starts) strategies, then prints follow-up commands.
 
 ---
 

@@ -176,10 +176,10 @@ End-to-end on Stage:
 
 ## 10) Future work (still tracked)
 
-- **Per-book router.** Today one Deployment routes one book; for multi-book trading we'd parametrise the manifest and run one Deployment per book.
-- **Meta strategy in-process.** The original POINT-10 doc points at a `meta_router` strategy type as the eventual evolution. We'll graduate to that once Phase 2 has logged a few weeks of clean regime classification on Stage.
+- ✅ **Per-book router (2026-05-22).** `STRATEGY_ROUTER_BOOK` accepts comma-separated books; `BookCoordinator` runs one engine per book; metrics include a `book` label. See [`POST-POINT-10-ROADMAP-2026-05-22.md`](POST-POINT-10-ROADMAP-2026-05-22.md) item 10.
+- ✅ **Grafana dashboard (2026-05-22).** `monitoring/grafana/dashboards/services/strategy-router.json` — import via `./scripts/grafana-import-dashboard.sh strategy-router`.
+- **Meta strategy in-process.** The original POINT-10 doc points at a `meta_router` strategy type as the eventual evolution. Defer until ≥ 4 weeks of clean Stage classification (item 1 in [`POST-POINT-10-IMPLEMENTATION-STATUS-2026-05-25.md`](POST-POINT-10-IMPLEMENTATION-STATUS-2026-05-25.md)).
 - **Agent-coordinator threshold tuner.** Plug the audit log into `services/agent-coordinator` so an LLM agent can *recommend* threshold changes off-line. The router itself remains deterministic; only humans (or the agent with an operator approval gate) get to flip the env vars.
-- **Grafana dashboard.** A starter JSON dashboard plotting regime over time, active strategy over time, switches per hour, blocked reasons, and evaluation latency. Will land in `services/strategy-router/dashboards/` when the metrics have a few days of data to inform panel design.
 
 ## 11) Related files
 

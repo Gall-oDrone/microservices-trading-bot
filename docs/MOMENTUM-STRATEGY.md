@@ -187,16 +187,18 @@ Conservative requires extreme RSI plus a slow trend filter — far fewer signals
 |-------|--------|-------|
 | RSI/EMA entry + exit | ✅ | Implemented |
 | EMA trend filter on entries | ✅ | Implemented |
-| Schedule / `min_signal_interval` cooldown | ✅ | Implemented |
+| Schedule / `min_signal_interval` cooldown | ✅ | Implemented (gates entry and exit) |
 | `min_confidence` floor | ✅ | Implemented |
 | `dry_run` flag | ✅ | Implemented (entry + exit metadata) |
-| Hard stop-loss in quote terms | ⏳ | Not yet — handled implicitly by RSI re-cross. Track in roadmap below. |
-| Per-strategy ATR-scaled sizing | ⏳ | Future — `limit_profit` already implements this; reuse the same model. |
-| Session circuit breaker (`max_daily_loss_quote`) | ⏳ | Future — port from `limit_profit`. |
-| Per-strategy RSI/EMA periods | ⏳ | Indicator service uses global periods today. |
-| Prometheus metrics (`momentum_*`) | ⏳ | The strategy is covered by generic `strategy_executor_signals_generated_total{strategy,side}`; dedicated counters are tracked for a future PR. |
+| Realized-fee P&L (POINT-11) | ✅ | `OrderFillAware`; exits wait for confirmed SELL fill — see [`strategy-fee-accuracy/POINT-11-FEE-HONESTY-MEAN-REVERSION-MOMENTUM-2026-05-22.md`](strategy-fee-accuracy/POINT-11-FEE-HONESTY-MEAN-REVERSION-MOMENTUM-2026-05-22.md) |
+| `stop_loss_quote` | ✅ | SELL when price ≤ entry − stop (quote per base) |
+| `max_position_hold_seconds` | ✅ | Time stop; `exit_reason=max_hold` |
+| `max_daily_loss_quote` | ✅ | Session circuit breaker; `exit_reason=circuit_breaker` on forced exit |
+| Per-strategy ATR-scaled sizing | ⏳ | Future — `limit_profit` implements `atr_scaled`; port if momentum needs vol-adjusted size |
+| Per-strategy RSI/EMA periods | ⏳ | Indicator service uses global periods (`INDICATOR_RSI_PERIOD`, `INDICATOR_EMA_PERIOD`) |
+| Prometheus metrics (`momentum_*`) | ⏳ | Use `strategy_executor_signals_generated_total{strategy,side}`; dedicated counters deferred |
 
-When the strategy moves toward production, mirror the `limit_profit` lifecycle controls (see [LIMIT-PROFIT-IMPROVEMENTS.md](LIMIT-PROFIT-IMPROVEMENTS.md)).
+Organic startup env vars for lifecycle (0 = disabled): `MOMENTUM_STOP_LOSS_QUOTE`, `MOMENTUM_MAX_POSITION_HOLD_SEC`, `MOMENTUM_MAX_DAILY_LOSS_QUOTE`, `MOMENTUM_DAILY_LOSS_RESET_HOUR_UTC`.
 
 ---
 

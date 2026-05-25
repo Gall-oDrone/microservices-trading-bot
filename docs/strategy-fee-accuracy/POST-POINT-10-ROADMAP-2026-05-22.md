@@ -7,7 +7,9 @@ Repository: `microservices-trading-bot`
 
 POINT-9 ([`POINT-9-REALIZED-FEES.md`](POINT-9-REALIZED-FEES.md)) and POINT-10 Phase 1 + Phase 2 ([`POINT-10-STRATEGY-REGIME-ROUTER.md`](POINT-10-STRATEGY-REGIME-ROUTER.md), [`STRATEGY-REGIME-ROUTER-SERVICE-2026-05-22.md`](STRATEGY-REGIME-ROUTER-SERVICE-2026-05-22.md)) shipped the fee-honesty wiring and the regime-driven routing service. This document is the prioritized follow-up list that came out of the post-implementation review on 2026-05-22.
 
-Items 2–4 and 5–10 (except the Stage soak in item 1) are implemented on branch `feat/k8s-deployment-manifests`.
+Items 2–10 (except the Stage soak in item 1) are implemented on branch `feat/k8s-deployment-manifests`.
+
+**Status snapshot (2026-05-25):** See [`POST-POINT-10-IMPLEMENTATION-STATUS-2026-05-25.md`](POST-POINT-10-IMPLEMENTATION-STATUS-2026-05-25.md) for verification commands, Stage workflow, and operator next steps.
 
 ## Status legend
 
