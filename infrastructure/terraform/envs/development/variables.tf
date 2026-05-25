@@ -31,7 +31,7 @@ variable "public_subnets" {
 variable "repos" { 
   type    = list(string)
   default = [
-    "api-gateway","market-data","order-management","strategy-executor","trading-engine","backtesting"
+    "api-gateway","market-data","order-management","strategy-executor","strategy-router","trading-engine","backtesting"
   ]
 }
 
