@@ -32,4 +32,5 @@ data:
   # Agentic news / research (cold path — see k8s/overlays/research)
   kafka-topic-news-agentic: "news.agentic"
   kafka-topic-research-memos: "research.memos"
+  research-s3-bucket: "test-financial-news-bucket"
 

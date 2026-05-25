@@ -12,3 +12,5 @@ data:
   kafka-topic-research-memos: "research.memos"
   news-publisher-url: "http://news-publisher:8090"
   broker-target: "etoro"
+  research-s3-bucket: "test-financial-news-bucket"
+  research-s3-prefix: "research/memos/"

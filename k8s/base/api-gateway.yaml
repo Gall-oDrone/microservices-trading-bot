@@ -39,6 +39,30 @@ spec:
           value: "http://strategy-executor:8081"
         - name: BACKTESTING_URL
           value: "http://backtesting:8084"
+        - name: RESEARCH_API_ENABLED
+          value: "false"
+        - name: RESEARCH_AGENT_URL
+          value: "http://research-agent.trading-research.svc:8091"
+        - name: RESEARCH_S3_BUCKET
+          valueFrom:
+            configMapKeyRef:
+              name: trading-config
+              key: research-s3-bucket
+              optional: true
+        - name: RESEARCH_S3_PREFIX
+          value: "research/memos/"
+        - name: KAFKA_BROKERS
+          valueFrom:
+            configMapKeyRef:
+              name: trading-config
+              key: kafka-brokers
+              optional: true
+        - name: KAFKA_TOPIC_SIGNALS
+          valueFrom:
+            configMapKeyRef:
+              name: trading-config
+              key: kafka-topic-signals
+              optional: true
         resources:
           requests:
             memory: "128Mi"

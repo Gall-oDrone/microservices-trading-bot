@@ -49,6 +49,18 @@ spec:
               key: kafka-topic-research-memos
         - name: KAFKA_PUBLISH_MEMOS
           value: "true"
+        - name: RESEARCH_S3_ENABLED
+          value: "true"
+        - name: RESEARCH_S3_BUCKET
+          valueFrom:
+            configMapKeyRef:
+              name: research-config
+              key: research-s3-bucket
+        - name: RESEARCH_S3_PREFIX
+          valueFrom:
+            configMapKeyRef:
+              name: research-config
+              key: research-s3-prefix
         - name: OPENAI_API_KEY
           valueFrom:
             secretKeyRef:
