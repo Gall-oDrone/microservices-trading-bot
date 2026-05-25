@@ -82,6 +82,14 @@ spec:
           value: "https://stage.bitso.com/api"
         - name: DEFAULT_STRATEGY
           value: "mean_reversion"
+        # Agentic news sentiment gate (news-publisher → news.agentic). Off by default.
+        - name: NEWS_ENABLED
+          value: "false"
+        - name: KAFKA_TOPIC_NEWS_AGENTIC
+          valueFrom:
+            configMapKeyRef:
+              name: trading-config
+              key: kafka-topic-news-agentic
         resources:
           requests:
             memory: "256Mi"

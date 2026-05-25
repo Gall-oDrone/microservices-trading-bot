@@ -37,6 +37,18 @@ spec:
               key: broker-target
         - name: RESEARCH_READ_ONLY
           value: "true"
+        - name: KAFKA_BROKERS
+          valueFrom:
+            configMapKeyRef:
+              name: research-config
+              key: kafka-brokers
+        - name: KAFKA_TOPIC_RESEARCH_MEMOS
+          valueFrom:
+            configMapKeyRef:
+              name: research-config
+              key: kafka-topic-research-memos
+        - name: KAFKA_PUBLISH_MEMOS
+          value: "true"
         - name: OPENAI_API_KEY
           valueFrom:
             secretKeyRef:

@@ -12,6 +12,8 @@ Cold-path HTTP service wrapping [Gall-oDrone/TradingAgents](https://github.com/G
 | Variable | Default |
 |----------|---------|
 | `NEWS_PUBLISHER_URL` | `http://news-publisher:8090` |
+| `KAFKA_BROKERS` | empty (no memo publish) |
+| `KAFKA_PUBLISH_MEMOS` | `false` — set `true` to emit `research.memos` |
 | `BROKER_TARGET` | `etoro` (metadata only) |
 | `RESEARCH_READ_ONLY` | `true` |
 | `OPENAI_API_KEY` / `TRADINGAGENTS_*` | Required by TradingAgents |

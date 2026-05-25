@@ -84,17 +84,21 @@ func (a *OpsAgent) TriageIncident(ctx context.Context, id string, incident Incid
 	summary := fmt.Sprintf("Incident '%s' (%s) from %s. Initial read-only diagnostics collected.",
 		incident.Title, strings.ToLower(incident.Severity), incident.Source)
 
-	// Provider call remains optional in phase 1; if unwired we still return useful output.
+	confidence := 0.65
 	if a.provider != nil {
-		_, _ = a.provider.Generate(ctx, agent.GenerateRequest{
+		resp, err := a.provider.Generate(ctx, agent.GenerateRequest{
 			Model:  "",
-			System: "You are an SRE incident triage assistant.",
+			System: "You are an SRE incident triage assistant. Summarize likely cause and next steps in under 120 words.",
 			Messages: []agent.Message{
 				{Role: "user", Content: incident.Description},
 			},
 			Temperature: 0.1,
 			MaxTokens:   400,
 		})
+		if err == nil && strings.TrimSpace(resp.Text) != "" {
+			summary = strings.TrimSpace(resp.Text)
+			confidence = 0.75
+		}
 	}
 
 	return Report{
@@ -102,7 +106,7 @@ func (a *OpsAgent) TriageIncident(ctx context.Context, id string, incident Incid
 		CreatedAt:       time.Now().UTC(),
 		Incident:        incident,
 		Summary:         summary,
-		Confidence:      0.65,
+		Confidence:      confidence,
 		Recommendations: recommendations,
 		ToolOutputs:     outputs,
 	}, nil

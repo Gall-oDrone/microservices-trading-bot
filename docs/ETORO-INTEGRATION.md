@@ -59,6 +59,8 @@ Cold-path integration (separate namespace `trading-research`):
 
 Deploy: `kubectl apply -k k8s/overlays/research`
 
+**News → signals (optional):** set `NEWS_ENABLED=true` on `strategy-executor` to consume `news.agentic` and gate BUY signals by sentiment. See `docs/agentic-ai/AGENTIC-AI-ETORO-IMPLEMENTATION-STATUS-2026-05-25.md`.
+
 ## Branch
 
 Work for eToro integration lives on `feat/etoro-api-integration`, based on `feat/k8s-deployment-manifests`.

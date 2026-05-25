@@ -44,6 +44,20 @@ type Config struct {
 
 	// OrderManagement optional — HTTP integration for pending-buy timeout cancels (see .docs/PRODUCTION_PENDING_BUY_AND_CANCEL.md).
 	OrderManagement OrderManagementConfig `json:"order_management"`
+
+	// News optional — Kafka consumer for news.agentic sentiment gating (see NEWS-INTEGRATION-IMPLEMENTATION-PLAN.md).
+	News NewsConfig `json:"news"`
+}
+
+// NewsConfig holds agentic news / sentiment filter settings.
+type NewsConfig struct {
+	Enabled                bool
+	Topic                  string
+	AutoOffsetReset        string
+	SentimentTTL           time.Duration
+	MinSentimentForBuy     float64
+	BlockBearishBuy        bool
+	HighImpactCooldown     time.Duration
 }
 
 // OrderManagementConfig holds order-management service URL for coordinated cancels.
@@ -266,6 +280,15 @@ func Load() (*Config, error) {
 		},
 		OrderManagement: OrderManagementConfig{
 			BaseURL: getEnv("ORDER_MANAGEMENT_BASE_URL", ""),
+		},
+		News: NewsConfig{
+			Enabled:            getEnvAsBool("NEWS_ENABLED", false),
+			Topic:              getEnv("KAFKA_TOPIC_NEWS_AGENTIC", "news.agentic"),
+			AutoOffsetReset:    getEnv("KAFKA_NEWS_AUTO_OFFSET_RESET", "latest"),
+			SentimentTTL:       getEnvAsDuration("NEWS_SENTIMENT_TTL", 2*time.Hour),
+			MinSentimentForBuy: getEnvAsFloat("NEWS_MIN_SENTIMENT_FOR_BUY", -0.35),
+			BlockBearishBuy:    getEnvAsBool("NEWS_BLOCK_BEARISH_BUY", true),
+			HighImpactCooldown: getEnvAsDuration("NEWS_HIGH_IMPACT_COOLDOWN", 15*time.Minute),
 		},
 	}
 	config.Bitso.FeesEnabled = config.Bitso.APIKey != "" && config.Bitso.APISecret != ""

@@ -220,6 +220,7 @@ Two viable options:
 
 - [x] Define interfaces in `shared/pkg/agent`
 - [x] Implement provider adapters skeleton (`anthropic`, `openai`)
+- [x] Wire Anthropic Go SDK in `shared/pkg/agent/providers/anthropic` (2026-05-25)
 - [x] Add policy engine and budget model
 - [x] Add feature flags and kill-switch
 - [ ] Add audit schema

@@ -36,6 +36,9 @@ type Config struct {
 
 	// TLS configuration
 	TLS TLSConfig
+
+	// Research cold-path (S3 memos + optional signal bridge)
+	Research ResearchConfig
 }
 
 // ServiceConfig holds service-level configuration
@@ -52,6 +55,16 @@ type BackendConfig struct {
 	MarketDataURL       string
 	OrderManagementURL  string
 	StrategyExecutorURL string
+	ResearchAgentURL    string
+}
+
+// ResearchConfig holds cold-path research memo store and signal bridge settings.
+type ResearchConfig struct {
+	S3Bucket         string
+	S3Prefix         string
+	KafkaBrokers     string
+	KafkaTopicSignals string
+	Enabled          bool
 }
 
 // ClientConfig holds HTTP client configuration
@@ -126,6 +139,14 @@ func Load() (*Config, error) {
 			MarketDataURL:       getEnv("MARKET_DATA_URL", "http://localhost:8083"),
 			OrderManagementURL:  getEnv("ORDER_MANAGEMENT_URL", "http://localhost:8081"),
 			StrategyExecutorURL: getEnv("STRATEGY_EXECUTOR_URL", "http://localhost:8082"),
+			ResearchAgentURL:    getEnv("RESEARCH_AGENT_URL", ""),
+		},
+		Research: ResearchConfig{
+			S3Bucket:          getEnv("RESEARCH_S3_BUCKET", ""),
+			S3Prefix:          getEnv("RESEARCH_S3_PREFIX", "research/memos/"),
+			KafkaBrokers:      getEnv("KAFKA_BROKERS", ""),
+			KafkaTopicSignals: getEnv("KAFKA_TOPIC_SIGNALS", "trading.signals"),
+			Enabled:           getEnvAsBool("RESEARCH_API_ENABLED", false),
 		},
 		Client: ClientConfig{
 			Timeout:            getEnvAsDuration("CLIENT_TIMEOUT", 30*time.Second),
