@@ -4,6 +4,8 @@ This document outlines the recommended steps to add **crypto news** (and optiona
 
 **Principle:** News is an **optional enrichment**. The system continues to operate without it; when the news service or feed is unavailable, strategies fall back to price-only behaviour. Use stage/paper first to validate news-driven behaviour.
 
+**Update (2026-05-22):** Phase 1–2 scaffold implemented as `services/news-publisher` (S3 ETL `test-financial-news-bucket` → Kafka `news.agentic`). See `docs/agentic-ai/AGENTIC-AI-FINANCIAL-NEWS-S3-ETL-2026-05-22.md`.
+
 ---
 
 ## How News Can Improve Strategies

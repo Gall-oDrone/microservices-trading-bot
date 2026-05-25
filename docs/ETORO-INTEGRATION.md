@@ -48,6 +48,17 @@ For eToro, set the signal `book` field to the ticker symbol (e.g. `AAPL`, `BTC`)
 - `services/trading-engine/internal/execution/etoro_executor.go` — order execution
 - `shared/pkg/config/broker.go` — `BROKER` parsing
 
+## Agentic research (TradingAgents + financial news)
+
+Cold-path integration (separate namespace `trading-research`):
+
+- `docs/agentic-ai/AGENTIC-AI-ETORO-TRADINGAGENTS-INTEGRATION-PLAN-2026-05-22.md`
+- `docs/agentic-ai/AGENTIC-AI-FINANCIAL-NEWS-S3-ETL-2026-05-22.md`
+- `services/news-publisher` — S3 ETL → Kafka `news.agentic`
+- `services/research-agent` — [TradingAgents](https://github.com/Gall-oDrone/TradingAgents) HTTP wrapper
+
+Deploy: `kubectl apply -k k8s/overlays/research`
+
 ## Branch
 
 Work for eToro integration lives on `feat/etoro-api-integration`, based on `feat/k8s-deployment-manifests`.

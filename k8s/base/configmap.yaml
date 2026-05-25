@@ -29,3 +29,7 @@ data:
   # eToro trading environment when BROKER=etoro (demo|real)
   etoro-env: "demo"
 
+  # Agentic news / research (cold path — see k8s/overlays/research)
+  kafka-topic-news-agentic: "news.agentic"
+  kafka-topic-research-memos: "research.memos"
+

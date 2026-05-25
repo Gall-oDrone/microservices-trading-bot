@@ -1,0 +1,26 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: trading-research
+
+resources:
+  - namespace.yaml
+  - configmap.yaml
+  - service-account-external-secrets.yaml
+  - secret-store.yaml
+  - service-account-news.yaml
+  - news-publisher.yaml
+  - research-agent.yaml
+  - external-secret-research.yaml
+
+commonLabels:
+  app: trading-research
+  plane: cold-path
+
+images:
+  - name: news-publisher
+    newName: ECR_REGISTRY_PLACEHOLDER/news-publisher
+    newTag: latest
+  - name: research-agent
+    newName: ECR_REGISTRY_PLACEHOLDER/research-agent
+    newTag: latest
