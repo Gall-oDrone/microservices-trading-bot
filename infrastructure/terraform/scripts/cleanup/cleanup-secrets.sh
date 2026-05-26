@@ -38,6 +38,8 @@ SECRETS=(
     "${SECRET_PREFIX}/bitso-api-key"
     "${SECRET_PREFIX}/bitso-api-secret"
     "${SECRET_PREFIX}/redis-password"
+    "${SECRET_PREFIX}/anthropic-api-key"
+    "${SECRET_PREFIX}/openai-api-key"
     "${SECRET_PREFIX}/etoro-api-key"
     "${SECRET_PREFIX}/etoro-user-key"
 )

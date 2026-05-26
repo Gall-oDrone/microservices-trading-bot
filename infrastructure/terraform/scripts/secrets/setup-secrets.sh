@@ -78,10 +78,8 @@ validate_secret_value() {
 BITSO_KEY=""
 BITSO_SECRET=""
 REDIS_PASSWORD=""
-CLAUDE_KEY=""
-CLAUDE_SECRET=""
-OPENAI_KEY=""
-OPENAI_SECRET=""
+ANTHROPIC_API_KEY=""
+OPENAI_API_KEY=""
 ETORO_PUBLIC_KEY=""
 ETORO_PRIVATE_KEY=""
 
@@ -149,56 +147,30 @@ else
     print_info "Using Redis password from script variables"
 fi
 
-# Prompt for CLAUDE_KEY if not set
-if [ -z "$CLAUDE_KEY" ]; then
-    print_info "Claude API Key not set in script variables."
-    read -sp "Enter Claude API Key: " CLAUDE_KEY
+# Prompt for ANTHROPIC_API_KEY if not set
+if [ -z "$ANTHROPIC_API_KEY" ]; then
+    print_info "Anthropic API Key not set in script variables."
+    read -sp "Enter Anthropic API Key: " ANTHROPIC_API_KEY
     echo
-    if [ -z "$CLAUDE_KEY" ]; then
-        print_error "Claude API Key cannot be empty"
+    if [ -z "$ANTHROPIC_API_KEY" ]; then
+        print_error "Anthropic API Key cannot be empty"
         exit 1
     fi
 else
-    print_info "Using Claude API Key from script variables"
+    print_info "Using Anthropic API Key from script variables"
 fi
 
-# Prompt for CLAUDE_SECRET if not set
-if [ -z "$CLAUDE_SECRET" ]; then
-    print_info "Claude API Secret not set in script variables."
-    read -sp "Enter Claude API Secret: " CLAUDE_SECRET
-    echo
-    if [ -z "$CLAUDE_SECRET" ]; then
-        print_error "Claude API Secret cannot be empty"
-        exit 1
-    fi
-else
-    print_info "Using Claude API Secret from script variables"
-fi
-
-# Prompt for OPENAI_KEY if not set
-if [ -z "$OPENAI_KEY" ]; then
+# Prompt for OPENAI_API_KEY if not set
+if [ -z "$OPENAI_API_KEY" ]; then
     print_info "OpenAI API Key not set in script variables."
-    read -sp "Enter OpenAI API Key: " OPENAI_KEY
+    read -sp "Enter OpenAI API Key: " OPENAI_API_KEY
     echo
-    if [ -z "$OPENAI_KEY" ]; then
+    if [ -z "$OPENAI_API_KEY" ]; then
         print_error "OpenAI API Key cannot be empty"
         exit 1
     fi
 else
     print_info "Using OpenAI API Key from script variables"
-fi
-
-# Prompt for OPENAI_SECRET if not set
-if [ -z "$OPENAI_SECRET" ]; then
-    print_info "OpenAI API Secret not set in script variables."
-    read -sp "Enter OpenAI API Secret: " OPENAI_SECRET
-    echo
-    if [ -z "$OPENAI_SECRET" ]; then
-        print_error "OpenAI API Secret cannot be empty"
-        exit 1
-    fi
-else
-    print_info "Using OpenAI API Secret from script variables"
 fi
 
 # Prompt for ETORO_PUBLIC_KEY if not set (optional; x-api-key / public API key)
@@ -304,39 +276,21 @@ else
     print_info "Skipping Redis password secret (not provided)"
 fi
 
-# Create Claude API Key secret
+# Create Anthropic API Key secret
 if ! create_or_update_secret \
-    "${SECRET_PREFIX}/claude-api-key" \
-    "$CLAUDE_KEY" \
-    "Claude API Key for trading bot"; then
-    print_error "Failed to create/update Claude API Key secret"
-    exit 1
-fi
-
-# Create Claude API Secret
-if ! create_or_update_secret \
-    "${SECRET_PREFIX}/claude-api-secret" \
-    "$CLAUDE_SECRET" \
-    "Claude API Secret for trading bot"; then
-    print_error "Failed to create/update Claude API Secret"
+    "${SECRET_PREFIX}/anthropic-api-key" \
+    "$ANTHROPIC_API_KEY" \
+    "Anthropic API Key for trading bot"; then
+    print_error "Failed to create/update Anthropic API Key secret"
     exit 1
 fi
 
 # Create OpenAI API Key secret
 if ! create_or_update_secret \
     "${SECRET_PREFIX}/openai-api-key" \
-    "$OPENAI_KEY" \
+    "$OPENAI_API_KEY" \
     "OpenAI API Key for trading bot"; then
     print_error "Failed to create/update OpenAI API Key secret"
-    exit 1
-fi
-
-# Create OpenAI API Secret
-if ! create_or_update_secret \
-    "${SECRET_PREFIX}/openai-api-secret" \
-    "$OPENAI_SECRET" \
-    "OpenAI API Secret for trading bot"; then
-    print_error "Failed to create/update OpenAI API Secret"
     exit 1
 fi
 
@@ -374,10 +328,8 @@ VERIFICATION_FAILED=0
 for secret in \
     "${SECRET_PREFIX}/bitso-api-key" \
     "${SECRET_PREFIX}/bitso-api-secret" \
-    "${SECRET_PREFIX}/claude-api-key" \
-    "${SECRET_PREFIX}/claude-api-secret" \
-    "${SECRET_PREFIX}/openai-api-key" \
-    "${SECRET_PREFIX}/openai-api-secret"; do
+    "${SECRET_PREFIX}/anthropic-api-key" \
+    "${SECRET_PREFIX}/openai-api-key"; do
     if aws secretsmanager describe-secret --secret-id "$secret" --region "$AWS_REGION" 1>/dev/null 2>&1; then
         print_success "✅ Verified: $secret"
         SECRETS_CREATED=$((SECRETS_CREATED + 1))
