@@ -74,8 +74,8 @@ module "eks" {
   # This allows the IAM role/user that created the cluster to access it
   enable_cluster_creator_admin_permissions = true
 
-  # KMS key is created by default for cluster encryption
-  # The deletion window (7 days) is set when scheduling deletion via cleanup script
+  # KMS key is created by default for cluster encryption (module default is 30 days)
+  kms_key_deletion_window_in_days   = 7
   kms_key_source_policy_documents = [data.aws_iam_policy_document.eks_kms_extra.json]
 
   eks_managed_node_groups = {
