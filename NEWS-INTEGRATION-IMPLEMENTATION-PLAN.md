@@ -6,7 +6,7 @@ This document outlines the recommended steps to add **crypto news** (and optiona
 
 **Update (2026-05-22):** Phase 1–2 scaffold implemented as `services/news-publisher` (S3 ETL `test-financial-news-bucket` → Kafka `news.agentic`). See `docs/agentic-ai/AGENTIC-AI-FINANCIAL-NEWS-S3-ETL-2026-05-22.md`.
 
-**Update (2026-05-25):** Phase 3 Option B (signal filter) implemented in `services/strategy-executor/internal/news` — Kafka consumer + sentiment gate before publishing `trading.signals`. Enable with `NEWS_ENABLED=true`. See `docs/agentic-ai/AGENTIC-AI-ETORO-IMPLEMENTATION-STATUS-2026-05-25.md`.
+**Update (2026-05-25):** Phase 3 Option B (signal filter) implemented in `services/strategy-executor/internal/news` — Kafka consumer + sentiment gate before publishing `trading.signals`. Enable with `NEWS_ENABLED=true`. See `docs/agentic-ai/AGENTIC-AI-ETORO-IMPLEMENTATION-STATUS-2026-05-27.md`.
 
 ---
 

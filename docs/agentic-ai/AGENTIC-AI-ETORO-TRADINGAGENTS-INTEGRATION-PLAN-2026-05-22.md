@@ -82,7 +82,7 @@ flowchart LR
 | Phase | Deliverable | Status |
 |-------|-------------|--------|
 | P0 | S3 catalog doc + news-publisher + research-agent scaffold + research K8s overlay | **Done** |
-| P1 | strategy-executor consumer for `news.agentic` (sentiment filter) | **Done (2026-05-25)** — see `AGENTIC-AI-ETORO-IMPLEMENTATION-STATUS-2026-05-25.md` |
+| P1 | strategy-executor consumer for `news.agentic` (sentiment filter) | **Done (2026-05-25)** — see `AGENTIC-AI-ETORO-IMPLEMENTATION-STATUS-2026-05-27.md` |
 | P2 | research memo store (S3) + operator API in api-gateway | **Done (2026-05-25)** |
 | P3 | Approved research → `TradeSignalEvent` bridge with audit id | **Done (2026-05-25)** |
 

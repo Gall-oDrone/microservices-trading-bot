@@ -61,7 +61,7 @@ Deploy: `kubectl apply -k k8s/overlays/research`
 
 **News → signals (optional):** set `NEWS_ENABLED=true` on `strategy-executor` to consume `news.agentic` and gate BUY signals by sentiment.
 
-**Research → signals (operator gate):** set `RESEARCH_API_ENABLED=true` on `api-gateway` to list S3 memos and approve them into `trading.signals` with an `audit_id`. See `docs/agentic-ai/AGENTIC-AI-ETORO-IMPLEMENTATION-STATUS-2026-05-25.md`.
+**Research → signals (operator gate):** set `RESEARCH_API_ENABLED=true` on `api-gateway` to list S3 memos and approve them into `trading.signals` with an `audit_id`. See `docs/agentic-ai/AGENTIC-AI-ETORO-IMPLEMENTATION-STATUS-2026-05-27.md`.
 
 ## Branch
 
