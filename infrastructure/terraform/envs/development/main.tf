@@ -208,6 +208,9 @@ resource "helm_release" "external_dns" {
       }
     })
   ]
+
+  # Wait for AWS Load Balancer Controller webhook (external-dns creates Services that hit the webhook)
+  depends_on = [time_sleep.wait_for_alb_controller_webhook]
 }
 
 resource "helm_release" "cert_manager" {
