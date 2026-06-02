@@ -67,16 +67,7 @@ compare_one_regime() {
   go_regime=$(kubectl -n "$NAMESPACE" exec deploy/strategy-router -- \
     wget -qO- http://127.0.0.1:8092/api/v1/router/state 2>/dev/null \
     | jq -r '.last_decisions[0].regime // "unknown"')
-  bash_regime=$(
-    DRY_RUN=true BOOK="$BOOK" STRATEGY_EXECUTOR_URL="$se" ROUTER_DURATION_SEC=0 \
-      ROUTE_LOW_VOL="mean_reversion_${BOOK_ROUTE_SUFFIX}" \
-      ROUTE_NEUTRAL="mean_reversion_${BOOK_ROUTE_SUFFIX}" \
-      ROUTE_TRENDING_UP="momentum_${BOOK_ROUTE_SUFFIX}" \
-      ROUTE_TRENDING_DOWN="momentum_${BOOK_ROUTE_SUFFIX}" \
-      "$(dirname "$0")/strategy-regime-router.sh" 2>&1 \
-    | grep -E '^\[INFO\] regime=' | head -1 | sed -E 's/.*regime=([^ ]+).*/\1/' || true
-  )
-  # Single-cycle classify via jq (avoids info() polluting classify_regime capture)
+  # Classify same snapshot as bash router (see scripts/strategy-regime-router.sh)
   bash_regime=$(echo "$snap" | jq -r --argjson hi 0.85 --argjson lo 0.15 '
     def price: (.bollinger.current_price // .sma.value // .sma.Value // 0);
     def atr: (.atr.value // .atr.Value // 0);
