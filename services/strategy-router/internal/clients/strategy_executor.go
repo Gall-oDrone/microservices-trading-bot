@@ -77,11 +77,14 @@ type valueField struct {
 }
 
 type bollingerField struct {
-	Upper  float64 `json:"upper_band"`
-	Middle float64 `json:"middle_band"`
-	Lower  float64 `json:"lower_band"`
-	// Some snapshot variants include a "current_price" sibling; we accept
-	// it but it's optional.
+	// strategy-executor emits PascalCase (BollingerBands has no json tags).
+	Upper  float64 `json:"Upper"`
+	Middle float64 `json:"Middle"`
+	Lower  float64 `json:"Lower"`
+	// Legacy / doc snake_case (kept for forward-compatible snapshots).
+	UpperBand  float64 `json:"upper_band"`
+	MiddleBand float64 `json:"middle_band"`
+	LowerBand  float64 `json:"lower_band"`
 	CurrentPrice float64 `json:"current_price"`
 }
 
@@ -102,9 +105,21 @@ func (c *HTTPClient) GetSnapshot(ctx context.Context, book string) (classifier.S
 		if resp.Bollinger.CurrentPrice > 0 {
 			snap.Price = resp.Bollinger.CurrentPrice
 		}
-		snap.BBUpper = resp.Bollinger.Upper
-		snap.BBMiddle = resp.Bollinger.Middle
-		snap.BBLower = resp.Bollinger.Lower
+		upper := resp.Bollinger.Upper
+		if upper == 0 {
+			upper = resp.Bollinger.UpperBand
+		}
+		middle := resp.Bollinger.Middle
+		if middle == 0 {
+			middle = resp.Bollinger.MiddleBand
+		}
+		lower := resp.Bollinger.Lower
+		if lower == 0 {
+			lower = resp.Bollinger.LowerBand
+		}
+		snap.BBUpper = upper
+		snap.BBMiddle = middle
+		snap.BBLower = lower
 	}
 	if resp.ATR != nil {
 		snap.ATR = resp.ATR.Value

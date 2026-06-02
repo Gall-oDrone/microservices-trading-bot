@@ -12,6 +12,7 @@ patchesStrategicMerge:
 - strategy-executor-indicators-dev.yaml
 - trading-engine-replicas-dev.yaml
 - order-management-dev-fill-test-env.yaml
+- strategy-router-soak.yaml
 
 namespace: bitso-trading-dev
 

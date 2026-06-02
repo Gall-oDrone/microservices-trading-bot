@@ -103,6 +103,9 @@ DRY_RUN="${DRY_RUN:-false}"
 # Router-managed mode: register strategies but do not start — strategy-router picks the active one.
 # When true, defaults STRATEGY_TYPES to mean_reversion,limit_profit,momentum unless overridden.
 ROUTER_MANAGED="${ROUTER_MANAGED:-false}"
+# When ROUTER_MANAGED=true, use stable names (mean_reversion_btc_mxn) instead of organic_* timestamps
+# so strategy-router ROUTE_* env vars match. Set ROUTER_CANONICAL_NAMES=false to keep organic_* names.
+ROUTER_CANONICAL_NAMES="${ROUTER_CANONICAL_NAMES:-true}"
 # Momentum lifecycle (0 = disabled) — parity with limit_profit; see docs/MOMENTUM-STRATEGY.md §7
 MOMENTUM_MAX_POSITION_HOLD_SEC="${MOMENTUM_MAX_POSITION_HOLD_SEC:-0}"
 MOMENTUM_STOP_LOSS_QUOTE="${MOMENTUM_STOP_LOSS_QUOTE:-0}"
@@ -369,7 +372,11 @@ if [[ -n "$STRATEGY_TYPES" ]]; then
   TS="$(date +%s)"
   for t in "${TYPES_TO_RUN[@]}"; do
     t="$(echo "$t" | xargs)"
-    NAMES_TO_RUN+=("organic_${t}_${TS}")
+    if [[ "$ROUTER_MANAGED" == "true" && "$ROUTER_CANONICAL_NAMES" == "true" ]]; then
+      NAMES_TO_RUN+=("${t}_${BOOK}")
+    else
+      NAMES_TO_RUN+=("organic_${t}_${TS}")
+    fi
   done
 else
   TYPES_TO_RUN=("$STRATEGY_TYPE")

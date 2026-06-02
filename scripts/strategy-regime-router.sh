@@ -128,13 +128,14 @@ classify_regime() {
 
   # Extract values; defaults to "0" when an indicator hasn't warmed up yet.
   local atr ema_value rsi_value bb_lower bb_upper bb_middle price
-  atr=$(echo "$snapshot"      | jq -r '.atr.value // 0')
-  ema_value=$(echo "$snapshot" | jq -r '.ema.value // 0')
-  rsi_value=$(echo "$snapshot" | jq -r '.rsi.value // 0')
-  bb_lower=$(echo "$snapshot" | jq -r '.bollinger.lower_band // 0')
-  bb_upper=$(echo "$snapshot" | jq -r '.bollinger.upper_band // 0')
-  bb_middle=$(echo "$snapshot"| jq -r '.bollinger.middle_band // 0')
-  price=$(echo "$snapshot"    | jq -r '.bollinger.current_price // .sma.value // 0')
+  # strategy-executor snapshot uses snake_case in docs; wire JSON may use PascalCase (no json tags on IndicatorValue).
+  atr=$(echo "$snapshot"      | jq -r '.atr.value // .atr.Value // 0')
+  ema_value=$(echo "$snapshot" | jq -r '.ema.value // .ema.Value // 0')
+  rsi_value=$(echo "$snapshot" | jq -r '.rsi.value // .rsi.Value // 0')
+  bb_lower=$(echo "$snapshot" | jq -r '.bollinger.lower_band // .bollinger.Lower // 0')
+  bb_upper=$(echo "$snapshot" | jq -r '.bollinger.upper_band // .bollinger.Upper // 0')
+  bb_middle=$(echo "$snapshot"| jq -r '.bollinger.middle_band // .bollinger.Middle // 0')
+  price=$(echo "$snapshot"    | jq -r '.bollinger.current_price // .sma.value // .sma.Value // .ema.value // .ema.Value // 0')
 
   if [[ "$price" == "0" || "$price" == "null" ]]; then
     echo "neutral"

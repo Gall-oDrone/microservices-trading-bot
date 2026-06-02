@@ -26,20 +26,20 @@ type Trade struct {
 
 // IndicatorValue represents a computed indicator value with metadata
 type IndicatorValue struct {
-	Name      string
-	Period    int
-	Value     float64
-	Timestamp time.Time
-	Book      string
-	Extra     map[string]float64
+	Name      string             `json:"name"`
+	Period    int                `json:"period"`
+	Value     float64            `json:"value"`
+	Timestamp time.Time          `json:"timestamp"`
+	Book      string             `json:"book"`
+	Extra     map[string]float64 `json:"extra,omitempty"`
 }
 
 // BollingerBands represents Bollinger Bands indicator values
 type BollingerBands struct {
-	Upper  float64
-	Middle float64
-	Lower  float64
-	StdDev float64
+	Upper  float64 `json:"upper_band"`
+	Middle float64 `json:"middle_band"`
+	Lower  float64 `json:"lower_band"`
+	StdDev float64 `json:"std_dev,omitempty"`
 }
 
 // Indicator defines the interface for all technical indicators

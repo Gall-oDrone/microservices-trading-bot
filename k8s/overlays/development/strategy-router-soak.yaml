@@ -1,0 +1,25 @@
+# Stage soak (POST-POINT-10 item 1): classify regimes without start/stop.
+# Flip DRY_RUN to "false" only after ≥99% bash+Go agreement for 24–48h (and 7d gate).
+# See docs/strategy-fee-accuracy/STAGE-SOAK-OPERATOR-GUIDE-2026-06-02.md
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: strategy-router
+spec:
+  template:
+    spec:
+      containers:
+      - name: strategy-router
+        env:
+        - name: DRY_RUN
+          value: "true"
+        - name: ROUTE_LOW_VOL
+          value: "mean_reversion_btc_mxn"
+        - name: ROUTE_NEUTRAL
+          value: "mean_reversion_btc_mxn"
+        - name: ROUTE_TRENDING_UP
+          value: "momentum_btc_mxn"
+        - name: ROUTE_TRENDING_DOWN
+          value: "momentum_btc_mxn"
+        - name: ROUTE_HIGH_VOL
+          value: "none"

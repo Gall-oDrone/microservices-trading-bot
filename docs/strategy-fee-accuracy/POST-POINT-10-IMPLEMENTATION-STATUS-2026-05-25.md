@@ -119,7 +119,7 @@ Items 8–10 are complete and not required for the milestone gate above, but the
 
 ## Operator next steps (recommended)
 
-1. **Item 1 — Stage soak:** See [`STAGE-SOAK-OPERATOR-GUIDE-2026-06-02.md`](STAGE-SOAK-OPERATOR-GUIDE-2026-06-02.md). Deploy `strategy-router` with `DRY_RUN=true` for 24–48 h alongside `DRY_RUN=true ./scripts/strategy-regime-router.sh`. Compare audit log / `GET /api/v1/router/state` → `last_decisions`. Target ≥ 99 % regime agreement per poll cycle.
+1. **Item 1 — Stage soak:** See [`STAGE-SOAK-OPERATOR-GUIDE-2026-06-02.md`](STAGE-SOAK-OPERATOR-GUIDE-2026-06-02.md). Helper: `./scripts/run-stage-soak.sh` (`register`, `start-bash`, `check`, `status`). Development overlay `k8s/overlays/development/strategy-router-soak.yaml` sets `DRY_RUN=true` and canonical `ROUTE_*`. Run 24–48 h alongside bash router; target ≥ 99 % regime agreement. **Do not** set router `DRY_RUN=false` until soak passes.
 2. **Flip live routing:** Set `DRY_RUN=false` on `strategy-router` only after soak passes; keep `ROUTER_MANAGED=true` organic registration.
 3. **Monitor:** Import `strategy-router` Grafana dashboard; confirm `RouterNotEvaluating` and `RouterEvaluationsFailing` stay quiet.
 4. **Fee honesty spot-check:** On first round-trip under router-managed momentum or mean_reversion, confirm `trading.order.fills` events carry `fee_rate` and strategy logs show net P&L using realized legs.

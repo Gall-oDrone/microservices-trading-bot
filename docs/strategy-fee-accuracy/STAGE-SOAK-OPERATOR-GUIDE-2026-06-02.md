@@ -198,12 +198,17 @@ export ROUTE_TRENDING_DOWN=organic_momentum_1717334400
 ### 1. Register strategies
 
 ```bash
+# Canonical names (default when ROUTER_MANAGED=true): mean_reversion_btc_mxn, momentum_btc_mxn, limit_profit_btc_mxn
+./scripts/run-stage-soak.sh register
+
+# Or manually:
 NAMESPACE=bitso-trading-dev BOOK=btc_mxn \
-  ROUTER_MANAGED=true \
+  ROUTER_MANAGED=true ROUTER_CANONICAL_NAMES=true \
+  STRATEGY_TYPES=mean_reversion,momentum,limit_profit \
   ./scripts/start-organic-trading.sh
 ```
 
-Note the registered names for `ROUTE_*` if not using `mean_reversion_btc_mxn` defaults.
+Development overlay `strategy-router-soak.yaml` sets `DRY_RUN=true` and canonical `ROUTE_*` names.
 
 ### 2. Deploy Go router with `DRY_RUN=true`
 
@@ -216,6 +221,8 @@ kubectl -n bitso-trading-dev rollout status deploy/strategy-router
 ### 3. Run bash router in parallel (dry-run)
 
 ```bash
+./scripts/run-stage-soak.sh start-bash
+# Or manually:
 DRY_RUN=true BOOK=btc_mxn ROUTER_INTERVAL_SEC=30 \
   NAMESPACE=bitso-trading-dev \
   ./scripts/strategy-regime-router.sh
