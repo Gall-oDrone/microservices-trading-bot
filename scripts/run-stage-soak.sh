@@ -82,7 +82,7 @@ compare_one_regime() {
     def rsi: (.rsi.value // .rsi.Value // 50);
     if price == 0 then "neutral"
     elif atr_pct > 1.5 then "high_vol"
-    elif atr_pct < 0.30 and pb > lo and pb < hi then "low_vol_range"
+    elif atr_pct < 0.30 and pb > $lo and pb < $hi then "low_vol_range"
     elif ema_dist_pct > 0.10 and rsi < 70 then "trending_up"
     elif ema_dist_pct < -0.10 and rsi > 30 then "trending_down"
     else "neutral" end
