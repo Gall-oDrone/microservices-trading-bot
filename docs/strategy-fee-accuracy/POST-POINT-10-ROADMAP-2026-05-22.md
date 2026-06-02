@@ -26,6 +26,8 @@ Items 2–10 (except the Stage soak in item 1) are implemented on branch `feat/k
 
 ### 1. 📋 Stage soak with `DRY_RUN=true`
 
+Full operator guide: [`STAGE-SOAK-OPERATOR-GUIDE-2026-06-02.md`](STAGE-SOAK-OPERATOR-GUIDE-2026-06-02.md).
+
 Deploy `strategy-router` to `bitso-trading-dev` and let it run for 24–48 h **alongside** `scripts/strategy-regime-router.sh` (also in dry-run, from a laptop). Goal: confirm both classifiers pick the same regime on the same indicator snapshots.
 
 **Acceptance:**

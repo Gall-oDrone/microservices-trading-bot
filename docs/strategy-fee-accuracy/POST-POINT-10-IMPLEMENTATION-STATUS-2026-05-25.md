@@ -119,7 +119,7 @@ Items 8–10 are complete and not required for the milestone gate above, but the
 
 ## Operator next steps (recommended)
 
-1. **Item 1 — Stage soak:** Deploy `strategy-router` with `DRY_RUN=true` for 24–48 h alongside `DRY_RUN=true ./scripts/strategy-regime-router.sh`. Compare `/tmp/strategy-regime-router.log` with `GET /api/v1/router/state` → `last_decisions`. Target ≥ 99 % regime agreement per poll cycle.
+1. **Item 1 — Stage soak:** See [`STAGE-SOAK-OPERATOR-GUIDE-2026-06-02.md`](STAGE-SOAK-OPERATOR-GUIDE-2026-06-02.md). Deploy `strategy-router` with `DRY_RUN=true` for 24–48 h alongside `DRY_RUN=true ./scripts/strategy-regime-router.sh`. Compare audit log / `GET /api/v1/router/state` → `last_decisions`. Target ≥ 99 % regime agreement per poll cycle.
 2. **Flip live routing:** Set `DRY_RUN=false` on `strategy-router` only after soak passes; keep `ROUTER_MANAGED=true` organic registration.
 3. **Monitor:** Import `strategy-router` Grafana dashboard; confirm `RouterNotEvaluating` and `RouterEvaluationsFailing` stay quiet.
 4. **Fee honesty spot-check:** On first round-trip under router-managed momentum or mean_reversion, confirm `trading.order.fills` events carry `fee_rate` and strategy logs show net P&L using realized legs.
@@ -129,6 +129,7 @@ Items 8–10 are complete and not required for the milestone gate above, but the
 
 ## Related documents
 
+- [`STAGE-SOAK-OPERATOR-GUIDE-2026-06-02.md`](STAGE-SOAK-OPERATOR-GUIDE-2026-06-02.md) — soak process, measurement, router vs market-data behavior
 - [`POST-POINT-10-ROADMAP-2026-05-22.md`](POST-POINT-10-ROADMAP-2026-05-22.md) — original prioritized list
 - [`README.md`](README.md) — folder index
 - [`POINT-9-REALIZED-FEES.md`](POINT-9-REALIZED-FEES.md)
