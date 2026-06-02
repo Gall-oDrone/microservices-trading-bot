@@ -199,7 +199,7 @@ export ROUTE_TRENDING_DOWN=organic_momentum_1717334400
 
 ```bash
 # Canonical names (default when ROUTER_MANAGED=true): mean_reversion_btc_mxn, momentum_btc_mxn, limit_profit_btc_mxn
-./scripts/run-stage-soak.sh register
+./scripts/run-stage-soak-2026-06-02.sh register
 
 # Or manually:
 NAMESPACE=bitso-trading-dev BOOK=btc_mxn \
@@ -221,7 +221,7 @@ kubectl -n bitso-trading-dev rollout status deploy/strategy-router
 ### 3. Run bash router in parallel (dry-run)
 
 ```bash
-./scripts/run-stage-soak.sh start-bash
+./scripts/run-stage-soak-2026-06-02.sh start-bash
 # Or manually:
 DRY_RUN=true BOOK=btc_mxn ROUTER_INTERVAL_SEC=30 \
   NAMESPACE=bitso-trading-dev \

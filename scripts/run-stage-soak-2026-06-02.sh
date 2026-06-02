@@ -4,11 +4,11 @@
 # See docs/strategy-fee-accuracy/STAGE-SOAK-OPERATOR-GUIDE-2026-06-02.md
 #
 # Usage:
-#   ./scripts/run-stage-soak.sh check          # prerequisites + one regime compare
-#   ./scripts/run-stage-soak.sh register       # ROUTER_MANAGED canonical names
-#   ./scripts/run-stage-soak.sh start-bash     # port-forward + bash router in background
-#   ./scripts/run-stage-soak.sh stop-bash      # stop bash router + port-forward
-#   ./scripts/run-stage-soak.sh status         # router state, processes, ATR warmup
+#   ./scripts/run-stage-soak-2026-06-02.sh check          # prerequisites + one regime compare
+#   ./scripts/run-stage-soak-2026-06-02.sh register       # ROUTER_MANAGED canonical names
+#   ./scripts/run-stage-soak-2026-06-02.sh start-bash     # port-forward + bash router in background
+#   ./scripts/run-stage-soak-2026-06-02.sh stop-bash      # stop bash router + port-forward
+#   ./scripts/run-stage-soak-2026-06-02.sh status         # router state, processes, ATR warmup
 #
 set -euo pipefail
 

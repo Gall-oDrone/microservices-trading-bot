@@ -16,7 +16,7 @@ The two documents below cover the work-streams independently — each is shippab
 | `POST-POINT-10-IMPLEMENTATION-STATUS-2026-05-25.md` | Closure status for roadmap items 2–10: verification, Stage workflow, milestone gate, operator next steps. |
 | `POINT-11-FEE-HONESTY-MEAN-REVERSION-MOMENTUM-2026-05-22.md` | Extends POINT-9 realized-fee P&L and fill-confirmed exits to `mean_reversion` and `momentum`; momentum lifecycle parity with `limit_profit`. |
 | `STAGE-SOAK-OPERATOR-GUIDE-2026-06-02.md` | Stage soak (POST-POINT-10 item 1): what is probed, how regime agreement is measured, env parameters, router behavior vs Bitso Stage market data, pass/fail checklist. |
-| `scripts/run-stage-soak.sh` | Helper: `register`, `start-bash`, `check`, `status` for item 1; pairs with `k8s/overlays/development/strategy-router-soak.yaml`. |
+| `scripts/run-stage-soak-2026-06-02.sh` | Helper: `register`, `start-bash`, `check`, `status` for item 1; pairs with `k8s/overlays/development/strategy-router-soak.yaml`. |
 
 ## TL;DR
 
