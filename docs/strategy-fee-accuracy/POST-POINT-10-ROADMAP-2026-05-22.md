@@ -26,16 +26,19 @@ Items 2–10 (except the Stage soak in item 1) are implemented on branch `feat/k
 
 ### 1. 📋 Stage soak with `DRY_RUN=true`
 
-Full operator guide: [`STAGE-SOAK-OPERATOR-GUIDE-2026-06-02.md`](STAGE-SOAK-OPERATOR-GUIDE-2026-06-02.md).
+Full operator guide: [`STAGE-SOAK-OPERATOR-GUIDE-2026-06-02.md`](STAGE-SOAK-OPERATOR-GUIDE-2026-06-02.md). Context and ATR notes: [`STAGE-SOAK-MARKET-DATA-ATR-OBSERVATIONS-2026-06-03.md`](STAGE-SOAK-MARKET-DATA-ATR-OBSERVATIONS-2026-06-03.md). Helper: `./scripts/run-stage-soak-2026-06-02.sh`.
 
-Deploy `strategy-router` to `bitso-trading-dev` and let it run for 24–48 h **alongside** `scripts/strategy-regime-router.sh` (also in dry-run, from a laptop). Goal: confirm both classifiers pick the same regime on the same indicator snapshots.
+Deploy `strategy-router` to `bitso-trading-dev` and let it run for 24–48 h **alongside** `scripts/strategy-regime-router.sh` (also in dry-run). Goal: confirm both classifiers pick the same regime on the same indicator snapshots.
+
+**ATR prerequisite (✅ 2026-06-03):** `strategy-executor` needs OHLCV from `GET /api/v1/bars` on market-data. Implemented in `services/market-data/internal/bars` + `internal/api/bars.go`. Roll out **`market-data`** image only; soak routers need not restart. Warm-up ~15+ minutes of trades before `snapshot.atr` is non-null.
 
 **Acceptance:**
 - `strategy_router_regime{regime=…}` and the bash audit log agree for ≥ 99 % of poll cycles.
 - `strategy_router_evaluation_errors_total` stays flat (no snapshot fetch failures).
 - `strategy_router_evaluations_total` rate matches `1 / ROUTER_INTERVAL_SEC` (i.e. 1 / 30 = ~0.033 Hz at default).
+- (Recommended) `GET /api/v1/bars` returns sufficient 1m candles; `atr_pct` non-zero when book is active.
 
-**Owner:** operator. **Not blocked** — K8s/CI/monitoring wiring is merged; this is manual validation.
+**Owner:** operator. **Not blocked** — K8s/CI/monitoring and bars API are merged; manual validation + `market-data` deploy.
 
 ### 2. ✅ K8s overlay wiring
 
@@ -165,6 +168,7 @@ The post-POINT-10 milestone is "done" when:
 - [x] Image is rewritten in all three overlays (item 2)
 - [x] Prometheus scrapes the router and the three alerts are armed (item 3)
 - [ ] Item 1 (Stage soak) has logged ≥ 7 days of agreeing classifications between bash + Go routers
+- [x] market-data `GET /api/v1/bars` for ATR (2026-06-03) — deploy to soak namespace before expecting `high_vol` regimes
 - [x] Item 5 (Grafana dashboard) shows regime + active strategy + switches without ad-hoc PromQL
 - [x] Item 6 (POINT-11 fee honesty) has flipped `mean_reversion` and `momentum` to realized-fee P&L
 - [x] Item 7 (momentum stop-loss) has parameter parity with `limit_profit`
@@ -180,6 +184,8 @@ Items 8–10 are **complete** but not required for the milestone gate above.
 - [`POINT-10-STRATEGY-REGIME-ROUTER.md`](POINT-10-STRATEGY-REGIME-ROUTER.md) — Phase 1 design
 - [`STRATEGY-REGIME-ROUTER-SERVICE-2026-05-22.md`](STRATEGY-REGIME-ROUTER-SERVICE-2026-05-22.md) — Phase 2 service
 - [`README.md`](README.md) — folder index
+- [`STAGE-SOAK-MARKET-DATA-ATR-OBSERVATIONS-2026-06-03.md`](STAGE-SOAK-MARKET-DATA-ATR-OBSERVATIONS-2026-06-03.md) — soak + ATR/bars
+- [`STAGE-SOAK-OPERATOR-GUIDE-2026-06-02.md`](STAGE-SOAK-OPERATOR-GUIDE-2026-06-02.md) — soak operator steps
 - [`../MOMENTUM-STRATEGY.md`](../MOMENTUM-STRATEGY.md) §7 — momentum risk roadmap
 - [`../LIMIT-PROFIT-IMPROVEMENTS.md`](../LIMIT-PROFIT-IMPROVEMENTS.md) — limit_profit roadmap
 - [`../agentic-ai/AGENTIC-AI-INTEGRATION-PLAN-2026-05-07.md`](../agentic-ai/AGENTIC-AI-INTEGRATION-PLAN-2026-05-07.md) — agent approval workflow context

@@ -148,15 +148,20 @@ kubectl -n bitso-trading-dev exec deploy/strategy-executor -- \
 
 ---
 
-## 9. Parallel soak with full ATR / Stage WS
+## 9. ATR implementation (shipped 2026-06-03)
 
-| Approach | Description |
-|----------|-------------|
-| **Upgrade current soak** | Ship `/api/v1/bars` + optional Stage WS patch; same bash + Go soak gains ATR without second router |
-| **Second time window** | After bars warm up, run another 24–48h agreement pass including `high_vol` regimes |
-| **Second namespace** | Only if you must not touch `bitso-trading-dev`; usually unnecessary |
+| Component | Path / behavior |
+|-----------|-----------------|
+| **API** | `GET /api/v1/bars?book=btc_mxn&interval=1m&limit=30` on market-data (`:8083`) |
+| **Aggregation** | `services/market-data/internal/bars/aggregate.go` — OHLCV from Redis recent trades |
+| **Handler** | `services/market-data/internal/api/bars.go` |
+| **Consumer** | `strategy-executor` `HTTPDataProvider.GetRecentBars` → ATR in `ComputeAndStore` |
 
-Bars are built from **trade stream** (WebSocket → market-data), not Bitso REST candles API.
+**Deploy:** Roll **`market-data`** only (CI image or manual). **Do not** restart `strategy-router` or bash soak for bars to appear; executor picks up ATR on the next indicator cycle.
+
+**Optional:** Development overlay `bitso-ws-url: wss://ws.stage.bitso.com` for Stage-aligned trade prices (see §5).
+
+**Extended soak:** After warm-up, a second 24–48h window can validate agreement when `high_vol` / `low_vol_range` branches are active — not required for the minimum item 1 gate if bash and Go already agree on trade-based indicators.
 
 ---
 

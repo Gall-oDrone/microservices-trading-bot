@@ -145,6 +145,6 @@ We deliberately ship Phase 1 (external) and document the in-process design as a 
 - `docs/strategy-fee-accuracy/STRATEGY-REGIME-ROUTER-SERVICE-2026-05-22.md` — Phase 2 design, metrics, and operations notes.
 - `scripts/start-organic-trading.sh` — pre-registers strategies the router can choose from.
 - `services/strategy-executor/internal/server/http_server.go` — endpoints consumed.
-- `services/strategy-executor/internal/indicators/service.go` — `Snapshot` schema (`atr`, `ema`, `rsi`, `bollinger`).
+- `services/strategy-executor/internal/indicators/service.go` — `Snapshot` schema (`atr`, `ema`, `rsi`, `bollinger`). ATR requires `GET /api/v1/bars` on market-data (implemented 2026-06-03; see [`STAGE-SOAK-MARKET-DATA-ATR-OBSERVATIONS-2026-06-03.md`](STAGE-SOAK-MARKET-DATA-ATR-OBSERVATIONS-2026-06-03.md)).
 - `services/strategy-executor/FEATURES-ROADMAP.md` — long-term "Strategy Composition Framework".
 - `k8s/base/strategy-router.yaml` — Kubernetes manifest for the Phase 2 service.

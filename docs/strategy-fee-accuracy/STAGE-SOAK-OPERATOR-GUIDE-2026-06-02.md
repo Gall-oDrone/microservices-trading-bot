@@ -35,10 +35,13 @@ strategy-router  ──every ROUTER_INTERVAL_SEC (default 30s)──►
 
 **strategy-executor** maintains indicators (ATR, EMA, RSI, Bollinger, etc.) by:
 
-1. Consuming **market-data** (Kafka trades/tickers and/or HTTP `GET` to the market-data service), and/or  
-2. Refreshing from recent trades on a background interval (`INDICATOR_UPDATE_INTERVAL`, default **30s** in the indicator service).
+1. Consuming **market-data** (Kafka trades/tickers and HTTP `GET /api/v1/trades` to market-data), and  
+2. Refreshing from recent trades on a background interval (`INDICATOR_UPDATE_INTERVAL`, e.g. **5s** in the development overlay).
+3. **ATR** — `GET /api/v1/bars?book=…&interval=1m&limit=30` on market-data (OHLCV aggregated from the trade stream). Implemented **2026-06-03** in `services/market-data` (see [`STAGE-SOAK-MARKET-DATA-ATR-OBSERVATIONS-2026-06-03.md`](STAGE-SOAK-MARKET-DATA-ATR-OBSERVATIONS-2026-06-03.md)).
 
-**market-data** on Stage connects to the **Bitso Stage WebSocket / REST** for the configured book (e.g. `btc_mxn`). So as long as `market-data` and `strategy-executor` are running in the cluster, each router poll sees **indicators derived from live Stage prices** — not a frozen snapshot.
+**market-data** ingests live trades via Bitso WebSocket (`BITSO_WS_URL`; use `wss://ws.stage.bitso.com` on Stage — see observations doc). As long as `market-data` and `strategy-executor` are running, each router poll sees **indicators derived from live prices** — not a frozen snapshot.
+
+**ATR warm-up:** After deploying a `market-data` build that includes `/api/v1/bars`, allow ≥ **15 minutes** of trades on the book so 1m buckets can populate (ATR period 14 needs enough bars). Until then `atr` may be null and `atr_pct` may be 0 (classifier skews toward `low_vol_range`).
 
 ### What happens each poll cycle
 
@@ -82,6 +85,7 @@ Compare:
 | `increase(strategy_router_evaluation_errors_total[5m])` | 0 |
 | Alerts `RouterNotEvaluating`, `RouterEvaluationsFailing` | Not firing |
 | Regime stuck on `neutral` + “missing price” | Investigate cold indicators |
+| `atr` null / `atr_pct` always 0 | Confirm `GET /api/v1/bars` returns bars; roll out `market-data` image with bars API; wait for trade volume |
 
 ### Usually **not** scored during soak
 
@@ -192,8 +196,13 @@ export ROUTE_TRENDING_DOWN=organic_momentum_1717334400
 ### Prerequisites
 
 - [ ] `market-data` and `strategy-executor` running on Stage (`bitso-trading-dev` or your namespace).
-- [ ] `GET /api/v1/indicators/btc_mxn/snapshot` returns non-zero ATR, RSI, EMA, Bollinger.
-- [ ] Strategies registered (`ROUTER_MANAGED=true`); none required to be running during soak.
+- [ ] `market-data` deployed with **`GET /api/v1/bars`** (commit 2026-06-03+). Verify:
+  ```bash
+  kubectl -n bitso-trading-dev exec deploy/strategy-executor -- \
+    wget -qO- 'http://market-data:8083/api/v1/bars?book=btc_mxn&interval=1m&limit=30' | jq '.count'
+  ```
+- [ ] `GET /api/v1/indicators/btc_mxn/snapshot` returns RSI, EMA, Bollinger; **ATR** non-null after warm-up (optional for agreement gate, required for full regime tree including `high_vol`).
+- [ ] Strategies registered (`ROUTER_MANAGED=true`); **none running** during soak (`./scripts/run-stage-soak-2026-06-02.sh register`).
 
 ### 1. Register strategies
 
@@ -279,8 +288,10 @@ comparable_cycles = cycles where both routers fetched a valid snapshot
 | Regime agreement | ≥ 99% | Diff thresholds; dump both `snapshot` payloads |
 | Evaluation errors | Flat | Fix executor URL / network |
 | Evaluations rate | ~1/interval | Check `ROUTER_AUTOSTART`, pod restarts |
-| Indicators warm | Non-zero snapshot | Fix market-data WS / Kafka |
+| Indicators warm | Non-zero RSI/EMA/Bollinger in snapshot | Fix market-data WS / Kafka |
+| ATR / bars | `count` ≥ 15 on bars API; `atr.value` in snapshot after warm-up | Deploy market-data with `/api/v1/bars`; ensure trade flow on book |
 | Constant `not_registered` | — | Align `ROUTE_*` with registered names |
+| Bash leg healthy | No repeated `snapshot fetch failed` in bash log | `./scripts/run-stage-soak-2026-06-02.sh stop-bash && start-bash` after executor pod restart |
 
 ---
 
@@ -297,8 +308,23 @@ For apples-to-apples bash vs Go on **one** snapshot, fetch once and pipe the JSO
 
 ---
 
+## ATR and OHLCV bars (2026-06-03)
+
+| Layer | Role |
+|-------|------|
+| **market-data** | `GET /api/v1/bars` — builds 1m/5m/15m/1h OHLCV from Redis recent trades (`internal/bars`, `internal/api/bars.go`) |
+| **strategy-executor** | On each indicator refresh, `GetRecentBars` → `atr.ComputeFromBars` → `atr` in snapshot |
+| **Routers** | `atr_pct = (atr/price)*100` drives `high_vol` / `low_vol_range` branches |
+
+Rolling out **only** `market-data` does **not** require restarting `strategy-router` or the bash soak. Restart the bash leg only if port-forward died (executor pod restart).
+
+Spot-check: `./scripts/run-stage-soak-2026-06-02.sh check`
+
+---
+
 ## Related documents
 
+- [`STAGE-SOAK-MARKET-DATA-ATR-OBSERVATIONS-2026-06-03.md`](STAGE-SOAK-MARKET-DATA-ATR-OBSERVATIONS-2026-06-03.md) — soak rationale, `DRY_RUN`, Stage WS, ATR fix
 - [`POINT-10-STRATEGY-REGIME-ROUTER.md`](POINT-10-STRATEGY-REGIME-ROUTER.md) — Phase 1 design
 - [`STRATEGY-REGIME-ROUTER-SERVICE-2026-05-22.md`](STRATEGY-REGIME-ROUTER-SERVICE-2026-05-22.md) — Phase 2 service
 - [`POST-POINT-10-ROADMAP-2026-05-22.md`](POST-POINT-10-ROADMAP-2026-05-22.md) — item 1 acceptance

@@ -99,6 +99,7 @@ Watch `strategy_router_regime`, `strategy_router_active_strategy`, `strategy_rou
 | POINT-11 fee honesty on MR + momentum | ✅ |
 | Momentum lifecycle parity with `limit_profit` | ✅ |
 | ≥ 7 days bash + Go classifier agreement (item 1) | 📋 Pending operator |
+| ATR / `GET /api/v1/bars` on market-data (soak classifier inputs) | ✅ | 2026-06-03 — `services/market-data/internal/bars`, deploy `market-data` image to dev; see [`STAGE-SOAK-MARKET-DATA-ATR-OBSERVATIONS-2026-06-03.md`](STAGE-SOAK-MARKET-DATA-ATR-OBSERVATIONS-2026-06-03.md) |
 
 Items 8–10 are complete and not required for the milestone gate above, but they are production-ready on this branch.
 
@@ -108,7 +109,7 @@ Items 8–10 are complete and not required for the milestone gate above, but the
 
 | Topic | Doc | Notes |
 |-------|-----|-------|
-| Stage soak (item 1) | This doc §Operator | Manual validation |
+| Stage soak (item 1) | [`STAGE-SOAK-OPERATOR-GUIDE-2026-06-02.md`](STAGE-SOAK-OPERATOR-GUIDE-2026-06-02.md), [`STAGE-SOAK-MARKET-DATA-ATR-OBSERVATIONS-2026-06-03.md`](STAGE-SOAK-MARKET-DATA-ATR-OBSERVATIONS-2026-06-03.md) | Manual validation; ATR bars API shipped 2026-06-03 |
 | `agent-coordinator` threshold tuner | POST-POINT-10 §11 | Needs approval workflow + audit history |
 | In-process `meta_router` | POINT-10 §6 | Defer until ≥ 4 weeks clean Stage classification |
 | `momentum_*` dedicated Prometheus counters | `MOMENTUM-STRATEGY.md` §7 | Generic `strategy_executor_signals_generated_total` suffices for now |
@@ -119,7 +120,7 @@ Items 8–10 are complete and not required for the milestone gate above, but the
 
 ## Operator next steps (recommended)
 
-1. **Item 1 — Stage soak:** See [`STAGE-SOAK-OPERATOR-GUIDE-2026-06-02.md`](STAGE-SOAK-OPERATOR-GUIDE-2026-06-02.md). Helper: `./scripts/run-stage-soak-2026-06-02.sh` (`register`, `start-bash`, `check`, `status`). Development overlay `k8s/overlays/development/strategy-router-soak.yaml` sets `DRY_RUN=true` and canonical `ROUTE_*`. Run 24–48 h alongside bash router; target ≥ 99 % regime agreement. **Do not** set router `DRY_RUN=false` until soak passes.
+1. **Item 1 — Stage soak:** See [`STAGE-SOAK-OPERATOR-GUIDE-2026-06-02.md`](STAGE-SOAK-OPERATOR-GUIDE-2026-06-02.md) and [`STAGE-SOAK-MARKET-DATA-ATR-OBSERVATIONS-2026-06-03.md`](STAGE-SOAK-MARKET-DATA-ATR-OBSERVATIONS-2026-06-03.md). Helper: `./scripts/run-stage-soak-2026-06-02.sh` (`register`, `start-bash`, `check`, `status`). Overlay `strategy-router-soak.yaml`: `DRY_RUN=true`, canonical `ROUTE_*`. **Deploy `market-data`** with `GET /api/v1/bars` (2026-06-03) so ATR populates after warm-up — does not require restarting the soak routers. Run 24–48 h bash + Go; ≥ 99 % regime agreement. **Do not** set router `DRY_RUN=false` until soak passes.
 2. **Flip live routing:** Set `DRY_RUN=false` on `strategy-router` only after soak passes; keep `ROUTER_MANAGED=true` organic registration.
 3. **Monitor:** Import `strategy-router` Grafana dashboard; confirm `RouterNotEvaluating` and `RouterEvaluationsFailing` stay quiet.
 4. **Fee honesty spot-check:** On first round-trip under router-managed momentum or mean_reversion, confirm `trading.order.fills` events carry `fee_rate` and strategy logs show net P&L using realized legs.
@@ -130,6 +131,7 @@ Items 8–10 are complete and not required for the milestone gate above, but the
 ## Related documents
 
 - [`STAGE-SOAK-OPERATOR-GUIDE-2026-06-02.md`](STAGE-SOAK-OPERATOR-GUIDE-2026-06-02.md) — soak process, measurement, router vs market-data behavior
+- [`STAGE-SOAK-MARKET-DATA-ATR-OBSERVATIONS-2026-06-03.md`](STAGE-SOAK-MARKET-DATA-ATR-OBSERVATIONS-2026-06-03.md) — soak rationale, ATR/bars implementation, ops lessons
 - [`POST-POINT-10-ROADMAP-2026-05-22.md`](POST-POINT-10-ROADMAP-2026-05-22.md) — original prioritized list
 - [`README.md`](README.md) — folder index
 - [`POINT-9-REALIZED-FEES.md`](POINT-9-REALIZED-FEES.md)
