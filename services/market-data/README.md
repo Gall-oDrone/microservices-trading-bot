@@ -179,6 +179,10 @@ The Market Data Service is a microservice that handles real-time market data fro
 - `GET /health/live` - Liveness probe
 - `GET /health/ready` - Readiness probe
 
+### OHLCV Bars
+
+- `GET /api/v1/bars?book=btc_mxn&interval=1m&limit=30` - OHLCV candles aggregated from recent trades (used by strategy-executor for ATR). Intervals: `1m`, `5m`, `15m`, `1h`.
+
 ### Trade Endpoints
 
 - `GET /api/v1/trades` - Get recent trades

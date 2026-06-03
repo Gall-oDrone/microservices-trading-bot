@@ -87,6 +87,9 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/health/live", h.LivenessCheck)
 	mux.HandleFunc("/health/ready", h.ReadinessCheck)
 
+	// OHLCV bars (aggregated from trades; used by strategy-executor ATR)
+	mux.HandleFunc("/api/v1/bars", h.GetBars)
+
 	// Trade endpoints
 	mux.HandleFunc("/api/v1/trades", h.GetTrades)
 	mux.HandleFunc("/api/v1/trades/", h.GetTradeByID)
