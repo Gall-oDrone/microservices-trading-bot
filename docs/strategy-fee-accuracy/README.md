@@ -16,8 +16,10 @@ The two documents below cover the work-streams independently — each is shippab
 | `POST-POINT-10-IMPLEMENTATION-STATUS-2026-05-25.md` | Closure status for roadmap items 2–10: verification, Stage workflow, milestone gate, operator next steps. |
 | `POINT-11-FEE-HONESTY-MEAN-REVERSION-MOMENTUM-2026-05-22.md` | Extends POINT-9 realized-fee P&L and fill-confirmed exits to `mean_reversion` and `momentum`; momentum lifecycle parity with `limit_profit`. |
 | `STAGE-SOAK-OPERATOR-GUIDE-2026-06-02.md` | Stage soak (POST-POINT-10 item 1): regime agreement, env parameters, pass/fail checklist, **ATR/bars** prerequisites and warm-up. |
-| `scripts/run-stage-soak-2026-06-02.sh` | Helper: `register`, `start-bash`, `check`, `status` for item 1; pairs with `k8s/overlays/development/strategy-router-soak.yaml`. |
+| `scripts/run-stage-soak-2026-06-02.sh` | Helper: `register`, `start-bash`, `check`, `status`, `report`, `sample` for item 1; pairs with `k8s/overlays/development/strategy-router-soak.yaml`. |
+| `scripts/analyze-stage-soak-agreement.sh` | Agreement analysis: `report`, `sample`, `pull-go`; writes `tmp/stage-soak/soak-verification-report.json`. |
 | `STAGE-SOAK-MARKET-DATA-ATR-OBSERVATIONS-2026-06-03.md` | Soak purpose, market-data flow, `DRY_RUN` semantics, Stage WS vs REST; **ATR fix** via `GET /api/v1/bars` on market-data (2026-06-03). |
+| `STAGE-SOAK-VERIFICATION-2026-06-03.md` | Post–24h verification report: log analysis, ATR/bars check, short-soak verdict, live sample collection plan. |
 
 ## TL;DR
 

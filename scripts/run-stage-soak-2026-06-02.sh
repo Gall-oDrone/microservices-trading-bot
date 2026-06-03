@@ -9,6 +9,8 @@
 #   ./scripts/run-stage-soak-2026-06-02.sh start-bash     # port-forward + bash router in background
 #   ./scripts/run-stage-soak-2026-06-02.sh stop-bash      # stop bash router + port-forward
 #   ./scripts/run-stage-soak-2026-06-02.sh status         # router state, processes, ATR warmup
+#   ./scripts/run-stage-soak-2026-06-02.sh report         # pull Go audit + agreement analysis
+#   ./scripts/run-stage-soak-2026-06-02.sh sample         # one live bash vs Go regime sample
 #
 set -euo pipefail
 
@@ -69,7 +71,7 @@ compare_one_regime() {
     | jq -r '.last_decisions[0].regime // "unknown"')
   # Classify same snapshot as bash router (see scripts/strategy-regime-router.sh)
   bash_regime=$(echo "$snap" | jq -r --argjson hi 0.85 --argjson lo 0.15 '
-    def price: (.bollinger.current_price // .sma.value // .sma.Value // 0);
+    def price: (.bollinger.current_price // .bollinger.middle_band // .sma.value // .sma.Value // 0);
     def atr: (.atr.value // .atr.Value // 0);
     def atr_pct: if price > 0 then (atr / price) * 100 else 0 end;
     def pb:
@@ -159,8 +161,14 @@ case "$cmd" in
     pgrep -af 'strategy-regime-router|port-forward.*'"${PF_PORT}"':8081' || echo "(none)"
     [[ -f "$LOG_DIR/bash-router-soak.log" ]] && tail -3 "$LOG_DIR/bash-router-soak.log" || true
     ;;
+  report)
+    "$(dirname "$0")/analyze-stage-soak-agreement.sh" report
+    ;;
+  sample)
+    "$(dirname "$0")/analyze-stage-soak-agreement.sh" sample
+    ;;
   *)
-    err "Unknown command: $cmd (check|register|start-bash|stop-bash|status)"
+    err "Unknown command: $cmd (check|register|start-bash|stop-bash|status|report|sample)"
     exit 1
     ;;
 esac

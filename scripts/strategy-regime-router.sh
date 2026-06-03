@@ -135,7 +135,7 @@ classify_regime() {
   bb_lower=$(echo "$snapshot" | jq -r '.bollinger.lower_band // .bollinger.Lower // 0')
   bb_upper=$(echo "$snapshot" | jq -r '.bollinger.upper_band // .bollinger.Upper // 0')
   bb_middle=$(echo "$snapshot"| jq -r '.bollinger.middle_band // .bollinger.Middle // 0')
-  price=$(echo "$snapshot"    | jq -r '.bollinger.current_price // .sma.value // .sma.Value // .ema.value // .ema.Value // 0')
+  price=$(echo "$snapshot"    | jq -r '.bollinger.current_price // .bollinger.middle_band // .sma.value // .sma.Value // .ema.value // .ema.Value // 0')
 
   if [[ "$price" == "0" || "$price" == "null" ]]; then
     echo "neutral"
@@ -203,7 +203,7 @@ run_one_cycle() {
   preferred=$(resolve_route "$regime")
   current=$(get_running_strategy_name || echo "")
 
-  info "regime=$regime  preferred=$preferred  current=${current:-<none>}"
+  info "$(date -u +%FT%TZ) regime=$regime  preferred=$preferred  current=${current:-<none>}"
 
   if [[ "$preferred" == "none" || -z "$preferred" ]]; then
     if [[ -n "$current" ]]; then

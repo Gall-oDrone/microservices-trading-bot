@@ -273,6 +273,15 @@ comparable_cycles = cycles where both routers fetched a valid snapshot
 
 **Pass:** `agreement_rate ≥ 0.99` over 24–48 h short soak, then maintain logging for **≥ 7 days** for the milestone gate.
 
+**Automation (2026-06-03):**
+
+```bash
+./scripts/run-stage-soak-2026-06-02.sh report   # bash log stats + pull Go audit
+./scripts/run-stage-soak-2026-06-02.sh sample   # append one live bash vs Go pair
+```
+
+Go audit lives in the pod at `/tmp/strategy-regime-router.log` and is **lost on pod restart** — run `report` (or `analyze-stage-soak-agreement.sh pull-go`) before redeploys. See [`STAGE-SOAK-VERIFICATION-2026-06-03.md`](STAGE-SOAK-VERIFICATION-2026-06-03.md).
+
 ### 7. After pass
 
 1. Set `DRY_RUN=false` on `strategy-router` only; stop bash router.
