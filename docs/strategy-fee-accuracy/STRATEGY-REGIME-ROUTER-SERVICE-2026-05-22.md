@@ -179,6 +179,7 @@ End-to-end on Stage:
 - ✅ **Per-book router (2026-05-22).** `STRATEGY_ROUTER_BOOK` accepts comma-separated books; `BookCoordinator` runs one engine per book; metrics include a `book` label. See [`POST-POINT-10-ROADMAP-2026-05-22.md`](POST-POINT-10-ROADMAP-2026-05-22.md) item 10.
 - ✅ **Grafana dashboard (2026-05-22).** `monitoring/grafana/dashboards/services/strategy-router.json` — import via `./scripts/grafana-import-dashboard.sh strategy-router`.
 - **Meta strategy in-process.** The original POINT-10 doc points at a `meta_router` strategy type as the eventual evolution. Defer until ≥ 4 weeks of clean Stage classification (item 1 in [`POST-POINT-10-IMPLEMENTATION-STATUS-2026-05-25.md`](POST-POINT-10-IMPLEMENTATION-STATUS-2026-05-25.md)).
+- **ATR / OHLCV bars (2026-06-03).** Regime `high_vol` / `low_vol_range` use `atr_pct` from snapshot ATR. market-data now serves `GET /api/v1/bars`; deploy `market-data` before expecting non-zero `atr_pct` on soak. See [`STAGE-SOAK-MARKET-DATA-ATR-OBSERVATIONS-2026-06-03.md`](STAGE-SOAK-MARKET-DATA-ATR-OBSERVATIONS-2026-06-03.md).
 - **Agent-coordinator threshold tuner.** Plug the audit log into `services/agent-coordinator` so an LLM agent can *recommend* threshold changes off-line. The router itself remains deterministic; only humans (or the agent with an operator approval gate) get to flip the env vars.
 
 ## 11) Related files
