@@ -333,6 +333,7 @@ Spot-check: `./scripts/run-stage-soak-2026-06-02.sh check`
 
 ## Related documents
 
+- [`STAGE-FINANCIAL-APPROACH-2026-06-04.md`](STAGE-FINANCIAL-APPROACH-2026-06-04.md) — **single reference** if lost: financial priorities vs soak gates
 - [`STAGE-EXECUTION-SOAK-OPERATOR-GUIDE-2026-06-04.md`](STAGE-EXECUTION-SOAK-OPERATOR-GUIDE-2026-06-04.md) — **after** classification soak passes: router lifecycle, Stage orders, fee honesty
 - [`STAGE-SOAK-MARKET-DATA-ATR-OBSERVATIONS-2026-06-03.md`](STAGE-SOAK-MARKET-DATA-ATR-OBSERVATIONS-2026-06-03.md) — soak rationale, `DRY_RUN`, Stage WS, ATR fix
 - [`POINT-10-STRATEGY-REGIME-ROUTER.md`](POINT-10-STRATEGY-REGIME-ROUTER.md) — Phase 1 design
