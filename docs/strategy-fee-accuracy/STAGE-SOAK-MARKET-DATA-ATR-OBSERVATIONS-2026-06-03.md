@@ -180,6 +180,7 @@ kubectl -n bitso-trading-dev exec deploy/strategy-executor -- \
 
 ## 11. Related documents
 
+- [`STAGE-EXECUTION-SOAK-OPERATOR-GUIDE-2026-06-04.md`](STAGE-EXECUTION-SOAK-OPERATOR-GUIDE-2026-06-04.md) — router lifecycle + Stage orders after classification soak
 - [`STAGE-SOAK-OPERATOR-GUIDE-2026-06-02.md`](STAGE-SOAK-OPERATOR-GUIDE-2026-06-02.md)
 - [`POST-POINT-10-IMPLEMENTATION-STATUS-2026-05-25.md`](POST-POINT-10-IMPLEMENTATION-STATUS-2026-05-25.md)
 - [`README.md`](README.md)

@@ -127,9 +127,10 @@ Optional: continue bash soak until **48 h** from `start-bash` for the upper boun
 ### After short soak PASS
 
 1. `./scripts/run-stage-soak-2026-06-02.sh stop-bash`
-2. Set `DRY_RUN=false` on **Go router only** (not trading-engine).
-3. Fee-honesty spot-check on first live round-trip ([`POST-POINT-10-IMPLEMENTATION-STATUS-2026-05-25.md`](POST-POINT-10-IMPLEMENTATION-STATUS-2026-05-25.md)).
-4. Maintain `DRY_RUN=true` logging for **≥ 7 days** (extended milestone gate).
+2. Follow [`STAGE-EXECUTION-SOAK-OPERATOR-GUIDE-2026-06-04.md`](STAGE-EXECUTION-SOAK-OPERATOR-GUIDE-2026-06-04.md) — phased router lifecycle, trading-engine on Stage, fee honesty.
+3. Set `DRY_RUN=false` on **Go router only** when starting Phase 2 of the execution guide (not trading-engine until Phase 3).
+4. Fee-honesty spot-check on first live round-trip ([`POST-POINT-10-IMPLEMENTATION-STATUS-2026-05-25.md`](POST-POINT-10-IMPLEMENTATION-STATUS-2026-05-25.md)).
+5. Maintain classification sampling for **≥ 7 days** (extended milestone gate).
 
 ### Operational hygiene
 

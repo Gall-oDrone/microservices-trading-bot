@@ -20,6 +20,7 @@ The two documents below cover the work-streams independently — each is shippab
 | `scripts/analyze-stage-soak-agreement.sh` | Agreement analysis: `report`, `sample`, `pull-go`; writes `tmp/stage-soak/soak-verification-report.json`. |
 | `STAGE-SOAK-MARKET-DATA-ATR-OBSERVATIONS-2026-06-03.md` | Soak purpose, market-data flow, `DRY_RUN` semantics, Stage WS vs REST; **ATR fix** via `GET /api/v1/bars` on market-data (2026-06-03). |
 | `STAGE-SOAK-VERIFICATION-2026-06-03.md` | Post–24h verification report: log analysis, ATR/bars check, short-soak verdict, live sample collection plan. |
+| `STAGE-EXECUTION-SOAK-OPERATOR-GUIDE-2026-06-04.md` | Stage execution soak: phased router lifecycle + Bitso Stage orders + fee honesty; runs **after** classification soak passes. |
 
 ## TL;DR
 
