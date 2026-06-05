@@ -178,11 +178,17 @@ live_sample() {
   local snap go_regime bash_regime ts
   ts=$(date -u +%FT%TZ)
   snap=$(curl -fsS "${se}/api/v1/indicators/${BOOK}/snapshot")
+  # Force one fresh Go evaluation on current indicators (avoid stale last_decisions).
   go_regime=$(kubectl -n "$NAMESPACE" exec deploy/strategy-router -- \
-    wget -qO- http://127.0.0.1:8092/api/v1/router/state 2>/dev/null \
-    | jq -r '.last_decisions[0].regime // "unknown"')
+    wget -qO- --post-data='' http://127.0.0.1:8092/api/v1/router/run 2>/dev/null \
+    | jq -r '.decisions[0].regime // .decisions[0].Regime // "unknown"')
+  if [[ -z "$go_regime" || "$go_regime" == "unknown" || "$go_regime" == "null" ]]; then
+    go_regime=$(kubectl -n "$NAMESPACE" exec deploy/strategy-router -- \
+      wget -qO- http://127.0.0.1:8092/api/v1/router/state 2>/dev/null \
+      | jq -r '.last_decisions[0].regime // "unknown"')
+  fi
   bash_regime=$(echo "$snap" | jq -r --argjson hi 0.85 --argjson lo 0.15 '
-    def price: (.bollinger.current_price // .bollinger.middle_band // .sma.value // .sma.Value // 0);
+    def price: (.current_price // .bollinger.current_price // .bollinger.middle_band // .sma.value // .sma.Value // 0);
     def atr: (.atr.value // .atr.Value // 0);
     def atr_pct: if (price|tonumber) > 0 then (atr / (price|tonumber)) * 100 else 0 end;
     def pb:
