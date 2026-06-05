@@ -63,13 +63,16 @@ func NewHTTPClient(baseURL string, timeout time.Duration) *HTTPClient {
 // snapshotResponse is the wire payload returned by
 // GET /api/v1/indicators/{book}/snapshot.
 type snapshotResponse struct {
-	Book      string `json:"book"`
-	SMA       *valueField     `json:"sma,omitempty"`
-	EMA       *valueField     `json:"ema,omitempty"`
-	RSI       *valueField     `json:"rsi,omitempty"`
-	ATR       *valueField     `json:"atr,omitempty"`
-	Bollinger *bollingerField `json:"bollinger,omitempty"`
-	VWAP      *valueField     `json:"vwap,omitempty"`
+	Book         string          `json:"book"`
+	CurrentPrice float64         `json:"current_price"`
+	DataHealthy  bool            `json:"data_healthy"`
+	StaleReason  string          `json:"stale_reason,omitempty"`
+	SMA          *valueField     `json:"sma,omitempty"`
+	EMA          *valueField     `json:"ema,omitempty"`
+	RSI          *valueField     `json:"rsi,omitempty"`
+	ATR          *valueField     `json:"atr,omitempty"`
+	Bollinger    *bollingerField `json:"bollinger,omitempty"`
+	VWAP         *valueField     `json:"vwap,omitempty"`
 }
 
 type valueField struct {
@@ -97,8 +100,15 @@ func (c *HTTPClient) GetSnapshot(ctx context.Context, book string) (classifier.S
 		return classifier.Snapshot{}, err
 	}
 
-	snap := classifier.Snapshot{Book: book}
-	if resp.SMA != nil {
+	snap := classifier.Snapshot{
+		Book:        book,
+		DataHealthy: resp.DataHealthy,
+		StaleReason: resp.StaleReason,
+	}
+	if resp.CurrentPrice > 0 {
+		snap.Price = resp.CurrentPrice
+	}
+	if resp.SMA != nil && snap.Price == 0 {
 		snap.Price = resp.SMA.Value
 	}
 	if resp.Bollinger != nil {

@@ -22,6 +22,7 @@ The two documents below cover the work-streams independently — each is shippab
 | `STAGE-SOAK-VERIFICATION-2026-06-03.md` | Post–24h verification report: log analysis, ATR/bars check, short-soak verdict, live sample collection plan. |
 | `STAGE-EXECUTION-SOAK-OPERATOR-GUIDE-2026-06-04.md` | Stage execution soak: phased router lifecycle + Bitso Stage orders + fee honesty; runs **after** classification soak passes. |
 | **`STAGE-FINANCIAL-APPROACH-2026-06-04.md`** | **Start here if lost:** engineering vs economic proof, fee floor, regime allocation, decision tree, priorities, doc index. |
+| **`BAR-FIRST-INDICATORS-PRODUCTION-2026-06-04.md`** | **Production indicator pipeline:** 1m bar-first compute, bootstrap warm-up, snapshot health, router pause-on-stale, dev overlay ops. |
 
 ## TL;DR
 

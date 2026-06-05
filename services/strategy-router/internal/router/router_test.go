@@ -46,6 +46,9 @@ func (c *fakeClient) GetSnapshot(ctx context.Context, book string) (classifier.S
 	}
 	snap := c.snapshot
 	snap.Book = book
+	if snap.Price > 0 && !snap.DataHealthy && snap.StaleReason == "" {
+		snap.DataHealthy = true
+	}
 	return snap, nil
 }
 
@@ -391,6 +394,36 @@ func TestRunOnce_SnapshotErrorDegradesGracefully(t *testing.T) {
 	}
 	if d.Reason == "" {
 		t.Fatalf("expected an error reason, got empty")
+	}
+}
+
+func TestRunOnce_StaleIndicatorDataBlocksRouting(t *testing.T) {
+	cfg := baseConfig()
+	fc := &fakeClient{
+		snapshot: classifier.Snapshot{
+			Price:       0,
+			DataHealthy: false,
+			StaleReason: "insufficient bars: got 5 need 21",
+		},
+		strategies: []clients.StrategyInfo{
+			{Name: "mean_reversion_btc_mxn", Running: false},
+		},
+	}
+	clk := &fakeClock{now: time.Date(2026, 6, 4, 12, 0, 0, 0, time.UTC)}
+	e := newEngine(t, cfg, fc, clk)
+
+	d, err := e.RunOnce(context.Background())
+	if err != nil {
+		t.Fatalf("RunOnce err: %v", err)
+	}
+	if d.Action != "blocked" {
+		t.Fatalf("action = %q, want blocked", d.Action)
+	}
+	if d.Preferred != "none" {
+		t.Fatalf("preferred = %q, want none (pause)", d.Preferred)
+	}
+	if len(fc.startedCalls) != 0 {
+		t.Fatalf("stale data must not start strategies")
 	}
 }
 

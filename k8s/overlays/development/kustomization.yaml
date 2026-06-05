@@ -10,9 +10,13 @@ patchesStrategicMerge:
 - trading-engine-balance-test-env.yaml
 - strategy-executor-replicas-dev.yaml
 - strategy-executor-indicators-dev.yaml
+- market-data-replicas-dev.yaml
 - trading-engine-replicas-dev.yaml
 - order-management-dev-fill-test-env.yaml
 - strategy-router-soak.yaml
+
+resources:
+- kafka-topics-init-job.yaml
 
 namespace: bitso-trading-dev
 

@@ -74,7 +74,11 @@ func main() {
 		} else {
 			redisUsable = true
 			appLogger.Info("Connected to Redis")
-			indicatorStore = indicators.NewRedisIndicatorStoreWithTTL(redisClient, cfg.Redis.TTL)
+			indicatorTTL := cfg.Indicators.RedisTTL
+			if indicatorTTL <= 0 {
+				indicatorTTL = cfg.Redis.TTL
+			}
+			indicatorStore = indicators.NewRedisIndicatorStoreWithTTL(redisClient, indicatorTTL)
 
 			healthMgr.RegisterCheck(health.NewSimpleCheck("redis", func(ctx context.Context) error {
 				return redisClient.Ping(ctx).Err()
@@ -95,6 +99,11 @@ func main() {
 		BollingerStdDev: cfg.Indicators.BollingerStdDev,
 		ATRPeriod:       cfg.Indicators.ATRPeriod,
 		UpdateInterval:  cfg.Indicators.UpdateInterval,
+		BarInterval:     cfg.Indicators.BarInterval,
+		BarLimitBuffer:  cfg.Indicators.BarLimitBuffer,
+		MaxStaleness:    cfg.Indicators.MaxStaleness,
+		BootstrapWait:   cfg.Indicators.BootstrapWait,
+		BootstrapEvery:  cfg.Indicators.BootstrapEvery,
 	}
 
 	indicatorSvc := indicators.NewService(indicatorConfig, indicatorStore, dataProvider, nil)

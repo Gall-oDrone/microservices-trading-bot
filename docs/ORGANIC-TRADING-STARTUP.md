@@ -81,5 +81,5 @@ The script verifies pods, checks Redis in logs, port-forwards strategy-executor,
 
 ## Troubleshooting
 
-- **`Insufficient trades for btc_mxn: got N, need 20`** in strategy-executor logs: the indicator service needs enough recent trades from market-data before bands/SMA stabilize; wait for **N ≥ 20** or reduce indicator window in config if your deployment exposes it.
+- **`Insufficient trades for btc_mxn: got N, need 20`** (legacy): prior indicator path gated on hot-cache tick count. **Current production path** uses 1m bars — see [`docs/strategy-fee-accuracy/BAR-FIRST-INDICATORS-PRODUCTION-2026-06-04.md`](strategy-fee-accuracy/BAR-FIRST-INDICATORS-PRODUCTION-2026-06-04.md). If `data_healthy=false`, wait for bar warm-up (~20 min) or check `GET /api/v1/bars`.
 - **GET `/api/v1/strategies/{name}`** should return the **instance** `name` (the id you passed at create) and **`parameters`** from the stored config. If you still see stale behavior, ensure the running image includes the strategy-executor registry fix (instance name + parameters on `StrategyInfo`).

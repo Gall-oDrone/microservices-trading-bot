@@ -1,5 +1,5 @@
-# Faster market poll in dev so limit_profit pending_buy_timeout_seconds is evaluated
-# closer to wall time (OnTick runs on each indicators update interval).
+# Bar-first indicators: 1m OHLCV closes for SMA/EMA/RSI/Bollinger/ATR (production path).
+# Faster poll in dev so limit_profit pending_buy_timeout_seconds tracks wall time.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -12,3 +12,15 @@ spec:
         env:
         - name: INDICATORS_UPDATE_INTERVAL
           value: "5s"
+        - name: INDICATORS_BAR_INTERVAL
+          value: "1m"
+        - name: INDICATORS_BAR_LIMIT_BUFFER
+          value: "5"
+        - name: INDICATORS_MAX_STALENESS
+          value: "15m"
+        - name: INDICATORS_REDIS_TTL
+          value: "15m"
+        - name: INDICATORS_BOOTSTRAP_WAIT
+          value: "2m"
+        - name: INDICATORS_BOOTSTRAP_EVERY
+          value: "10s"

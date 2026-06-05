@@ -147,6 +147,29 @@ func (e *Engine) RunOnce(ctx context.Context) (Decision, error) {
 		}), nil
 	}
 
+	if !snap.DataHealthy || snap.Price <= 0 {
+		reason := snap.StaleReason
+		if reason == "" {
+			reason = "indicator snapshot missing or stale"
+		}
+		if e.metrics != nil {
+			e.metrics.BlockedTotal.WithLabelValues(book, "data_stale").Inc()
+		}
+		return e.record(Decision{
+			Timestamp: start,
+			Book:      book,
+			Regime:    "high_vol",
+			Preferred: "none",
+			Action:    "blocked",
+			Reason:    fmt.Sprintf("indicator data not ready: %s", reason),
+			Snapshot: classifier.Decision{
+				Regime: "high_vol",
+				Reason: reason,
+				Price:  snap.Price,
+			},
+		}), nil
+	}
+
 	cdec := classifier.Classify(snap, e.thresholds())
 	if e.metrics != nil {
 		e.metrics.SetRegime(book, cdec.Regime)

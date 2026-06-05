@@ -166,6 +166,12 @@ type IndicatorsConfig struct {
 	BollingerStdDev float64       `json:"bollinger_stddev"`
 	ATRPeriod       int           `json:"atr_period"`
 	Books           []string      `json:"books"`
+	BarInterval     string        `json:"bar_interval"`
+	BarLimitBuffer  int           `json:"bar_limit_buffer"`
+	MaxStaleness    time.Duration `json:"max_staleness"`
+	BootstrapWait   time.Duration `json:"bootstrap_wait"`
+	BootstrapEvery  time.Duration `json:"bootstrap_every"`
+	RedisTTL        time.Duration `json:"redis_ttl"`
 }
 
 // Load loads configuration from environment variables with defaults
@@ -233,6 +239,12 @@ func Load() (*Config, error) {
 			BollingerStdDev: getEnvAsFloat("INDICATORS_BOLLINGER_STDDEV", 2.0),
 			ATRPeriod:       getEnvAsInt("INDICATORS_ATR_PERIOD", 14),
 			Books:           getEnvAsSlice("INDICATORS_BOOKS", []string{"btc_mxn"}),
+			BarInterval:     getEnv("INDICATORS_BAR_INTERVAL", "1m"),
+			BarLimitBuffer:  getEnvAsInt("INDICATORS_BAR_LIMIT_BUFFER", 5),
+			MaxStaleness:    getEnvAsDuration("INDICATORS_MAX_STALENESS", 15*time.Minute),
+			BootstrapWait:   getEnvAsDuration("INDICATORS_BOOTSTRAP_WAIT", 2*time.Minute),
+			BootstrapEvery:  getEnvAsDuration("INDICATORS_BOOTSTRAP_EVERY", 10*time.Second),
+			RedisTTL:        getEnvAsDuration("INDICATORS_REDIS_TTL", 15*time.Minute),
 		},
 		Strategy: StrategyConfig{
 			DefaultBook:     getEnv("DEFAULT_BOOK", "btc_mxn"),

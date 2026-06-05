@@ -1,0 +1,8 @@
+# Single market-data replica in dev: one Bitso WebSocket consumer per book avoids
+# split ingest stats and duplicate WS connections writing to shared Redis.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: market-data
+spec:
+  replicas: 1

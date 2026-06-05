@@ -17,14 +17,16 @@ package classifier
 // JSON. Each pointer field may be nil when the indicator hasn't warmed
 // up yet; the classifier treats missing inputs as "neutral".
 type Snapshot struct {
-	Book      string
-	Price     float64
-	ATR       float64
-	EMA       float64
-	RSI       float64
-	BBUpper   float64
-	BBMiddle  float64
-	BBLower   float64
+	Book        string
+	Price       float64
+	ATR         float64
+	EMA         float64
+	RSI         float64
+	BBUpper     float64
+	BBMiddle    float64
+	BBLower     float64
+	DataHealthy bool
+	StaleReason string
 }
 
 // Thresholds bundles the tunable knobs for the classifier so callers can
