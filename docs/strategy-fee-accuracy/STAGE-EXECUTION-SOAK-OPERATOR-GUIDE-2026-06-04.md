@@ -29,7 +29,7 @@ This is **not** a substitute for the classification soak. Complete item 1 (≥ 9
 
 Complete **before** Phase 3+ of this guide:
 
-- [ ] Classification short soak **PASS** — see [`STAGE-SOAK-VERIFICATION-2026-06-03.md`](STAGE-SOAK-VERIFICATION-2026-06-03.md) (`live_agreement_rate ≥ 0.99` via `./scripts/run-stage-soak-2026-06-02.sh report`).
+- [x] Classification short soak **PASS** — see [`STAGE-SOAK-VERIFICATION-2026-06-07.md`](STAGE-SOAK-VERIFICATION-2026-06-07.md) (`live_agreement_rate = 1.0`, 140/140 samples, ~69.8 h elapsed; verified 2026-06-07).
 - [ ] `market-data` with `GET /api/v1/bars`; ATR warm-up ≥ 15 min on book ([`STAGE-SOAK-MARKET-DATA-ATR-OBSERVATIONS-2026-06-03.md`](STAGE-SOAK-MARKET-DATA-ATR-OBSERVATIONS-2026-06-03.md)).
 - [ ] Strategies registered with **canonical** names matching `ROUTE_*` (`mean_reversion_btc_mxn`, `momentum_btc_mxn`, `limit_profit_btc_mxn`):
   ```bash
@@ -93,9 +93,9 @@ flowchart LR
 ./scripts/run-stage-soak-2026-06-02.sh report
 ```
 
-**Pass:** `live_agreement_rate ≥ 0.99` in report output (target ≥ 288 samples over 24 h at 30 min spacing, or denser).
+**Pass:** `live_agreement_rate ≥ 0.99` in report output — **achieved 2026-06-07** (see [`STAGE-SOAK-VERIFICATION-2026-06-07.md`](STAGE-SOAK-VERIFICATION-2026-06-07.md)).
 
-**Do not proceed** if [`STAGE-SOAK-VERIFICATION-2026-06-03.md`](STAGE-SOAK-VERIFICATION-2026-06-03.md) criteria are still open.
+**Proceed to Phase 2** via `./scripts/run-stage-execution-soak-2026-06-04.sh phase2-start`.
 
 ---
 
@@ -111,7 +111,12 @@ flowchart LR
 
 **Enable router lifecycle:**
 
-1. Edit `k8s/overlays/development/strategy-router-soak.yaml` — set `DRY_RUN` to `"false"`, **or** patch:
+1. Prefer the helper (stops bash soak, sets env, records window):
+   ```bash
+   ./scripts/run-stage-execution-soak-2026-06-04.sh phase2-start
+   ./scripts/run-stage-execution-soak-2026-06-04.sh phase2-status
+   ```
+   Or edit `k8s/overlays/development/strategy-router-soak.yaml` — set `DRY_RUN` to `"false"`, **or** patch:
    ```bash
    kubectl -n bitso-trading-dev set env deployment/strategy-router DRY_RUN=false
    kubectl -n bitso-trading-dev rollout status deploy/strategy-router
@@ -330,7 +335,8 @@ After Phase 4 short soak (24–48 h) with no critical incidents:
 
 - [`STAGE-FINANCIAL-APPROACH-2026-06-04.md`](STAGE-FINANCIAL-APPROACH-2026-06-04.md) — **single reference**: engineering vs economic proof, priorities, decision tree
 - [`STAGE-SOAK-OPERATOR-GUIDE-2026-06-02.md`](STAGE-SOAK-OPERATOR-GUIDE-2026-06-02.md) — classification soak (item 1)
-- [`STAGE-SOAK-VERIFICATION-2026-06-03.md`](STAGE-SOAK-VERIFICATION-2026-06-03.md) — verification report template
+- [`STAGE-SOAK-VERIFICATION-2026-06-07.md`](STAGE-SOAK-VERIFICATION-2026-06-07.md) — classification PASS (2026-06-07)
+- [`scripts/run-stage-execution-soak-2026-06-04.sh`](../../scripts/run-stage-execution-soak-2026-06-04.sh) — execution soak helper
 - [`STAGE-SOAK-MARKET-DATA-ATR-OBSERVATIONS-2026-06-03.md`](STAGE-SOAK-MARKET-DATA-ATR-OBSERVATIONS-2026-06-03.md) — `DRY_RUN`, Stage WS, ATR
 - [`../ORDER-FLOW-AND-BITSO-TESTING.md`](../ORDER-FLOW-AND-BITSO-TESTING.md) — order pipeline validation
 - [`POST-POINT-10-IMPLEMENTATION-STATUS-2026-05-25.md`](POST-POINT-10-IMPLEMENTATION-STATUS-2026-05-25.md) — milestone gate

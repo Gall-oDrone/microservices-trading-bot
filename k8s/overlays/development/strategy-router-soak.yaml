@@ -1,5 +1,6 @@
 # Stage soak (POST-POINT-10 item 1): classify regimes without start/stop.
-# Flip DRY_RUN to "false" only after ≥99% bash+Go agreement for 24–48h (and 7d gate).
+# Classification short soak PASS 2026-06-07 — see STAGE-SOAK-VERIFICATION-2026-06-07.md.
+# Flip DRY_RUN to "false" via execution soak Phase 2 (run-stage-execution-soak-2026-06-04.sh).
 # See docs/strategy-fee-accuracy/STAGE-SOAK-OPERATOR-GUIDE-2026-06-02.md
 apiVersion: apps/v1
 kind: Deployment

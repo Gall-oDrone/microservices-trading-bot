@@ -1,0 +1,16 @@
+# Execution soak Phase 2: router may start/stop strategies; engine must NOT place Bitso orders.
+# Applied imperatively by scripts/run-stage-execution-soak-2026-06-04.sh phase2-start.
+# Do not merge into kustomization until Phase 2 is the steady-state dev default.
+# See docs/strategy-fee-accuracy/STAGE-EXECUTION-SOAK-OPERATOR-GUIDE-2026-06-04.md
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: trading-engine
+spec:
+  template:
+    spec:
+      containers:
+      - name: trading-engine
+        env:
+        - name: DRY_RUN
+          value: "true"

@@ -133,7 +133,7 @@ Detail: [`STAGE-SOAK-MARKET-DATA-ATR-OBSERVATIONS-2026-06-03.md`](STAGE-SOAK-MAR
 | Gate | Doc | Proves (engineering) | Does **not** prove |
 |------|-----|----------------------|---------------------|
 | **Classification soak** | [`STAGE-SOAK-OPERATOR-GUIDE-2026-06-02.md`](STAGE-SOAK-OPERATOR-GUIDE-2026-06-02.md) | ≥ 99% bash ↔ Go `regime`; router loop healthy | P&L, fees on trades, routing safety under load |
-| **Verification status** | [`STAGE-SOAK-VERIFICATION-2026-06-03.md`](STAGE-SOAK-VERIFICATION-2026-06-03.md) | Where item 1 stood on 2026-06-03 | — |
+| **Verification status** | [`STAGE-SOAK-VERIFICATION-2026-06-07.md`](STAGE-SOAK-VERIFICATION-2026-06-07.md) | Classification short soak **PASS** (2026-06-07) | — |
 | **Execution soak** | [`STAGE-EXECUTION-SOAK-OPERATOR-GUIDE-2026-06-04.md`](STAGE-EXECUTION-SOAK-OPERATOR-GUIDE-2026-06-04.md) | Start/stop, orders, OM sync, fee honesty | Profitability, prod readiness |
 | **ATR / market-data** | [`STAGE-SOAK-MARKET-DATA-ATR-OBSERVATIONS-2026-06-03.md`](STAGE-SOAK-MARKET-DATA-ATR-OBSERVATIONS-2026-06-03.md) | Indicators + `high_vol` / `low_vol` inputs | — |
 
@@ -168,17 +168,17 @@ Detail: [`STAGE-SOAK-MARKET-DATA-ATR-OBSERVATIONS-2026-06-03.md`](STAGE-SOAK-MAR
 
 ## 10. What to do right now (priority stack)
 
-As of the 2026-06-03 verification report, **classification short soak was not PASS** (Go audit lost on restart; need live samples).
+As of **2026-06-07**, **classification short soak PASS** (~69.8 h, 140/140 live agreement). **Current priority: execution soak Phase 2.**
 
 | Priority | Action | Financial why |
 |----------|--------|---------------|
-| **1** | `./scripts/run-stage-soak-2026-06-02.sh sample` + `report` until `live_agreement_rate ≥ 0.99` | Wrong label → wrong strategy |
-| **2** | Optional: `bitso-ws-url: wss://ws.stage.bitso.com` in dev overlay | Indicators align with Stage fills |
-| **3** | One manual `mean_reversion` round-trip, minimal `position_size` | Realized fees or fiction |
-| **4** | Execution guide Phase 2 → 4, small size | Prove allocation + plumbing together |
+| **1** | `./scripts/run-stage-execution-soak-2026-06-04.sh phase2-start` then `phase2-status` ≥ 24 h | Prove start/stop without Bitso orders |
+| **2** | One manual `mean_reversion` round-trip, minimal `position_size` (Phase 3) | Realized fees or fiction |
+| **3** | Execution guide Phase 4, small size | Prove allocation + plumbing together |
+| **4** | Continue `./scripts/run-stage-soak-2026-06-02.sh sample` during execution | Catch classifier drift |
 | **5** | Defer `limit_profit` as default until fee floor proven on Stage | Same failure mode as May loss |
 
-**Do not** set `strategy-router` `DRY_RUN=false` for profit-seeking before priority **1** passes.
+Classification gate (priority 1 in prior stack) **passed 2026-06-07**. **`strategy-router` `DRY_RUN=false` is allowed for Phase 2+** of the execution guide; keep `trading-engine` dry until Phase 3.
 
 ---
 

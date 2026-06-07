@@ -1,8 +1,10 @@
-# Stage Soak Verification Report
+# Stage Soak Verification Report (interim — 2026-06-03)
 
 Date: 2026-06-03  
 Repository: `microservices-trading-bot`  
 Related: [`STAGE-SOAK-OPERATOR-GUIDE-2026-06-02.md`](STAGE-SOAK-OPERATOR-GUIDE-2026-06-02.md), [`STAGE-SOAK-MARKET-DATA-ATR-OBSERVATIONS-2026-06-03.md`](STAGE-SOAK-MARKET-DATA-ATR-OBSERVATIONS-2026-06-03.md)
+
+> **Superseded for pass/fail:** Classification short soak **PASS** was declared on **2026-06-07** after ~69.8 h and 140/140 live agreement samples. See **[`STAGE-SOAK-VERIFICATION-2026-06-07.md`](STAGE-SOAK-VERIFICATION-2026-06-07.md)** for final results and next steps.
 
 Operator verification run after the bash soak leg exceeded **24 hours**. ATR/`/api/v1/bars` was implemented in-repo on 2026-06-03 (see market-data observations doc; deploy work may have been done from another session).
 
