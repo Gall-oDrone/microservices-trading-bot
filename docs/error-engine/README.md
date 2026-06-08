@@ -13,6 +13,7 @@ This folder plans a **production-grade Error Engine** for the Bitso microservice
 - Standardized observability (metrics, alerts, SLOs) tied to stable error codes
 - Financial-integrity error classes with circuit breakers and reconciliation gates
 - An operational lifecycle (detection → triage → mitigation → post-mortem) integrated with existing runbooks and ops-agent tooling
+- A **green / yellow / red** traffic-light level for operators — see below
 
 **What it is not (yet):**
 
@@ -34,6 +35,27 @@ This folder plans a **production-grade Error Engine** for the Bitso microservice
 | 6 | [`PHASE-6-ROLLOUT-VERIFICATION-AND-GATES-2026-06-07.md`](PHASE-6-ROLLOUT-VERIFICATION-AND-GATES-2026-06-07.md) | Pilot order, exit criteria, future implementation | Planned | Phases 1–5 |
 
 Read phases in order. Phase 1 establishes why the engine is needed; Phase 6 defines how to ship it safely.
+
+---
+
+## Traffic-light levels (green / yellow / red)
+
+Every classified error carries a **`level`** field for operators and dashboards. It complements engineering severity (`P0`–`P3`) with a single at-a-glance signal.
+
+| Level | Color | Operator meaning | Typical severity | Action |
+|-------|-------|------------------|------------------|--------|
+| **green** | Normal | Expected or benign; platform safe to run | P3; expected P2 | Continue; metric/log only |
+| **yellow** | Caution | Degraded; retry or watch required | P1; operational P2 | Alert; circuit breaker may engage |
+| **red** | Critical | Unsafe or wrong financial state | P0; sustained critical P1 | Halt/restrict trading; page on-call |
+
+**Rules:**
+
+- `financial_impact=confirmed` → **red** always
+- `financial_impact=potential` → **yellow** minimum; escalate to **red** if sustained or over threshold
+- Errors **never downgrade** level when propagated downstream (same as severity)
+- Book/platform aggregate level = **worst active level** among open errors (red > yellow > green)
+
+Full mapping, envelope fields, and per-code levels: [`PHASE-2-ERROR-MODEL-AND-CLASSIFICATION-2026-06-07.md`](PHASE-2-ERROR-MODEL-AND-CLASSIFICATION-2026-06-07.md) §3.
 
 ---
 
@@ -115,5 +137,5 @@ Each service owns emission of structured errors for its domain. The Error Engine
 ## TL;DR
 
 1. **Today:** errors are tracked per-service via ad-hoc Prometheus counters and unstructured logs — sufficient for Stage soak but not for unified financial-integrity monitoring.
-2. **Plan:** introduce stable error codes, a shared context envelope, normalized metrics, financial alert classes, and an incident lifecycle wired to ops-agent and runbooks.
+2. **Plan:** introduce stable error codes, a shared context envelope, **green/yellow/red levels**, normalized metrics, financial alert classes, and an incident lifecycle wired to ops-agent and runbooks.
 3. **Ship order:** order-management + strategy-router pilot → trading-engine + strategy-executor + market-data → api-gateway + backtesting + ops-agent feed (see Phase 6).

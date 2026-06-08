@@ -62,7 +62,7 @@ flowchart LR
 | Defer path | Emit `OM_SYNC_TRADES_DEFERRED` (log + metric) |
 | User-trades poller | Map to `OM_USER_TRADES_POLL_ERROR` |
 | Heuristic alert | Limit == avg on filled order → `OM_SYNC_AVG_PRICE_MISMATCH` |
-| Add metric vec | `order_management_errors_total{error_code, domain, severity, book}` |
+| Add metric vec | `order_management_errors_total{error_code, domain, severity, level, book}` |
 
 ### strategy-router
 
@@ -88,7 +88,8 @@ Duration: **48–72 h** (align with classification soak pattern — `docs/strate
 | Legacy counters still present | No dashboard regression |
 | `SR_EVALUATION_ERROR` rate | Consistent with legacy counter |
 | P0 alerts | None firing in steady state |
-| Runbooks | Draft for pilot codes |
+| Platform level gauge | `trading_platform_error_level` green in steady state |
+| Runbooks | Draft for pilot codes (include level in header) |
 
 ---
 
@@ -158,8 +159,9 @@ All must pass before Production:
 ## Error Engine Stage Verification — {date}
 
 ### Metrics
-- [ ] `order_management_errors_total` scraping
+- [ ] `order_management_errors_total` scraping (includes `level` label)
 - [ ] `strategy_router_errors_total` scraping
+- [ ] `trading_platform_error_level` shows green in steady state
 - [ ] Legacy counters flat in steady state
 
 ### Alerts

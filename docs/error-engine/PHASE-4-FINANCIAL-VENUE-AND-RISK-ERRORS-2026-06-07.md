@@ -17,16 +17,16 @@ Define **financial-industry error classes** specific to crypto venue trading: fi
 
 Errors that can affect **money, position, or regulatory audit** require stricter handling than operational blips.
 
-| Class | Description | Default severity | financial_impact |
-|-------|-------------|------------------|------------------|
-| **Fill integrity** | Wrong avg price, limit-as-fill, missed trade correction | P0 | confirmed |
-| **Fee integrity** | Configured fee ≠ realized fee beyond tolerance | P1 | potential → confirmed |
-| **P&L truth** | Strategy P&L diverges from OM/canonical execution | P0 | confirmed |
-| **Pre-trade risk** | Order blocked by risk rules (expected) | P2 | none |
-| **Pre-trade risk bypass** | Order submitted despite failed validation | P0 | confirmed |
-| **Venue connectivity** | Bitso API/WS failures affecting order state | P1 | potential |
-| **Stale reference data** | Indicators/bars too old for safe decisions | P1 | potential |
-| **Session / balance** | Cannot verify balance or session risk limits | P1 | potential |
+| Class | Description | Default level | Default severity | financial_impact |
+|-------|-------------|---------------|------------------|------------------|
+| **Fill integrity** | Wrong avg price, limit-as-fill, missed trade correction | red | P0 | confirmed |
+| **Fee integrity** | Configured fee ≠ realized fee beyond tolerance | yellow | P1 | potential → confirmed |
+| **P&L truth** | Strategy P&L diverges from OM/canonical execution | red | P0 | confirmed |
+| **Pre-trade risk** | Order blocked by risk rules (expected) | green | P2 | none |
+| **Pre-trade risk bypass** | Order submitted despite failed validation | red | P0 | confirmed |
+| **Venue connectivity** | Bitso API/WS failures affecting order state | yellow | P1 | potential |
+| **Stale reference data** | Indicators/bars too old for safe decisions | yellow | P1 | potential |
+| **Session / balance** | Cannot verify balance or session risk limits | yellow | P1 | potential |
 
 ---
 
@@ -104,16 +104,19 @@ Errors that can affect **money, position, or regulatory audit** require stricter
 
 Defines **automated safe responses** when error codes fire. Manual override via env/runbook always available.
 
-| Error code(s) | Breaker action | Scope | Auto-recover |
-|---------------|----------------|-------|--------------|
-| `OM_SYNC_AVG_PRICE_MISMATCH`, `FIN_RECONCILIATION_DELTA` | Halt P&L updates; flag orders | OM + strategy-executor | No — operator clear |
-| `FIN_FEE_ASSUMPTION_DRIFT` (sustained) | Alert only; optional strategy pause | Per strategy | When drift < threshold 30m |
-| `TE_BALANCE_FETCH_ERROR` (burst) | Skip new orders | trading-engine | When counter flat 5m |
-| `TE_KAFKA_CONSUMER_ERROR` (burst) | Consumer pause / restart policy | trading-engine | K8s restart + lag clear |
-| `SR_SNAPSHOT_UNHEALTHY`, `SE_INDICATOR_STALE` | Router regime → pause | strategy-router | When snapshot healthy |
-| `MD_WEBSOCKET_ERROR` (sustained) | No new entries; hold positions | strategy-executor | WS reconnected + bars fresh |
-| `OM_SYNC_BITSO_API_ERROR` (sustained) | Continue with last known state; no new closes from stale data | order-management | Sync success timestamp fresh |
-| `SR_EVALUATION_ERROR` | Skip cycle (existing) | strategy-router | Next successful eval |
+**Level column** = default traffic-light at emission; sustained yellow alerts may escalate to red actions.
+
+| Error code(s) | Level | Breaker action | Scope | Auto-recover |
+|---------------|-------|----------------|-------|--------------|
+| `OM_SYNC_AVG_PRICE_MISMATCH`, `FIN_RECONCILIATION_DELTA` | red | Halt P&L updates; flag orders | OM + strategy-executor | No — operator clear |
+| `FIN_FEE_ASSUMPTION_DRIFT` (sustained) | yellow → red | Alert; optional strategy pause | Per strategy | When drift < threshold 30m |
+| `TE_BALANCE_FETCH_ERROR` (burst) | yellow | Skip new orders | trading-engine | When counter flat 5m |
+| `TE_KAFKA_CONSUMER_ERROR` (burst) | yellow | Consumer pause / restart policy | trading-engine | K8s restart + lag clear |
+| `SR_SNAPSHOT_UNHEALTHY`, `SE_INDICATOR_STALE` | yellow | Router regime → pause | strategy-router | When snapshot healthy |
+| `MD_WEBSOCKET_ERROR` (sustained) | yellow | No new entries; hold positions | strategy-executor | WS reconnected + bars fresh |
+| `OM_SYNC_BITSO_API_ERROR` (sustained) | yellow | Continue with last known state | order-management | Sync success timestamp fresh |
+| `SR_EVALUATION_ERROR` | yellow | Skip cycle (existing) | strategy-router | Next successful eval |
+| `OM_SYNC_TRADES_DEFERRED`, `TE_PRETRADE_RISK_VIOLATION` | green | No breaker; expected path | — | Immediate |
 
 ### 4.1 Kill switches (operator/env)
 
@@ -172,14 +175,17 @@ flowchart LR
 
 ## 6) Venue degradation modes
 
-| Mode | Trigger | Trading behavior |
-|------|---------|------------------|
-| **Normal** | All health checks pass | Full operation |
-| **Degraded** | P2 errors or single P1 burst | Retry; skip cycles; no new risk |
-| **Restricted** | Sustained P1 venue errors | No new orders; manage open positions only |
-| **Halt** | P0 financial integrity | Stop placement; preserve audit; operator required |
+| Mode | Level | Trigger | Trading behavior |
+|------|-------|---------|------------------|
+| **Normal** | green | All health checks pass | Full operation |
+| **Degraded** | yellow | Yellow errors or single burst | Retry; skip cycles; no new risk |
+| **Restricted** | yellow (escalating) | Sustained yellow venue errors | No new orders; manage open positions only |
+| **Halt** | red | Red financial integrity errors | Stop placement; preserve audit; operator required |
 
-Mode exposed as gauge: `trading_platform_operating_mode{book}` (planned).
+Mode exposed as gauges:
+
+- `trading_platform_error_level{book}` — 0/1/2 numeric traffic light
+- `trading_platform_operating_mode{book}` — normal / degraded / restricted / halt (planned)
 
 ---
 

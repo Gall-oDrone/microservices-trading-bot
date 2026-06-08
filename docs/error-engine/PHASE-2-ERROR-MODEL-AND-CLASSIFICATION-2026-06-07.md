@@ -23,6 +23,7 @@ Every structured error MUST include these dimensions:
 |-----------|--------|---------|
 | `domain` | `venue`, `kafka`, `strategy`, `risk`, `reconciliation`, `infra`, `agent` | Which subsystem failed |
 | `severity` | `P0`, `P1`, `P2`, `P3` | Response urgency (see §3) |
+| `level` | `green`, `yellow`, `red` | Operator traffic-light (see §3) |
 | `recoverability` | `transient`, `retryable`, `fatal` | Retry/backoff behavior |
 | `financial_impact` | `none`, `potential`, `confirmed` | Whether P&L or positions may be wrong |
 
@@ -35,16 +36,51 @@ Optional but recommended:
 
 ---
 
-## 3) Severity definitions
+## 3) Severity and traffic-light levels
 
-| Severity | Name | Financial impact | Typical response | Example |
-|----------|------|------------------|------------------|---------|
-| **P0** | Critical / integrity | `confirmed` or high `potential` | Halt trading or P&L updates; page on-call | Fill price persisted as limit; reconciliation delta > threshold |
-| **P1** | Major / degraded | `potential` | Circuit breaker; alert within 5 min | Bitso sync errors sustained; balance fetch failures |
-| **P2** | Minor / operational | `none` | Log + metric; retry | Single snapshot fetch timeout; one Kafka publish retry |
-| **P3** | Informational | `none` | Metric only | Expected validation reject; dry-run skip |
+The Error Engine uses **two linked classifications**:
 
-**Rule:** If `financial_impact=confirmed`, severity MUST be at least **P0**.
+- **`severity` (`P0`–`P3`)** — engineering and SLO/alert routing
+- **`level` (`green` / `yellow` / `red`)** — operator traffic-light for dashboards, runbooks, and on-call
+
+They are related but not identical: some **expected** failures are low severity *and* **green** (e.g. pre-trade reject working as designed).
+
+### 3.1 Traffic-light definitions
+
+| Level | Color | Operator meaning | Trading posture | Page on-call? |
+|-------|-------|------------------|-----------------|---------------|
+| **green** | Normal | Safe to continue; expected or recovered | Full operation | No |
+| **yellow** | Caution | Degraded; investigate if sustained | Restrict or retry; may pause routing | Warning channel only |
+| **red** | Critical | Unsafe or incorrect financial state | Halt or restrict; preserve audit | Yes (P0 path) |
+
+### 3.2 Severity definitions
+
+| Severity | Name | Default level | Financial impact | Typical response | Example |
+|----------|------|---------------|------------------|------------------|---------|
+| **P0** | Critical / integrity | **red** | `confirmed` or high `potential` | Halt trading or P&L updates; page on-call | Fill price persisted as limit; reconciliation delta > threshold |
+| **P1** | Major / degraded | **yellow** | `potential` | Circuit breaker; alert within 5 min | Bitso sync errors sustained; balance fetch failures |
+| **P2** | Minor / operational | **yellow** or **green** | `none` | Log + metric; retry | Snapshot timeout → yellow; expected pre-trade reject → green |
+| **P3** | Informational | **green** | `none` | Metric only | Dry-run skip; benign health blip |
+
+### 3.3 Mapping rules
+
+| Condition | `level` |
+|-----------|---------|
+| `financial_impact=confirmed` | **red** (always) |
+| `severity=P0` | **red** |
+| `severity=P1` | **yellow** (→ **red** if sustained beyond alert threshold or reconciliation delta) |
+| `severity=P2` + expected/safe behavior (pre-trade reject, defer-until-trades) | **green** |
+| `severity=P2` + operational failure (timeout, publish retry) | **yellow** |
+| `severity=P3` | **green** |
+
+**Propagation:** downstream services inherit `level` and must not downgrade (red stays red).
+
+**Aggregate platform level** (per book or global): `max(level)` among active unacked errors — red beats yellow beats green.
+
+### 3.4 Severity-only rules
+
+- If `financial_impact=confirmed`, severity MUST be at least **P0** and level MUST be **red**.
+- Escalation: **yellow** → **red** when the same `error_code` exceeds sustained-rate or reconciliation thresholds (Phase 3 alerts).
 
 ---
 
@@ -57,6 +93,7 @@ All services emit errors with a shared JSON/log field set:
   "error_code": "OM_SYNC_TRADES_DEFERRED",
   "domain": "venue",
   "severity": "P2",
+  "level": "green",
   "recoverability": "retryable",
   "financial_impact": "none",
   "service": "order-management",
@@ -97,67 +134,70 @@ All services emit errors with a shared JSON/log field set:
 
 Naming convention: `{SERVICE_PREFIX}_{DOMAIN}_{DESCRIPTION}` in `SCREAMING_SNAKE_CASE`.
 
+Each code has a fixed default **`level`** at emission; sustained-rate alerts may escalate **yellow → red** (Phase 3).
+
 ### order-management
 
-| Code | Severity | Recoverability | Maps to existing metric |
-|------|----------|----------------|---------------------------|
-| `OM_SYNC_BITSO_API_ERROR` | P1 | retryable | `bitso_sync_errors_total` |
-| `OM_SYNC_TRADES_DEFERRED` | P2 | retryable | (log-only today) |
-| `OM_SYNC_AVG_PRICE_MISMATCH` | P0 | fatal | (incident-driven; no metric yet) |
-| `OM_USER_TRADES_POLL_ERROR` | P1 | retryable | `user_trades_poll_errors_total` |
-| `OM_SESSION_RISK_REQUEST_ERROR` | P1 | retryable | `session_risk_request_errors_total` |
-| `OM_KAFKA_PUBLISH_FAILED` | P1 | retryable | `events_failed` (labeled) |
+| Code | Level | Severity | Recoverability | Maps to existing metric |
+|------|-------|----------|----------------|---------------------------|
+| `OM_SYNC_BITSO_API_ERROR` | yellow | P1 | retryable | `bitso_sync_errors_total` |
+| `OM_SYNC_TRADES_DEFERRED` | green | P2 | retryable | (log-only today) |
+| `OM_SYNC_AVG_PRICE_MISMATCH` | red | P0 | fatal | (incident-driven; no metric yet) |
+| `OM_USER_TRADES_POLL_ERROR` | yellow | P1 | retryable | `user_trades_poll_errors_total` |
+| `OM_SESSION_RISK_REQUEST_ERROR` | yellow | P1 | retryable | `session_risk_request_errors_total` |
+| `OM_KAFKA_PUBLISH_FAILED` | yellow | P1 | retryable | `events_failed` (labeled) |
 
 ### trading-engine
 
-| Code | Severity | Recoverability | Maps to existing metric |
-|------|----------|----------------|---------------------------|
-| `TE_PRETRADE_RISK_VIOLATION` | P2 | fatal | pretrade reject path |
-| `TE_BALANCE_FETCH_ERROR` | P1 | retryable | `bitso_balance_fetch_errors_total` |
-| `TE_KAFKA_CONSUMER_ERROR` | P1 | retryable | `kafka_consumer_errors_total` |
-| `TE_ORDER_PLACED_PUBLISH_ERROR` | P1 | retryable | `order_placed_events_publish_errors_total` |
-| `TE_BITSO_ORDER_REJECTED` | P2 | fatal | venue reject |
+| Code | Level | Severity | Recoverability | Maps to existing metric |
+|------|-------|----------|----------------|---------------------------|
+| `TE_PRETRADE_RISK_VIOLATION` | green | P2 | fatal | pretrade reject path |
+| `TE_BALANCE_FETCH_ERROR` | yellow | P1 | retryable | `bitso_balance_fetch_errors_total` |
+| `TE_KAFKA_CONSUMER_ERROR` | yellow | P1 | retryable | `kafka_consumer_errors_total` |
+| `TE_ORDER_PLACED_PUBLISH_ERROR` | yellow | P1 | retryable | `order_placed_events_publish_errors_total` |
+| `TE_BITSO_ORDER_REJECTED` | yellow | P2 | fatal | venue reject |
+| `TE_PRETRADE_RISK_BYPASS` | red | P0 | fatal | (anomaly path) |
 
 ### strategy-executor
 
-| Code | Severity | Recoverability | Maps to existing metric |
-|------|----------|----------------|---------------------------|
-| `SE_STRATEGY_RUNTIME_ERROR` | P1 | varies | `strategy_errors_total` |
-| `SE_MARKET_DATA_PROCESS_ERROR` | P2 | retryable | `market_data_errors_total` |
-| `SE_INDICATOR_STALE` | P1 | retryable | snapshot `data_healthy=false` |
-| `SE_SIGNAL_PUBLISH_ERROR` | P1 | retryable | publisher errors |
+| Code | Level | Severity | Recoverability | Maps to existing metric |
+|------|-------|----------|----------------|---------------------------|
+| `SE_STRATEGY_RUNTIME_ERROR` | yellow | P1 | varies | `strategy_errors_total` |
+| `SE_MARKET_DATA_PROCESS_ERROR` | yellow | P2 | retryable | `market_data_errors_total` |
+| `SE_INDICATOR_STALE` | yellow | P1 | retryable | snapshot `data_healthy=false` |
+| `SE_SIGNAL_PUBLISH_ERROR` | yellow | P1 | retryable | publisher errors |
 
 ### strategy-router
 
-| Code | Severity | Recoverability | Maps to existing metric |
-|------|----------|----------------|---------------------------|
-| `SR_EVALUATION_ERROR` | P2 | retryable | `strategy_router_evaluation_errors_total` |
-| `SR_SNAPSHOT_UNHEALTHY` | P1 | retryable | regime pause path |
-| `SR_STRATEGY_SWITCH_FAILED` | P1 | retryable | blocked/switch errors |
+| Code | Level | Severity | Recoverability | Maps to existing metric |
+|------|-------|----------|----------------|---------------------------|
+| `SR_EVALUATION_ERROR` | yellow | P2 | retryable | `strategy_router_evaluation_errors_total` |
+| `SR_SNAPSHOT_UNHEALTHY` | yellow | P1 | retryable | regime pause path |
+| `SR_STRATEGY_SWITCH_FAILED` | yellow | P1 | retryable | blocked/switch errors |
 
 ### market-data
 
-| Code | Severity | Recoverability | Maps to existing metric |
-|------|----------|----------------|---------------------------|
-| `MD_WEBSOCKET_ERROR` | P1 | retryable | `market_data_websocket_errors_total` |
-| `MD_WEBSOCKET_SUBSCRIBE_ERROR` | P1 | retryable | `market_data_websocket_subscribe_errors_total` |
-| `MD_STORAGE_ERROR` | P1 | retryable | `market_data_storage_errors_total` |
-| `MD_HISTORICAL_FETCH_ERROR` | P2 | retryable | `market_data_historical_errors_total` |
+| Code | Level | Severity | Recoverability | Maps to existing metric |
+|------|-------|----------|----------------|---------------------------|
+| `MD_WEBSOCKET_ERROR` | yellow | P1 | retryable | `market_data_websocket_errors_total` |
+| `MD_WEBSOCKET_SUBSCRIBE_ERROR` | yellow | P1 | retryable | `market_data_websocket_subscribe_errors_total` |
+| `MD_STORAGE_ERROR` | yellow | P1 | retryable | `market_data_storage_errors_total` |
+| `MD_HISTORICAL_FETCH_ERROR` | yellow | P2 | retryable | `market_data_historical_errors_total` |
 
 ### api-gateway
 
-| Code | Severity | Recoverability | Maps to existing metric |
-|------|----------|----------------|---------------------------|
-| `AG_BACKEND_ERROR` | P2 | retryable | `api_gateway_backend_errors_total` |
-| `AG_BACKEND_TIMEOUT` | P2 | retryable | backend duration + errors |
+| Code | Level | Severity | Recoverability | Maps to existing metric |
+|------|-------|----------|----------------|---------------------------|
+| `AG_BACKEND_ERROR` | yellow | P2 | retryable | `api_gateway_backend_errors_total` |
+| `AG_BACKEND_TIMEOUT` | yellow | P2 | retryable | backend duration + errors |
 
 ### Financial / reconciliation (cross-cutting)
 
-| Code | Severity | Recoverability | Notes |
-|------|----------|----------------|-------|
-| `FIN_FEE_ASSUMPTION_DRIFT` | P1 | retryable | Configured vs realized fee delta — see POINT-9 |
-| `FIN_RECONCILIATION_DELTA` | P0 | fatal | Internal P&L vs canonical execution |
-| `FIN_REALIZED_PNL_STALE` | P1 | retryable | Gauge not updated after fill event |
+| Code | Level | Severity | Recoverability | Notes |
+|------|-------|----------|----------------|-------|
+| `FIN_FEE_ASSUMPTION_DRIFT` | yellow | P1 | retryable | → **red** if sustained; see POINT-9 |
+| `FIN_RECONCILIATION_DELTA` | red | P0 | fatal | Internal P&L vs canonical execution |
+| `FIN_REALIZED_PNL_STALE` | yellow | P1 | retryable | → **red** if stale after fill > threshold |
 
 ---
 
@@ -185,8 +225,8 @@ sequenceDiagram
 **Rules:**
 
 1. Downstream services **inherit** `correlation_id` from upstream Kafka headers/payload when present.
-2. Services **do not downgrade** severity when re-emitting (P0 stays P0).
-3. Transient upstream errors (P2) must not cascade to P0 unless financial state is corrupted.
+2. Services **do not downgrade** severity or **level** when re-emitting (red stays red).
+3. Transient upstream errors (P2/yellow or green) must not cascade to red unless financial state is corrupted.
 
 ### 6.2 HTTP chain (router → executor)
 
@@ -198,7 +238,7 @@ sequenceDiagram
 
 - Use wrapped errors in Go (`fmt.Errorf("...: %w", err)`) for debugging.
 - Structured envelope exposes `cause` as the immediate upstream message — not full stack in production logs.
-- P0/P1 errors: include `order_id` / `bitso_oid` when available for operator queries.
+- P0/red errors: include `order_id` / `bitso_oid` when available for operator queries.
 
 ---
 
@@ -212,6 +252,7 @@ type Error struct {
     Code             string
     Domain           string
     Severity         string
+    Level            string // green | yellow | red
     Recoverability   string
     FinancialImpact  string
     Context          Context
@@ -252,7 +293,7 @@ Services call `Record()` to emit structured log + normalized metric in one path.
 
 ## 9) Exit criteria (Phase 2 complete)
 
-- [x] Classification dimensions defined
+- [x] Classification dimensions defined (including green/yellow/red `level`)
 - [x] Context envelope specified
 - [x] Initial error code catalog mapped to existing metrics
 - [x] Propagation rules documented

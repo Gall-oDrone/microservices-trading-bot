@@ -22,14 +22,14 @@ Covers: metrics naming standards, inventory normalization, alert tiers, SLOs/err
 Follow Prometheus naming best practices aligned with existing services:
 
 ```
-{service_prefix}_errors_total{error_code, domain, severity, book}
+{service_prefix}_errors_total{error_code, domain, severity, level, book}
 ```
 
 Examples:
 
 ```
-order_management_errors_total{error_code="OM_SYNC_BITSO_API_ERROR", domain="venue", severity="P1", book="btc_mxn"}
-strategy_router_errors_total{error_code="SR_EVALUATION_ERROR", domain="strategy", severity="P2", book="btc_mxn"}
+order_management_errors_total{error_code="OM_SYNC_BITSO_API_ERROR", domain="venue", severity="P1", level="yellow", book="btc_mxn"}
+strategy_router_errors_total{error_code="SR_EVALUATION_ERROR", domain="strategy", severity="P2", level="yellow", book="btc_mxn"}
 ```
 
 **Migration path:** Keep legacy counters (e.g. `bitso_sync_errors_total`) during transition; add normalized vec alongside; deprecate after Phase 6 pilot sign-off.
@@ -40,13 +40,24 @@ strategy_router_errors_total{error_code="SR_EVALUATION_ERROR", domain="strategy"
 |-------|---------------|------------------|
 | `error_code` | Always | Bounded catalog (~50 codes v1) |
 | `domain` | Always | 7 values |
-| `severity` | Always | 4 values |
+| `severity` | Always | 4 values (`P0`–`P3`) |
+| `level` | Always | 3 values (`green`, `yellow`, `red`) |
 | `book` | Trading-path errors | Limit to configured books |
 | `service` | Cross-service dashboards | Implicit from metric namespace |
 
 **Avoid:** unbounded labels (`order_id`, `message`, `stack`).
 
-### 2.3 RED / USE alignment
+### 2.3 Platform traffic-light gauge (planned)
+
+Aggregate worst active level per book for Grafana stat panels and ops-agent artifacts:
+
+```
+trading_platform_error_level{book}  # 0=green, 1=yellow, 2=red
+```
+
+Derivation: `max(level_numeric)` over active errors in rolling window (e.g. 15m), where `green=0`, `yellow=1`, `red=2`. Clears to **green** when no yellow/red errors in window.
+
+### 2.4 RED / USE alignment
 
 | Service type | Primary signals |
 |--------------|-----------------|
@@ -128,12 +139,13 @@ Also expose: `strategy_router_blocked_total{reason}` — map `has_position` stuc
 
 ### 4.2 Planned group: `error-engine-financial`
 
-| Alert | Expr (sketch) | Severity | For |
-|-------|---------------|----------|-----|
-| `FinancialIntegrityError` | `increase(order_management_errors_total{severity="P0"}[5m]) > 0` | critical | 0m |
-| `ReconciliationDeltaDetected` | Custom gauge `reconciliation_delta_quote > threshold` | critical | 5m |
-| `FeeAssumptionDrift` | `abs(configured_fee - realized_fee) > 0.0001` histogram | warning | 15m |
-| `RealizedPnLStaleAfterFill` | fill event timestamp vs P&L gauge update | warning | 10m |
+| Alert | Level | Expr (sketch) | Alertmanager severity | For |
+|-------|-------|---------------|----------------------|-----|
+| `FinancialIntegrityError` | red | `increase(..._errors_total{level="red"}[5m]) > 0` | critical | 0m |
+| `ReconciliationDeltaDetected` | red | `reconciliation_delta_quote > threshold` | critical | 5m |
+| `FeeAssumptionDrift` | yellow | fee drift histogram | warning | 15m |
+| `FeeAssumptionDriftSustained` | red | drift yellow > 30m | critical | 0m |
+| `RealizedPnLStaleAfterFill` | yellow | fill vs P&L gauge lag | warning | 10m |
 
 ### 4.3 Planned group: `error-engine-venue`
 
@@ -155,12 +167,12 @@ Also expose: `strategy_router_blocked_total{reason}` — map `has_position` stuc
 
 Every Error Engine alert annotation MUST include:
 
-- `error_code` (when applicable)
+- `error_code` and **`level`** (green / yellow / red)
 - Link to runbook section (Phase 5)
 - One-line operator action ("port-forward OM, check sync logs for oid X")
 - `summary` / `description` consistent with existing router alerts
 
-Route P0 to critical channel; P1 to warning; integrate with `ops-agent` Alertmanager webhook (future).
+Route **red** → critical channel; **yellow** → warning; **green** → no page (dashboard only). Integrate with `ops-agent` Alertmanager webhook (future).
 
 ---
 
@@ -192,12 +204,13 @@ Route P0 to critical channel; P1 to warning; integrate with `ops-agent` Alertman
 
 Panels:
 
-1. **Error rate by `error_code`** — stacked area, 1h / 24h
-2. **P0/P1 count** — stat panel with threshold coloring
-3. **Top books by error rate**
-4. **Venue health** — sync last success, trades poll last success, WS connected
-5. **Router health** — evaluations, evaluation errors, blocked reasons
-6. **Kafka error counters** — consumer + publish failures by service
+1. **Platform traffic light** — stat panel from `trading_platform_error_level{book}` (green / yellow / red background)
+2. **Error rate by `level`** — stacked area: green vs yellow vs red, 1h / 24h
+3. **Error rate by `error_code`** — drill-down table
+4. **Top books by yellow+red rate**
+5. **Venue health** — sync last success, trades poll last success, WS connected
+6. **Router health** — evaluations, evaluation errors, blocked reasons
+7. **Kafka error counters** — consumer + publish failures by service
 
 ### 6.2 Financial integrity row
 
@@ -208,7 +221,7 @@ Panels:
 
 ### 6.3 Operator drill-down
 
-- Template variables: `book`, `service`, `error_code`, `severity`
+- Template variables: `book`, `service`, `error_code`, `level`, `severity`
 - Link to Loki/log query placeholder (if logs centralized later)
 
 Existing strategy-router dashboard referenced in soak docs — extend with normalized error_code panels.
@@ -222,6 +235,7 @@ Complement metrics with searchable logs:
 | Field | Source |
 |-------|--------|
 | `error_code` | Phase 2 catalog |
+| `level` | green / yellow / red |
 | `correlation_id` | Context propagation |
 | `severity` | Classification |
 | `book`, `strategy`, `order_id`, `bitso_oid` | Context envelope |

@@ -20,7 +20,8 @@ This phase answers: *"Why do we need a unified error engine, and what are we sta
 | **Error Engine** | Planned cross-cutting capability: taxonomy, context, recording, and observability standards — not a single monolithic service in v1. |
 | **Operational error** | Failure that degrades availability or latency but does not corrupt financial truth (e.g. transient Bitso 503, snapshot fetch timeout). |
 | **Financial integrity error** | Failure that can cause incorrect P&L, wrong fill prices, fee drift, or unauthorized trading (Severity P0). |
-| **Structured error** | Machine-readable record with stable `error_code`, severity, domain, and context envelope (Phase 2). |
+| **Structured error** | Machine-readable record with stable `error_code`, severity, **level** (green/yellow/red), domain, and context envelope (Phase 2). |
+| **Traffic-light level** | Operator-facing `green`, `yellow`, or `red` — worst-level-wins on dashboards; maps to severity and financial impact. |
 | **Canonical execution data** | Fills, fees, and order IDs from the platform sync path — see `docs/agentic-ai/AGENTIC-AI-PRODUCTION-STRATEGY-2026-05-13.md`. |
 
 ---
@@ -128,6 +129,7 @@ The Error Engine must **not** break proven patterns:
 | Alerts | Generic + router-specific | Missing financial/reconciliation classes | Phase 3, 4 |
 | Incidents | Reactive post-mortems | No proactive classification pipeline | Phase 4, 5 |
 | Ops AI | Prometheus/health tools | No error artifact feed | Phase 5 |
+| Operator UX | Grafana + logs | No unified green/yellow/red platform health | Phase 2, 3 |
 | Recovery | Service-specific | No documented circuit breaker matrix | Phase 4 |
 | Audit | Log lines | No durable error record store | Phase 2, 5 |
 

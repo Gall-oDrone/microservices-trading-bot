@@ -51,14 +51,15 @@ flowchart TD
 
 ## 3) Escalation matrix
 
-| Severity | Notify | Channel | Auto-actions allowed |
-|----------|--------|---------|----------------------|
-| P0 | On-call + trading lead | Pager / critical Slack | Circuit breakers only (no auto trade) |
-| P1 | On-call | Warning Slack | Retry/backoff; router pause |
-| P2 | Dashboard | Grafana | None |
-| P3 | Logs | — | None |
+| Level | Severity (typical) | Notify | Channel | Auto-actions allowed |
+|-------|-------------------|--------|---------|----------------------|
+| **red** | P0 | On-call + trading lead | Pager / critical Slack | Circuit breakers only (no auto trade) |
+| **yellow** | P1, P2 | On-call | Warning Slack | Retry/backoff; router pause |
+| **green** | P3, expected P2 | Dashboard | Grafana / logs | None |
 
-**Escalation path:** on-call → trading lead → engineering manager (P0 unresolved > 1h).
+**Escalation path:** yellow sustained → red (alert threshold) → on-call → trading lead → engineering manager (red unresolved > 1h).
+
+Legacy severity-based MTTR targets (Phase 5 §2) remain for engineering; operators use **level** first.
 
 ---
 
@@ -73,6 +74,7 @@ File naming: `docs/runbooks/error-engine/{ERROR_CODE}.md` (future) or section in
 ```markdown
 # Runbook: {ERROR_CODE}
 
+**Level:** green | yellow | red  
 **Severity:** P0 | P1 | P2  
 **Domain:** venue | kafka | ...  
 **Financial impact:** none | potential | confirmed  
@@ -152,6 +154,7 @@ JSON bundle consumed by ops-agent tools:
   "errors": [
     {
       "error_code": "OM_SYNC_BITSO_API_ERROR",
+      "level": "yellow",
       "severity": "P1",
       "count": 12,
       "last_occurrence": "2026-06-07T12:00:00Z",
@@ -160,6 +163,7 @@ JSON bundle consumed by ops-agent tools:
     }
   ],
   "reconciliation_delta": null,
+  "platform_error_level": "yellow",
   "operating_mode": "degraded"
 }
 ```
@@ -235,15 +239,23 @@ Enables post-incident replay without log aggregation dependency.
 
 ## 9) Communication templates
 
-### P0 operator message
+### Red operator message
 
 ```
-[P0] {error_code} — {book}
+[RED] {error_code} — {book}
 Impact: {financial_impact description}
 Action: {first runbook step}
 Correlation: {id}
-Dashboard: {Grafana link}
+Dashboard: {Grafana traffic-light panel}
 Runbook: docs/runbooks/error-engine/{code}.md
+```
+
+### Yellow operator message
+
+```
+[YELLOW] {error_code} — {book}
+Watch: sustained rate or escalation to RED if {threshold}
+Action: {first runbook step}
 ```
 
 ### Post-mortem distribution
