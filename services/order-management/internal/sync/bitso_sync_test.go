@@ -45,6 +45,7 @@ func (f *fakeBitsoClient) MyOpenOrders(_ url.Values) ([]bitso.UserOrder, error) 
 // recordingOrderManager captures calls to OrderManagerSync so we can assert
 // which path was taken.
 type recordingOrderManager struct {
+	listOIDs        []string
 	syncCalls       []syncCall
 	syncTradesCalls []syncTradesCall
 	staleCalls      []string
@@ -63,7 +64,7 @@ type syncTradesCall struct {
 }
 
 func (r *recordingOrderManager) ListActiveBitsoOrderIDs(_ context.Context) ([]string, error) {
-	return nil, nil
+	return r.listOIDs, nil
 }
 
 func (r *recordingOrderManager) SyncOrderFromBitso(_ context.Context, oid string, filled, avg float64, status models.OrderStatus) error {
@@ -210,5 +211,35 @@ func TestApplyBitsoUserOrder_NoFillsForwardsStatus(t *testing.T) {
 	}
 	if bc.orderTradesCallsBy[oid] != 0 {
 		t.Fatalf("OrderTrades should not be called for unfilled order, got %d calls", bc.orderTradesCallsBy[oid])
+	}
+}
+
+type batchFailLookupClient struct {
+	fakeBitsoClient
+}
+
+func (f *batchFailLookupClient) LookupOrders(_ []string) ([]bitso.UserOrder, error) {
+	return nil, errors.New("Error 312: OID incorrecto (no existe o no pertenece al usuario)")
+}
+
+func TestBitsoSyncJob_lookupFailureOrderTradesReconciles(t *testing.T) {
+	const oid = "VgdJKh6fKC2c1xrZ"
+
+	bc := &batchFailLookupClient{fakeBitsoClient: *newFakeBitsoClient()}
+	bc.orderTrades[oid] = []bitso.UserOrderTrade{{
+		OID:   oid,
+		Major: bitso.ToMonetary(0.001),
+		Price: bitso.ToMonetary(1_096_890),
+	}}
+
+	om := &recordingOrderManager{listOIDs: []string{oid}}
+	job := newJobForTest(bc, om)
+	job.syncOnce(context.Background())
+
+	if len(om.syncTradesCalls) != 1 {
+		t.Fatalf("expected SyncOrderFromBitsoTrades once, got %+v", om.syncTradesCalls)
+	}
+	if len(om.staleCalls) != 0 {
+		t.Fatalf("expected no stale mark when order_trades reconciles, got %+v", om.staleCalls)
 	}
 }

@@ -1,8 +1,8 @@
 # Stage Execution Soak Verification Report — Phase 2 PASS, Phase 3 In Progress
 
-Date: **2026-06-09** (verification run; updated through **03:23 UTC**)  
+Date: **2026-06-09** (verification run; updated through **~16:00 UTC** reconciliation)  
 Repository: `microservices-trading-bot`  
-Related: [`STAGE-EXECUTION-SOAK-OPERATOR-GUIDE-2026-06-04.md`](STAGE-EXECUTION-SOAK-OPERATOR-GUIDE-2026-06-04.md), [`STAGE-SOAK-VERIFICATION-2026-06-07.md`](STAGE-SOAK-VERIFICATION-2026-06-07.md) (classification PASS), [`BAR-FIRST-INDICATORS-PRODUCTION-2026-06-04.md`](BAR-FIRST-INDICATORS-PRODUCTION-2026-06-04.md), [`STAGE-FINANCIAL-APPROACH-2026-06-04.md`](STAGE-FINANCIAL-APPROACH-2026-06-04.md)
+Related: [`STAGE-EXECUTION-SOAK-OPERATOR-GUIDE-2026-06-04.md`](STAGE-EXECUTION-SOAK-OPERATOR-GUIDE-2026-06-04.md), [`STAGE-EXECUTION-SOAK-PHASE3-RECONCILIATION-2026-06-09.md`](STAGE-EXECUTION-SOAK-PHASE3-RECONCILIATION-2026-06-09.md), [`STAGE-SOAK-VERIFICATION-2026-06-07.md`](STAGE-SOAK-VERIFICATION-2026-06-07.md) (classification PASS), [`BAR-FIRST-INDICATORS-PRODUCTION-2026-06-04.md`](BAR-FIRST-INDICATORS-PRODUCTION-2026-06-04.md), [`STAGE-FINANCIAL-APPROACH-2026-06-04.md`](STAGE-FINANCIAL-APPROACH-2026-06-04.md)
 
 ---
 
@@ -21,7 +21,10 @@ Related: [`STAGE-EXECUTION-SOAK-OPERATOR-GUIDE-2026-06-04.md`](STAGE-EXECUTION-S
 | 4× SELL signals rejected (0.1 BTC sizing bug) | 2026-06-09T03:08–03:11Z |
 | **Sizing fix shipped** (`ResolvePositionSize`, image `638b776…`) | **2026-06-09T03:22Z** |
 | Strategies re-registered; `mean_reversion_btc_mxn` restarted | 2026-06-09T03:22Z |
-| **Latest status check** | **2026-06-09T03:23Z** |
+| First live BUY filled (`oVs9Fk5oEnzkfDqo`) | 2026-06-09T03:34:40Z |
+| First live SELL placed (`VgdJKh6fKC2c1xrZ`) | 2026-06-09T03:41:24Z |
+| SELL partial-fill burst (OM bug) | 2026-06-09T04:00:25Z |
+| **OM partial-fill fix + reconciliation** | **2026-06-09T~16:00Z** — see reconciliation doc |
 
 Operator session: Phase 3 started via `./scripts/run-stage-execution-soak-2026-06-04.sh phase3-start`.
 
@@ -38,8 +41,8 @@ Machine-readable window: `tmp/stage-execution-soak/execution-window.json`.
 | Phase 3 — engine live | ✅ | `trading_engine_dry_run 0` |
 | Phase 3 — live price in cluster | ✅ **Fixed** | Was stale ~90 h; restart restored WS trades |
 | Phase 3 — position sizing | ✅ **Fixed** | `parameters.position_size` no longer overridden by global `MaxPositionSize` |
-| Phase 3 — first Stage round-trip | 📋 **Pending** | 4 signals pre-fix rejected; 0 orders placed on Bitso |
-| Phase 3 — fee honesty on fill | 📋 **Pending** | Awaits first complete round-trip |
+| Phase 3 — first Stage round-trip | 📋 **Partial** | BUY filled; SELL stuck at 0.0001/0.001 → reconciliation shipped |
+| Phase 3 — fee honesty on fill | 📋 **Partial** | BUY `fee_rate` 0.57%; round-trip incomplete |
 | Extended 7-day classification gate | 📋 **In progress** | Continue periodic sampling |
 
 **Current priority:** Wait for next band-breakout signal at **0.001 BTC** (~1.1k MXN notional); confirm engine places order and OM records OID.

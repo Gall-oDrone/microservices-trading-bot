@@ -2,7 +2,6 @@ package sync
 
 import (
 	"context"
-	"errors"
 	"net/url"
 	"sync"
 	"time"
@@ -109,10 +108,11 @@ func (j *BitsoSyncJob) syncOnce(ctx context.Context) {
 		return
 	}
 
-	// Try batch lookup first; if it fails (e.g., 404 due to stale orders), fall back to individual lookups
+	// Try batch lookup first; if it fails (e.g., 404/312 due to stale orders), fall back to individual lookups
 	orders, batchErr := j.bitsoClient.LookupOrders(oids)
 	seen := make(map[string]struct{}, len(orders))
-	
+	lookupEvicted := isBitsoErrorCode(batchErr, 312)
+
 	if batchErr == nil {
 		// Batch succeeded, process results
 		for i := range orders {
@@ -133,26 +133,26 @@ func (j *BitsoSyncJob) syncOnce(ctx context.Context) {
 		if _, ok := seen[oid]; ok {
 			continue
 		}
-		
+
 		trades, err := j.bitsoClient.OrderTrades(oid, nil)
 		if err != nil {
 			// Check if error is Bitso code 378 "Order has not matched yet" - this means
 			// the order is still valid and pending on the book, NOT stale.
-			var bitsoErr *bitso.Error
-			if errors.As(err, &bitsoErr) && bitsoErr.Code() == 378 {
+			if isBitsoErrorCode(err, 378) {
 				j.log.Debug("Order has not matched yet (code 378), keeping active", map[string]interface{}{
 					"bitso_order_id": oid,
 				})
 				j.clearStaleRetry(oid)
 				continue
 			}
-			
+
 			// Track this failure for stale order cleanup (true lookup failures only)
 			retries := j.incrementStaleRetry(oid)
 			j.log.Debug("OrderTrades lookup failed", map[string]interface{}{
 				"bitso_order_id": oid,
 				"error":          err.Error(),
 				"retry_count":    retries,
+				"lookup_evicted": lookupEvicted,
 			})
 			if retries >= maxStaleRetries {
 				j.log.Info("Marking order as stale after max retries", map[string]interface{}{
@@ -169,15 +169,34 @@ func (j *BitsoSyncJob) syncOnce(ctx context.Context) {
 			}
 			continue
 		}
-		
+
+		if len(trades) == 0 && lookupEvicted {
+			retries := j.incrementStaleRetry(oid)
+			j.log.Debug("OrderTrades empty after LookupOrders 312", map[string]interface{}{
+				"bitso_order_id": oid,
+				"retry_count":    retries,
+			})
+			if retries >= maxStaleRetries {
+				if err := j.orderManager.MarkOrderStale(ctx, oid); err != nil {
+					j.log.Warn("MarkOrderStale failed", map[string]interface{}{
+						"bitso_order_id": oid,
+						"error":          err.Error(),
+					})
+				}
+				j.clearStaleRetry(oid)
+			}
+			continue
+		}
+
 		// Got trades, sync the order
-		j.clearStaleRetry(oid)
 		if err := j.orderManager.SyncOrderFromBitsoTrades(ctx, oid, trades); err != nil {
 			j.log.Debug("SyncOrderFromBitsoTrades failed", map[string]interface{}{
 				"bitso_order_id": oid,
 				"error":          err.Error(),
 			})
+			continue
 		}
+		j.clearStaleRetry(oid)
 	}
 	
 	if j.metrics != nil {

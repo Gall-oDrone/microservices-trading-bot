@@ -15,6 +15,7 @@ import (
 	"bitso-trading-platform/order-management/internal/repository"
 	"bitso-trading-platform/order-management/internal/risk"
 	"bitso-trading-platform/order-management/internal/validator"
+	"bitso-trading-platform/shared/pkg/bitso"
 	sharedModels "bitso-trading-platform/shared/pkg/models"
 )
 
@@ -419,6 +420,67 @@ func TestRecordOrderPlaced_LinksSignalOrder(t *testing.T) {
 	}
 	if len(list) != 1 {
 		t.Fatalf("expected 1 order in repo, got %d (duplicate placement rows?)", len(list))
+	}
+}
+
+func TestSyncOrderFromBitsoTrades_incrementalPollLegs(t *testing.T) {
+	mgr := setupManager()
+	defer mgr.Stop()
+
+	ctx := context.Background()
+	const oid = "bitso-partial-sell"
+	if _, err := mgr.RecordOrderPlaced(ctx, oid, "btc_mxn", "sell", 0.001, 1_096_890, "mean_reversion_btc_mxn", "sell-signal-1"); err != nil {
+		t.Fatalf("RecordOrderPlaced: %v", err)
+	}
+	if err := mgr.SyncOrderFromBitso(ctx, oid, 0, 1_096_890, models.OrderStatusAccepted); err != nil {
+		t.Fatalf("SyncOrderFromBitso accepted: %v", err)
+	}
+
+	trade := func(maj float64, tid int64) bitso.UserOrderTrade {
+		return bitso.UserOrderTrade{
+			OID:   oid,
+			Major: bitso.ToMonetary(maj),
+			Price: bitso.ToMonetary(1_096_890),
+			TID:   bitso.TID(tid),
+		}
+	}
+
+	// Single-trade poll legs must accumulate (regression for Stage soak partial SELL burst).
+	if err := mgr.SyncOrderFromBitsoTrades(ctx, oid, []bitso.UserOrderTrade{trade(0.0001, 685207177)}); err != nil {
+		t.Fatalf("first poll leg: %v", err)
+	}
+	if err := mgr.SyncOrderFromBitsoTrades(ctx, oid, []bitso.UserOrderTrade{trade(0.000063, 685207179)}); err != nil {
+		t.Fatalf("second poll leg: %v", err)
+	}
+
+	order, err := mgr.GetOrderByBitsoOrderID(ctx, oid)
+	if err != nil {
+		t.Fatalf("GetOrderByBitsoOrderID: %v", err)
+	}
+	if got, want := order.FilledAmount, 0.000163; got < want-1e-9 || got > want+1e-9 {
+		t.Fatalf("filled_amount: got %v want ~%v", got, want)
+	}
+	if order.Status != models.OrderStatusPartiallyFilled {
+		t.Fatalf("status: got %s want partially_filled", order.Status)
+	}
+
+	// Full /order_trades snapshot replaces cumulative total authoritatively.
+	if err := mgr.SyncOrderFromBitsoTrades(ctx, oid, []bitso.UserOrderTrade{
+		trade(0.0001, 685207177),
+		trade(0.000063, 685207179),
+		trade(0.000837, 685207180),
+	}); err != nil {
+		t.Fatalf("full snapshot: %v", err)
+	}
+	order, err = mgr.GetOrderByBitsoOrderID(ctx, oid)
+	if err != nil {
+		t.Fatalf("GetOrderByBitsoOrderID after snapshot: %v", err)
+	}
+	if order.Status != models.OrderStatusFilled {
+		t.Fatalf("status after snapshot: got %s want filled", order.Status)
+	}
+	if got, want := order.FilledAmount, 0.001; got < want-1e-9 || got > want+1e-9 {
+		t.Fatalf("filled_amount after snapshot: got %v want %v", got, want)
 	}
 }
 

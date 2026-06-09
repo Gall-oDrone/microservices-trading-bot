@@ -571,6 +571,63 @@ func (m *Manager) SyncOrderFromBitso(ctx context.Context, bitsoOrderID string, f
 	return nil
 }
 
+const syncedTradeTIDsMetaKey = "synced_trade_tids"
+
+func tradeMajorAbs(t bitso.UserOrderTrade) float64 {
+	maj := (&t.Major).Float64()
+	if maj < 0 {
+		return -maj
+	}
+	return maj
+}
+
+func tradeTIDSet(meta map[string]interface{}) map[uint64]struct{} {
+	out := make(map[uint64]struct{})
+	if meta == nil {
+		return out
+	}
+	raw, ok := meta[syncedTradeTIDsMetaKey]
+	if !ok {
+		return out
+	}
+	switch v := raw.(type) {
+	case []interface{}:
+		for _, item := range v {
+			switch tid := item.(type) {
+			case float64:
+				out[uint64(tid)] = struct{}{}
+			case int:
+				out[uint64(tid)] = struct{}{}
+			case int64:
+				out[uint64(tid)] = struct{}{}
+			case uint64:
+				out[tid] = struct{}{}
+			}
+		}
+	}
+	return out
+}
+
+func addTradeTIDs(meta map[string]interface{}, trades []bitso.UserOrderTrade) {
+	if meta == nil {
+		return
+	}
+	seen := tradeTIDSet(meta)
+	ids := make([]interface{}, 0)
+	if existing, ok := meta[syncedTradeTIDsMetaKey].([]interface{}); ok {
+		ids = append(ids, existing...)
+	}
+	for _, t := range trades {
+		tid := uint64(t.TID)
+		if _, ok := seen[tid]; ok {
+			continue
+		}
+		seen[tid] = struct{}{}
+		ids = append(ids, tid)
+	}
+	meta[syncedTradeTIDsMetaKey] = ids
+}
+
 // SyncOrderFromBitsoTrades updates order state from Bitso /order_trades when /orders lookup omits the OID (e.g. completed).
 func (m *Manager) SyncOrderFromBitsoTrades(ctx context.Context, bitsoOrderID string, trades []bitso.UserOrderTrade) error {
 	if len(trades) == 0 {
@@ -607,12 +664,39 @@ func (m *Manager) SyncOrderFromBitsoTrades(ctx context.Context, bitsoOrderID str
 			"bitso_order_id": bitsoOrderID,
 		})
 	}
-	var filledMajor, vwapNum float64
+
+	synced := tradeTIDSet(order.Metadata)
+	var newTrades []bitso.UserOrderTrade
 	for _, t := range trades {
-		maj := (&t.Major).Float64()
+		if _, ok := synced[uint64(t.TID)]; !ok {
+			newTrades = append(newTrades, t)
+		}
+	}
+	// Multiple legs from /order_trades is an authoritative cumulative snapshot.
+	useFullSnapshot := len(trades) > 1
+	if !useFullSnapshot && len(newTrades) == 0 {
+		return nil
+	}
+
+	prevFilled := order.FilledAmount
+	var filledMajor, vwapNum float64
+	if useFullSnapshot {
+		for _, t := range trades {
+			maj := tradeMajorAbs(t)
+			pr := (&t.Price).Float64()
+			filledMajor += maj
+			vwapNum += maj * pr
+		}
+	} else {
+		t := trades[0]
+		maj := tradeMajorAbs(t)
 		pr := (&t.Price).Float64()
-		filledMajor += maj
-		vwapNum += maj * pr
+		filledMajor = prevFilled + maj
+		if prevFilled > 0 && order.AveragePrice > 0 {
+			vwapNum = prevFilled*order.AveragePrice + maj*pr
+		} else {
+			vwapNum = maj * pr
+		}
 	}
 	if filledMajor <= 0 {
 		m.logger.Debug("SyncOrderFromBitsoTrades: no filled amount", map[string]interface{}{
@@ -635,16 +719,33 @@ func (m *Manager) SyncOrderFromBitsoTrades(ctx context.Context, bitsoOrderID str
 	}
 
 	m.logger.Info("SyncOrderFromBitsoTrades: calculated fill", map[string]interface{}{
-		"order_id":       order.ID,
-		"bitso_order_id": bitsoOrderID,
-		"num_trades":     len(trades),
-		"filled_major":   filledMajor,
-		"order_amount":   order.Amount,
-		"avg_price":      avgPrice,
-		"computed_status": string(status),
+		"order_id":        order.ID,
+		"bitso_order_id":    bitsoOrderID,
+		"num_trades":        len(trades),
+		"new_trades":        len(newTrades),
+		"filled_major":      filledMajor,
+		"order_amount":      order.Amount,
+		"avg_price":         avgPrice,
+		"computed_status":   string(status),
+		"full_snapshot":     useFullSnapshot,
 	})
 
-	return m.SyncOrderFromBitso(ctx, bitsoOrderID, filledMajor, avgPrice, status)
+	if err := m.SyncOrderFromBitso(ctx, bitsoOrderID, filledMajor, avgPrice, status); err != nil {
+		return err
+	}
+	updated, err := m.repository.GetByBitsoOrderID(ctx, bitsoOrderID)
+	if err != nil {
+		return err
+	}
+	if updated.Metadata == nil {
+		updated.Metadata = make(map[string]interface{})
+	}
+	if useFullSnapshot {
+		addTradeTIDs(updated.Metadata, trades)
+	} else {
+		addTradeTIDs(updated.Metadata, newTrades)
+	}
+	return m.repository.Update(ctx, updated)
 }
 
 // ListActiveBitsoOrderIDs returns Bitso order IDs for all active orders that have one (for sync job)

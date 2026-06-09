@@ -267,7 +267,11 @@ func (p *UserTradesPoller) handleTrade(ctx context.Context, t *bitso.UserTrade) 
 		"fee_currency":   string(obs.FeeCurrency),
 	})
 
-	if err := p.orderManager.SyncOrderFromBitsoTrades(ctx, oid, []bitso.UserOrderTrade{tradeFromPoll}); err != nil {
+	tradesToSync := []bitso.UserOrderTrade{tradeFromPoll}
+	if allTrades, otErr := p.bitsoClient.OrderTrades(oid, nil); otErr == nil && len(allTrades) > 0 {
+		tradesToSync = allTrades
+	}
+	if err := p.orderManager.SyncOrderFromBitsoTrades(ctx, oid, tradesToSync); err != nil {
 		p.log.Warn("SyncOrderFromBitsoTrades failed from user-trades poll", map[string]interface{}{
 			"bitso_order_id": oid,
 			"error":          err.Error(),
