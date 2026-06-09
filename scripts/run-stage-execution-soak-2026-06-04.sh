@@ -9,6 +9,8 @@
 #   ./scripts/run-stage-execution-soak-2026-06-04.sh phase2-status
 #   ./scripts/run-stage-execution-soak-2026-06-04.sh phase3-start   # router dry, engine live, one strategy
 #   ./scripts/run-stage-execution-soak-2026-06-04.sh phase3-status
+#   ./scripts/run-stage-execution-soak-2026-06-04.sh phase4-start   # router + engine live, router-managed
+#   ./scripts/run-stage-execution-soak-2026-06-04.sh phase4-status
 #   ./scripts/run-stage-execution-soak-2026-06-04.sh rollback        # DRY_RUN=true on router + engine
 #
 set -euo pipefail
@@ -109,6 +111,20 @@ print(f"phase2_elapsed_hours={elapsed:.1f}")
 print(f"phase2_time_gate_met={elapsed >= min_h}")
 sys.exit(0 if elapsed >= min_h else 1)
 PY
+}
+
+stop_all_strategies() {
+  info "Stopping all running strategies..."
+  kubectl -n "$NAMESPACE" exec deploy/strategy-executor -- \
+    wget -qO- http://127.0.0.1:8081/api/v1/strategies 2>/dev/null \
+    | jq -r '.strategies[]? | select(.running==true) | .name' \
+    | while read -r n; do
+        [[ -z "$n" ]] && continue
+        info "  stop $n"
+        kubectl -n "$NAMESPACE" exec deploy/strategy-executor -- \
+          wget -qO- --post-data='' "http://127.0.0.1:8081/api/v1/strategies/${n}/stop" >/dev/null 2>&1 || true
+      done
+  ok "All running strategies stopped"
 }
 
 ensure_strategy_running() {
@@ -228,6 +244,65 @@ PY
       wget -qO- http://127.0.0.1:8080/metrics 2>/dev/null \
       | grep -E '^trading_engine_(dry_run|orders_|signals_)' || warn "metrics unavailable"
     ;;
+  phase4-start)
+    check_classification_pass
+    info "Stopping classification bash router..."
+    "$ROOT/scripts/run-stage-soak-2026-06-02.sh" stop-bash || true
+    "$ROOT/scripts/stage-soak-sample-loop.sh" stop 2>/dev/null || true
+    stop_all_strategies
+    info "Registering canonical router strategies (stopped, POSITION_SIZE=0.001)..."
+    NAMESPACE="$NAMESPACE" BOOK="$BOOK" ROUTER_MANAGED=true ROUTER_CANONICAL_NAMES=true \
+      POSITION_SIZE=0.001 STRATEGY_TYPES=mean_reversion,momentum,limit_profit \
+      "$ROOT/scripts/start-organic-trading.sh" 2>&1 | tail -8 || warn "register had warnings (strategies may already exist)"
+    info "Enabling router-managed execution (DRY_RUN=false on strategy-router)..."
+    kubectl -n "$NAMESPACE" set env deployment/strategy-router DRY_RUN=false
+    kubectl -n "$NAMESPACE" rollout status deploy/strategy-router --timeout=180s
+    info "Ensuring trading-engine stays live (DRY_RUN unset)..."
+    kubectl -n "$NAMESPACE" set env deployment/trading-engine DRY_RUN-
+    kubectl -n "$NAMESPACE" rollout status deploy/trading-engine --timeout=180s
+    dry_metric=$(kubectl -n "$NAMESPACE" exec deploy/trading-engine -- \
+      wget -qO- http://127.0.0.1:8080/metrics 2>/dev/null | awk '/^trading_engine_dry_run /{print $2}')
+    if [[ "$dry_metric" != "0" ]]; then
+      err "trading_engine_dry_run=$dry_metric (expected 0 for Phase 4)"
+      exit 1
+    fi
+    router_dry=$(router_dry_run)
+    if [[ "$router_dry" == "true" ]]; then
+      err "strategy-router still DRY_RUN=true"
+      exit 1
+    fi
+    ok "Phase 4 live — router manages start/stop; engine may place Bitso Stage orders"
+    write_window "4" "Phase 4: strategy-router DRY_RUN=false, trading-engine live, router-managed canonical strategies."
+    ok "Phase 4 started — observe ≥ 24–48 h; run phase4-status periodically"
+    info "See docs/strategy-fee-accuracy/STAGE-EXECUTION-SOAK-OPERATOR-GUIDE-2026-06-04.md § Phase 4"
+    print_status
+    ;;
+  phase4-status)
+    mkdir -p "$LOG_DIR"
+    info "Execution soak window:"
+    [[ -f "$WINDOW_JSON" ]] && cat "$WINDOW_JSON" || warn "No $WINDOW_JSON — run phase4-start first"
+    if [[ -f "$WINDOW_JSON" ]]; then
+      python3 - "$WINDOW_JSON" <<'PY'
+import json, sys
+from datetime import datetime, timezone
+w = json.load(open(sys.argv[1]))
+started = w.get("started_at", "")
+if started:
+    t0 = datetime.fromisoformat(started.replace("Z", "+00:00"))
+    elapsed = (datetime.now(timezone.utc) - t0).total_seconds() / 3600
+    print(f"Phase {w.get('phase','?')} elapsed: {elapsed:.1f}h (24h gate: {'PASS' if elapsed >= 24 else 'pending'})")
+PY
+    fi
+    print_status
+    info "Router metrics:"
+    kubectl -n "$NAMESPACE" exec deploy/strategy-router -- \
+      wget -qO- http://127.0.0.1:8092/metrics 2>/dev/null \
+      | grep -E '^strategy_router_(evaluation|switch|error)' || warn "router metrics unavailable"
+    info "Trading-engine order metrics:"
+    kubectl -n "$NAMESPACE" exec deploy/trading-engine -- \
+      wget -qO- http://127.0.0.1:8080/metrics 2>/dev/null \
+      | grep -E '^trading_engine_(dry_run|orders_|signals_)' || warn "metrics unavailable"
+    ;;
   rollback)
     warn "Rolling back to safe mode (router + engine DRY_RUN=true)..."
     kubectl -n "$NAMESPACE" set env deployment/strategy-router DRY_RUN=true
@@ -237,7 +312,7 @@ PY
     ok "Rollback complete — strategies may still be running; stop manually if needed"
     ;;
   *)
-    err "Unknown command: $cmd (check-prereqs|phase2-start|phase2-status|phase3-start|phase3-status|rollback)"
+    err "Unknown command: $cmd (check-prereqs|phase2-start|phase2-status|phase3-start|phase3-status|phase4-start|phase4-status|rollback)"
     exit 1
     ;;
 esac

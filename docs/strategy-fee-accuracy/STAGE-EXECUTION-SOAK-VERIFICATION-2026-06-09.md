@@ -197,7 +197,7 @@ kubectl -n bitso-trading-dev exec deploy/trading-engine -- \
 2. **Confirm first Bitso OID** — engine log + OM + Stage dashboard.
 3. **Fee honesty** — realized `fee_rate` on fill.
 4. **Keep `market-data` fresh** — grep `Last Trade` in logs during soak.
-5. **Phase 4** — after first round-trip spot-check, enable router + engine live per execution guide.
+5. **Phase 4** — **started 2026-06-09T17:11:11Z** — see [`STAGE-EXECUTION-SOAK-PHASE4-VERIFICATION-2026-06-09.md`](STAGE-EXECUTION-SOAK-PHASE4-VERIFICATION-2026-06-09.md).
 
 ---
 

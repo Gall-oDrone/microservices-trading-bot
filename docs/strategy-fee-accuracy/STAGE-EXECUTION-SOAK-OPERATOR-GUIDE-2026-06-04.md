@@ -4,7 +4,7 @@ Date: 2026-06-04
 Repository: `microservices-trading-bot`  
 Related: [`STAGE-SOAK-OPERATOR-GUIDE-2026-06-02.md`](STAGE-SOAK-OPERATOR-GUIDE-2026-06-02.md), [`STAGE-SOAK-VERIFICATION-2026-06-07.md`](STAGE-SOAK-VERIFICATION-2026-06-07.md), [`STAGE-EXECUTION-SOAK-VERIFICATION-2026-06-09.md`](STAGE-EXECUTION-SOAK-VERIFICATION-2026-06-09.md), [`STAGE-SOAK-MARKET-DATA-ATR-OBSERVATIONS-2026-06-03.md`](STAGE-SOAK-MARKET-DATA-ATR-OBSERVATIONS-2026-06-03.md), [`../ORDER-FLOW-AND-BITSO-TESTING.md`](../ORDER-FLOW-AND-BITSO-TESTING.md)
 
-> **Status (2026-06-09):** Classification **PASS** (2026-06-07). Phase 2 **PASS**. **Phase 3 in progress** — engine live, sizing + market-data fixes applied; **0 Bitso orders** (4 pre-fix signals rejected). See [`STAGE-EXECUTION-SOAK-VERIFICATION-2026-06-09.md`](STAGE-EXECUTION-SOAK-VERIFICATION-2026-06-09.md).
+> **Status (2026-06-09):** Classification **PASS** (2026-06-07). Phase 2 **PASS**. Phase 3 **PASS** (round-trip complete). **Phase 4 in progress** — router + engine live, router-managed. See [`STAGE-EXECUTION-SOAK-PHASE4-VERIFICATION-2026-06-09.md`](STAGE-EXECUTION-SOAK-PHASE4-VERIFICATION-2026-06-09.md).
 
 ## Purpose
 
@@ -164,7 +164,7 @@ curl -s http://127.0.0.1:8092/api/v1/router/state | jq '{
 
 ---
 
-### Phase 3 — Single-strategy order path (router still dry or manual start) — **IN PROGRESS (2026-06-09)**
+### Phase 3 — Single-strategy order path (router still dry or manual start) — **PASS (2026-06-09)**
 
 **Goal:** One controlled Stage round-trip through Kafka → engine → Bitso → order-management.
 
@@ -273,9 +273,18 @@ Common rejection: `order value … exceeds maximum 100000` → reduce `position_
 
 ---
 
-### Phase 4 — Router-managed execution (full stack)
+### Phase 4 — Router-managed execution (full stack) — **IN PROGRESS (2026-06-09)**
 
 **Goal:** Regime-driven `start`/`stop` with live engine orders on Stage for ≥ 24–48 h.
+
+**Enable Phase 4 (preferred):**
+
+```bash
+./scripts/run-stage-execution-soak-2026-06-04.sh phase4-start   # after Phase 3 round-trip PASS
+./scripts/run-stage-execution-soak-2026-06-04.sh phase4-status
+```
+
+Started **2026-06-09T17:11:11Z** — see [`STAGE-EXECUTION-SOAK-PHASE4-VERIFICATION-2026-06-09.md`](STAGE-EXECUTION-SOAK-PHASE4-VERIFICATION-2026-06-09.md).
 
 | Component | Setting |
 |-----------|---------|
@@ -395,8 +404,9 @@ After Phase 4 short soak (24–48 h) with no critical incidents:
 - [`STAGE-FINANCIAL-APPROACH-2026-06-04.md`](STAGE-FINANCIAL-APPROACH-2026-06-04.md) — **single reference**: engineering vs economic proof, priorities, decision tree
 - [`STAGE-SOAK-OPERATOR-GUIDE-2026-06-02.md`](STAGE-SOAK-OPERATOR-GUIDE-2026-06-02.md) — classification soak (item 1)
 - [`STAGE-SOAK-VERIFICATION-2026-06-07.md`](STAGE-SOAK-VERIFICATION-2026-06-07.md) — classification PASS (2026-06-07)
-- [`STAGE-EXECUTION-SOAK-VERIFICATION-2026-06-09.md`](STAGE-EXECUTION-SOAK-VERIFICATION-2026-06-09.md) — Phase 2 PASS, Phase 3 in progress (2026-06-09)
-- [`scripts/run-stage-execution-soak-2026-06-04.sh`](../../scripts/run-stage-execution-soak-2026-06-04.sh) — execution soak helper (`phase2-start`, `phase3-start`, `phase3-status`, `rollback`)
+- [`STAGE-EXECUTION-SOAK-VERIFICATION-2026-06-09.md`](STAGE-EXECUTION-SOAK-VERIFICATION-2026-06-09.md) — Phase 2/3 PASS (2026-06-09)
+- [`STAGE-EXECUTION-SOAK-PHASE4-VERIFICATION-2026-06-09.md`](STAGE-EXECUTION-SOAK-PHASE4-VERIFICATION-2026-06-09.md) — Phase 4 started (2026-06-09)
+- [`scripts/run-stage-execution-soak-2026-06-04.sh`](../../scripts/run-stage-execution-soak-2026-06-04.sh) — execution soak helper (`phase2-start` … `phase4-start`, `phase4-status`, `rollback`)
 - [`STAGE-SOAK-MARKET-DATA-ATR-OBSERVATIONS-2026-06-03.md`](STAGE-SOAK-MARKET-DATA-ATR-OBSERVATIONS-2026-06-03.md) — `DRY_RUN`, Stage WS, ATR
 - [`../ORDER-FLOW-AND-BITSO-TESTING.md`](../ORDER-FLOW-AND-BITSO-TESTING.md) — order pipeline validation
 - [`POST-POINT-10-IMPLEMENTATION-STATUS-2026-05-25.md`](POST-POINT-10-IMPLEMENTATION-STATUS-2026-05-25.md) — milestone gate
