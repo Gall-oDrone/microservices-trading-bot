@@ -674,7 +674,6 @@ func (te *TradingEngine) healthMonitor() {
 		case <-ticker.C:
 			if err := te.performHealthCheck(); err != nil {
 				te.logger.Printf("Health check failed: %v", err)
-				te.recordError(err)
 			}
 		}
 	}
@@ -816,7 +815,6 @@ func (te *TradingEngine) validateSignalPrice(signal *models.TradeSignalEvent, ti
 }
 
 func (te *TradingEngine) performHealthCheck() error {
-	// Check Redis
 	if err := te.dbClient.Ping(te.ctx); err != nil {
 		if te.metricsRecorder != nil {
 			te.metricsRecorder.RecordHealthCheckFailure()
@@ -824,15 +822,35 @@ func (te *TradingEngine) performHealthCheck() error {
 		return fmt.Errorf("redis health check failed: %w", err)
 	}
 
-	// Check Bitso API
-	if _, err := te.bitsoClient.Ticker(te.book); err != nil {
-		if te.metricsRecorder != nil {
-			te.metricsRecorder.RecordHealthCheckFailure()
+	const maxAttempts = 3
+	delays := []time.Duration{0, 2 * time.Second, 4 * time.Second}
+	var lastErr error
+	for attempt := 0; attempt < maxAttempts; attempt++ {
+		if attempt > 0 {
+			delay := delays[attempt]
+			if delay <= 0 {
+				delay = 2 * time.Second
+			}
+			select {
+			case <-te.ctx.Done():
+				return te.ctx.Err()
+			case <-time.After(delay):
+			}
 		}
-		return fmt.Errorf("bitso health check failed: %w", err)
+		_, lastErr = te.bitsoClient.Ticker(te.book)
+		if lastErr == nil {
+			return nil
+		}
+		if !bitso.IsRetryable(lastErr) || attempt == maxAttempts-1 {
+			break
+		}
+		te.logger.Printf("Bitso health check attempt %d/%d failed (retryable): %v", attempt+1, maxAttempts, lastErr)
 	}
 
-	return nil
+	if te.metricsRecorder != nil {
+		te.metricsRecorder.RecordHealthCheckFailure()
+	}
+	return fmt.Errorf("bitso health check failed: %w", lastErr)
 }
 
 func (te *TradingEngine) recordError(err error) {

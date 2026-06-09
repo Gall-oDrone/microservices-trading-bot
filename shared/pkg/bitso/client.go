@@ -451,6 +451,14 @@ func (c *Client) doRequest(method string, endpoint string, params url.Values, bo
 		Int("status", res.StatusCode).
 		Logger()
 
+	if res.StatusCode >= 400 {
+		snippet := responseBodySnippet(buf, 200)
+		logger.Error().
+			Str("body", snippet).
+			Msg("http error response")
+		return &HTTPError{StatusCode: res.StatusCode, Body: snippet}
+	}
+
 	if logger.GetLevel() <= zerolog.DebugLevel {
 		logger = logger.With().
 			Str("body", string(buf)).
@@ -477,6 +485,14 @@ func (c *Client) doRequest(method string, endpoint string, params url.Values, bo
 	}
 
 	return nil
+}
+
+func responseBodySnippet(buf []byte, maxLen int) string {
+	s := strings.TrimSpace(string(buf))
+	if maxLen <= 0 || len(s) <= maxLen {
+		return s
+	}
+	return s[:maxLen] + "..."
 }
 
 func (c *Client) deleteResponse(endpoint string, params url.Values, dest interface{}) error {
