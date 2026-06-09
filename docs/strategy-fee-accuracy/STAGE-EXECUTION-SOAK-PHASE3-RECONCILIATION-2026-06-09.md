@@ -73,15 +73,20 @@ Phase 3 proved the live Stage order path (engine → Bitso → OM) but left a **
 
 ---
 
-## Post-reconciliation expectations
+## Post-reconciliation results (~16:30 UTC)
 
-| Check | Expected |
-|-------|----------|
-| SELL OID | `cancelled` (stale) or `filled` if Bitso `/order_trades` returns remaining legs |
-| Strategy | `has_position=false`, `pending_sell=false` after `reset-strategy` |
-| market-data | `Last Trade` within minutes of restart |
-| OM 312 spam | Stops once SELL leaves active-order list |
-| Next signal | 0.001 BTC, passes OM validation (~1.1k MXN) |
+| Check | Result |
+|-------|--------|
+| OM image deployed | `order-management:7fae8b0` |
+| SELL `VgdJKh6fKC2c1xrZ` | **filled** 0.001 BTC (11 trade TIDs synced) |
+| BUY `oVs9Fk5oEnzkfDqo` | **filled** 0.001 BTC (unchanged) |
+| Strategy `mean_reversion_btc_mxn` | `has_position=false`, `trade_count=1`, no pending sell |
+| market-data | Restarted; cluster price aligned with Bitso (~1,064,130 MXN) |
+| OM 312 errors | **0** (last 5 min) |
+
+### Follow-up fix (`7fae8b0`)
+
+Initial deploy (`5618afa`) accumulated partial legs correctly but **Redis updates failed** when cumulative fill barely exceeded `0.001` by float noise (`0.0010000000000000002 > 0.001`). `NormalizeFilledAmount()` + epsilon validation in `order.Validate()` resolved persistence; SELL transitioned to `filled` within ~30s of rollout.
 
 ---
 
@@ -93,7 +98,7 @@ Phase 3 proved the live Stage order path (engine → Bitso → OM) but left a **
 4. Fee honesty: `fee_rate` on `trading.order.fills` events
 5. Strategy `trade_count` increments after complete exit
 
-**Status after this pass:** Phase 3 still **in progress** — infrastructure and first live orders proven; awaiting a **clean** post-reconciliation round-trip before declaring PASS and moving to Phase 4.
+**Status after this pass:** First **complete Stage round-trip** reconciled (BUY + SELL filled, fee metadata on both legs, strategy `trade_count=1`). Phase 3 spot-check **substantially complete** — operator should confirm Bitso Stage dashboard OIDs match logs, then proceed to Phase 4 per execution guide.
 
 ---
 

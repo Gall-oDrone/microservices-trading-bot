@@ -41,8 +41,8 @@ Machine-readable window: `tmp/stage-execution-soak/execution-window.json`.
 | Phase 3 — engine live | ✅ | `trading_engine_dry_run 0` |
 | Phase 3 — live price in cluster | ✅ **Fixed** | Was stale ~90 h; restart restored WS trades |
 | Phase 3 — position sizing | ✅ **Fixed** | `parameters.position_size` no longer overridden by global `MaxPositionSize` |
-| Phase 3 — first Stage round-trip | 📋 **Partial** | BUY filled; SELL stuck at 0.0001/0.001 → reconciliation shipped |
-| Phase 3 — fee honesty on fill | 📋 **Partial** | BUY `fee_rate` 0.57%; round-trip incomplete |
+| Phase 3 — first Stage round-trip | ✅ **Complete** | BUY + SELL filled after reconciliation (`7fae8b0`) |
+| Phase 3 — fee honesty on fill | ✅ **Verified** | BUY `fee_rate` 0.57%; SELL `fee_rate` 0.57% on partial/final legs |
 | Extended 7-day classification gate | 📋 **In progress** | Continue periodic sampling |
 
 **Current priority:** Wait for next band-breakout signal at **0.001 BTC** (~1.1k MXN notional); confirm engine places order and OM records OID.
