@@ -484,6 +484,36 @@ func TestSyncOrderFromBitsoTrades_incrementalPollLegs(t *testing.T) {
 	}
 }
 
+func TestSyncOrderFromBitso_floatOvershootPersistsFilled(t *testing.T) {
+	mgr := setupManager()
+	defer mgr.Stop()
+
+	ctx := context.Background()
+	const oid = "bitso-float-sell"
+	if _, err := mgr.RecordOrderPlaced(ctx, oid, "btc_mxn", "sell", 0.001, 1_096_890, "mean_reversion_btc_mxn", "sell-signal-float"); err != nil {
+		t.Fatalf("RecordOrderPlaced: %v", err)
+	}
+	if err := mgr.SyncOrderFromBitso(ctx, oid, 0.0001, 1_096_890, models.OrderStatusPartiallyFilled); err != nil {
+		t.Fatalf("SyncOrderFromBitso partial: %v", err)
+	}
+
+	// Cumulative snapshot can exceed 0.001 by float noise (Stage soak VgdJKh6fKC2c1xrZ).
+	const overshoot = 0.0010000000000000002
+	if err := mgr.SyncOrderFromBitso(ctx, oid, overshoot, 1_096_890, models.OrderStatusFilled); err != nil {
+		t.Fatalf("SyncOrderFromBitso filled with float overshoot: %v", err)
+	}
+	order, err := mgr.GetOrderByBitsoOrderID(ctx, oid)
+	if err != nil {
+		t.Fatalf("GetOrderByBitsoOrderID: %v", err)
+	}
+	if order.Status != models.OrderStatusFilled {
+		t.Fatalf("status: got %s want filled", order.Status)
+	}
+	if order.FilledAmount != 0.001 {
+		t.Fatalf("filled_amount: got %v want 0.001", order.FilledAmount)
+	}
+}
+
 func TestGetPositionSummary_Empty(t *testing.T) {
 	mgr := setupManager()
 	defer mgr.Stop()

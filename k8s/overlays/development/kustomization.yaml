@@ -34,7 +34,7 @@ images:
   newTag: 194cdd55fb84062bca4e4aba696bae6e55159b1b
 - name: ECR_REGISTRY_PLACEHOLDER/order-management
   newName: 326105557351.dkr.ecr.us-east-1.amazonaws.com/order-management
-  newTag: 194cdd55fb84062bca4e4aba696bae6e55159b1b
+  newTag: 5618afa
 - name: ECR_REGISTRY_PLACEHOLDER/strategy-executor
   newName: 326105557351.dkr.ecr.us-east-1.amazonaws.com/strategy-executor
   newTag: 638b776d5d0c853db9fa6c8fbd9ab757b618858f

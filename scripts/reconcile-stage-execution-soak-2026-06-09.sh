@@ -81,15 +81,26 @@ restart_market_data() {
 }
 
 reset_strategy() {
+  local root
+  root="$(cd "$(dirname "$0")/.." && pwd)"
   info "Stopping ${STRATEGY}..."
   kubectl -n "$NAMESPACE" exec deploy/strategy-executor -- \
     wget -qO- --post-data='' "http://127.0.0.1:8081/api/v1/strategies/${STRATEGY}/stop" >/dev/null 2>&1 || true
+  sleep 2
+  info "Removing ${STRATEGY} (clears in-memory position state)..."
+  kubectl -n "$NAMESPACE" exec deploy/strategy-executor -- \
+    wget -qO- --method=DELETE "http://127.0.0.1:8081/api/v1/strategies/${STRATEGY}" >/dev/null 2>&1 || true
+  sleep 1
+  info "Re-registering ${STRATEGY} at POSITION_SIZE=0.001..."
+  NAMESPACE="$NAMESPACE" BOOK=btc_mxn ROUTER_MANAGED=true ROUTER_CANONICAL_NAMES=true \
+    STRATEGY_TYPES=mean_reversion POSITION_SIZE=0.001 \
+    "$root/scripts/start-organic-trading.sh" 2>&1 | tail -5
   sleep 2
   info "Starting ${STRATEGY}..."
   kubectl -n "$NAMESPACE" exec deploy/strategy-executor -- \
     wget -qO- --post-data='' "http://127.0.0.1:8081/api/v1/strategies/${STRATEGY}/start" >/dev/null
   sleep 2
-  ok "Strategy restarted"
+  ok "Strategy re-registered and started"
   check_orders
 }
 

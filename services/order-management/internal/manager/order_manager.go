@@ -706,6 +706,7 @@ func (m *Manager) SyncOrderFromBitsoTrades(ctx context.Context, bitsoOrderID str
 		return nil
 	}
 	avgPrice := vwapNum / filledMajor
+	filledMajor = order.NormalizeFilledAmount(filledMajor)
 	eps := 1e-7
 	if order.Amount > 0 {
 		eps = order.Amount * 1e-9

@@ -158,6 +158,26 @@ func (o *Order) RecordFill(filledAmount, fillPrice float64) {
 	o.UpdatedAt = time.Now()
 }
 
+func fillAmountEpsilon(amount float64) float64 {
+	eps := amount * 1e-9
+	if eps < 1e-12 {
+		return 1e-12
+	}
+	return eps
+}
+
+// NormalizeFilledAmount clamps exchange-reported fills that exceed order.Amount only by float noise.
+func (o *Order) NormalizeFilledAmount(filled float64) float64 {
+	eps := fillAmountEpsilon(o.Amount)
+	if filled > o.Amount && filled-o.Amount <= eps {
+		return o.Amount
+	}
+	if filled > o.Amount {
+		return o.Amount
+	}
+	return filled
+}
+
 // AccumulateFill updates filled quantity and average price from a fill delta without changing status.
 // Used when syncing from the exchange so Bitso-reported status is applied only via the state machine.
 func (o *Order) AccumulateFill(fillDelta, fillPrice float64) {
@@ -166,8 +186,12 @@ func (o *Order) AccumulateFill(fillDelta, fillPrice float64) {
 	}
 	previousFilledAmount := o.FilledAmount
 	o.FilledAmount += fillDelta
+	eps := fillAmountEpsilon(o.Amount)
+	if o.FilledAmount > o.Amount && o.FilledAmount-o.Amount <= eps {
+		o.FilledAmount = o.Amount
+	}
 	o.RemainingAmount = o.Amount - o.FilledAmount
-	if o.RemainingAmount < 0 && o.RemainingAmount > -1e-6 {
+	if o.RemainingAmount < 0 && o.RemainingAmount > -eps {
 		o.RemainingAmount = 0
 	}
 	totalValue := (previousFilledAmount * o.AveragePrice) + (fillDelta * fillPrice)
@@ -230,7 +254,8 @@ func (o *Order) Validate() error {
 		return fmt.Errorf("filled amount cannot be negative: %f", o.FilledAmount)
 	}
 
-	if o.FilledAmount > o.Amount {
+	eps := fillAmountEpsilon(o.Amount)
+	if o.FilledAmount > o.Amount+eps {
 		return fmt.Errorf("filled amount cannot exceed total amount: %f > %f", o.FilledAmount, o.Amount)
 	}
 
