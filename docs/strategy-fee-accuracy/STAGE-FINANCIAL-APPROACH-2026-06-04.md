@@ -169,7 +169,7 @@ Detail: [`STAGE-SOAK-MARKET-DATA-ATR-OBSERVATIONS-2026-06-03.md`](STAGE-SOAK-MAR
 
 ## 10. What to do right now (priority stack)
 
-As of **2026-06-09**, **classification short soak PASS** (2026-06-07), **execution soak Phase 2 PASS** (26.2 h). **Current priority: execution soak Phase 3** — first Stage round-trip with `mean_reversion_btc_mxn` (`position_size=0.001`).
+As of **2026-06-09**, **classification PASS**, **Phase 2 PASS**. **Phase 3 in progress** — market-data staleness and sizing override fixed; awaiting first Bitso order at `position_size=0.001`. See [`STAGE-EXECUTION-SOAK-VERIFICATION-2026-06-09.md`](STAGE-EXECUTION-SOAK-VERIFICATION-2026-06-09.md).
 
 | Priority | Action | Financial why |
 |----------|--------|---------------|

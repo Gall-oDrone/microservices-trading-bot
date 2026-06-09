@@ -204,3 +204,18 @@ kubectl -n bitso-trading-dev exec deploy/strategy-executor -- \
 ```
 
 Do **not** set `strategy-router` `DRY_RUN=false` until soak agreement gate passes.
+
+---
+
+## 12. Addendum (2026-06-09) — trade stream can go stale while pods stay healthy
+
+During execution soak **Phase 3**, cluster `current_price` (**1,083,640** MXN) lagged the Bitso dashboard (~**1,097,340** MXN) by ~90 hours. `market-data` logs showed `Last Trade: 89h+ ago` while the pod was `1/1` Ready and the indicator snapshot reported `data_healthy: true`.
+
+**Lesson:** Bar-first snapshots recompute on a timer; if the WebSocket trade feed stops, indicators stay **internally consistent but wrong vs the live market**. For execution soak (real orders), always cross-check:
+
+```bash
+kubectl -n bitso-trading-dev logs deploy/market-data --tail=5 | grep 'Last Trade'
+curl -s 'https://bitso.com/api/v3/ticker/?book=btc_mxn' | jq '.payload.last'
+```
+
+Remediation: `kubectl rollout restart deploy/market-data`. Full timeline: [`STAGE-EXECUTION-SOAK-VERIFICATION-2026-06-09.md`](STAGE-EXECUTION-SOAK-VERIFICATION-2026-06-09.md).

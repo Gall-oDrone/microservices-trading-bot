@@ -22,7 +22,7 @@ The two documents below cover the work-streams independently — each is shippab
 | `STAGE-SOAK-VERIFICATION-2026-06-03.md` | Interim post–24h verification (2026-06-03); superseded by 2026-06-07 PASS report. |
 | `STAGE-SOAK-VERIFICATION-2026-06-07.md` | **Classification short soak PASS** (2026-06-07): ~69.8 h, 140/140 agreement, timeline and next steps. |
 | `STAGE-EXECUTION-SOAK-OPERATOR-GUIDE-2026-06-04.md` | Stage execution soak: phased router lifecycle + Bitso Stage orders + fee honesty; runs **after** classification soak passes. |
-| `STAGE-EXECUTION-SOAK-VERIFICATION-2026-06-09.md` | **Execution soak status** (2026-06-09): Phase 2 PASS, Phase 3 in progress — first Stage round-trip pending. |
+| `STAGE-EXECUTION-SOAK-VERIFICATION-2026-06-09.md` | **Execution soak status** (2026-06-09): Phase 2 PASS; Phase 3 incidents (stale market-data, sizing override) + fixes; 0 Bitso orders yet. |
 | `scripts/run-stage-execution-soak-2026-06-04.sh` | Helper: `check-prereqs`, `phase2-start`, `phase2-status`, `phase3-start`, `phase3-status`, `rollback`. |
 | **`STAGE-FINANCIAL-APPROACH-2026-06-04.md`** | **Start here if lost:** engineering vs economic proof, fee floor, regime allocation, decision tree, priorities, doc index. |
 | **`BAR-FIRST-INDICATORS-PRODUCTION-2026-06-04.md`** | **Production indicator pipeline:** 1m bar-first compute, bootstrap warm-up, snapshot health, router pause-on-stale, dev overlay ops. |

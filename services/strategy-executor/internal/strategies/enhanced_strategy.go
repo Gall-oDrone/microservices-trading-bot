@@ -86,6 +86,26 @@ type SizingConfig struct {
 	MaxPositionValue float64 `json:"max_position_value" yaml:"max_position_value"`
 }
 
+// ResolvePositionSize uses parameters.position_size when set, otherwise sizing.max_position_size
+// or defaultSize. MaxPositionSize is a ceiling, not an unconditional override.
+func ResolvePositionSize(parameters map[string]interface{}, maxPositionSize float64, defaultSize float64) float64 {
+	size := defaultSize
+	paramSet := false
+	if parameters != nil {
+		if v, ok := parameters["position_size"].(float64); ok && v > 0 {
+			size = v
+			paramSet = true
+		}
+	}
+	if !paramSet && maxPositionSize > 0 {
+		size = maxPositionSize
+	}
+	if maxPositionSize > 0 && size > maxPositionSize {
+		size = maxPositionSize
+	}
+	return size
+}
+
 // RiskConfig holds risk management configuration
 type RiskConfig struct {
 	MaxDailyLoss        float64 `json:"max_daily_loss" yaml:"max_daily_loss"`

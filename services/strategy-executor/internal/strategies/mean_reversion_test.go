@@ -70,8 +70,29 @@ func TestMeanReversionStrategy_Initialize(t *testing.T) {
 		t.Errorf("Expected ExitThreshold 0.3, got %f", mrConfig.ExitThreshold)
 	}
 
-	if mrConfig.PositionSize != 0.01 {
-		t.Errorf("Expected PositionSize 0.01 (from Sizing.MaxPositionSize), got %f", mrConfig.PositionSize)
+	if mrConfig.PositionSize != 0.005 {
+		t.Errorf("Expected PositionSize 0.005 (from parameters, under max cap), got %f", mrConfig.PositionSize)
+	}
+}
+
+func TestResolvePositionSize_ExplicitParamWinsUnderCap(t *testing.T) {
+	got := ResolvePositionSize(map[string]interface{}{"position_size": 0.005}, 0.01, 0.001)
+	if got != 0.005 {
+		t.Errorf("expected 0.005, got %f", got)
+	}
+}
+
+func TestResolvePositionSize_CappedByMax(t *testing.T) {
+	got := ResolvePositionSize(map[string]interface{}{"position_size": 0.02}, 0.01, 0.001)
+	if got != 0.01 {
+		t.Errorf("expected cap 0.01, got %f", got)
+	}
+}
+
+func TestResolvePositionSize_DefaultFromMaxWhenParamMissing(t *testing.T) {
+	got := ResolvePositionSize(nil, 0.01, 0.001)
+	if got != 0.01 {
+		t.Errorf("expected 0.01 from max, got %f", got)
 	}
 }
 

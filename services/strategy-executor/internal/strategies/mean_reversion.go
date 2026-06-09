@@ -78,14 +78,10 @@ func (s *MeanReversionStrategy) Initialize(config StrategyConfig, indicatorSvc *
 		if v, ok := params["min_signal_interval"].(float64); ok {
 			s.mrConfig.MinSignalInterval = int(v)
 		}
-		if v, ok := params["position_size"].(float64); ok {
-			s.mrConfig.PositionSize = v
-		}
 	}
 
-	if config.Sizing.MaxPositionSize > 0 {
-		s.mrConfig.PositionSize = config.Sizing.MaxPositionSize
-	}
+	s.mrConfig.PositionSize = ResolvePositionSize(
+		config.Parameters, config.Sizing.MaxPositionSize, s.mrConfig.PositionSize)
 	if config.Sizing.MaxPositionValue > 0 {
 		s.mrConfig.MaxPositionValue = config.Sizing.MaxPositionValue
 	}

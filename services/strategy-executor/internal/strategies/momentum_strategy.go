@@ -104,9 +104,6 @@ func (s *MomentumStrategy) Initialize(config StrategyConfig, indicatorSvc *indic
 		if v, ok := params["min_signal_interval"].(float64); ok {
 			s.momConfig.MinSignalInterval = int(v)
 		}
-		if v, ok := params["position_size"].(float64); ok {
-			s.momConfig.PositionSize = v
-		}
 		if v, ok := params["min_confidence"].(float64); ok {
 			s.momConfig.MinConfidence = v
 		}
@@ -127,9 +124,9 @@ func (s *MomentumStrategy) Initialize(config StrategyConfig, indicatorSvc *indic
 		}
 	}
 
-	if config.Sizing.MaxPositionSize > 0 {
-		s.momConfig.PositionSize = config.Sizing.MaxPositionSize
-	}
+	s.momConfig.PositionSize = ResolvePositionSize(
+		config.Parameters, config.Sizing.MaxPositionSize, s.momConfig.PositionSize)
+
 	if config.Sizing.MaxPositionValue > 0 {
 		s.momConfig.MaxPositionValue = config.Sizing.MaxPositionValue
 	}

@@ -4,7 +4,7 @@ Date: 2026-06-04
 Repository: `microservices-trading-bot`  
 Related: [`STAGE-SOAK-OPERATOR-GUIDE-2026-06-02.md`](STAGE-SOAK-OPERATOR-GUIDE-2026-06-02.md), [`STAGE-SOAK-VERIFICATION-2026-06-07.md`](STAGE-SOAK-VERIFICATION-2026-06-07.md), [`STAGE-EXECUTION-SOAK-VERIFICATION-2026-06-09.md`](STAGE-EXECUTION-SOAK-VERIFICATION-2026-06-09.md), [`STAGE-SOAK-MARKET-DATA-ATR-OBSERVATIONS-2026-06-03.md`](STAGE-SOAK-MARKET-DATA-ATR-OBSERVATIONS-2026-06-03.md), [`../ORDER-FLOW-AND-BITSO-TESTING.md`](../ORDER-FLOW-AND-BITSO-TESTING.md)
 
-> **Status (2026-06-09):** Classification **PASS** (2026-06-07). Execution soak **Phase 2 PASS** (26.2 h, 3,137 evaluations, zero errors). **Phase 3 in progress** — started 2026-06-09T01:06:52Z; `mean_reversion_btc_mxn` running, `trading_engine_dry_run 0`; awaiting first Stage round-trip. See [`STAGE-EXECUTION-SOAK-VERIFICATION-2026-06-09.md`](STAGE-EXECUTION-SOAK-VERIFICATION-2026-06-09.md).
+> **Status (2026-06-09):** Classification **PASS** (2026-06-07). Phase 2 **PASS**. **Phase 3 in progress** — engine live, sizing + market-data fixes applied; **0 Bitso orders** (4 pre-fix signals rejected). See [`STAGE-EXECUTION-SOAK-VERIFICATION-2026-06-09.md`](STAGE-EXECUTION-SOAK-VERIFICATION-2026-06-09.md).
 
 ## Purpose
 
@@ -224,6 +224,52 @@ kubectl -n bitso-trading-dev port-forward svc/order-management 8087:8082 &
 kubectl -n bitso-trading-dev exec deploy/strategy-executor -- \
   wget -qO- --post-data='' http://127.0.0.1:8081/api/v1/strategies/mean_reversion_btc_mxn/stop
 ```
+
+#### Phase 3 troubleshooting (2026-06-09 soak lessons)
+
+**1. Stale cluster price vs Bitso dashboard**
+
+`data_healthy: true` on the indicator snapshot does **not** guarantee live trades. It only means indicators were recomputed recently from whatever bars exist. If `market-data` stopped ingesting WebSocket trades, `current_price` can lag by days while the snapshot still looks healthy.
+
+| Check | Healthy |
+|-------|---------|
+| Snapshot `current_price` ≈ Bitso REST ticker | Within ~0.5% |
+| `market-data` log `Last Trade` | Minutes ago, not hours |
+| `GET /api/v1/trades?book=btc_mxn` | Recent trades present |
+| Last 1m bar timestamp | Current hour/day |
+
+```bash
+kubectl -n bitso-trading-dev logs deploy/market-data --tail=20 | grep 'Last Trade'
+curl -s 'https://bitso.com/api/v3/ticker/?book=btc_mxn' | jq '.payload.last'
+kubectl -n bitso-trading-dev rollout restart deploy/market-data   # if stale
+```
+
+**2. `position_size` vs order-management `MAX_ORDER_VALUE`**
+
+For Phase 3 soak, register with **minimal** size (e.g. `POSITION_SIZE=0.001` via `start-organic-trading.sh`). Order value in MXN ≈ `position_size × price`. Default `MAX_ORDER_VALUE` on order-management is **100,000 MXN**.
+
+At ~1.1M MXN/BTC, **0.1 BTC** ≈ 110k MXN and will be **rejected** even when `parameters.position_size` in the API shows 0.001 — if an older executor build overrode params with global `MaxPositionSize` (0.1). Fixed in `ResolvePositionSize()` (image `638b776…`+).
+
+```bash
+# Verify effective size on running strategy
+kubectl -n bitso-trading-dev exec deploy/strategy-executor -- \
+  wget -qO- http://127.0.0.1:8081/api/v1/strategies/mean_reversion_btc_mxn | jq '.parameters.position_size'
+
+# Re-register after strategy-executor rollout (in-memory registry)
+./scripts/run-stage-soak-2026-06-02.sh register
+kubectl -n bitso-trading-dev exec deploy/strategy-executor -- \
+  wget -qO- --post-data='' http://127.0.0.1:8081/api/v1/strategies/mean_reversion_btc_mxn/start
+```
+
+**3. Signals rejected but no Bitso order**
+
+```bash
+kubectl -n bitso-trading-dev logs deploy/trading-engine --since=30m | grep -iE 'signal|validation|placed'
+kubectl -n bitso-trading-dev exec deploy/trading-engine -- \
+  wget -qO- http://127.0.0.1:8080/metrics | grep -E 'signals_received|pretrade_validation|orders_failed'
+```
+
+Common rejection: `order value … exceeds maximum 100000` → reduce `position_size` or raise `MAX_ORDER_VALUE` (not recommended for soak).
 
 ---
 

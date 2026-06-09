@@ -122,7 +122,7 @@ Items 8–10 are complete and not required for the milestone gate above, but the
 
 1. **Item 1 — Stage soak:** **Short soak PASS** on 2026-06-07 — see [`STAGE-SOAK-VERIFICATION-2026-06-07.md`](STAGE-SOAK-VERIFICATION-2026-06-07.md) (~69.8 h, 140/140 agreement). Extended 7-day sampling continues during execution soak.
 2. **Stage execution soak Phase 2:** **PASS** (2026-06-09) — 26.2 h router lifecycle, zero errors, no Bitso orders. See [`STAGE-EXECUTION-SOAK-VERIFICATION-2026-06-09.md`](STAGE-EXECUTION-SOAK-VERIFICATION-2026-06-09.md).
-3. **Stage execution soak Phase 3:** **In progress** (started 2026-06-09T01:06:52Z) — `mean_reversion_btc_mxn` running, engine live; run `./scripts/run-stage-execution-soak-2026-06-04.sh phase3-status` ([`STAGE-EXECUTION-SOAK-OPERATOR-GUIDE-2026-06-04.md`](STAGE-EXECUTION-SOAK-OPERATOR-GUIDE-2026-06-04.md)).
+3. **Stage execution soak Phase 3:** **In progress** — stale `market-data` and sizing override fixed 2026-06-09; 4 pre-fix signals rejected (0.1 BTC > 100k MXN cap); **0 Bitso orders** yet. See [`STAGE-EXECUTION-SOAK-VERIFICATION-2026-06-09.md`](STAGE-EXECUTION-SOAK-VERIFICATION-2026-06-09.md).
 4. **Monitor:** Import `strategy-router` Grafana dashboard; confirm `RouterNotEvaluating` and `RouterEvaluationsFailing` stay quiet.
 5. **Fee honesty spot-check:** On first Phase 3 round-trip, confirm `trading.order.fills` events carry `fee_rate` and strategy logs show net P&L using realized legs.
 6. **Merge PR:** Open or merge `feat/k8s-deployment-manifests` → `main` so CI publishes `strategy-router:<sha>` on every push.

@@ -227,9 +227,6 @@ func (s *LimitProfitStrategy) Initialize(config StrategyConfig, indicatorSvc *in
 		if v, ok := p["fee_bps"].(float64); ok {
 			s.lpConfig.FeeBPS = v
 		}
-		if v, ok := p["position_size"].(float64); ok {
-			s.lpConfig.PositionSize = v
-		}
 		if v, ok := p["min_signal_interval"].(float64); ok {
 			s.lpConfig.MinSignalInterval = int(v)
 		}
@@ -294,9 +291,8 @@ func (s *LimitProfitStrategy) Initialize(config StrategyConfig, indicatorSvc *in
 			s.lpConfig.DryRun = v
 		}
 	}
-	if config.Sizing.MaxPositionSize > 0 {
-		s.lpConfig.PositionSize = config.Sizing.MaxPositionSize
-	}
+	s.lpConfig.PositionSize = ResolvePositionSize(
+		config.Parameters, config.Sizing.MaxPositionSize, s.lpConfig.PositionSize)
 	if s.lpConfig.Reference == "" {
 		s.lpConfig.Reference = "last_trade"
 	}
