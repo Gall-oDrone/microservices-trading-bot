@@ -134,10 +134,10 @@ elapsed_hours       = ~69.8 ≥ 24               ✅
 
 ### Next steps (execution soak)
 
-1. Stop classification bash leg: `./scripts/run-stage-soak-2026-06-02.sh stop-bash`
-2. Stop classification sample loop: `./scripts/stage-soak-sample-loop.sh stop`
-3. Start execution soak Phase 2: `./scripts/run-stage-execution-soak-2026-06-04.sh phase2-start`
-4. Observe router lifecycle ≥ 24 h with `strategy-router` `DRY_RUN=false` and `trading-engine` `DRY_RUN=true`
+1. ~~Stop classification bash leg~~ — done before Phase 2
+2. ~~Start execution soak Phase 2~~ — **PASS** 2026-06-09 (26.2 h) — see [`STAGE-EXECUTION-SOAK-VERIFICATION-2026-06-09.md`](STAGE-EXECUTION-SOAK-VERIFICATION-2026-06-09.md)
+3. **Phase 3 in progress** (started 2026-06-09T01:06:52Z) — `./scripts/run-stage-execution-soak-2026-06-04.sh phase3-status`
+4. Await first Stage round-trip + fee honesty spot-check
 5. Continue periodic `./scripts/run-stage-soak-2026-06-02.sh sample` during execution phases to detect classifier drift
 6. Extended 7-day classification milestone: keep sampling until 2026-06-12+ while execution phases run
 

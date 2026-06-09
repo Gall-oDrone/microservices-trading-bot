@@ -135,6 +135,7 @@ Detail: [`STAGE-SOAK-MARKET-DATA-ATR-OBSERVATIONS-2026-06-03.md`](STAGE-SOAK-MAR
 | **Classification soak** | [`STAGE-SOAK-OPERATOR-GUIDE-2026-06-02.md`](STAGE-SOAK-OPERATOR-GUIDE-2026-06-02.md) | ≥ 99% bash ↔ Go `regime`; router loop healthy | P&L, fees on trades, routing safety under load |
 | **Verification status** | [`STAGE-SOAK-VERIFICATION-2026-06-07.md`](STAGE-SOAK-VERIFICATION-2026-06-07.md) | Classification short soak **PASS** (2026-06-07) | — |
 | **Execution soak** | [`STAGE-EXECUTION-SOAK-OPERATOR-GUIDE-2026-06-04.md`](STAGE-EXECUTION-SOAK-OPERATOR-GUIDE-2026-06-04.md) | Start/stop, orders, OM sync, fee honesty | Profitability, prod readiness |
+| **Execution verification** | [`STAGE-EXECUTION-SOAK-VERIFICATION-2026-06-09.md`](STAGE-EXECUTION-SOAK-VERIFICATION-2026-06-09.md) | Phase 2 PASS; Phase 3 in progress (2026-06-09) | — |
 | **ATR / market-data** | [`STAGE-SOAK-MARKET-DATA-ATR-OBSERVATIONS-2026-06-03.md`](STAGE-SOAK-MARKET-DATA-ATR-OBSERVATIONS-2026-06-03.md) | Indicators + `high_vol` / `low_vol` inputs | — |
 
 **Order:** Classification PASS → execution phases (router dry → one strategy orders → full stack small) → extended shadow for economics.
@@ -168,17 +169,17 @@ Detail: [`STAGE-SOAK-MARKET-DATA-ATR-OBSERVATIONS-2026-06-03.md`](STAGE-SOAK-MAR
 
 ## 10. What to do right now (priority stack)
 
-As of **2026-06-07**, **classification short soak PASS** (~69.8 h, 140/140 live agreement). **Current priority: execution soak Phase 2.**
+As of **2026-06-09**, **classification short soak PASS** (2026-06-07), **execution soak Phase 2 PASS** (26.2 h). **Current priority: execution soak Phase 3** — first Stage round-trip with `mean_reversion_btc_mxn` (`position_size=0.001`).
 
 | Priority | Action | Financial why |
 |----------|--------|---------------|
-| **1** | `./scripts/run-stage-execution-soak-2026-06-04.sh phase2-start` then `phase2-status` ≥ 24 h | Prove start/stop without Bitso orders |
-| **2** | One manual `mean_reversion` round-trip, minimal `position_size` (Phase 3) | Realized fees or fiction |
-| **3** | Execution guide Phase 4, small size | Prove allocation + plumbing together |
+| **1** | `./scripts/run-stage-execution-soak-2026-06-04.sh phase3-status`; watch for first BUY OID | Realized fees or fiction |
+| **2** | Confirm fill sync + realized `fee_rate` on first round-trip | Fee honesty before sizing up |
+| **3** | Execution guide Phase 4 after Phase 3 spot-check | Prove allocation + plumbing together |
 | **4** | Continue `./scripts/run-stage-soak-2026-06-02.sh sample` during execution | Catch classifier drift |
 | **5** | Defer `limit_profit` as default until fee floor proven on Stage | Same failure mode as May loss |
 
-Classification gate (priority 1 in prior stack) **passed 2026-06-07**. **`strategy-router` `DRY_RUN=false` is allowed for Phase 2+** of the execution guide; keep `trading-engine` dry until Phase 3.
+Classification gate **passed 2026-06-07**. Phase 2 **passed 2026-06-09**. Phase 3 started **2026-06-09T01:06:52Z** — `strategy-router` `DRY_RUN=true`, `trading-engine` live (`trading_engine_dry_run 0`).
 
 ---
 

@@ -18,7 +18,7 @@ This is **not** a trading, P&L, or fee-honesty test. Those are separate checks a
 
 See also: [`POST-POINT-10-IMPLEMENTATION-STATUS-2026-05-25.md`](POST-POINT-10-IMPLEMENTATION-STATUS-2026-05-25.md), [`POST-POINT-10-ROADMAP-2026-05-22.md`](POST-POINT-10-ROADMAP-2026-05-22.md) item 1, [`STAGE-SOAK-VERIFICATION-2026-06-07.md`](STAGE-SOAK-VERIFICATION-2026-06-07.md) (**short soak PASS**, 2026-06-07).
 
-> **Status (2026-06-07):** Classification short soak **PASS** — window started 2026-06-05T00:59:42Z, ~69.8 h elapsed, 140/140 live agreement. Proceed to [`STAGE-EXECUTION-SOAK-OPERATOR-GUIDE-2026-06-04.md`](STAGE-EXECUTION-SOAK-OPERATOR-GUIDE-2026-06-04.md) Phase 2.
+> **Status (2026-06-09):** Classification short soak **PASS** (2026-06-07). Execution soak **Phase 2 PASS**, **Phase 3 in progress** — see [`STAGE-EXECUTION-SOAK-VERIFICATION-2026-06-09.md`](STAGE-EXECUTION-SOAK-VERIFICATION-2026-06-09.md). Continue periodic `./scripts/run-stage-soak-2026-06-02.sh sample` during execution phases.
 
 ---
 

@@ -7,11 +7,16 @@
 #   ./scripts/run-stage-execution-soak-2026-06-04.sh check-prereqs
 #   ./scripts/run-stage-execution-soak-2026-06-04.sh phase2-start   # router live, engine dry
 #   ./scripts/run-stage-execution-soak-2026-06-04.sh phase2-status
+#   ./scripts/run-stage-execution-soak-2026-06-04.sh phase3-start   # router dry, engine live, one strategy
+#   ./scripts/run-stage-execution-soak-2026-06-04.sh phase3-status
 #   ./scripts/run-stage-execution-soak-2026-06-04.sh rollback        # DRY_RUN=true on router + engine
 #
 set -euo pipefail
 
 NAMESPACE="${NAMESPACE:-bitso-trading-dev}"
+BOOK="${BOOK:-btc_mxn}"
+STRATEGY="${STRATEGY:-mean_reversion_${BOOK}}"
+PHASE2_MIN_HOURS="${PHASE2_MIN_HOURS:-24}"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 LOG_DIR="${LOG_DIR:-$ROOT/tmp/stage-execution-soak}"
 CLASSIFICATION_REPORT="${CLASSIFICATION_REPORT:-$ROOT/tmp/stage-soak/soak-verification-report.json}"
@@ -67,6 +72,7 @@ engine_dry_run() {
 
 write_window() {
   local phase="$1"
+  local notes="${2:-}"
   mkdir -p "$LOG_DIR"
   cat >"$WINDOW_JSON" <<EOF
 {
@@ -75,10 +81,74 @@ write_window() {
   "classification_pass_ref": "docs/strategy-fee-accuracy/STAGE-SOAK-VERIFICATION-2026-06-07.md",
   "router_dry_run": "$(router_dry_run)",
   "engine_dry_run": "$(engine_dry_run)",
-  "notes": "Phase 2: strategy-router DRY_RUN=false, trading-engine DRY_RUN=true. No Bitso orders."
+  "strategy": "$STRATEGY",
+  "notes": "$notes"
 }
 EOF
   ok "Execution window written to $WINDOW_JSON"
+}
+
+check_phase2_time_gate() {
+  if [[ ! -f "$WINDOW_JSON" ]]; then
+    err "No Phase 2 window at $WINDOW_JSON — run phase2-start first"
+    return 1
+  fi
+  local phase started
+  phase=$(jq -r '.phase // ""' "$WINDOW_JSON")
+  started=$(jq -r '.started_at // ""' "$WINDOW_JSON")
+  if [[ "$phase" != "2" ]]; then
+    warn "Current window phase=$phase (expected 2 completed before Phase 3)"
+  fi
+  python3 - "$started" "$PHASE2_MIN_HOURS" <<'PY'
+import sys
+from datetime import datetime, timezone, timedelta
+started = datetime.fromisoformat(sys.argv[1].replace("Z", "+00:00"))
+min_h = float(sys.argv[2])
+elapsed = (datetime.now(timezone.utc) - started).total_seconds() / 3600
+print(f"phase2_elapsed_hours={elapsed:.1f}")
+print(f"phase2_time_gate_met={elapsed >= min_h}")
+sys.exit(0 if elapsed >= min_h else 1)
+PY
+}
+
+ensure_strategy_running() {
+  local running
+  running=$(kubectl -n "$NAMESPACE" exec deploy/strategy-executor -- \
+    wget -qO- "http://127.0.0.1:8081/api/v1/strategies/${STRATEGY}" 2>/dev/null \
+    | jq -r '.running // false')
+  if [[ "$running" == "true" ]]; then
+    ok "$STRATEGY already running"
+    return 0
+  fi
+  info "Starting $STRATEGY manually..."
+  kubectl -n "$NAMESPACE" exec deploy/strategy-executor -- \
+    wget -qO- --post-data='' "http://127.0.0.1:8081/api/v1/strategies/${STRATEGY}/start" >/dev/null
+  ok "Started $STRATEGY"
+}
+
+print_status() {
+  info "DRY_RUN switches:"
+  echo "  strategy-router DRY_RUN=$(router_dry_run)"
+  echo "  trading-engine DRY_RUN=$(engine_dry_run)"
+  info "Go router state:"
+  kubectl -n "$NAMESPACE" exec deploy/strategy-router -- \
+    wget -qO- http://127.0.0.1:8092/api/v1/router/state 2>/dev/null \
+    | jq '{dry_run, routes, last: .last_decisions[0] | {regime, action, current, preferred, reason}}'
+  info "Running strategies:"
+  kubectl -n "$NAMESPACE" exec deploy/strategy-executor -- \
+    wget -qO- http://127.0.0.1:8081/api/v1/strategies 2>/dev/null \
+    | jq '[.strategies[]? | select(.running==true) | .name]'
+  info "Strategy $STRATEGY parameters:"
+  kubectl -n "$NAMESPACE" exec deploy/strategy-executor -- \
+    wget -qO- "http://127.0.0.1:8081/api/v1/strategies/${STRATEGY}" 2>/dev/null \
+    | jq '{name, running, parameters: .parameters | {position_size, dry_run}}' || warn "strategy detail unavailable"
+  info "Engine dry-run metric:"
+  kubectl -n "$NAMESPACE" exec deploy/trading-engine -- \
+    wget -qO- http://127.0.0.1:8080/metrics 2>/dev/null | grep '^trading_engine_dry_run' || warn "metric unavailable"
+  info "Engine Stage env (redacted):"
+  kubectl -n "$NAMESPACE" exec deploy/trading-engine -- env 2>/dev/null \
+    | grep -E '^(BITSO_API_BASE_URL|ORDER_MANAGEMENT_URL|DRY_RUN|STAGE_BITSO_API_KEY)=' \
+    | sed 's/STAGE_BITSO_API_KEY=.*/STAGE_BITSO_API_KEY=<set>/' || true
 }
 
 case "$cmd" in
@@ -102,7 +172,7 @@ case "$cmd" in
     info "Ensuring trading-engine stays dry (DRY_RUN=true)..."
     kubectl -n "$NAMESPACE" set env deployment/trading-engine DRY_RUN=true
     kubectl -n "$NAMESPACE" rollout status deploy/trading-engine --timeout=180s
-    write_window "2"
+    write_window "2" "Phase 2: strategy-router DRY_RUN=false, trading-engine DRY_RUN=true. No Bitso orders."
     ok "Phase 2 started — observe ≥ 24 h; run phase2-status periodically"
     info "See docs/strategy-fee-accuracy/STAGE-EXECUTION-SOAK-OPERATOR-GUIDE-2026-06-04.md § Phase 2"
     ;;
@@ -110,20 +180,53 @@ case "$cmd" in
     mkdir -p "$LOG_DIR"
     info "Execution soak window:"
     [[ -f "$WINDOW_JSON" ]] && cat "$WINDOW_JSON" || warn "No $WINDOW_JSON — run phase2-start first"
-    info "DRY_RUN switches:"
-    echo "  strategy-router DRY_RUN=$(router_dry_run)"
-    echo "  trading-engine DRY_RUN=$(engine_dry_run)"
-    info "Go router state:"
-    kubectl -n "$NAMESPACE" exec deploy/strategy-router -- \
-      wget -qO- http://127.0.0.1:8092/api/v1/router/state 2>/dev/null \
-      | jq '{dry_run, routes, last: .last_decisions[0] | {regime, action, current, preferred, reason}}'
-    info "Running strategies:"
-    kubectl -n "$NAMESPACE" exec deploy/strategy-executor -- \
-      wget -qO- http://127.0.0.1:8081/api/v1/strategies 2>/dev/null \
-      | jq '[.strategies[]? | select(.running==true) | .name]'
-    info "Engine dry-run metric:"
+    if [[ -f "$WINDOW_JSON" ]]; then
+      python3 - "$WINDOW_JSON" <<'PY'
+import json, sys
+from datetime import datetime, timezone
+w = json.load(open(sys.argv[1]))
+started = w.get("started_at", "")
+if started:
+    t0 = datetime.fromisoformat(started.replace("Z", "+00:00"))
+    elapsed = (datetime.now(timezone.utc) - t0).total_seconds() / 3600
+    print(f"Phase {w.get('phase','?')} elapsed: {elapsed:.1f}h (24h gate: {'PASS' if elapsed >= 24 else 'pending'})")
+PY
+    fi
+    print_status
+    ;;
+  phase3-start)
+    check_classification_pass
+    check_phase2_time_gate
+    info "Pulling Go audit before router mode change..."
+    "$ROOT/scripts/analyze-stage-soak-agreement.sh" pull-go || warn "pull-go failed (non-fatal)"
+    info "Pausing autonomous routing (DRY_RUN=true on strategy-router)..."
+    kubectl -n "$NAMESPACE" set env deployment/strategy-router DRY_RUN=true
+    kubectl -n "$NAMESPACE" rollout status deploy/strategy-router --timeout=180s
+    ensure_strategy_running
+    info "Enabling Stage order path (unset trading-engine DRY_RUN)..."
+    kubectl -n "$NAMESPACE" set env deployment/trading-engine DRY_RUN-
+    kubectl -n "$NAMESPACE" rollout status deploy/trading-engine --timeout=180s
+    dry_metric=$(kubectl -n "$NAMESPACE" exec deploy/trading-engine -- \
+      wget -qO- http://127.0.0.1:8080/metrics 2>/dev/null | awk '/^trading_engine_dry_run /{print $2}')
+    if [[ "$dry_metric" != "0" ]]; then
+      err "trading_engine_dry_run=$dry_metric (expected 0 for Phase 3)"
+      exit 1
+    fi
+    ok "trading_engine_dry_run=0 — engine may place Bitso Stage orders"
+    write_window "3" "Phase 3: strategy-router DRY_RUN=true, trading-engine live, one strategy for Stage round-trip."
+    ok "Phase 3 started — watch engine/OM logs for first round-trip; run phase3-status"
+    info "See docs/strategy-fee-accuracy/STAGE-EXECUTION-SOAK-OPERATOR-GUIDE-2026-06-04.md § Phase 3"
+    print_status
+    ;;
+  phase3-status)
+    mkdir -p "$LOG_DIR"
+    info "Execution soak window:"
+    [[ -f "$WINDOW_JSON" ]] && cat "$WINDOW_JSON" || warn "No $WINDOW_JSON — run phase3-start first"
+    print_status
+    info "Recent trading-engine order metrics:"
     kubectl -n "$NAMESPACE" exec deploy/trading-engine -- \
-      wget -qO- http://127.0.0.1:8080/metrics 2>/dev/null | grep '^trading_engine_dry_run' || warn "metric unavailable"
+      wget -qO- http://127.0.0.1:8080/metrics 2>/dev/null \
+      | grep -E '^trading_engine_(dry_run|orders_|signals_)' || warn "metrics unavailable"
     ;;
   rollback)
     warn "Rolling back to safe mode (router + engine DRY_RUN=true)..."
@@ -134,7 +237,7 @@ case "$cmd" in
     ok "Rollback complete — strategies may still be running; stop manually if needed"
     ;;
   *)
-    err "Unknown command: $cmd (check-prereqs|phase2-start|phase2-status|rollback)"
+    err "Unknown command: $cmd (check-prereqs|phase2-start|phase2-status|phase3-start|phase3-status|rollback)"
     exit 1
     ;;
 esac

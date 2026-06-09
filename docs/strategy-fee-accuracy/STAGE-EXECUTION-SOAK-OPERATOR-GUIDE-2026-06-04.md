@@ -2,7 +2,9 @@
 
 Date: 2026-06-04  
 Repository: `microservices-trading-bot`  
-Related: [`STAGE-SOAK-OPERATOR-GUIDE-2026-06-02.md`](STAGE-SOAK-OPERATOR-GUIDE-2026-06-02.md), [`STAGE-SOAK-VERIFICATION-2026-06-03.md`](STAGE-SOAK-VERIFICATION-2026-06-03.md), [`STAGE-SOAK-MARKET-DATA-ATR-OBSERVATIONS-2026-06-03.md`](STAGE-SOAK-MARKET-DATA-ATR-OBSERVATIONS-2026-06-03.md), [`../ORDER-FLOW-AND-BITSO-TESTING.md`](../ORDER-FLOW-AND-BITSO-TESTING.md)
+Related: [`STAGE-SOAK-OPERATOR-GUIDE-2026-06-02.md`](STAGE-SOAK-OPERATOR-GUIDE-2026-06-02.md), [`STAGE-SOAK-VERIFICATION-2026-06-07.md`](STAGE-SOAK-VERIFICATION-2026-06-07.md), [`STAGE-EXECUTION-SOAK-VERIFICATION-2026-06-09.md`](STAGE-EXECUTION-SOAK-VERIFICATION-2026-06-09.md), [`STAGE-SOAK-MARKET-DATA-ATR-OBSERVATIONS-2026-06-03.md`](STAGE-SOAK-MARKET-DATA-ATR-OBSERVATIONS-2026-06-03.md), [`../ORDER-FLOW-AND-BITSO-TESTING.md`](../ORDER-FLOW-AND-BITSO-TESTING.md)
+
+> **Status (2026-06-09):** Classification **PASS** (2026-06-07). Execution soak **Phase 2 PASS** (26.2 h, 3,137 evaluations, zero errors). **Phase 3 in progress** — started 2026-06-09T01:06:52Z; `mean_reversion_btc_mxn` running, `trading_engine_dry_run 0`; awaiting first Stage round-trip. See [`STAGE-EXECUTION-SOAK-VERIFICATION-2026-06-09.md`](STAGE-EXECUTION-SOAK-VERIFICATION-2026-06-09.md).
 
 ## Purpose
 
@@ -95,11 +97,11 @@ flowchart LR
 
 **Pass:** `live_agreement_rate ≥ 0.99` in report output — **achieved 2026-06-07** (see [`STAGE-SOAK-VERIFICATION-2026-06-07.md`](STAGE-SOAK-VERIFICATION-2026-06-07.md)).
 
-**Proceed to Phase 2** via `./scripts/run-stage-execution-soak-2026-06-04.sh phase2-start`.
+**Proceed to Phase 2** via `./scripts/run-stage-execution-soak-2026-06-04.sh phase2-start` — **done 2026-06-07**.
 
 ---
 
-### Phase 2 — Router lifecycle only (no Bitso orders)
+### Phase 2 — Router lifecycle only (no Bitso orders) — **PASS (2026-06-09)**
 
 **Goal:** Verify `start`/`stop`, cooldown, `has_position`, `not_registered`, and `high_vol` → pause without placing orders.
 
@@ -156,9 +158,13 @@ curl -s http://127.0.0.1:8092/api/v1/router/state | jq '{
 ./scripts/analyze-stage-soak-agreement.sh pull-go
 ```
 
+**Pass (2026-06-09):** 26.2 h elapsed, 3,137 evaluations, 1 strategy start, zero evaluation errors, `trading_engine_dry_run 1` throughout. See [`STAGE-EXECUTION-SOAK-VERIFICATION-2026-06-09.md`](STAGE-EXECUTION-SOAK-VERIFICATION-2026-06-09.md).
+
+**Proceed to Phase 3** via `./scripts/run-stage-execution-soak-2026-06-04.sh phase3-start`.
+
 ---
 
-### Phase 3 — Single-strategy order path (router still dry or manual start)
+### Phase 3 — Single-strategy order path (router still dry or manual start) — **IN PROGRESS (2026-06-09)**
 
 **Goal:** One controlled Stage round-trip through Kafka → engine → Bitso → order-management.
 
@@ -167,6 +173,13 @@ curl -s http://127.0.0.1:8092/api/v1/router/state | jq '{
 | `strategy-router` | `DRY_RUN=true` **or** router stopped; **manual** `start` one strategy |
 | `trading-engine` | `DRY_RUN` **unset** or `false` |
 | Strategies | **One** running (e.g. `mean_reversion_btc_mxn`); minimal `position_size` |
+
+**Enable Phase 3 (preferred):**
+
+```bash
+./scripts/run-stage-execution-soak-2026-06-04.sh phase3-start   # after Phase 2 ≥ 24 h
+./scripts/run-stage-execution-soak-2026-06-04.sh phase3-status
+```
 
 **Pre-flight:**
 
@@ -179,7 +192,7 @@ kubectl -n bitso-trading-dev exec deploy/trading-engine -- \
   wget -qO- http://127.0.0.1:8080/metrics | grep '^trading_engine_dry_run'
 ```
 
-**Start one strategy manually:**
+**Start one strategy manually** (if not already running from Phase 2):
 
 ```bash
 kubectl -n bitso-trading-dev exec deploy/strategy-executor -- \
@@ -336,7 +349,8 @@ After Phase 4 short soak (24–48 h) with no critical incidents:
 - [`STAGE-FINANCIAL-APPROACH-2026-06-04.md`](STAGE-FINANCIAL-APPROACH-2026-06-04.md) — **single reference**: engineering vs economic proof, priorities, decision tree
 - [`STAGE-SOAK-OPERATOR-GUIDE-2026-06-02.md`](STAGE-SOAK-OPERATOR-GUIDE-2026-06-02.md) — classification soak (item 1)
 - [`STAGE-SOAK-VERIFICATION-2026-06-07.md`](STAGE-SOAK-VERIFICATION-2026-06-07.md) — classification PASS (2026-06-07)
-- [`scripts/run-stage-execution-soak-2026-06-04.sh`](../../scripts/run-stage-execution-soak-2026-06-04.sh) — execution soak helper
+- [`STAGE-EXECUTION-SOAK-VERIFICATION-2026-06-09.md`](STAGE-EXECUTION-SOAK-VERIFICATION-2026-06-09.md) — Phase 2 PASS, Phase 3 in progress (2026-06-09)
+- [`scripts/run-stage-execution-soak-2026-06-04.sh`](../../scripts/run-stage-execution-soak-2026-06-04.sh) — execution soak helper (`phase2-start`, `phase3-start`, `phase3-status`, `rollback`)
 - [`STAGE-SOAK-MARKET-DATA-ATR-OBSERVATIONS-2026-06-03.md`](STAGE-SOAK-MARKET-DATA-ATR-OBSERVATIONS-2026-06-03.md) — `DRY_RUN`, Stage WS, ATR
 - [`../ORDER-FLOW-AND-BITSO-TESTING.md`](../ORDER-FLOW-AND-BITSO-TESTING.md) — order pipeline validation
 - [`POST-POINT-10-IMPLEMENTATION-STATUS-2026-05-25.md`](POST-POINT-10-IMPLEMENTATION-STATUS-2026-05-25.md) — milestone gate
