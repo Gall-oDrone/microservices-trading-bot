@@ -23,6 +23,8 @@ type Metrics struct {
 	TradeValue                prometheus.Counter
 	LastTradeAgeSeconds       prometheus.Gauge
 	TradeSilenceReconnects    prometheus.Counter
+	RESTFallbackFetches       prometheus.Counter
+	RESTFallbackTrades        prometheus.Counter
 
 	// Order book metrics
 	OrderBookUpdates prometheus.Counter
@@ -98,6 +100,16 @@ func NewMetrics() *Metrics {
 		TradeSilenceReconnects: promauto.NewCounter(prometheus.CounterOpts{
 			Name: "market_data_trade_silence_reconnects_total",
 			Help: "Total number of WebSocket reconnects triggered by the trade silence watchdog",
+		}),
+
+		RESTFallbackFetches: promauto.NewCounter(prometheus.CounterOpts{
+			Name: "market_data_rest_fallback_fetches_total",
+			Help: "Total number of REST /trades fallback poll attempts",
+		}),
+
+		RESTFallbackTrades: promauto.NewCounter(prometheus.CounterOpts{
+			Name: "market_data_rest_fallback_trades_ingested_total",
+			Help: "Total number of trades ingested via REST fallback",
 		}),
 
 		// Order book metrics
@@ -565,4 +577,12 @@ func (mc *MetricsCollector) SetLastTradeAgeSeconds(ageSec float64) {
 // RecordTradeSilenceReconnect records a watchdog-triggered WebSocket reconnect.
 func (mc *MetricsCollector) RecordTradeSilenceReconnect() {
 	mc.metrics.TradeSilenceReconnects.Inc()
+}
+
+// RecordRESTFallbackFetch records a REST fallback poll outcome.
+func (mc *MetricsCollector) RecordRESTFallbackFetch(success bool, tradesIngested int) {
+	mc.metrics.RESTFallbackFetches.Inc()
+	if success && tradesIngested > 0 {
+		mc.metrics.RESTFallbackTrades.Add(float64(tradesIngested))
+	}
 }

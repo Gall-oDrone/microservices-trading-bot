@@ -1,0 +1,41 @@
+# market-data trade-stream freshness: REST fallback, readiness gate, HTTP probes.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: market-data
+spec:
+  template:
+    spec:
+      containers:
+      - name: market-data
+        env:
+        - name: BITSO_API_BASE_URL
+          value: "https://stage.bitso.com/api"
+        - name: TRADE_SILENCE_THRESHOLD
+          value: "5m"
+        - name: TRADE_SILENCE_RECONNECT_COOLDOWN
+          value: "2m"
+        - name: TRADE_REST_FALLBACK_ENABLED
+          value: "true"
+        - name: TRADE_REST_FALLBACK_INTERVAL
+          value: "60s"
+        - name: TRADE_REST_FALLBACK_THRESHOLD
+          value: "3m"
+        - name: READINESS_MAX_TRADE_AGE
+          value: "10m"
+        - name: READINESS_STARTUP_GRACE
+          value: "5m"
+        livenessProbe:
+          httpGet:
+            path: /health/live
+            port: 8083
+          initialDelaySeconds: 30
+          periodSeconds: 30
+          timeoutSeconds: 5
+        readinessProbe:
+          httpGet:
+            path: /health/ready
+            port: 8083
+          initialDelaySeconds: 20
+          periodSeconds: 10
+          timeoutSeconds: 5

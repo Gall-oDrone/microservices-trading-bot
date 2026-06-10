@@ -189,24 +189,29 @@ func (p *Processor) processingLoop(ctx context.Context) {
 	}
 }
 
-// ProcessTrade processes a single trade
+// ProcessTrade processes a single WebSocket trade.
 func (p *Processor) ProcessTrade(wsTrade *bitso.WebSocketTrade) error {
 	if wsTrade == nil {
 		return nil
 	}
 
-	// Convert to TradeEvent
 	tradeEvent := models.FromBitsoWebSocketTrade(wsTrade)
 	if tradeEvent == nil {
 		p.logger.Println("Warning: Failed to convert WebSocket trade")
 		p.incrementDropped()
 		return nil
 	}
+	return p.ProcessTradeEvent(tradeEvent)
+}
 
-	// Update statistics
+// ProcessTradeEvent ingests a normalized trade into the output stream.
+func (p *Processor) ProcessTradeEvent(tradeEvent *models.TradeEvent) error {
+	if tradeEvent == nil {
+		return nil
+	}
+
 	p.updateStats(tradeEvent)
 
-	// Send to output channel (non-blocking)
 	select {
 	case p.tradesOutput <- tradeEvent:
 		p.logger.Printf("Processed trade: %s ID=%d Price=%.2f Amount=%.8f",
@@ -218,6 +223,26 @@ func (p *Processor) ProcessTrade(wsTrade *bitso.WebSocketTrade) error {
 	}
 
 	return nil
+}
+
+// LastTradeAge returns how long ago the most recent trade was ingested.
+func (p *Processor) LastTradeAge() time.Duration {
+	stats := p.GetStatistics()
+	if stats.LastTradeTime.IsZero() {
+		return 0
+	}
+	return time.Since(stats.LastTradeTime)
+}
+
+// HasReceivedTrade reports whether any trade has been ingested.
+func (p *Processor) HasReceivedTrade() bool {
+	stats := p.GetStatistics()
+	return !stats.LastTradeTime.IsZero()
+}
+
+// StartTime returns when the processor was created.
+func (p *Processor) StartTime() time.Time {
+	return p.GetStatistics().StartTime
 }
 
 // GetProcessedTradesStream returns the output channel for processed trades

@@ -11,6 +11,7 @@ patchesStrategicMerge:
 - strategy-executor-replicas-dev.yaml
 - strategy-executor-indicators-dev.yaml
 - market-data-replicas-dev.yaml
+- market-data-freshness-dev.yaml
 - trading-engine-replicas-dev.yaml
 - order-management-dev-fill-test-env.yaml
 - strategy-router-soak.yaml

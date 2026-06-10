@@ -58,25 +58,58 @@ type HistoricalRecorder interface {
 	RecordHistoricalRequest(duration time.Duration, success bool)
 }
 
-// Handler handles HTTP API requests
-type Handler struct {
-	cache              Cache
-	storage            Storage
-	logger             *log.Logger
-	historicalRecorder HistoricalRecorder // optional: for Prometheus
+// TradeFreshness reports trade-stream age for readiness probes.
+type TradeFreshness interface {
+	LastTradeAge() time.Duration
+	HasReceivedTrade() bool
+	StartTime() time.Time
 }
 
-// NewHandler creates a new API handler. historicalRecorder is optional (Phase 2 metrics).
-func NewHandler(cache Cache, storage Storage, logger *log.Logger, historicalRecorder HistoricalRecorder) *Handler {
+// HandlerConfig configures the HTTP API handler.
+type HandlerConfig struct {
+	Cache                 Cache
+	Storage               Storage
+	Logger                *log.Logger
+	HistoricalRecorder    HistoricalRecorder
+	TradeFreshness        TradeFreshness
+	ReadinessMaxTradeAge  time.Duration
+	ReadinessStartupGrace time.Duration
+}
+
+// Handler handles HTTP API requests
+type Handler struct {
+	cache                 Cache
+	storage               Storage
+	logger                *log.Logger
+	historicalRecorder    HistoricalRecorder
+	tradeFreshness        TradeFreshness
+	readinessMaxTradeAge  time.Duration
+	readinessStartupGrace time.Duration
+}
+
+// NewHandler creates a new API handler.
+func NewHandler(cfg HandlerConfig) *Handler {
+	logger := cfg.Logger
 	if logger == nil {
 		logger = log.New(log.Writer(), "[API-HANDLER] ", log.LstdFlags|log.Lshortfile)
 	}
+	maxAge := cfg.ReadinessMaxTradeAge
+	if maxAge <= 0 {
+		maxAge = 10 * time.Minute
+	}
+	startupGrace := cfg.ReadinessStartupGrace
+	if startupGrace <= 0 {
+		startupGrace = 5 * time.Minute
+	}
 
 	return &Handler{
-		cache:              cache,
-		storage:            storage,
-		logger:             logger,
-		historicalRecorder: historicalRecorder,
+		cache:                 cfg.Cache,
+		storage:               cfg.Storage,
+		logger:                logger,
+		historicalRecorder:    cfg.HistoricalRecorder,
+		tradeFreshness:        cfg.TradeFreshness,
+		readinessMaxTradeAge:  maxAge,
+		readinessStartupGrace: startupGrace,
 	}
 }
 
@@ -183,6 +216,24 @@ func (h *Handler) ReadinessCheck(w http.ResponseWriter, r *http.Request) {
 			ready = false
 		} else {
 			checks["storage"] = "ready"
+		}
+	}
+
+	if h.tradeFreshness != nil {
+		switch {
+		case h.tradeFreshness.HasReceivedTrade():
+			age := h.tradeFreshness.LastTradeAge()
+			if age > h.readinessMaxTradeAge {
+				checks["trade_stream"] = fmt.Sprintf("stale (%v)", age.Round(time.Second))
+				ready = false
+			} else {
+				checks["trade_stream"] = "ready"
+			}
+		case time.Since(h.tradeFreshness.StartTime()) > h.readinessStartupGrace:
+			checks["trade_stream"] = "no trades yet"
+			ready = false
+		default:
+			checks["trade_stream"] = "warming up"
 		}
 	}
 

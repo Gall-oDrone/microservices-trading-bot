@@ -99,21 +99,17 @@ spec:
             memory: "512Mi"
             cpu: "500m"
         livenessProbe:
-          exec:
-            command:
-            - /bin/sh
-            - -c
-            - "ps aux | grep -v grep | grep market-data || exit 1"
-          initialDelaySeconds: 60
+          httpGet:
+            path: /health/live
+            port: 8083
+          initialDelaySeconds: 30
           periodSeconds: 30
           timeoutSeconds: 5
         readinessProbe:
-          exec:
-            command:
-            - /bin/sh
-            - -c
-            - "ps aux | grep -v grep | grep market-data || exit 1"
-          initialDelaySeconds: 30
+          httpGet:
+            path: /health/ready
+            port: 8083
+          initialDelaySeconds: 20
           periodSeconds: 10
           timeoutSeconds: 5
 ---

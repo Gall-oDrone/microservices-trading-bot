@@ -211,6 +211,41 @@ groups:
           description: "Strategy {{ $labels.strategy }} is not running. Verify if intentional or restart needed."
 
   # ============================================================================
+  # market-data trade stream freshness
+  # ============================================================================
+  - name: market-data-freshness-alerts
+    rules:
+      - alert: MarketDataTradeStreamStale
+        expr: market_data_last_trade_age_seconds{job=~"market-data.*"} > 300
+        for: 2m
+        labels:
+          severity: critical
+          service: market-data
+        annotations:
+          summary: "market-data trade stream is stale"
+          description: "No WebSocket trades for {{ $value }}s (>5m). REST fallback and silence watchdog should be active; verify Last Trade logs and Bitso Stage connectivity."
+
+      - alert: MarketDataTradeSilenceReconnectsHigh
+        expr: increase(market_data_trade_silence_reconnects_total{job=~"market-data.*"}[1h]) > 3
+        for: 0m
+        labels:
+          severity: warning
+          service: market-data
+        annotations:
+          summary: "market-data repeated silence-triggered reconnects"
+          description: "{{ $value }} watchdog reconnects in the last hour — investigate WS stability."
+
+      - alert: StrategyExecutorIndicatorsUnhealthy
+        expr: strategy_executor_indicators_healthy{job=~"strategy-executor.*"} == 0
+        for: 5m
+        labels:
+          severity: warning
+          service: strategy-executor
+        annotations:
+          summary: "strategy-executor indicators unhealthy"
+          description: "Bar-first compute marked indicators unhealthy — router should block routing; check market-data trade stream and snapshot last_bar_age_sec."
+
+  # ============================================================================
   # Infrastructure Alerts (Redis, Kafka)
   # ============================================================================
   - name: infrastructure-alerts

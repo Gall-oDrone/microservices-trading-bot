@@ -28,6 +28,35 @@ func (t *TradeEvent) GetLatencyMs() int64 {
 	return t.ReceivedAt.UnixMilli() - t.CreatedAtMillis
 }
 
+// FromBitsoRESTTrade converts a Bitso REST /trades payload row to a TradeEvent.
+func FromBitsoRESTTrade(trade *bitso.Trade) *TradeEvent {
+	if trade == nil {
+		return nil
+	}
+
+	ts := trade.CreatedAt.Time()
+	price := trade.Price.Float64()
+	amount := trade.Amount.Float64()
+	makerSide := trade.MakerSide.String()
+	side := "sell"
+	if trade.MakerSide == bitso.OrderSideBuy {
+		side = "buy"
+	}
+
+	return &TradeEvent{
+		ID:              uint64(trade.TID),
+		Book:            trade.Book.String(),
+		Price:           price,
+		Amount:          amount,
+		Value:           price * amount,
+		Side:            side,
+		MakerSide:       makerSide,
+		Timestamp:       ts,
+		ReceivedAt:      time.Now(),
+		CreatedAtMillis: ts.UnixMilli(),
+	}
+}
+
 // FromBitsoWebSocketTrade converts a Bitso WebSocket trade to a TradeEvent
 func FromBitsoWebSocketTrade(wsTrade *bitso.WebSocketTrade) *TradeEvent {
 	if wsTrade == nil || len(wsTrade.Payload) == 0 {

@@ -18,6 +18,7 @@ import (
 	"bitso-trading-platform/market-data/internal/metrics"
 	"bitso-trading-platform/market-data/internal/processor"
 	"bitso-trading-platform/market-data/internal/publisher"
+	"bitso-trading-platform/market-data/internal/restfallback"
 	"bitso-trading-platform/market-data/internal/server"
 	"bitso-trading-platform/market-data/internal/websocket"
 	"bitso-trading-platform/market-data/internal/writer"
@@ -42,6 +43,7 @@ type Application struct {
 	// Core components
 	wsManager      websocket.StreamManager
 	tradeProcessor processor.TradeProcessor
+	restPoller     *restfallback.Poller
 	redisWriter    *writer.Writer
 	tradePublisher publisher.TradePublisher
 	kafkaProducer  *kafka.Producer
@@ -167,6 +169,20 @@ func NewApplication() (*Application, error) {
 	tradeProcessor := processor.NewProcessor(processorConfig)
 	appLogger.Info("Trade processor created")
 
+	var restPoller *restfallback.Poller
+	if cfg.TradeRESTFallbackEnabled {
+		restPoller = restfallback.NewPoller(restfallback.Config{
+			Books:      cfg.BitsoBooks,
+			Interval:   cfg.TradeRESTFallbackInterval,
+			Threshold:  cfg.TradeRESTFallbackThreshold,
+			APIBaseURL: cfg.BitsoAPIBaseURL,
+			Logger:     stdLogger,
+			Ingestor:   tradeProcessor,
+			Metrics:    metricsCollector,
+		})
+		appLogger.Info("REST trade fallback poller created")
+	}
+
 	// Indicator gauges and recorder for Prometheus (RSI, VWAP, momentum, etc.)
 	indicatorGauges := metrics.NewIndicatorGauges()
 	indicatorRecorder := metrics.NewIndicatorRecorder(indicatorGauges)
@@ -197,7 +213,15 @@ func NewApplication() (*Application, error) {
 	}
 
 	// Initialize API handler (with optional historical metrics for Phase 2)
-	apiHandler := api.NewHandler(cacheLayer, storage, stdLogger, metricsCollector)
+	apiHandler := api.NewHandler(api.HandlerConfig{
+		Cache:                 cacheLayer,
+		Storage:               storage,
+		Logger:                stdLogger,
+		HistoricalRecorder:    metricsCollector,
+		TradeFreshness:        tradeProcessor,
+		ReadinessMaxTradeAge:  cfg.ReadinessMaxTradeAge,
+		ReadinessStartupGrace: cfg.ReadinessStartupGrace,
+	})
 	appLogger.Info("API handler created")
 
 	// Initialize HTTP server (with /metrics for Prometheus)
@@ -232,6 +256,7 @@ func NewApplication() (*Application, error) {
 		config:           cfg,
 		wsManager:        wsManager,
 		tradeProcessor:   tradeProcessor,
+		restPoller:       restPoller,
 		redisWriter:      redisWriter,
 		tradePublisher:   tradePublisher,
 		kafkaProducer:    kafkaProducer,
@@ -295,6 +320,13 @@ func (app *Application) Start() error {
 	}
 	app.logger.Info("Trade processor started")
 
+	if app.restPoller != nil {
+		if err := app.restPoller.Start(app.ctx); err != nil {
+			return fmt.Errorf("failed to start REST fallback poller: %w", err)
+		}
+		app.logger.Info("REST trade fallback poller started")
+	}
+
 	// Start Redis trade writer (persists to cache + storage, forwards to publisher)
 	if err := app.redisWriter.Start(app.ctx); err != nil {
 		return fmt.Errorf("failed to start Redis trade writer: %w", err)
@@ -350,6 +382,11 @@ func (app *Application) Stop() error {
 		if err := app.redisWriter.Stop(); err != nil {
 			app.logger.Error("Error stopping Redis trade writer", map[string]interface{}{"error": err})
 			lastErr = err
+		}
+
+		if app.restPoller != nil {
+			app.logger.Info("Stopping REST fallback poller...")
+			app.restPoller.Stop()
 		}
 
 		// Stop trade processor

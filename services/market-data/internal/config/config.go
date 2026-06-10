@@ -16,9 +16,10 @@ type Config struct {
 	ServicePort string
 
 	// Bitso WebSocket configuration
-	BitsoWSURL    string
-	BitsoBooks    []string // Trading pairs to monitor
-	BitsoChannels []string // Channels to subscribe (trades, diff-orders, orders)
+	BitsoWSURL       string
+	BitsoAPIBaseURL  string
+	BitsoBooks       []string // Trading pairs to monitor
+	BitsoChannels    []string // Channels to subscribe (trades, diff-orders, orders)
 
 	// Kafka configuration
 	KafkaBrokers        string
@@ -50,6 +51,15 @@ type Config struct {
 	TradeSilenceThreshold         time.Duration
 	TradeSilenceReconnectCooldown time.Duration
 
+	// REST fallback when WebSocket trade stream stalls
+	TradeRESTFallbackEnabled   bool
+	TradeRESTFallbackInterval  time.Duration
+	TradeRESTFallbackThreshold time.Duration
+
+	// Readiness probe trade-stream freshness
+	ReadinessMaxTradeAge    time.Duration
+	ReadinessStartupGrace   time.Duration
+
 	// Feature flags
 	EnableWebSocket bool
 	EnableKafka     bool
@@ -79,10 +89,11 @@ func LoadConfig() (*Config, error) {
 		ServiceName: getEnv("SERVICE_NAME", "market-data"),
 		ServicePort: getEnv("SERVICE_PORT", "8083"),
 
-		// Bitso WebSocket
-		BitsoWSURL:    getEnv("BITSO_WS_URL", "wss://ws.bitso.com"),
-		BitsoBooks:    strings.Split(getEnv("BITSO_BOOKS", "btc_mxn"), ","),
-		BitsoChannels: strings.Split(getEnv("BITSO_CHANNELS", "trades"), ","),
+		// Bitso WebSocket / REST
+		BitsoWSURL:      getEnv("BITSO_WS_URL", "wss://ws.bitso.com"),
+		BitsoAPIBaseURL: getEnv("BITSO_API_BASE_URL", "https://bitso.com/api"),
+		BitsoBooks:      strings.Split(getEnv("BITSO_BOOKS", "btc_mxn"), ","),
+		BitsoChannels:   strings.Split(getEnv("BITSO_CHANNELS", "trades"), ","),
 
 		// Kafka
 		KafkaBrokers:        getEnv("KAFKA_BROKERS", "localhost:9092"),
@@ -113,6 +124,13 @@ func LoadConfig() (*Config, error) {
 		// Trade silence watchdog
 		TradeSilenceThreshold:         getEnvAsDuration("TRADE_SILENCE_THRESHOLD", 5*time.Minute),
 		TradeSilenceReconnectCooldown: getEnvAsDuration("TRADE_SILENCE_RECONNECT_COOLDOWN", 2*time.Minute),
+
+		TradeRESTFallbackEnabled:   getEnvAsBool("TRADE_REST_FALLBACK_ENABLED", true),
+		TradeRESTFallbackInterval:  getEnvAsDuration("TRADE_REST_FALLBACK_INTERVAL", 60*time.Second),
+		TradeRESTFallbackThreshold: getEnvAsDuration("TRADE_REST_FALLBACK_THRESHOLD", 3*time.Minute),
+
+		ReadinessMaxTradeAge:  getEnvAsDuration("READINESS_MAX_TRADE_AGE", 10*time.Minute),
+		ReadinessStartupGrace: getEnvAsDuration("READINESS_STARTUP_GRACE", 5*time.Minute),
 
 		// Feature flags
 		EnableWebSocket: getEnvAsBool("ENABLE_WEBSOCKET", true),
