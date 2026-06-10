@@ -74,6 +74,38 @@ func TestComputeAndStoreBarFirst(t *testing.T) {
 	}
 }
 
+func TestComputeAndStoreStaleBarAge(t *testing.T) {
+	cfg := DefaultServiceConfig()
+	cfg.MaxStaleness = 15 * time.Minute
+
+	bars := makeBars(25, 1_000_000)
+	for i := range bars {
+		bars[i].Timestamp = bars[i].Timestamp.Add(-time.Hour)
+	}
+
+	store := NewInMemoryIndicatorStore()
+	provider := &stubDataProvider{bars: bars}
+	svc := NewService(cfg, store, provider, nil)
+
+	if err := svc.ComputeAndStore(context.Background(), "btc_mxn"); err != nil {
+		t.Fatalf("ComputeAndStore: %v", err)
+	}
+
+	snap, err := svc.GetSnapshot(context.Background(), "btc_mxn")
+	if err != nil {
+		t.Fatalf("GetSnapshot: %v", err)
+	}
+	if snap.DataHealthy {
+		t.Fatalf("expected data_healthy=false for stale bars, reason=%q", snap.StaleReason)
+	}
+	if snap.StaleReason == "" {
+		t.Fatal("expected stale_reason when bars are stale")
+	}
+	if snap.LastBarAgeSec <= float64((15 * time.Minute).Seconds()) {
+		t.Fatalf("expected last_bar_age_sec > 15m, got %v", snap.LastBarAgeSec)
+	}
+}
+
 func TestComputeAndStoreInsufficientBars(t *testing.T) {
 	cfg := DefaultServiceConfig()
 	store := NewInMemoryIndicatorStore()

@@ -10,6 +10,17 @@ import (
 	"bitso-trading-platform/shared/pkg/models"
 )
 
+// ReconnectTrigger forces a WebSocket reconnect when the trade stream stalls.
+type ReconnectTrigger interface {
+	ForceReconnect(ctx context.Context) error
+}
+
+// TradeSilenceRecorder records trade-age metrics for observability.
+type TradeSilenceRecorder interface {
+	SetLastTradeAgeSeconds(ageSec float64)
+	RecordTradeSilenceReconnect()
+}
+
 // TradeProcessor processes incoming trade messages
 type TradeProcessor interface {
 	Start(ctx context.Context) error
@@ -28,6 +39,14 @@ type Processor struct {
 
 	// Output stream
 	tradesOutput chan *models.TradeEvent
+
+	// Trade silence watchdog
+	silenceThreshold         time.Duration
+	silenceReconnectCooldown time.Duration
+	reconnectTrigger         ReconnectTrigger
+	silenceRecorder          TradeSilenceRecorder
+	lastReconnectAttempt     time.Time
+	watchdogMu               sync.Mutex
 
 	// Statistics
 	stats      *ProcessorStatistics
@@ -62,9 +81,13 @@ type BookStatistics struct {
 
 // ProcessorConfig holds configuration for the processor
 type ProcessorConfig struct {
-	Logger       *log.Logger
-	TradesInput  <-chan *bitso.WebSocketTrade
-	OutputBuffer int
+	Logger                   *log.Logger
+	TradesInput              <-chan *bitso.WebSocketTrade
+	OutputBuffer             int
+	SilenceThreshold         time.Duration
+	SilenceReconnectCooldown time.Duration
+	ReconnectTrigger         ReconnectTrigger
+	SilenceRecorder          TradeSilenceRecorder
 }
 
 // NewProcessor creates a new trade processor
@@ -79,10 +102,19 @@ func NewProcessor(config *ProcessorConfig) *Processor {
 		outputBuffer = 100
 	}
 
+	cooldown := config.SilenceReconnectCooldown
+	if cooldown <= 0 {
+		cooldown = 2 * time.Minute
+	}
+
 	return &Processor{
-		logger:       logger,
-		tradesInput:  config.TradesInput,
-		tradesOutput: make(chan *models.TradeEvent, outputBuffer),
+		logger:                   logger,
+		tradesInput:              config.TradesInput,
+		tradesOutput:             make(chan *models.TradeEvent, outputBuffer),
+		silenceThreshold:         config.SilenceThreshold,
+		silenceReconnectCooldown: cooldown,
+		reconnectTrigger:         config.ReconnectTrigger,
+		silenceRecorder:          config.SilenceRecorder,
 		stats: &ProcessorStatistics{
 			StartTime: time.Now(),
 			BookStats: make(map[string]*BookStatistics),
@@ -266,7 +298,51 @@ func (p *Processor) statsReporter(ctx context.Context) {
 
 		case <-ticker.C:
 			p.logStatistics()
+			p.checkTradeSilence(ctx)
 		}
+	}
+}
+
+func shouldForceReconnect(lastTrade time.Time, threshold, cooldown time.Duration, lastAttempt, now time.Time) bool {
+	if lastTrade.IsZero() || threshold <= 0 {
+		return false
+	}
+	if now.Sub(lastTrade) <= threshold {
+		return false
+	}
+	if !lastAttempt.IsZero() && now.Sub(lastAttempt) < cooldown {
+		return false
+	}
+	return true
+}
+
+func (p *Processor) checkTradeSilence(ctx context.Context) {
+	if p.reconnectTrigger == nil || p.silenceThreshold <= 0 {
+		return
+	}
+
+	stats := p.GetStatistics()
+	now := time.Now()
+	if !stats.LastTradeTime.IsZero() && p.silenceRecorder != nil {
+		p.silenceRecorder.SetLastTradeAgeSeconds(now.Sub(stats.LastTradeTime).Seconds())
+	}
+
+	p.watchdogMu.Lock()
+	defer p.watchdogMu.Unlock()
+
+	if !shouldForceReconnect(stats.LastTradeTime, p.silenceThreshold, p.silenceReconnectCooldown, p.lastReconnectAttempt, now) {
+		return
+	}
+
+	age := now.Sub(stats.LastTradeTime).Round(time.Second)
+	p.logger.Printf("Trade silence watchdog: last trade %v ago (threshold %v), forcing WebSocket reconnect",
+		age, p.silenceThreshold)
+	p.lastReconnectAttempt = now
+	if p.silenceRecorder != nil {
+		p.silenceRecorder.RecordTradeSilenceReconnect()
+	}
+	if err := p.reconnectTrigger.ForceReconnect(ctx); err != nil {
+		p.logger.Printf("Trade silence watchdog reconnect failed: %v", err)
 	}
 }
 

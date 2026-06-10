@@ -18,6 +18,7 @@ type StreamManager interface {
 	Subscribe(books []*bitso.Book, channels []string) error
 	Start(ctx context.Context) error
 	Stop() error
+	ForceReconnect(ctx context.Context) error
 	GetTradesStream() <-chan *bitso.WebSocketTrade
 	GetOrdersStream() <-chan *bitso.WebSocketOrder
 	GetDiffOrdersStream() <-chan *bitso.WebSocketDiffOrder
@@ -45,6 +46,7 @@ type Manager struct {
 	// State management
 	connected   bool
 	connectedMu sync.RWMutex
+	wsConnMu    sync.Mutex
 	stopChan    chan struct{}
 	wg          sync.WaitGroup
 
@@ -104,7 +106,9 @@ func (m *Manager) Connect(ctx context.Context) error {
 		return fmt.Errorf("failed to connect: %w", err)
 	}
 
+	m.wsConnMu.Lock()
 	m.wsConn = conn
+	m.wsConnMu.Unlock()
 	m.setConnected(true)
 	m.currentAttempt = 0
 
@@ -112,9 +116,34 @@ func (m *Manager) Connect(ctx context.Context) error {
 	return nil
 }
 
+// ForceReconnect closes the current WebSocket so the message loop reconnects.
+// Used when the trade stream goes silent while the connection still appears healthy.
+func (m *Manager) ForceReconnect(ctx context.Context) error {
+	_ = ctx
+	m.logger.Println("Force reconnect requested (trade silence watchdog)")
+	m.closeConnection()
+	m.setConnected(false)
+	return nil
+}
+
+func (m *Manager) getConnection() *bitso.WebSocketConn {
+	m.wsConnMu.Lock()
+	defer m.wsConnMu.Unlock()
+	return m.wsConn
+}
+
+func (m *Manager) closeConnection() {
+	m.wsConnMu.Lock()
+	defer m.wsConnMu.Unlock()
+	if m.wsConn != nil {
+		_ = m.wsConn.Close()
+		m.wsConn = nil
+	}
+}
+
 // Subscribe subscribes to specified channels for given books
 func (m *Manager) Subscribe(books []*bitso.Book, channels []string) error {
-	if m.wsConn == nil {
+	if m.getConnection() == nil {
 		return fmt.Errorf("not connected to WebSocket")
 	}
 
@@ -124,8 +153,12 @@ func (m *Manager) Subscribe(books []*bitso.Book, channels []string) error {
 	m.logger.Printf("Subscribing to channels: %v for books: %v", channels, books)
 
 	for _, book := range books {
+		conn := m.getConnection()
+		if conn == nil {
+			return fmt.Errorf("not connected to WebSocket")
+		}
 		for _, channel := range channels {
-			if err := m.wsConn.Subscribe(book, channel); err != nil {
+			if err := conn.Subscribe(book, channel); err != nil {
 				if m.subscribeErrorRecorder != nil {
 					m.subscribeErrorRecorder.RecordWebSocketSubscribeError()
 				}
@@ -140,7 +173,7 @@ func (m *Manager) Subscribe(books []*bitso.Book, channels []string) error {
 
 // Start begins processing messages from the WebSocket
 func (m *Manager) Start(ctx context.Context) error {
-	if m.wsConn == nil {
+	if m.getConnection() == nil {
 		return fmt.Errorf("not connected to WebSocket")
 	}
 
@@ -179,11 +212,7 @@ func (m *Manager) Stop() error {
 	}
 
 	// Close WebSocket connection
-	if m.wsConn != nil {
-		if err := m.wsConn.Close(); err != nil {
-			m.logger.Printf("Error closing WebSocket: %v", err)
-		}
-	}
+	m.closeConnection()
 
 	// Close channels
 	close(m.tradesStream)
@@ -200,7 +229,12 @@ func (m *Manager) messageLoop(ctx context.Context) {
 	defer m.wg.Done()
 	m.logger.Println("Message loop started")
 
-	receiveChan := m.wsConn.Receive()
+	conn := m.getConnection()
+	if conn == nil {
+		m.logger.Println("No WebSocket connection available")
+		return
+	}
+	receiveChan := conn.Receive()
 
 	for {
 		select {
@@ -224,7 +258,12 @@ func (m *Manager) messageLoop(ctx context.Context) {
 				}
 
 				// Get new receive channel
-				receiveChan = m.wsConn.Receive()
+				conn = m.getConnection()
+				if conn == nil {
+					m.logger.Println("Reconnect succeeded but connection is nil")
+					return
+				}
+				receiveChan = conn.Receive()
 				continue
 			}
 

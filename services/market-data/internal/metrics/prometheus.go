@@ -17,10 +17,12 @@ import (
 // Metrics holds all Prometheus metrics
 type Metrics struct {
 	// Trade metrics
-	TradeCounter prometheus.Counter
-	TradeLatency prometheus.Histogram
-	TradeVolume  prometheus.Counter
-	TradeValue   prometheus.Counter
+	TradeCounter              prometheus.Counter
+	TradeLatency              prometheus.Histogram
+	TradeVolume               prometheus.Counter
+	TradeValue                prometheus.Counter
+	LastTradeAgeSeconds       prometheus.Gauge
+	TradeSilenceReconnects    prometheus.Counter
 
 	// Order book metrics
 	OrderBookUpdates prometheus.Counter
@@ -86,6 +88,16 @@ func NewMetrics() *Metrics {
 		TradeValue: promauto.NewCounter(prometheus.CounterOpts{
 			Name: "market_data_trade_value_total",
 			Help: "Total trade value processed",
+		}),
+
+		LastTradeAgeSeconds: promauto.NewGauge(prometheus.GaugeOpts{
+			Name: "market_data_last_trade_age_seconds",
+			Help: "Seconds since the most recent trade was received from the WebSocket stream",
+		}),
+
+		TradeSilenceReconnects: promauto.NewCounter(prometheus.CounterOpts{
+			Name: "market_data_trade_silence_reconnects_total",
+			Help: "Total number of WebSocket reconnects triggered by the trade silence watchdog",
 		}),
 
 		// Order book metrics
@@ -543,4 +555,14 @@ func (mc *MetricsCollector) RecordHistoricalRequest(duration time.Duration, succ
 	if !success {
 		mc.metrics.HistoricalErrorsTotal.Inc()
 	}
+}
+
+// SetLastTradeAgeSeconds records how long ago the last trade was received.
+func (mc *MetricsCollector) SetLastTradeAgeSeconds(ageSec float64) {
+	mc.metrics.LastTradeAgeSeconds.Set(ageSec)
+}
+
+// RecordTradeSilenceReconnect records a watchdog-triggered WebSocket reconnect.
+func (mc *MetricsCollector) RecordTradeSilenceReconnect() {
+	mc.metrics.TradeSilenceReconnects.Inc()
 }

@@ -50,6 +50,7 @@ func DefaultServiceConfig() *ServiceConfig {
 type bookHealth struct {
 	Ready        bool
 	ComputedAt   time.Time
+	LastBarAt    time.Time
 	BarsUsed     int
 	CurrentPrice float64
 	StaleReason  string
@@ -220,6 +221,8 @@ func (s *Service) ComputeAndStore(ctx context.Context, book string) error {
 
 	closes := barCloses(bars)
 	currentPrice := closes[len(closes)-1]
+	lastBarAt := bars[len(bars)-1].Timestamp
+	barStale := s.isBarDataStale(lastBarAt)
 
 	if smaVal, err := s.sma.Compute(closes); err == nil {
 		s.store.Set(ctx, book, "sma", s.config.SMAPeriod, &IndicatorValue{
@@ -268,12 +271,22 @@ func (s *Service) ComputeAndStore(ctx context.Context, book string) error {
 		}
 	}
 
-	promMetrics.SetIndicatorsHealthy(true)
+	ready := !barStale
+	staleReason := ""
+	if barStale {
+		staleReason = barStaleReason(lastBarAt)
+		promMetrics.SetIndicatorsHealthy(false)
+	} else {
+		promMetrics.SetIndicatorsHealthy(true)
+	}
+
 	s.setBookHealth(book, bookHealth{
-		Ready:        true,
+		Ready:        ready,
 		ComputedAt:   now,
+		LastBarAt:    lastBarAt,
 		BarsUsed:     len(bars),
 		CurrentPrice: currentPrice,
+		StaleReason:  staleReason,
 	})
 	return nil
 }
@@ -331,8 +344,9 @@ type Snapshot struct {
 	DataHealthy  bool            `json:"data_healthy"`
 	ComputedAt   time.Time       `json:"computed_at,omitempty"`
 	BarsUsed     int             `json:"bars_used,omitempty"`
-	DataAgeSec   float64         `json:"data_age_sec,omitempty"`
-	StaleReason  string          `json:"stale_reason,omitempty"`
+	DataAgeSec    float64         `json:"data_age_sec,omitempty"`
+	LastBarAgeSec float64         `json:"last_bar_age_sec,omitempty"`
+	StaleReason   string          `json:"stale_reason,omitempty"`
 	SMA          *IndicatorValue `json:"sma,omitempty"`
 	EMA          *IndicatorValue `json:"ema,omitempty"`
 	RSI          *IndicatorValue `json:"rsi,omitempty"`
@@ -363,6 +377,9 @@ func (s *Service) GetSnapshot(ctx context.Context, book string) (*Snapshot, erro
 	if !h.ComputedAt.IsZero() {
 		snapshot.DataAgeSec = now.Sub(h.ComputedAt).Seconds()
 	}
+	if !h.LastBarAt.IsZero() {
+		snapshot.LastBarAgeSec = now.Sub(h.LastBarAt).Seconds()
+	}
 
 	snapshot.DataHealthy = s.evaluateSnapshotHealth(snapshot, h)
 	if !snapshot.DataHealthy && h.StaleReason != "" {
@@ -372,6 +389,14 @@ func (s *Service) GetSnapshot(ctx context.Context, book string) (*Snapshot, erro
 	}
 
 	return snapshot, nil
+}
+
+func (s *Service) isBarDataStale(lastBarAt time.Time) bool {
+	return s.config.MaxStaleness > 0 && !lastBarAt.IsZero() && time.Since(lastBarAt) > s.config.MaxStaleness
+}
+
+func barStaleReason(lastBarAt time.Time) string {
+	return fmt.Sprintf("bar data stale: last bar %v ago", time.Since(lastBarAt).Round(time.Second))
 }
 
 func (s *Service) evaluateSnapshotHealth(snapshot *Snapshot, h bookHealth) bool {
@@ -385,6 +410,9 @@ func (s *Service) evaluateSnapshotHealth(snapshot *Snapshot, h bookHealth) bool 
 		return false
 	}
 	if h.ComputedAt.IsZero() {
+		return false
+	}
+	if s.isBarDataStale(h.LastBarAt) {
 		return false
 	}
 	if s.config.MaxStaleness > 0 && time.Since(h.ComputedAt) > s.config.MaxStaleness {

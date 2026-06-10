@@ -156,9 +156,13 @@ func NewApplication() (*Application, error) {
 
 	// Initialize Trade Processor
 	processorConfig := &processor.ProcessorConfig{
-		Logger:       stdLogger, // processor uses *log.Logger
-		TradesInput:  wsManager.GetTradesStream(),
-		OutputBuffer: 100,
+		Logger:                   stdLogger, // processor uses *log.Logger
+		TradesInput:              wsManager.GetTradesStream(),
+		OutputBuffer:             100,
+		SilenceThreshold:         cfg.TradeSilenceThreshold,
+		SilenceReconnectCooldown: cfg.TradeSilenceReconnectCooldown,
+		ReconnectTrigger:         wsManager,
+		SilenceRecorder:          metricsCollector,
 	}
 	tradeProcessor := processor.NewProcessor(processorConfig)
 	appLogger.Info("Trade processor created")

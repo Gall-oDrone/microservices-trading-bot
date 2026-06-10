@@ -46,6 +46,10 @@ type Config struct {
 	WSReconnectInterval time.Duration
 	WSReconnectMaxDelay time.Duration
 
+	// Trade silence watchdog (force WS reconnect when no trades arrive)
+	TradeSilenceThreshold         time.Duration
+	TradeSilenceReconnectCooldown time.Duration
+
 	// Feature flags
 	EnableWebSocket bool
 	EnableKafka     bool
@@ -105,6 +109,10 @@ func LoadConfig() (*Config, error) {
 		WSReconnectAttempts: getEnvAsInt("WS_RECONNECT_ATTEMPTS", 10),
 		WSReconnectInterval: getEnvAsDuration("WS_RECONNECT_INTERVAL", 5*time.Second),
 		WSReconnectMaxDelay: getEnvAsDuration("WS_RECONNECT_MAX_DELAY", 30*time.Second),
+
+		// Trade silence watchdog
+		TradeSilenceThreshold:         getEnvAsDuration("TRADE_SILENCE_THRESHOLD", 5*time.Minute),
+		TradeSilenceReconnectCooldown: getEnvAsDuration("TRADE_SILENCE_RECONNECT_COOLDOWN", 2*time.Minute),
 
 		// Feature flags
 		EnableWebSocket: getEnvAsBool("ENABLE_WEBSOCKET", true),
