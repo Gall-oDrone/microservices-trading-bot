@@ -423,7 +423,7 @@ func (te *TradingEngine) signalProcessor() {
 
 			start := time.Now()
 			bookStr := signal.Book
-			strategy := te.config.StrategyType
+			strategy := te.strategyFromSignal(signal)
 			err := te.processTradeSignal(signal)
 			duration := time.Since(start)
 			if te.metricsRecorder != nil {
@@ -450,35 +450,37 @@ func (te *TradingEngine) processTradeSignal(signal *models.TradeSignalEvent) err
 	te.logger.Printf("Processing %s signal for %s at price %.2f",
 		signal.Signal, signal.Book, signal.Price)
 
+	strategy := te.strategyFromSignal(signal)
+
 	// Check if we're in trading hours
 	if !te.config.IsWithinTradingHours() {
-		te.recordOrderFailedIfMetrics(signal.Book, "validation")
+		te.recordOrderFailedIfMetrics(signal, "validation")
 		return fmt.Errorf("signal received outside trading hours")
 	}
 
 	// Check current state
 	if te.GetState() != StateRunning {
-		te.recordOrderFailedIfMetrics(signal.Book, "validation")
+		te.recordOrderFailedIfMetrics(signal, "validation")
 		return fmt.Errorf("engine not in running state")
 	}
 
 	// Parse book from signal
 	book, err := te.parseBook(signal.Book)
 	if err != nil {
-		te.recordOrderFailedIfMetrics(signal.Book, "validation")
+		te.recordOrderFailedIfMetrics(signal, "validation")
 		return fmt.Errorf("invalid book: %w", err)
 	}
 
 	// Get current ticker for validation
 	ticker, err := te.bitsoClient.Ticker(book)
 	if err != nil {
-		te.recordOrderFailedIfMetrics(signal.Book, "ticker_fetch")
+		te.recordOrderFailedIfMetrics(signal, "ticker_fetch")
 		return fmt.Errorf("failed to get ticker: %w", err)
 	}
 
 	// Validate signal price is reasonable
 	if err := te.validateSignalPrice(signal, ticker); err != nil {
-		te.recordOrderFailedIfMetrics(signal.Book, "validation")
+		te.recordOrderFailedIfMetrics(signal, "validation")
 		return fmt.Errorf("signal validation failed: %w", err)
 	}
 
@@ -488,7 +490,7 @@ func (te *TradingEngine) processTradeSignal(signal *models.TradeSignalEvent) err
 		var err error
 		dailyPnL, drawdownPct, err = te.sessionRiskProvider.GetSessionRisk(te.ctx)
 		if err != nil {
-			te.recordOrderFailedIfMetrics(signal.Book, "session_risk")
+			te.recordOrderFailedIfMetrics(signal, "session_risk")
 			return fmt.Errorf("session risk check: %w", err)
 		}
 	}
@@ -497,7 +499,7 @@ func (te *TradingEngine) processTradeSignal(signal *models.TradeSignalEvent) err
 			te.metricsRecorder.RecordSessionRiskCheck("rejected")
 			te.metricsRecorder.RecordSessionRiskRejection()
 		}
-		te.recordOrderFailedIfMetrics(signal.Book, "session_risk")
+		te.recordOrderFailedIfMetrics(signal, "session_risk")
 		return err
 	}
 	if te.metricsRecorder != nil {
@@ -506,10 +508,6 @@ func (te *TradingEngine) processTradeSignal(signal *models.TradeSignalEvent) err
 
 	// Pre-trade validation: call order-management to validate before placing order on Bitso
 	if te.preTradeValidator != nil {
-		strategy := strings.TrimSpace(signal.Strategy)
-		if strategy == "" {
-			strategy = te.config.StrategyType
-		}
 		validationReq := &execution.OrderValidationRequest{
 			Book:     signal.Book,
 			Side:     strings.ToLower(strings.TrimSpace(signal.Signal)),
@@ -528,7 +526,7 @@ func (te *TradingEngine) processTradeSignal(signal *models.TradeSignalEvent) err
 			if te.metricsRecorder != nil {
 				te.metricsRecorder.RecordPreTradeValidation("error")
 			}
-			te.recordOrderFailedIfMetrics(signal.Book, "pretrade_validation")
+			te.recordOrderFailedIfMetrics(signal, "pretrade_validation")
 			return fmt.Errorf("pre-trade validation failed: %w", err)
 		}
 
@@ -538,7 +536,7 @@ func (te *TradingEngine) processTradeSignal(signal *models.TradeSignalEvent) err
 				te.metricsRecorder.RecordPreTradeValidation("rejected")
 				te.metricsRecorder.RecordPreTradeRejection()
 			}
-			te.recordOrderFailedIfMetrics(signal.Book, "pretrade_validation")
+			te.recordOrderFailedIfMetrics(signal, "pretrade_validation")
 			return fmt.Errorf("order rejected by pre-trade validation: %v", validationResp.Errors)
 		}
 
@@ -559,7 +557,6 @@ func (te *TradingEngine) processTradeSignal(signal *models.TradeSignalEvent) err
 	}
 
 	bookStr := book.String()
-	strategy := te.config.StrategyType
 
 	// Execute based on signal type
 	var orderID string
@@ -599,7 +596,7 @@ func (te *TradingEngine) processTradeSignal(signal *models.TradeSignalEvent) err
 		}
 
 	default:
-		te.recordOrderFailedIfMetrics(signal.Book, "validation")
+		te.recordOrderFailedIfMetrics(signal, "validation")
 		return fmt.Errorf("unknown signal type: %s", signal.Signal)
 	}
 
@@ -613,16 +610,26 @@ func (te *TradingEngine) processTradeSignal(signal *models.TradeSignalEvent) err
 	return nil
 }
 
-// recordOrderFailedIfMetrics records orders_failed_total when metricsRecorder is set. bookOrFallback is signal.Book (may be invalid).
-func (te *TradingEngine) recordOrderFailedIfMetrics(bookOrFallback, reason string) {
+// strategyFromSignal returns the strategy name for metrics and events, preferring the signal payload.
+func (te *TradingEngine) strategyFromSignal(signal *models.TradeSignalEvent) string {
+	if signal != nil {
+		if s := strings.TrimSpace(signal.Strategy); s != "" {
+			return s
+		}
+	}
+	return te.config.StrategyType
+}
+
+// recordOrderFailedIfMetrics records orders_failed_total when metricsRecorder is set.
+func (te *TradingEngine) recordOrderFailedIfMetrics(signal *models.TradeSignalEvent, reason string) {
 	if te.metricsRecorder == nil {
 		return
 	}
-	bookStr := bookOrFallback
-	if bookStr == "" {
-		bookStr = "unknown"
+	bookStr := "unknown"
+	if signal != nil && signal.Book != "" {
+		bookStr = signal.Book
 	}
-	te.metricsRecorder.RecordOrderFailed(bookStr, te.config.StrategyType, reason)
+	te.metricsRecorder.RecordOrderFailed(bookStr, te.strategyFromSignal(signal), reason)
 }
 
 func (te *TradingEngine) publishOrderPlaced(orderID string, signal *models.TradeSignalEvent, book *bitso.Book, side string) {
@@ -633,7 +640,7 @@ func (te *TradingEngine) publishOrderPlaced(orderID string, signal *models.Trade
 		Side:     side,
 		Amount:   signal.Amount,
 		Price:    signal.Price,
-		Strategy: te.config.StrategyType,
+		Strategy: te.strategyFromSignal(signal),
 	}
 	payload, err := json.Marshal(evt)
 	if err != nil {
