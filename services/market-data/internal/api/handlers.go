@@ -198,7 +198,7 @@ func (h *Handler) ReadinessCheck(w http.ResponseWriter, r *http.Request) {
 		ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 		defer cancel()
 
-		if exists, err := h.cache.Exists(ctx, "health_check"); err != nil || !exists {
+		if _, err := h.cache.Exists(ctx, "__readiness_ping__"); err != nil {
 			checks["cache"] = "not ready"
 			ready = false
 		} else {
