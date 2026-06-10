@@ -269,7 +269,7 @@ func createTradingConfig() *models.TradingConfig {
 		StartTime:         time.Now(),
 		EndTime:           time.Now().Add(24 * time.Hour),
 		MaxOpenPositions:  3, // Maximum 3 concurrent positions
-		StrategyType:      "basic",
+		StrategyType:      "",
 		Parameters:        make(map[string]interface{}),
 	}
 }

@@ -415,3 +415,21 @@ func TestEnhancedRegistry_RegisterFactory(t *testing.T) {
 		t.Error("Expected error when registering duplicate factory")
 	}
 }
+
+func TestEnsureSignalStrategy(t *testing.T) {
+	t.Run("stamps missing strategy", func(t *testing.T) {
+		signal := &Signal{Book: "btc_mxn", Side: "BUY"}
+		EnsureSignalStrategy(signal, "mean_reversion_btc_mxn")
+		if signal.Strategy != "mean_reversion_btc_mxn" {
+			t.Fatalf("expected stamped strategy, got %q", signal.Strategy)
+		}
+	})
+
+	t.Run("preserves existing strategy", func(t *testing.T) {
+		signal := &Signal{Strategy: "momentum_btc_mxn", Book: "btc_mxn", Side: "SELL"}
+		EnsureSignalStrategy(signal, "mean_reversion_btc_mxn")
+		if signal.Strategy != "momentum_btc_mxn" {
+			t.Fatalf("expected existing strategy preserved, got %q", signal.Strategy)
+		}
+	})
+}

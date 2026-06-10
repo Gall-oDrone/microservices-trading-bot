@@ -321,6 +321,7 @@ func (r *EnhancedRegistry) ProcessTick(tick *indicators.Trade, book string) ([]*
 		}
 
 		if signal != nil {
+			EnsureSignalStrategy(signal, strategy.Name())
 			signals = append(signals, signal)
 			promMetrics := metrics.GetPrometheusMetrics()
 			promMetrics.IncSignalsGenerated(strategy.Name(), signal.Side)
@@ -354,6 +355,7 @@ func (r *EnhancedRegistry) ProcessBar(bar *indicators.OHLCV, book string) ([]*Si
 		}
 
 		if signal != nil {
+			EnsureSignalStrategy(signal, strategy.Name())
 			signals = append(signals, signal)
 		}
 	}

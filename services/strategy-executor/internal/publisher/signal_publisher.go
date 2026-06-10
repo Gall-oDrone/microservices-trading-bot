@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -18,7 +19,7 @@ import (
 type SignalPublisher interface {
 	Start(ctx context.Context) error
 	Stop() error
-	PublishSignal(signal *strategies.TradingSignal) error
+	PublishSignal(strategyName string, signal *strategies.TradingSignal) error
 	GetStatistics() *PublisherStatistics
 }
 
@@ -143,12 +144,13 @@ func (p *Publisher) Stop() error {
 	return nil
 }
 
-// PublishSignal publishes a trading signal to Kafka
-func (p *Publisher) PublishSignal(signal *strategies.TradingSignal) error {
+// PublishSignal publishes a trading signal to Kafka.
+// strategyName is the registered strategy instance (e.g. mean_reversion_btc_mxn).
+func (p *Publisher) PublishSignal(strategyName string, signal *strategies.TradingSignal) error {
 	start := time.Now()
 
 	// Convert signal to event
-	event := p.convertSignalToEvent(signal)
+	event := p.convertSignalToEvent(strategyName, signal)
 
 	// Serialize event
 	data, err := json.Marshal(event)
@@ -249,7 +251,7 @@ func (p *Publisher) processStrategySignals() {
 			}
 
 			// Publish signal
-			if err := p.PublishSignal(signal); err != nil {
+			if err := p.PublishSignal(strategyName, signal); err != nil {
 				p.logger.Errorf("Failed to publish signal from strategy '%s': %v", strategyName, err)
 			} else {
 				p.logger.Debugf("Published signal from strategy '%s': %s", strategyName, signal.Reason)
@@ -261,7 +263,7 @@ func (p *Publisher) processStrategySignals() {
 }
 
 // convertSignalToEvent converts a trading signal to a signal event
-func (p *Publisher) convertSignalToEvent(signal *strategies.TradingSignal) *models.TradeSignalEvent {
+func (p *Publisher) convertSignalToEvent(strategyName string, signal *strategies.TradingSignal) *models.TradeSignalEvent {
 	signalType := "UNKNOWN"
 	switch signal.Type {
 	case strategies.SignalBuy:
@@ -272,11 +274,16 @@ func (p *Publisher) convertSignalToEvent(signal *strategies.TradingSignal) *mode
 		signalType = "HOLD"
 	}
 
+	strategy := strings.TrimSpace(strategyName)
+	if strategy == "" {
+		strategy = "unknown"
+	}
+
 	return &models.TradeSignalEvent{
 		EventID:   fmt.Sprintf("signal-%d", time.Now().UnixNano()),
 		Timestamp: signal.Timestamp,
 		Book:      signal.Book.String(),
-		Strategy:  "unknown", // legacy publisher path; main path uses cmd/main publishTradeSignals with real strategy name
+		Strategy:  strategy,
 		Signal:    signalType,
 		Price:     signal.Price,
 		Amount:    signal.Amount,

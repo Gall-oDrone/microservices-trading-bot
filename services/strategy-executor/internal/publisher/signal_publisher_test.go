@@ -191,12 +191,15 @@ func TestPublisher_ConvertSignalToEvent(t *testing.T) {
 	book := bitso.NewBook(bitso.BTC, bitso.MXN)
 
 	tests := []struct {
-		name       string
-		signal     *strategies.TradingSignal
-		wantSignal string
+		name         string
+		strategyName string
+		signal       *strategies.TradingSignal
+		wantSignal   string
+		wantStrategy string
 	}{
 		{
-			name: "buy signal",
+			name:         "buy signal",
+			strategyName: "mean_reversion_btc_mxn",
 			signal: &strategies.TradingSignal{
 				Type:      strategies.SignalBuy,
 				Book:      book,
@@ -206,10 +209,12 @@ func TestPublisher_ConvertSignalToEvent(t *testing.T) {
 				Reason:    "test buy",
 				Timestamp: time.Now().Unix(),
 			},
-			wantSignal: "BUY",
+			wantSignal:   "BUY",
+			wantStrategy: "mean_reversion_btc_mxn",
 		},
 		{
-			name: "sell signal",
+			name:         "sell signal",
+			strategyName: "momentum_btc_mxn",
 			signal: &strategies.TradingSignal{
 				Type:      strategies.SignalSell,
 				Book:      book,
@@ -219,10 +224,12 @@ func TestPublisher_ConvertSignalToEvent(t *testing.T) {
 				Reason:    "test sell",
 				Timestamp: time.Now().Unix(),
 			},
-			wantSignal: "SELL",
+			wantSignal:   "SELL",
+			wantStrategy: "momentum_btc_mxn",
 		},
 		{
-			name: "hold signal",
+			name:         "hold signal",
+			strategyName: "",
 			signal: &strategies.TradingSignal{
 				Type:      strategies.SignalHold,
 				Book:      book,
@@ -232,13 +239,14 @@ func TestPublisher_ConvertSignalToEvent(t *testing.T) {
 				Reason:    "test hold",
 				Timestamp: time.Now().Unix(),
 			},
-			wantSignal: "HOLD",
+			wantSignal:   "HOLD",
+			wantStrategy: "unknown",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			event := publisher.convertSignalToEvent(tt.signal)
+			event := publisher.convertSignalToEvent(tt.strategyName, tt.signal)
 
 			if event == nil {
 				t.Fatal("convertSignalToEvent() returned nil")
@@ -246,6 +254,10 @@ func TestPublisher_ConvertSignalToEvent(t *testing.T) {
 
 			if event.Signal != tt.wantSignal {
 				t.Errorf("Expected signal type '%s', got '%s'", tt.wantSignal, event.Signal)
+			}
+
+			if event.Strategy != tt.wantStrategy {
+				t.Errorf("Expected strategy '%s', got '%s'", tt.wantStrategy, event.Strategy)
 			}
 
 			if event.Book != book.String() {

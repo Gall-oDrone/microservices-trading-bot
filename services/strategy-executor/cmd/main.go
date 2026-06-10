@@ -7,6 +7,7 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -250,6 +251,10 @@ func main() {
 			if signal == nil {
 				continue
 			}
+			strategyName := strings.TrimSpace(signal.Strategy)
+			if strategyName == "" {
+				return fmt.Errorf("refusing to publish signal without strategy for book %s", signal.Book)
+			}
 			eventID := uuid.New().String()
 			if signal.Metadata != nil {
 				if v, ok := signal.Metadata["event_id"].(string); ok && v != "" {
@@ -269,7 +274,7 @@ func main() {
 				EventID:   eventID,
 				Timestamp: signal.Timestamp.UnixMilli(),
 				Book:      signal.Book,
-				Strategy:  signal.Strategy,
+				Strategy:  strategyName,
 				Signal:    signal.Side,
 				Price:     signal.Price,
 				Amount:    signal.Amount,
@@ -290,8 +295,8 @@ func main() {
 			if err != nil {
 				return fmt.Errorf("kafka produce: %w", err)
 			}
-			appLogger.Infof("Published %s signal for %s: price=%.2f amount=%.8f reason=%s",
-				signal.Side, book, signal.Price, signal.Amount, signal.Reason)
+			appLogger.Infof("Published %s signal for %s strategy=%s: price=%.2f amount=%.8f reason=%s",
+				signal.Side, book, strategyName, signal.Price, signal.Amount, signal.Reason)
 		}
 		return nil
 	}

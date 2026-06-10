@@ -617,7 +617,10 @@ func (te *TradingEngine) strategyFromSignal(signal *models.TradeSignalEvent) str
 			return s
 		}
 	}
-	return te.config.StrategyType
+	if s := strings.TrimSpace(te.config.StrategyType); s != "" {
+		return s
+	}
+	return "unknown"
 }
 
 // recordOrderFailedIfMetrics records orders_failed_total when metricsRecorder is set.
