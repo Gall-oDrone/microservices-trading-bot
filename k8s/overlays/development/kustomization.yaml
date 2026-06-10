@@ -32,13 +32,13 @@ images:
   newTag: 194cdd55fb84062bca4e4aba696bae6e55159b1b
 - name: ECR_REGISTRY_PLACEHOLDER/market-data
   newName: 326105557351.dkr.ecr.us-east-1.amazonaws.com/market-data
-  newTag: 194cdd55fb84062bca4e4aba696bae6e55159b1b
+  newTag: 27b9e50
 - name: ECR_REGISTRY_PLACEHOLDER/order-management
   newName: 326105557351.dkr.ecr.us-east-1.amazonaws.com/order-management
   newTag: 7fae8b0
 - name: ECR_REGISTRY_PLACEHOLDER/strategy-executor
   newName: 326105557351.dkr.ecr.us-east-1.amazonaws.com/strategy-executor
-  newTag: 638b776d5d0c853db9fa6c8fbd9ab757b618858f
+  newTag: 27b9e50
 - name: ECR_REGISTRY_PLACEHOLDER/strategy-router
   newName: 326105557351.dkr.ecr.us-east-1.amazonaws.com/strategy-router
   newTag: 194cdd55fb84062bca4e4aba696bae6e55159b1b
