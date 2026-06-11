@@ -11,6 +11,8 @@
 #   ./scripts/run-stage-execution-soak-2026-06-04.sh phase3-status
 #   ./scripts/run-stage-execution-soak-2026-06-04.sh phase4-start   # router + engine live, router-managed
 #   ./scripts/run-stage-execution-soak-2026-06-04.sh phase4-status
+#   ./scripts/run-stage-execution-soak-2026-06-04.sh phase5-start   # 7-day extended soak (after Phase 4 PASS)
+#   ./scripts/run-stage-execution-soak-2026-06-04.sh phase5-status
 #   ./scripts/run-stage-execution-soak-2026-06-04.sh rollback        # DRY_RUN=true on router + engine
 #
 set -euo pipefail
@@ -19,6 +21,7 @@ NAMESPACE="${NAMESPACE:-bitso-trading-dev}"
 BOOK="${BOOK:-btc_mxn}"
 STRATEGY="${STRATEGY:-mean_reversion_${BOOK}}"
 PHASE2_MIN_HOURS="${PHASE2_MIN_HOURS:-24}"
+PHASE5_MIN_DAYS="${PHASE5_MIN_DAYS:-7}"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 LOG_DIR="${LOG_DIR:-$ROOT/tmp/stage-execution-soak}"
 CLASSIFICATION_REPORT="${CLASSIFICATION_REPORT:-$ROOT/tmp/stage-soak/soak-verification-report.json}"
@@ -324,6 +327,120 @@ if age_h > 1.5:
 PY
     fi
     ;;
+  phase5-start)
+    check_classification_pass
+    if [[ ! -f "$WINDOW_JSON" ]]; then
+      err "No execution window — run phase4-start first"
+      exit 1
+    fi
+    phase4_started=$(jq -r '.phase4_started_at // .started_at // ""' "$WINDOW_JSON")
+    if [[ -z "$phase4_started" ]]; then
+      err "Phase 4 start time missing from $WINDOW_JSON"
+      exit 1
+    fi
+    python3 - "$WINDOW_JSON" "$phase4_started" <<'PY'
+import json, sys
+from datetime import datetime, timezone
+from pathlib import Path
+w = json.loads(Path(sys.argv[1]).read_text())
+p4 = datetime.fromisoformat(sys.argv[2].replace("Z", "+00:00"))
+elapsed_h = (datetime.now(timezone.utc) - p4).total_seconds() / 3600
+if elapsed_h < 24:
+    print(f"Phase 4 only {elapsed_h:.1f}h — need ≥24h before Phase 5", file=sys.stderr)
+    sys.exit(1)
+PY
+    ok "Phase 4 gate satisfied (≥24h since $phase4_started)"
+    router_dry=$(router_dry_run)
+    dry_metric=$(kubectl -n "$NAMESPACE" exec deploy/trading-engine -- \
+      wget -qO- http://127.0.0.1:8080/metrics 2>/dev/null | awk '/^trading_engine_dry_run /{print $2}')
+    if [[ "$router_dry" == "true" ]]; then
+      err "strategy-router DRY_RUN=true — Phase 5 requires live router"
+      exit 1
+    fi
+    if [[ "$dry_metric" != "0" ]]; then
+      err "trading_engine_dry_run=$dry_metric — Phase 5 requires live engine"
+      exit 1
+    fi
+    mkdir -p "$LOG_DIR"
+    python3 - "$WINDOW_JSON" <<'PY'
+import json, sys
+from datetime import datetime, timezone
+from pathlib import Path
+p = Path(sys.argv[1])
+w = json.loads(p.read_text())
+now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+w["phase"] = "5"
+w["phase4_started_at"] = w.get("phase4_started_at") or w.get("started_at")
+w["phase4_pass_ref"] = "docs/strategy-fee-accuracy/STAGE-EXECUTION-SOAK-PHASE4-VERIFICATION-2026-06-11.md"
+w["started_at"] = now
+w["target_days"] = int(__import__("os").environ.get("PHASE5_MIN_DAYS", "7"))
+w["notes"] = (
+    "Phase 5: 7-day extended execution soak — router + engine live, router-managed strategies. "
+    "Classification sample loop should run every 30m."
+)
+p.write_text(json.dumps(w, indent=2) + "\n")
+print(now)
+PY
+    ok "Phase 5 window written to $WINDOW_JSON"
+    info "Ensuring classification sample loop is running..."
+    "$ROOT/scripts/stage-soak-sample-loop.sh" start 2>/dev/null || warn "sample loop start failed"
+    ok "Phase 5 started — observe ≥ ${PHASE5_MIN_DAYS} days; run phase5-status daily"
+    info "See docs/strategy-fee-accuracy/STAGE-EXECUTION-SOAK-OPERATOR-GUIDE-2026-06-04.md § Phase 5"
+    print_status
+    ;;
+  phase5-status)
+    mkdir -p "$LOG_DIR"
+    info "Execution soak window:"
+    [[ -f "$WINDOW_JSON" ]] && cat "$WINDOW_JSON" || warn "No $WINDOW_JSON — run phase5-start first"
+    if [[ -f "$WINDOW_JSON" ]]; then
+      python3 - "$WINDOW_JSON" "$PHASE5_MIN_DAYS" <<'PY'
+import json, sys
+from datetime import datetime, timezone
+w = json.load(open(sys.argv[1]))
+target_days = float(sys.argv[2])
+started = w.get("started_at", "")
+phase = w.get("phase", "?")
+if started:
+    t0 = datetime.fromisoformat(started.replace("Z", "+00:00"))
+    elapsed_d = (datetime.now(timezone.utc) - t0).total_seconds() / 86400
+    print(f"Phase {phase} elapsed: {elapsed_d:.2f}d ({target_days:.0f}d gate: {'PASS' if elapsed_d >= target_days else 'pending'})")
+p4 = w.get("phase4_started_at", "")
+if p4:
+    t4 = datetime.fromisoformat(p4.replace("Z", "+00:00"))
+    print(f"Phase 4 started: {p4} ({(datetime.now(timezone.utc)-t4).total_seconds()/3600:.1f}h ago)")
+PY
+    fi
+    print_status
+    info "Router metrics:"
+    kubectl -n "$NAMESPACE" exec deploy/strategy-router -- \
+      wget -qO- http://127.0.0.1:8092/metrics 2>/dev/null \
+      | grep -E '^strategy_router_(evaluations_total|evaluation_errors_total|blocked_total|switches_total)' \
+      | grep -v bucket || warn "router metrics unavailable"
+    info "market-data trade stream:"
+    kubectl -n "$NAMESPACE" exec deploy/market-data -- \
+      wget -qO- http://127.0.0.1:8083/metrics 2>/dev/null \
+      | grep -E 'market_data_(last_trade_age|trade_silence|rest_fallback)' | grep -v '^#' || warn "metrics unavailable"
+    info "Classification sample loop:"
+    "$ROOT/scripts/stage-soak-sample-loop.sh" status 2>/dev/null || warn "sample loop status unavailable"
+    samples="$ROOT/tmp/stage-soak/agreement-samples.jsonl"
+    if [[ -f "$samples" ]]; then
+      python3 - "$samples" <<'PY'
+import json, sys
+from datetime import datetime, timezone
+from pathlib import Path
+rows = [json.loads(l) for l in Path(sys.argv[1]).read_text().splitlines() if l.strip()]
+if not rows:
+    sys.exit(0)
+last = rows[-1]
+ts = datetime.fromisoformat(last["timestamp"].replace("Z", "+00:00"))
+age_h = (datetime.now(timezone.utc) - ts).total_seconds() / 3600
+m = sum(1 for r in rows if r.get("match"))
+print(f"  samples={len(rows)} matches={m} rate={m/len(rows):.4f} last_age_h={age_h:.1f}")
+if age_h > 1.5:
+    print(f"  WARN: last sample stale ({last['timestamp']}) — run: ./scripts/stage-soak-sample-loop.sh start")
+PY
+    fi
+    ;;
   rollback)
     warn "Rolling back to safe mode (router + engine DRY_RUN=true)..."
     kubectl -n "$NAMESPACE" set env deployment/strategy-router DRY_RUN=true
@@ -333,7 +450,7 @@ PY
     ok "Rollback complete — strategies may still be running; stop manually if needed"
     ;;
   *)
-    err "Unknown command: $cmd (check-prereqs|phase2-start|phase2-status|phase3-start|phase3-status|phase4-start|phase4-status|rollback)"
+    err "Unknown command: $cmd (check-prereqs|phase2-start|phase2-status|phase3-start|phase3-status|phase4-start|phase4-status|phase5-start|phase5-status|rollback)"
     exit 1
     ;;
 esac
