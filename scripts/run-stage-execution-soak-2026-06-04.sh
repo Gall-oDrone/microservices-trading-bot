@@ -246,9 +246,8 @@ PY
     ;;
   phase4-start)
     check_classification_pass
-    info "Stopping classification bash router..."
-    "$ROOT/scripts/run-stage-soak-2026-06-02.sh" stop-bash || true
-    "$ROOT/scripts/stage-soak-sample-loop.sh" stop 2>/dev/null || true
+    info "Stopping classification bash router (keeping port-forward for drift samples)..."
+    "$ROOT/scripts/run-stage-soak-2026-06-02.sh" stop-bash-router-only || true
     stop_all_strategies
     info "Registering canonical router strategies (stopped, POSITION_SIZE=0.001)..."
     NAMESPACE="$NAMESPACE" BOOK="$BOOK" ROUTER_MANAGED=true ROUTER_CANONICAL_NAMES=true \
@@ -274,6 +273,8 @@ PY
     ok "Phase 4 live — router manages start/stop; engine may place Bitso Stage orders"
     write_window "4" "Phase 4: strategy-router DRY_RUN=false, trading-engine live, router-managed canonical strategies."
     ok "Phase 4 started — observe ≥ 24–48 h; run phase4-status periodically"
+    info "Restarting classification sample loop (30 min interval)..."
+    "$ROOT/scripts/stage-soak-sample-loop.sh" start 2>/dev/null || warn "sample loop start failed — run manually"
     info "See docs/strategy-fee-accuracy/STAGE-EXECUTION-SOAK-OPERATOR-GUIDE-2026-06-04.md § Phase 4"
     print_status
     ;;
@@ -302,6 +303,26 @@ PY
     kubectl -n "$NAMESPACE" exec deploy/trading-engine -- \
       wget -qO- http://127.0.0.1:8080/metrics 2>/dev/null \
       | grep -E '^trading_engine_(dry_run|orders_|signals_)' || warn "metrics unavailable"
+    info "Classification sample loop:"
+    "$ROOT/scripts/stage-soak-sample-loop.sh" status 2>/dev/null || warn "sample loop status unavailable"
+    samples="$ROOT/tmp/stage-soak/agreement-samples.jsonl"
+    if [[ -f "$samples" ]]; then
+      python3 - "$samples" <<'PY'
+import json, sys
+from datetime import datetime, timezone
+from pathlib import Path
+rows = [json.loads(l) for l in Path(sys.argv[1]).read_text().splitlines() if l.strip()]
+if not rows:
+    sys.exit(0)
+last = rows[-1]
+ts = datetime.fromisoformat(last["timestamp"].replace("Z", "+00:00"))
+age_h = (datetime.now(timezone.utc) - ts).total_seconds() / 3600
+m = sum(1 for r in rows if r.get("match"))
+print(f"  samples={len(rows)} matches={m} rate={m/len(rows):.4f} last_age_h={age_h:.1f}")
+if age_h > 1.5:
+    print(f"  WARN: last sample stale ({last['timestamp']}) — run: ./scripts/stage-soak-sample-loop.sh start")
+PY
+    fi
     ;;
   rollback)
     warn "Rolling back to safe mode (router + engine DRY_RUN=true)..."

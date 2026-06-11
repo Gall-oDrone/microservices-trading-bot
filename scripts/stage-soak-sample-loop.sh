@@ -48,14 +48,32 @@ status_loop() {
   fi
 }
 
+ensure_port_forward() {
+  local pf_port="${STRATEGY_EXECUTOR_LOCAL_PORT:-8084}"
+  if curl -fsS --max-time 2 "http://127.0.0.1:${pf_port}/health" >/dev/null 2>&1; then
+    return 0
+  fi
+  if [[ -f "$LOG_DIR/port-forward.pid" ]] && kill -0 "$(cat "$LOG_DIR/port-forward.pid")" 2>/dev/null; then
+    sleep 1
+    curl -fsS --max-time 3 "http://127.0.0.1:${pf_port}/health" >/dev/null 2>&1 && return 0
+  fi
+  echo "[WARN] port-forward down; starting strategy-executor :${pf_port}" >>"$LOG_FILE"
+  kubectl -n "${NAMESPACE:-bitso-trading-dev}" port-forward svc/strategy-executor "${pf_port}:8081" \
+    >>"$LOG_DIR/port-forward.log" 2>&1 &
+  echo $! >"$LOG_DIR/port-forward.pid"
+  for _ in 1 2 3 4 5; do
+    sleep 1
+    curl -fsS --max-time 2 "http://127.0.0.1:${pf_port}/health" >/dev/null 2>&1 && return 0
+  done
+  echo "[ERROR] port-forward failed on :${pf_port}" >>"$LOG_FILE"
+  return 1
+}
+
 run_loop() {
   cd "$ROOT"
   while true; do
     echo "--- $(date -u +%FT%TZ) loop sample ---" >>"$LOG_FILE"
-    if ! pgrep -f 'port-forward.*8084:8081' >/dev/null || ! pgrep -f 'scripts/strategy-regime-router.sh' >/dev/null; then
-      echo "[WARN] soak helpers down; restarting bash leg" >>"$LOG_FILE"
-      ./scripts/run-stage-soak-2026-06-02.sh start-bash >>"$LOG_FILE" 2>&1 || true
-    fi
+    ensure_port_forward || true
     ./scripts/run-stage-soak-2026-06-02.sh sample >>"$LOG_FILE" 2>&1 || true
     sleep "$INTERVAL_SEC"
   done

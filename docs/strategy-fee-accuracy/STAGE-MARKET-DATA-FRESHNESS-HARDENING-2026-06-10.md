@@ -137,6 +137,14 @@ Exclude stale windows from Phase 4 PASS (documented gaps: 17:36–19:21 and 02:2
 
 ---
 
+## Root cause — watchdog reconnect ineffective (fixed 2026-06-11)
+
+The trade-silence watchdog called `ForceReconnect`, which closed the WebSocket socket, but `shared/pkg/bitso/websocket.go` never closed the `inbox` channel passed to `Receive()`. The `market-data` message loop blocked forever on the old channel (`ok` never became `false`), so **automatic WS reconnect did not run** after watchdog fires. REST fallback masked the failure by ingesting trades over HTTP.
+
+**Fix:** Close `inbox` when the read goroutine exits (on read error or external `Close()`). See [`STAGE-EXECUTION-SOAK-PHASE4-VERIFICATION-2026-06-11.md`](STAGE-EXECUTION-SOAK-PHASE4-VERIFICATION-2026-06-11.md) § Watch items.
+
+---
+
 ## Incident runbook (if stale recurs)
 
 1. Check `market_data_last_trade_age_seconds` and `market_data_trade_silence_reconnects_total`.

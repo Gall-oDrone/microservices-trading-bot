@@ -4,7 +4,7 @@ Date: 2026-06-04
 Repository: `microservices-trading-bot`  
 Related: [`STAGE-SOAK-OPERATOR-GUIDE-2026-06-02.md`](STAGE-SOAK-OPERATOR-GUIDE-2026-06-02.md), [`STAGE-SOAK-VERIFICATION-2026-06-07.md`](STAGE-SOAK-VERIFICATION-2026-06-07.md), [`STAGE-EXECUTION-SOAK-VERIFICATION-2026-06-09.md`](STAGE-EXECUTION-SOAK-VERIFICATION-2026-06-09.md), [`STAGE-SOAK-MARKET-DATA-ATR-OBSERVATIONS-2026-06-03.md`](STAGE-SOAK-MARKET-DATA-ATR-OBSERVATIONS-2026-06-03.md), [`../ORDER-FLOW-AND-BITSO-TESTING.md`](../ORDER-FLOW-AND-BITSO-TESTING.md)
 
-> **Status (2026-06-09):** Classification **PASS** (2026-06-07). Phase 2 **PASS**. Phase 3 **PASS** (round-trip complete). **Phase 4 in progress** — router + engine live, router-managed. See [`STAGE-EXECUTION-SOAK-PHASE4-VERIFICATION-2026-06-09.md`](STAGE-EXECUTION-SOAK-PHASE4-VERIFICATION-2026-06-09.md).
+> **Status (2026-06-11):** Classification **PASS** (2026-06-07). Phase 2 **PASS**. Phase 3 **PASS** (round-trip complete). **Phase 4 PASS** (2026-06-11). **Phase 5** (7-day extended soak) is next. See [`STAGE-EXECUTION-SOAK-PHASE4-VERIFICATION-2026-06-11.md`](STAGE-EXECUTION-SOAK-PHASE4-VERIFICATION-2026-06-11.md).
 
 ## Purpose
 
@@ -273,7 +273,7 @@ Common rejection: `order value … exceeds maximum 100000` → reduce `position_
 
 ---
 
-### Phase 4 — Router-managed execution (full stack) — **IN PROGRESS (2026-06-09)**
+### Phase 4 — Router-managed execution (full stack) — **PASS (2026-06-11)**
 
 **Goal:** Regime-driven `start`/`stop` with live engine orders on Stage for ≥ 24–48 h.
 

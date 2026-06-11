@@ -119,7 +119,10 @@ func NewWebSocketConnWithURL(url string) (*WebSocketConn, error) {
 	}
 
 	go func() {
-		defer ws.Close()
+		// Closing inbox signals market-data messageLoop that the connection is dead
+		// so it can reconnect. Without this, ForceReconnect closes the socket but
+		// the consumer blocks forever on a silent channel.
+		defer close(ws.inbox)
 		for {
 			_, data, err := ws.conn.ReadMessage()
 			if err != nil {
@@ -177,6 +180,7 @@ func NewWebSocketConnWithURL(url string) (*WebSocketConn, error) {
 }
 
 // Close closes the active connection with Bitso's websocket servers.
+// The read goroutine closes inbox on exit so Receive() consumers can reconnect.
 func (ws *WebSocketConn) Close() error {
 	if ws.conn != nil {
 		return ws.conn.Close()

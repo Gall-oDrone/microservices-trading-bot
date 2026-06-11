@@ -56,8 +56,16 @@ stop_pf() {
   pkill -f "port-forward.*${PF_PORT}:8081" 2>/dev/null || true
 }
 
-stop_bash() {
+stop_bash_router_only() {
+  if [[ -f "$LOG_DIR/bash-router.pid" ]]; then
+    kill "$(cat "$LOG_DIR/bash-router.pid")" 2>/dev/null || true
+    rm -f "$LOG_DIR/bash-router.pid"
+  fi
   pkill -f 'scripts/strategy-regime-router.sh' 2>/dev/null || true
+}
+
+stop_bash() {
+  stop_bash_router_only
   stop_pf
 }
 
@@ -145,12 +153,12 @@ case "$cmd" in
     info "Let run 24–48h; compare with: kubectl exec deploy/strategy-router -- tail /tmp/strategy-regime-router.log"
     ;;
   stop-bash)
-    if [[ -f "$LOG_DIR/bash-router.pid" ]]; then
-      kill "$(cat "$LOG_DIR/bash-router.pid")" 2>/dev/null || true
-      rm -f "$LOG_DIR/bash-router.pid"
-    fi
     stop_bash
     ok "Stopped bash soak helpers"
+    ;;
+  stop-bash-router-only)
+    stop_bash_router_only
+    ok "Stopped bash router (port-forward kept for classification samples)"
     ;;
   status)
     mkdir -p "$LOG_DIR"
