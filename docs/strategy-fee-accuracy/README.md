@@ -27,6 +27,7 @@ The two documents below cover the work-streams independently — each is shippab
 | `STAGE-EXECUTION-SOAK-PHASE4-VERIFICATION-2026-06-09.md` | **Phase 4 start** (2026-06-09): router + engine live, router-managed canonical strategies. |
 | `STAGE-EXECUTION-SOAK-PHASE4-VERIFICATION-2026-06-10.md` | **Phase 4 status** (2026-06-10): 29.8 h elapsed, trades/prices aligned post-hardening; post-hardening 24 h gate pending. |
 | `STAGE-EXECUTION-SOAK-PHASE4-VERIFICATION-2026-06-11.md` | **Phase 4 PASS** (2026-06-11): 48.4 h elapsed, post-hardening 24 h gate met; WS inbox + sample-loop fixes. |
+| `STAGE-EXECUTION-SOAK-POST-PHASE5-FINANCIAL-NEXT-STEPS-2026-06-12.md` | **Post-Phase 5 financial path** (2026-06-12): Phase 5 status snapshot, hardening interpretation, shadow → production gates. |
 | `STAGE-MARKET-DATA-FRESHNESS-HARDENING-2026-06-10.md` | **market-data freshness hardening** (2026-06-10): bar-age `data_healthy`, trade-silence watchdog, REST fallback, readiness probes, Prometheus alerts. |
 | `scripts/run-stage-execution-soak-2026-06-04.sh` | Helper: `check-prereqs`, `phase2-start`, `phase2-status`, `phase3-start`, `phase3-status`, `rollback`. |
 | **`STAGE-FINANCIAL-APPROACH-2026-06-04.md`** | **Start here if lost:** engineering vs economic proof, fee floor, regime allocation, decision tree, priorities, doc index. |
