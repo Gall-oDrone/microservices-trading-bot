@@ -32,7 +32,7 @@ images:
   newTag: 194cdd55fb84062bca4e4aba696bae6e55159b1b
 - name: ECR_REGISTRY_PLACEHOLDER/market-data
   newName: 326105557351.dkr.ecr.us-east-1.amazonaws.com/market-data
-  newTag: 2cb043f64a72017090d88c2f930a59810c824bbc
+  newTag: c360ca72d4cbf860c603db3626f798d46750b04f
 - name: ECR_REGISTRY_PLACEHOLDER/order-management
   newName: 326105557351.dkr.ecr.us-east-1.amazonaws.com/order-management
   newTag: 7fae8b0
