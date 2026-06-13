@@ -31,6 +31,7 @@ type Manager struct {
 	wsConn                 *bitso.WebSocketConn
 	logger                 *log.Logger
 	subscribeErrorRecorder SubscribeErrorRecorder
+	metricsRecorder          MetricsRecorder
 
 	// Reconnection strategy
 	reconnectAttempts int
@@ -60,6 +61,14 @@ type SubscribeErrorRecorder interface {
 	RecordWebSocketSubscribeError()
 }
 
+// MetricsRecorder records WebSocket connection lifecycle metrics. Optional.
+type MetricsRecorder interface {
+	RecordWebSocketConnection(connected bool)
+	RecordWebSocketMessage()
+	RecordWebSocketReconnect()
+	RecordWebSocketError()
+}
+
 // ManagerConfig holds configuration for the WebSocket manager
 type ManagerConfig struct {
 	WSURL                 string   // Bitso WebSocket URL (e.g. wss://ws.stage.bitso.com for stage)
@@ -68,6 +77,7 @@ type ManagerConfig struct {
 	ReconnectMaxDelay    time.Duration
 	Logger               *log.Logger
 	SubscribeErrorRecorder SubscribeErrorRecorder // optional: for Prometheus
+	MetricsRecorder          MetricsRecorder          // optional: for Prometheus
 }
 
 // NewManager creates a new WebSocket stream manager
@@ -81,6 +91,7 @@ func NewManager(config *ManagerConfig) *Manager {
 		wsURL:                  config.WSURL,
 		logger:                 logger,
 		subscribeErrorRecorder: config.SubscribeErrorRecorder,
+		metricsRecorder:          config.MetricsRecorder,
 		reconnectAttempts:      config.ReconnectAttempts,
 		reconnectInterval:      config.ReconnectInterval,
 		reconnectMaxDelay:      config.ReconnectMaxDelay,
@@ -111,18 +122,18 @@ func (m *Manager) Connect(ctx context.Context) error {
 	m.wsConnMu.Unlock()
 	m.setConnected(true)
 	m.currentAttempt = 0
+	m.recordConnection(true)
 
 	m.logger.Println("✓ Connected to Bitso WebSocket")
 	return nil
 }
 
 // ForceReconnect closes the current WebSocket so the message loop reconnects.
-// Used when the trade stream goes silent while the connection still appears healthy.
+// Reserved for explicit operator-triggered reconnects; trade silence no longer calls this.
 func (m *Manager) ForceReconnect(ctx context.Context) error {
 	_ = ctx
-	m.logger.Println("Force reconnect requested (trade silence watchdog)")
+	m.logger.Println("Force reconnect requested")
 	m.closeConnection()
-	m.setConnected(false)
 	return nil
 }
 
@@ -134,11 +145,12 @@ func (m *Manager) getConnection() *bitso.WebSocketConn {
 
 func (m *Manager) closeConnection() {
 	m.wsConnMu.Lock()
-	defer m.wsConnMu.Unlock()
 	if m.wsConn != nil {
 		_ = m.wsConn.Close()
 		m.wsConn = nil
 	}
+	m.wsConnMu.Unlock()
+	m.markDisconnected()
 }
 
 // Subscribe subscribes to specified channels for given books
@@ -219,7 +231,6 @@ func (m *Manager) Stop() error {
 	close(m.ordersStream)
 	close(m.diffOrdersStream)
 
-	m.setConnected(false)
 	m.logger.Println("✓ WebSocket manager stopped")
 	return nil
 }
@@ -249,7 +260,8 @@ func (m *Manager) messageLoop(ctx context.Context) {
 		case msg, ok := <-receiveChan:
 			if !ok {
 				m.logger.Println("WebSocket channel closed, attempting reconnect...")
-				m.setConnected(false)
+				m.markDisconnected()
+				m.recordError()
 
 				// Attempt to reconnect
 				if err := m.reconnect(ctx); err != nil {
@@ -275,6 +287,7 @@ func (m *Manager) messageLoop(ctx context.Context) {
 
 // routeMessage routes incoming messages to appropriate streams
 func (m *Manager) routeMessage(msg interface{}) {
+	m.recordMessage()
 	switch v := msg.(type) {
 	case bitso.WebSocketTrade:
 		select {
@@ -344,6 +357,7 @@ func (m *Manager) reconnect(ctx context.Context) error {
 			continue
 		}
 
+		m.recordReconnect()
 		m.logger.Printf("✓ Successfully reconnected after %d attempts", attempt)
 		return nil
 	}
@@ -421,4 +435,38 @@ func (m *Manager) setConnected(status bool) {
 	m.connectedMu.Lock()
 	defer m.connectedMu.Unlock()
 	m.connected = status
+}
+
+func (m *Manager) markDisconnected() {
+	m.connectedMu.Lock()
+	wasConnected := m.connected
+	m.connected = false
+	m.connectedMu.Unlock()
+	if wasConnected {
+		m.recordConnection(false)
+	}
+}
+
+func (m *Manager) recordConnection(connected bool) {
+	if m.metricsRecorder != nil {
+		m.metricsRecorder.RecordWebSocketConnection(connected)
+	}
+}
+
+func (m *Manager) recordMessage() {
+	if m.metricsRecorder != nil {
+		m.metricsRecorder.RecordWebSocketMessage()
+	}
+}
+
+func (m *Manager) recordReconnect() {
+	if m.metricsRecorder != nil {
+		m.metricsRecorder.RecordWebSocketReconnect()
+	}
+}
+
+func (m *Manager) recordError() {
+	if m.metricsRecorder != nil {
+		m.metricsRecorder.RecordWebSocketError()
+	}
 }

@@ -10,15 +10,9 @@ import (
 	"bitso-trading-platform/shared/pkg/models"
 )
 
-// ReconnectTrigger forces a WebSocket reconnect when the trade stream stalls.
-type ReconnectTrigger interface {
-	ForceReconnect(ctx context.Context) error
-}
-
 // TradeSilenceRecorder records trade-age metrics for observability.
 type TradeSilenceRecorder interface {
 	SetLastTradeAgeSeconds(ageSec float64)
-	RecordTradeSilenceReconnect()
 }
 
 // TradeProcessor processes incoming trade messages
@@ -40,13 +34,12 @@ type Processor struct {
 	// Output stream
 	tradesOutput chan *models.TradeEvent
 
-	// Trade silence watchdog
-	silenceThreshold         time.Duration
-	silenceReconnectCooldown time.Duration
-	reconnectTrigger         ReconnectTrigger
-	silenceRecorder          TradeSilenceRecorder
-	lastReconnectAttempt     time.Time
-	watchdogMu               sync.Mutex
+	// Trade silence observability (no forced reconnect — Bitso sends keep-alives while idle)
+	silenceThreshold      time.Duration
+	silenceWarnCooldown   time.Duration
+	silenceRecorder       TradeSilenceRecorder
+	lastSilenceWarning    time.Time
+	watchdogMu            sync.Mutex
 
 	// Statistics
 	stats      *ProcessorStatistics
@@ -84,10 +77,9 @@ type ProcessorConfig struct {
 	Logger                   *log.Logger
 	TradesInput              <-chan *bitso.WebSocketTrade
 	OutputBuffer             int
-	SilenceThreshold         time.Duration
-	SilenceReconnectCooldown time.Duration
-	ReconnectTrigger         ReconnectTrigger
-	SilenceRecorder          TradeSilenceRecorder
+	SilenceThreshold       time.Duration
+	SilenceWarnCooldown    time.Duration
+	SilenceRecorder        TradeSilenceRecorder
 }
 
 // NewProcessor creates a new trade processor
@@ -102,19 +94,18 @@ func NewProcessor(config *ProcessorConfig) *Processor {
 		outputBuffer = 100
 	}
 
-	cooldown := config.SilenceReconnectCooldown
+	cooldown := config.SilenceWarnCooldown
 	if cooldown <= 0 {
 		cooldown = 2 * time.Minute
 	}
 
 	return &Processor{
-		logger:                   logger,
-		tradesInput:              config.TradesInput,
-		tradesOutput:             make(chan *models.TradeEvent, outputBuffer),
-		silenceThreshold:         config.SilenceThreshold,
-		silenceReconnectCooldown: cooldown,
-		reconnectTrigger:         config.ReconnectTrigger,
-		silenceRecorder:          config.SilenceRecorder,
+		logger:              logger,
+		tradesInput:         config.TradesInput,
+		tradesOutput:        make(chan *models.TradeEvent, outputBuffer),
+		silenceThreshold:    config.SilenceThreshold,
+		silenceWarnCooldown: cooldown,
+		silenceRecorder:     config.SilenceRecorder,
 		stats: &ProcessorStatistics{
 			StartTime: time.Now(),
 			BookStats: make(map[string]*BookStatistics),
@@ -328,21 +319,22 @@ func (p *Processor) statsReporter(ctx context.Context) {
 	}
 }
 
-func shouldForceReconnect(lastTrade time.Time, threshold, cooldown time.Duration, lastAttempt, now time.Time) bool {
+func shouldWarnTradeSilence(lastTrade time.Time, threshold, cooldown time.Duration, lastWarning, now time.Time) bool {
 	if lastTrade.IsZero() || threshold <= 0 {
 		return false
 	}
 	if now.Sub(lastTrade) <= threshold {
 		return false
 	}
-	if !lastAttempt.IsZero() && now.Sub(lastAttempt) < cooldown {
+	if !lastWarning.IsZero() && now.Sub(lastWarning) < cooldown {
 		return false
 	}
 	return true
 }
 
 func (p *Processor) checkTradeSilence(ctx context.Context) {
-	if p.reconnectTrigger == nil || p.silenceThreshold <= 0 {
+	_ = ctx
+	if p.silenceThreshold <= 0 {
 		return
 	}
 
@@ -355,20 +347,14 @@ func (p *Processor) checkTradeSilence(ctx context.Context) {
 	p.watchdogMu.Lock()
 	defer p.watchdogMu.Unlock()
 
-	if !shouldForceReconnect(stats.LastTradeTime, p.silenceThreshold, p.silenceReconnectCooldown, p.lastReconnectAttempt, now) {
+	if !shouldWarnTradeSilence(stats.LastTradeTime, p.silenceThreshold, p.silenceWarnCooldown, p.lastSilenceWarning, now) {
 		return
 	}
 
 	age := now.Sub(stats.LastTradeTime).Round(time.Second)
-	p.logger.Printf("Trade silence watchdog: last trade %v ago (threshold %v), forcing WebSocket reconnect",
+	p.logger.Printf("Trade silence: last trade %v ago (threshold %v); WebSocket may still be connected (Bitso sends keep-alives). REST fallback handles ingestion.",
 		age, p.silenceThreshold)
-	p.lastReconnectAttempt = now
-	if p.silenceRecorder != nil {
-		p.silenceRecorder.RecordTradeSilenceReconnect()
-	}
-	if err := p.reconnectTrigger.ForceReconnect(ctx); err != nil {
-		p.logger.Printf("Trade silence watchdog reconnect failed: %v", err)
-	}
+	p.lastSilenceWarning = now
 }
 
 // logStatistics logs current statistics

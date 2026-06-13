@@ -549,6 +549,26 @@ func (mc *MetricsCollector) RecordWebSocketMetrics(connection bool, message bool
 	}
 }
 
+// RecordWebSocketConnection records connect/disconnect for the WebSocket gauge.
+func (mc *MetricsCollector) RecordWebSocketConnection(connected bool) {
+	NewWebSocketMetrics(mc.metrics).RecordWebSocketConnection(connected)
+}
+
+// RecordWebSocketMessage records a received WebSocket message.
+func (mc *MetricsCollector) RecordWebSocketMessage() {
+	NewWebSocketMetrics(mc.metrics).RecordWebSocketMessage()
+}
+
+// RecordWebSocketReconnect records a successful WebSocket reconnection.
+func (mc *MetricsCollector) RecordWebSocketReconnect() {
+	NewWebSocketMetrics(mc.metrics).RecordWebSocketReconnect()
+}
+
+// RecordWebSocketError records a WebSocket read/connection error.
+func (mc *MetricsCollector) RecordWebSocketError() {
+	NewWebSocketMetrics(mc.metrics).RecordWebSocketError()
+}
+
 // RecordAPIMetrics records API metrics
 func (mc *MetricsCollector) RecordAPIMetrics(responseTime time.Duration, success bool) {
 	apiMetrics := NewAPIMetrics(mc.metrics)

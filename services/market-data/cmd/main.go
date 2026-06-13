@@ -144,7 +144,7 @@ func NewApplication() (*Application, error) {
 		appLogger.Info("Kafka producer initialized")
 	}
 
-	// Initialize WebSocket Manager (BITSO_WS_URL: use wss://ws.stage.bitso.com for stage)
+	// Initialize WebSocket Manager (BITSO_WS_URL: production wss://ws.bitso.com — Bitso has no stage WS)
 	wsManagerConfig := &websocket.ManagerConfig{
 		WSURL:                  cfg.BitsoWSURL,
 		ReconnectAttempts:      cfg.WSReconnectAttempts,
@@ -152,19 +152,19 @@ func NewApplication() (*Application, error) {
 		ReconnectMaxDelay:     cfg.WSReconnectMaxDelay,
 		Logger:                stdLogger, // websocket.ManagerConfig uses *log.Logger
 		SubscribeErrorRecorder: metricsCollector,
+		MetricsRecorder:        metricsCollector,
 	}
 	wsManager := websocket.NewManager(wsManagerConfig)
 	appLogger.Info("WebSocket manager created")
 
 	// Initialize Trade Processor
 	processorConfig := &processor.ProcessorConfig{
-		Logger:                   stdLogger, // processor uses *log.Logger
-		TradesInput:              wsManager.GetTradesStream(),
-		OutputBuffer:             100,
-		SilenceThreshold:         cfg.TradeSilenceThreshold,
-		SilenceReconnectCooldown: cfg.TradeSilenceReconnectCooldown,
-		ReconnectTrigger:         wsManager,
-		SilenceRecorder:          metricsCollector,
+		Logger:              stdLogger, // processor uses *log.Logger
+		TradesInput:         wsManager.GetTradesStream(),
+		OutputBuffer:        100,
+		SilenceThreshold:    cfg.TradeSilenceThreshold,
+		SilenceWarnCooldown: cfg.TradeSilenceReconnectCooldown,
+		SilenceRecorder:     metricsCollector,
 	}
 	tradeProcessor := processor.NewProcessor(processorConfig)
 	appLogger.Info("Trade processor created")
