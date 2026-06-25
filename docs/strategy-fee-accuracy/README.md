@@ -34,6 +34,7 @@ The two documents below cover the work-streams independently — each is shippab
 | **`BAR-FIRST-INDICATORS-PRODUCTION-2026-06-04.md`** | **Production indicator pipeline:** 1m bar-first compute, bootstrap warm-up, snapshot health, router pause-on-stale, dev overlay ops. |
 | **`RECOMMENDED-NEXT-STEPS-2026-06-25.md`** | **Consolidated next steps (2026-06-25):** current-state recap, Phase 5 verification gap, missing engineering components (fee-drift alert, backtest API, promotion scripts), shadow/economic validation, prioritized sequence + decision gate. |
 | **`B-D-IMPLEMENTATION-2026-06-25.md`** | **Bucket B–D implementation (2026-06-25):** fee-drift metric+alert (B1), backtest HTTP API (B2), promotion scripts (B3), momentum counters (B4), shadow/prod-WS tooling (C), regime-stratified agreement report (D1/D2). What shipped, how to use it, what remains operator-led. |
+| **`STAGE-EXECUTION-SOAK-PHASE5-VERIFICATION-2026-06-25.md`** | **Phase 5 verification report (TEMPLATE):** fill-in skeleton for the 7-day extended soak PASS report (Bucket A1). Timeline, runtime state, router/trade/fee-drift/classification scorecards, regime-stratified coverage, populate commands. |
 
 ## TL;DR
 
