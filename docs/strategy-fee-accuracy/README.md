@@ -32,6 +32,7 @@ The two documents below cover the work-streams independently — each is shippab
 | `scripts/run-stage-execution-soak-2026-06-04.sh` | Helper: `check-prereqs`, `phase2-start`, `phase2-status`, `phase3-start`, `phase3-status`, `rollback`. |
 | **`STAGE-FINANCIAL-APPROACH-2026-06-04.md`** | **Start here if lost:** engineering vs economic proof, fee floor, regime allocation, decision tree, priorities, doc index. |
 | **`BAR-FIRST-INDICATORS-PRODUCTION-2026-06-04.md`** | **Production indicator pipeline:** 1m bar-first compute, bootstrap warm-up, snapshot health, router pause-on-stale, dev overlay ops. |
+| **`RECOMMENDED-NEXT-STEPS-2026-06-25.md`** | **Consolidated next steps (2026-06-25):** current-state recap, Phase 5 verification gap, missing engineering components (fee-drift alert, backtest API, promotion scripts), shadow/economic validation, prioritized sequence + decision gate. |
 
 ## TL;DR
 
