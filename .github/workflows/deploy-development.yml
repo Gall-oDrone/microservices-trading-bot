@@ -56,7 +56,7 @@ jobs:
           set -euo pipefail
           TAG="${{ steps.tag.outputs.sha }}"
           cd k8s/overlays/development
-          sed -i.bak "s/newTag: latest/newTag: ${TAG}/g" kustomization.yaml
+          sed -i.bak -E "s/newTag: .*/newTag: ${TAG}/g" kustomization.yaml
           kubectl apply -k .
           rm -f kustomization.yaml.bak
 
