@@ -64,7 +64,25 @@ type MomentumStrategy struct {
 	circuitBreakerTripped bool
 	lastRSI             float64
 	lastEMA             float64
+	metrics             *MomentumMetrics
 	mu                  sync.RWMutex
+}
+
+// MomentumMetrics holds Prometheus metric callbacks for the momentum strategy
+// (mirrors LimitProfitMetrics). All fields are optional.
+type MomentumMetrics struct {
+	EntrySignals         func(strategy, book, side string)
+	ExitSignals          func(strategy, book, reason string)
+	PositionHoldDuration func(strategy, book string, seconds float64)
+	DailyRealizedPnL     func(strategy, book string, value float64)
+	CircuitBreakerActive func(strategy, book string, active bool)
+}
+
+// SetMetrics injects Prometheus metric callbacks (optional).
+func (s *MomentumStrategy) SetMetrics(m *MomentumMetrics) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.metrics = m
 }
 
 // NewMomentumStrategy creates a new momentum strategy
@@ -236,6 +254,7 @@ func (s *MomentumStrategy) generateEntrySignal(price, rsi, ema float64) (*Signal
 			return nil, nil
 		}
 		s.RecordSignal()
+		s.recordEntryMetric("BUY")
 		eventID := uuid.New().String()
 		meta := s.signalMetadata(rsi, ema, "entry_long")
 		meta["event_id"] = eventID
@@ -259,6 +278,7 @@ func (s *MomentumStrategy) generateEntrySignal(price, rsi, ema float64) (*Signal
 			return nil, nil
 		}
 		s.RecordSignal()
+		s.recordEntryMetric("SELL")
 		eventID := uuid.New().String()
 		meta := s.signalMetadata(rsi, ema, "entry_short")
 		meta["event_id"] = eventID
@@ -320,6 +340,9 @@ func (s *MomentumStrategy) emitExit(price, rsi, ema float64, state *StrategyStat
 	pnl := s.calculateUnrealizedPnL(price, state)
 	eventID := uuid.New().String()
 	s.RecordSignal()
+	if s.metrics != nil && s.metrics.ExitSignals != nil {
+		s.metrics.ExitSignals(s.Name(), s.config.Book, exitReason)
+	}
 	s.UpdateState(func(st *StrategyState) {
 		st.PendingSell = true
 		st.PendingSellSince = time.Now()
@@ -352,6 +375,13 @@ func (s *MomentumStrategy) emitExit(price, rsi, ema float64, state *StrategyStat
 		Timestamp:  time.Now(),
 		Metadata:   meta,
 	}, nil
+}
+
+// recordEntryMetric increments the momentum entry-signal counter when metrics are wired.
+func (s *MomentumStrategy) recordEntryMetric(side string) {
+	if s.metrics != nil && s.metrics.EntrySignals != nil {
+		s.metrics.EntrySignals(s.Name(), s.config.Book, side)
+	}
 }
 
 func (s *MomentumStrategy) stopLossTriggered(price float64, state *StrategyState) bool {
@@ -436,6 +466,18 @@ func (s *MomentumStrategy) finalizeExitFillLocked(fill OrderFill) {
 		s.dailyRealizedLoss += -net
 		if s.momConfig.MaxDailyLossQuote > 0 && s.dailyRealizedLoss >= s.momConfig.MaxDailyLossQuote {
 			s.circuitBreakerTripped = true
+		}
+	}
+
+	if s.metrics != nil {
+		if s.metrics.PositionHoldDuration != nil && !st.EntryTime.IsZero() {
+			s.metrics.PositionHoldDuration(s.Name(), s.config.Book, time.Since(st.EntryTime).Seconds())
+		}
+		if s.metrics.DailyRealizedPnL != nil {
+			s.metrics.DailyRealizedPnL(s.Name(), s.config.Book, -s.dailyRealizedLoss)
+		}
+		if s.metrics.CircuitBreakerActive != nil {
+			s.metrics.CircuitBreakerActive(s.Name(), s.config.Book, s.circuitBreakerTripped)
 		}
 	}
 

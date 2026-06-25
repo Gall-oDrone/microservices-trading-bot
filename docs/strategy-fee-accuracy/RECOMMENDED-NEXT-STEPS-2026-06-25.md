@@ -9,6 +9,13 @@ This document consolidates the recommended next steps from a review of the strat
 
 It supersedes the "operator next steps" sections of the dated soak reports by rolling them into one prioritized list, and adds engineering gaps that were verified against the codebase on 2026-06-25.
 
+> **Update 2026-06-25 — Buckets B, C (tooling) and D are now implemented.** The code/tooling items
+> below (B1 fee-drift metric+alert, B2 backtest API, B3 promotion scripts, B4 momentum counters, the
+> C/D operator scripts) shipped in this branch. See
+> [`B-D-IMPLEMENTATION-2026-06-25.md`](B-D-IMPLEMENTATION-2026-06-25.md). What remains is **operator-led**:
+> the Bucket A Phase-5 verification and the Bucket C multi-week Stage shadow run that produces the
+> economic proof.
+
 ---
 
 ## 1. Where things actually stand (2026-06-25)

@@ -44,6 +44,21 @@ type PrometheusMetrics struct {
 	lpPendingCancelFailures map[string]float64            // counter
 	lpDailyRealizedPnL      map[string]float64            // gauge
 	lpCircuitBreakerActive  map[string]float64            // gauge (0 or 1)
+
+	// momentum strategy metrics (keyed by "strategy:book")
+	momEntrySignals         map[string]map[string]float64 // key -> side -> count
+	momExitSignals          map[string]map[string]float64 // key -> reason -> count
+	momPositionHoldDuration map[string][]float64          // observations
+	momDailyRealizedPnL     map[string]float64            // gauge
+	momCircuitBreakerActive map[string]float64            // gauge (0 or 1)
+
+	// Fee honesty metrics (POINT-9 §7) — realized vs assumed fee per book/side/liquidity.
+	// Keyed by "book|side|liquidity" unless noted.
+	feeRealizedSum   map[string]float64 // sum of realized fee rates (for summary avg)
+	feeRealizedCount map[string]float64 // count of realized fee observations
+	feeRealizedLast  map[string]float64 // last realized fee rate
+	feeAssumedRate   map[string]float64 // assumed fee rate, keyed by "book|liquidity"
+	feeDriftRatio    map[string]float64 // realized/assumed, keyed by "book|side|liquidity"
 }
 
 // NewPrometheusMetrics creates a new PrometheusMetrics instance
@@ -71,6 +86,18 @@ func NewPrometheusMetrics() *PrometheusMetrics {
 		lpPendingCancelFailures: make(map[string]float64),
 		lpDailyRealizedPnL:      make(map[string]float64),
 		lpCircuitBreakerActive:  make(map[string]float64),
+		// momentum metrics
+		momEntrySignals:         make(map[string]map[string]float64),
+		momExitSignals:          make(map[string]map[string]float64),
+		momPositionHoldDuration: make(map[string][]float64),
+		momDailyRealizedPnL:     make(map[string]float64),
+		momCircuitBreakerActive: make(map[string]float64),
+		// fee honesty metrics
+		feeRealizedSum:   make(map[string]float64),
+		feeRealizedCount: make(map[string]float64),
+		feeRealizedLast:  make(map[string]float64),
+		feeAssumedRate:   make(map[string]float64),
+		feeDriftRatio:    make(map[string]float64),
 	}
 }
 
@@ -276,6 +303,90 @@ func (m *PrometheusMetrics) SetLimitProfitCircuitBreakerActive(strategy, book st
 	} else {
 		m.lpCircuitBreakerActive[key] = 0
 	}
+}
+
+// momentum strategy metric methods
+
+// IncMomentumEntrySignals increments the momentum entry signals counter by side.
+func (m *PrometheusMetrics) IncMomentumEntrySignals(strategy, book, side string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	key := lpKey(strategy, book)
+	if m.momEntrySignals[key] == nil {
+		m.momEntrySignals[key] = make(map[string]float64)
+	}
+	m.momEntrySignals[key][side]++
+}
+
+// IncMomentumExitSignals increments the momentum exit signals counter by reason.
+func (m *PrometheusMetrics) IncMomentumExitSignals(strategy, book, reason string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	key := lpKey(strategy, book)
+	if m.momExitSignals[key] == nil {
+		m.momExitSignals[key] = make(map[string]float64)
+	}
+	m.momExitSignals[key][reason]++
+}
+
+// RecordMomentumPositionHoldDuration records a momentum position hold duration.
+func (m *PrometheusMetrics) RecordMomentumPositionHoldDuration(strategy, book string, seconds float64) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	key := lpKey(strategy, book)
+	m.momPositionHoldDuration[key] = append(m.momPositionHoldDuration[key], seconds)
+	if len(m.momPositionHoldDuration[key]) > 1000 {
+		m.momPositionHoldDuration[key] = m.momPositionHoldDuration[key][1:]
+	}
+}
+
+// SetMomentumDailyRealizedPnL sets the momentum session realized P&L gauge.
+func (m *PrometheusMetrics) SetMomentumDailyRealizedPnL(strategy, book string, value float64) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.momDailyRealizedPnL[lpKey(strategy, book)] = value
+}
+
+// SetMomentumCircuitBreakerActive sets the momentum circuit breaker gauge.
+func (m *PrometheusMetrics) SetMomentumCircuitBreakerActive(strategy, book string, active bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	key := lpKey(strategy, book)
+	if active {
+		m.momCircuitBreakerActive[key] = 1
+	} else {
+		m.momCircuitBreakerActive[key] = 0
+	}
+}
+
+// Fee honesty metric methods (POINT-9 §7)
+
+func feeKey(book, side, liquidity string) string {
+	return book + "|" + side + "|" + liquidity
+}
+
+// RecordRealizedFeeRate records a realized fee rate observation from a fill.
+func (m *PrometheusMetrics) RecordRealizedFeeRate(book, side, liquidity string, rate float64) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	key := feeKey(book, side, liquidity)
+	m.feeRealizedSum[key] += rate
+	m.feeRealizedCount[key]++
+	m.feeRealizedLast[key] = rate
+}
+
+// SetAssumedFeeRate sets the configured/assumed fee rate for a book + liquidity role.
+func (m *PrometheusMetrics) SetAssumedFeeRate(book, liquidity string, rate float64) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.feeAssumedRate[book+"|"+liquidity] = rate
+}
+
+// SetFeeDriftRatio sets the realized/assumed fee drift ratio for a book/side/liquidity.
+func (m *PrometheusMetrics) SetFeeDriftRatio(book, side, liquidity string, ratio float64) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.feeDriftRatio[feeKey(book, side, liquidity)] = ratio
 }
 
 // Handler returns an HTTP handler for the /metrics endpoint
@@ -518,7 +629,121 @@ func (m *PrometheusMetrics) Export() string {
 		}
 	}
 
+	// momentum strategy metrics
+	if len(m.momEntrySignals) > 0 {
+		sb.WriteString("# HELP momentum_entry_signals_total Total momentum entry signals by side\n")
+		sb.WriteString("# TYPE momentum_entry_signals_total counter\n")
+		for key, sides := range m.momEntrySignals {
+			strategy, book := parseLpKey(key)
+			sideKeys := make([]string, 0, len(sides))
+			for side := range sides {
+				sideKeys = append(sideKeys, side)
+			}
+			sort.Strings(sideKeys)
+			for _, side := range sideKeys {
+				sb.WriteString(fmt.Sprintf("momentum_entry_signals_total{strategy=\"%s\",book=\"%s\",side=\"%s\"} %g\n", strategy, book, side, sides[side]))
+			}
+		}
+	}
+
+	if len(m.momExitSignals) > 0 {
+		sb.WriteString("# HELP momentum_exit_signals_total Total momentum exit signals by reason\n")
+		sb.WriteString("# TYPE momentum_exit_signals_total counter\n")
+		for key, reasons := range m.momExitSignals {
+			strategy, book := parseLpKey(key)
+			reasonKeys := make([]string, 0, len(reasons))
+			for reason := range reasons {
+				reasonKeys = append(reasonKeys, reason)
+			}
+			sort.Strings(reasonKeys)
+			for _, reason := range reasonKeys {
+				sb.WriteString(fmt.Sprintf("momentum_exit_signals_total{strategy=\"%s\",book=\"%s\",reason=\"%s\"} %g\n", strategy, book, reason, reasons[reason]))
+			}
+		}
+	}
+
+	if len(m.momPositionHoldDuration) > 0 {
+		sb.WriteString("# HELP momentum_position_hold_duration_seconds Time from fill to exit\n")
+		sb.WriteString("# TYPE momentum_position_hold_duration_seconds summary\n")
+		for key, values := range m.momPositionHoldDuration {
+			strategy, book := parseLpKey(key)
+			if len(values) > 0 {
+				sum := 0.0
+				for _, v := range values {
+					sum += v
+				}
+				sb.WriteString(fmt.Sprintf("momentum_position_hold_duration_seconds_sum{strategy=\"%s\",book=\"%s\"} %g\n", strategy, book, sum))
+				sb.WriteString(fmt.Sprintf("momentum_position_hold_duration_seconds_count{strategy=\"%s\",book=\"%s\"} %g\n", strategy, book, float64(len(values))))
+			}
+		}
+	}
+
+	if len(m.momDailyRealizedPnL) > 0 {
+		sb.WriteString("# HELP momentum_daily_realized_pnl_quote Session P&L in quote currency (negative = loss)\n")
+		sb.WriteString("# TYPE momentum_daily_realized_pnl_quote gauge\n")
+		for key, value := range m.momDailyRealizedPnL {
+			strategy, book := parseLpKey(key)
+			sb.WriteString(fmt.Sprintf("momentum_daily_realized_pnl_quote{strategy=\"%s\",book=\"%s\"} %g\n", strategy, book, value))
+		}
+	}
+
+	if len(m.momCircuitBreakerActive) > 0 {
+		sb.WriteString("# HELP momentum_circuit_breaker_active Whether circuit breaker is active (1=tripped, 0=normal)\n")
+		sb.WriteString("# TYPE momentum_circuit_breaker_active gauge\n")
+		for key, value := range m.momCircuitBreakerActive {
+			strategy, book := parseLpKey(key)
+			sb.WriteString(fmt.Sprintf("momentum_circuit_breaker_active{strategy=\"%s\",book=\"%s\"} %g\n", strategy, book, value))
+		}
+	}
+
+	// Fee honesty metrics (POINT-9 §7)
+	if len(m.feeRealizedLast) > 0 {
+		sb.WriteString("# HELP strategy_executor_realized_fee_rate Last realized fee rate (decimal fraction of notional) by book/side/liquidity\n")
+		sb.WriteString("# TYPE strategy_executor_realized_fee_rate gauge\n")
+		for key, value := range m.feeRealizedLast {
+			book, side, liq := parseFeeKey(key)
+			sb.WriteString(fmt.Sprintf("strategy_executor_realized_fee_rate{book=\"%s\",side=\"%s\",liquidity=\"%s\"} %g\n", book, side, liq, value))
+		}
+		sb.WriteString("# HELP strategy_executor_realized_fee_rate_observations Realized fee rate summary (sum/count) by book/side/liquidity\n")
+		sb.WriteString("# TYPE strategy_executor_realized_fee_rate_observations summary\n")
+		for key := range m.feeRealizedLast {
+			book, side, liq := parseFeeKey(key)
+			sb.WriteString(fmt.Sprintf("strategy_executor_realized_fee_rate_observations_sum{book=\"%s\",side=\"%s\",liquidity=\"%s\"} %g\n", book, side, liq, m.feeRealizedSum[key]))
+			sb.WriteString(fmt.Sprintf("strategy_executor_realized_fee_rate_observations_count{book=\"%s\",side=\"%s\",liquidity=\"%s\"} %g\n", book, side, liq, m.feeRealizedCount[key]))
+		}
+	}
+
+	if len(m.feeAssumedRate) > 0 {
+		sb.WriteString("# HELP strategy_executor_assumed_fee_rate Configured/assumed fee rate (decimal fraction) by book/liquidity\n")
+		sb.WriteString("# TYPE strategy_executor_assumed_fee_rate gauge\n")
+		for key, value := range m.feeAssumedRate {
+			parts := strings.SplitN(key, "|", 2)
+			book, liq := key, ""
+			if len(parts) == 2 {
+				book, liq = parts[0], parts[1]
+			}
+			sb.WriteString(fmt.Sprintf("strategy_executor_assumed_fee_rate{book=\"%s\",liquidity=\"%s\"} %g\n", book, liq, value))
+		}
+	}
+
+	if len(m.feeDriftRatio) > 0 {
+		sb.WriteString("# HELP strategy_executor_fee_drift_ratio Realized/assumed fee ratio (1.0 = match, >1 = paying more than assumed) by book/side/liquidity\n")
+		sb.WriteString("# TYPE strategy_executor_fee_drift_ratio gauge\n")
+		for key, value := range m.feeDriftRatio {
+			book, side, liq := parseFeeKey(key)
+			sb.WriteString(fmt.Sprintf("strategy_executor_fee_drift_ratio{book=\"%s\",side=\"%s\",liquidity=\"%s\"} %g\n", book, side, liq, value))
+		}
+	}
+
 	return sb.String()
+}
+
+func parseFeeKey(key string) (book, side, liquidity string) {
+	parts := strings.SplitN(key, "|", 3)
+	if len(parts) == 3 {
+		return parts[0], parts[1], parts[2]
+	}
+	return key, "", ""
 }
 
 func parseLpKey(key string) (strategy, book string) {

@@ -7,6 +7,7 @@ import (
 	"math"
 	"time"
 
+	"bitso-trading-platform/strategy-executor/internal/indicators"
 	"bitso-trading-platform/strategy-executor/internal/strategies"
 )
 
@@ -71,6 +72,10 @@ type RunnerConfig struct {
 	SlippageBPS    float64 // Slippage in basis points
 	CommissionBPS  float64 // Commission in basis points
 	FillProbability float64 // Probability of limit orders filling (0-1)
+	// BeforeTick, when set, runs immediately before each strategy.OnTick call.
+	// Used by the historical engine to advance the indicator window so indicators
+	// reflect only past data at each replayed tick (no look-ahead).
+	BeforeTick func(ctx context.Context, trade *indicators.Trade)
 }
 
 // DefaultRunnerConfig returns default configuration.
@@ -133,6 +138,11 @@ func (r *Runner) Run(ctx context.Context) (*BacktestResult, error) {
 		}
 		result.EndTime = trade.Timestamp
 		result.TicksProcessed++
+
+		// Advance indicator window before the strategy reads indicators.
+		if r.config.BeforeTick != nil {
+			r.config.BeforeTick(ctx, trade)
+		}
 
 		// Run strategy tick
 		signal, err := r.strategy.OnTick(trade)

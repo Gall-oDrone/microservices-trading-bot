@@ -4,6 +4,7 @@ package strategies
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -91,6 +92,11 @@ func (r *EnhancedRegistry) CreateAndRegister(config StrategyConfig) (EnhancedStr
 	// Wire up limit_profit Prometheus metrics
 	if lp, ok := strategy.(*LimitProfitStrategy); ok {
 		r.wireLimitProfitMetrics(lp)
+	}
+
+	// Wire up momentum Prometheus metrics
+	if mom, ok := strategy.(*MomentumStrategy); ok {
+		r.wireMomentumMetrics(mom)
 	}
 
 	r.strategies[config.Name] = strategy
@@ -503,7 +509,45 @@ func (r *EnhancedRegistry) NotifyOrderFilled(fill OrderFill) {
 		}
 		fillAware.OnOrderFilled(fill)
 	}
+	r.recordFeeDrift(fill)
 	r.updatePrometheusMetrics()
+}
+
+// recordFeeDrift records realized fee rates from fills and, when a fee provider
+// is available, the drift vs the assumed maker/taker rate (POINT-9 §7). This is
+// the direct defense against the May 2026 loss where the configured liquidity
+// assumption diverged from what Bitso actually charged.
+func (r *EnhancedRegistry) recordFeeDrift(fill OrderFill) {
+	if fill.FeeRate <= 0 || fill.Book == "" {
+		return
+	}
+	side := strings.ToLower(strings.TrimSpace(fill.Side))
+	liquidity := strings.ToLower(strings.TrimSpace(fill.Liquidity))
+	if liquidity == "" {
+		liquidity = "unknown"
+	}
+
+	promMetrics := metrics.GetPrometheusMetrics()
+	promMetrics.RecordRealizedFeeRate(fill.Book, side, liquidity, fill.FeeRate)
+
+	if r.feeRates == nil || liquidity == "unknown" {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	maker, taker, ok := r.feeRates.MakerTakerRatesForBook(ctx, fill.Book)
+	if !ok {
+		return
+	}
+	assumed := taker
+	if liquidity == "maker" {
+		assumed = maker
+	}
+	if assumed <= 0 {
+		return
+	}
+	promMetrics.SetAssumedFeeRate(fill.Book, liquidity, assumed)
+	promMetrics.SetFeeDriftRatio(fill.Book, side, liquidity, fill.FeeRate/assumed)
 }
 
 // wireLimitProfitMetrics injects Prometheus metric callbacks into a limit_profit strategy.
@@ -531,6 +575,29 @@ func (r *EnhancedRegistry) wireLimitProfitMetrics(lp *LimitProfitStrategy) {
 		},
 		CircuitBreakerActive: func(strategy, book string, active bool) {
 			promMetrics.SetLimitProfitCircuitBreakerActive(strategy, book, active)
+		},
+	})
+}
+
+// wireMomentumMetrics injects Prometheus metric callbacks into a momentum strategy.
+func (r *EnhancedRegistry) wireMomentumMetrics(mom *MomentumStrategy) {
+	promMetrics := metrics.GetPrometheusMetrics()
+
+	mom.SetMetrics(&MomentumMetrics{
+		EntrySignals: func(strategy, book, side string) {
+			promMetrics.IncMomentumEntrySignals(strategy, book, side)
+		},
+		ExitSignals: func(strategy, book, reason string) {
+			promMetrics.IncMomentumExitSignals(strategy, book, reason)
+		},
+		PositionHoldDuration: func(strategy, book string, seconds float64) {
+			promMetrics.RecordMomentumPositionHoldDuration(strategy, book, seconds)
+		},
+		DailyRealizedPnL: func(strategy, book string, value float64) {
+			promMetrics.SetMomentumDailyRealizedPnL(strategy, book, value)
+		},
+		CircuitBreakerActive: func(strategy, book string, active bool) {
+			promMetrics.SetMomentumCircuitBreakerActive(strategy, book, active)
 		},
 	})
 }

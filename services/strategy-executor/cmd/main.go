@@ -302,8 +302,9 @@ func main() {
 	}
 
 	serverOpts := &server.ServerOptions{
-		IndicatorService: indicatorSvc,
-		StrategyRegistry: strategyRegistry,
+		IndicatorService:    indicatorSvc,
+		StrategyRegistry:    strategyRegistry,
+		BacktestTradeSource: dataProvider,
 	}
 	if signalPublishingEnabled && signalProducer != nil {
 		serverOpts.PublishTradeSignals = publishTradeSignals

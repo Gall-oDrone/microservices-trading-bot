@@ -33,6 +33,7 @@ The two documents below cover the work-streams independently — each is shippab
 | **`STAGE-FINANCIAL-APPROACH-2026-06-04.md`** | **Start here if lost:** engineering vs economic proof, fee floor, regime allocation, decision tree, priorities, doc index. |
 | **`BAR-FIRST-INDICATORS-PRODUCTION-2026-06-04.md`** | **Production indicator pipeline:** 1m bar-first compute, bootstrap warm-up, snapshot health, router pause-on-stale, dev overlay ops. |
 | **`RECOMMENDED-NEXT-STEPS-2026-06-25.md`** | **Consolidated next steps (2026-06-25):** current-state recap, Phase 5 verification gap, missing engineering components (fee-drift alert, backtest API, promotion scripts), shadow/economic validation, prioritized sequence + decision gate. |
+| **`B-D-IMPLEMENTATION-2026-06-25.md`** | **Bucket B–D implementation (2026-06-25):** fee-drift metric+alert (B1), backtest HTTP API (B2), promotion scripts (B3), momentum counters (B4), shadow/prod-WS tooling (C), regime-stratified agreement report (D1/D2). What shipped, how to use it, what remains operator-led. |
 
 ## TL;DR
 

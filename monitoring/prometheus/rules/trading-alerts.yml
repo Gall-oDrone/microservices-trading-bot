@@ -211,6 +211,37 @@ groups:
           description: "Strategy {{ $labels.strategy }} is not running. Verify if intentional or restart needed."
 
   # ============================================================================
+  # Fee honesty (POINT-9 §7) — realized vs assumed fee drift
+  # ============================================================================
+  # Direct defense against the May 2026 loss: alert when the fee Bitso actually
+  # charged drifts from the strategy's configured maker/taker assumption. The
+  # ratio is realized/assumed (1.0 = match). Sustained drift means exit
+  # thresholds and P&L are computed against the wrong fee floor.
+  - name: fee-honesty-alerts
+    rules:
+      - alert: FeeRealizedAboveAssumed
+        expr: strategy_executor_fee_drift_ratio{job=~"strategy-executor.*"} > 1.15
+        for: 15m
+        labels:
+          severity: warning
+          service: strategy-executor
+        annotations:
+          summary: "Realized fee exceeds assumed fee"
+          description: "Book {{ $labels.book }} {{ $labels.side }}/{{ $labels.liquidity }} realized fee is {{ $value | humanize }}x the configured assumption for >15m. Scalping thresholds may be too optimistic — review buy_liquidity/sell_liquidity."
+
+      - alert: FeeRealizedFarFromAssumed
+        expr: |
+          strategy_executor_fee_drift_ratio{job=~"strategy-executor.*"} > 1.30
+          or strategy_executor_fee_drift_ratio{job=~"strategy-executor.*"} < 0.70
+        for: 30m
+        labels:
+          severity: critical
+          service: strategy-executor
+        annotations:
+          summary: "Realized fee far from assumed (liquidity role likely misconfigured)"
+          description: "Book {{ $labels.book }} {{ $labels.side }}/{{ $labels.liquidity }} fee drift ratio is {{ $value | humanize }} (>30% off) for >30m. Likely the maker/taker assumption is inverted vs reality — POINT-9 failure mode. Pause scalping strategies and reconcile fees."
+
+  # ============================================================================
   # market-data trade stream freshness
   # ============================================================================
   - name: market-data-freshness-alerts

@@ -33,6 +33,7 @@ type Handlers struct {
 	API        *APIHandler
 	Indicators *IndicatorHandler
 	Strategies *StrategyHandler
+	Backtests  *BacktestHandler
 }
 
 // HealthHandler handles health check endpoints
@@ -73,6 +74,8 @@ type ServerOptions struct {
 	StrategyRegistry *strategies.EnhancedRegistry
 	// PublishTradeSignals publishes signals to Kafka (trading.signals) so trading-engine can execute orders.
 	PublishTradeSignals TradeSignalPublisher
+	// BacktestTradeSource supplies historical trades for the /api/v1/backtests API (optional).
+	BacktestTradeSource BacktestTradeSource
 }
 
 // New creates a new HTTP server
@@ -95,6 +98,10 @@ func NewWithOptions(config *Config, healthMgr *health.Manager, metrics *metrics.
 
 	if opts != nil && opts.IndicatorService != nil {
 		handlers.Indicators = &IndicatorHandler{service: opts.IndicatorService}
+	}
+
+	if opts != nil && opts.BacktestTradeSource != nil {
+		handlers.Backtests = NewBacktestHandler(opts.BacktestTradeSource)
 	}
 
 	if registry != nil {
@@ -130,6 +137,11 @@ func NewWithOptions(config *Config, healthMgr *health.Manager, metrics *metrics.
 
 	if handlers.Indicators != nil {
 		mux.HandleFunc("/api/v1/indicators/", handlers.Indicators.HandleIndicators)
+	}
+
+	if handlers.Backtests != nil {
+		mux.HandleFunc("/api/v1/backtests", handlers.Backtests.HandleBacktests)
+		mux.HandleFunc("/api/v1/backtests/", handlers.Backtests.HandleBacktest)
 	}
 
 	server := &http.Server{
