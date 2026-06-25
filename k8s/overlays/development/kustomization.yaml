@@ -4,6 +4,7 @@ kind: Kustomization
 resources:
 - namespace.yaml
 - ../../base
+- kafka-topics-init-job.yaml
 
 patchesStrategicMerge:
 - development-patches.yaml
@@ -15,9 +16,6 @@ patchesStrategicMerge:
 - trading-engine-replicas-dev.yaml
 - order-management-dev-fill-test-env.yaml
 - strategy-router-soak.yaml
-
-resources:
-- kafka-topics-init-job.yaml
 
 namespace: bitso-trading-dev
 
