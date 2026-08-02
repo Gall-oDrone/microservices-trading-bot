@@ -106,8 +106,8 @@ check_prerequisites() {
         exit 1
     fi
     
-    local aws_account=$(aws sts get-caller-identity --query 'Account' --output text)
-    local aws_user=$(aws sts get-caller-identity --query 'Arn' --output text)
+    local aws_account=$(aws sts get-caller-identity --query 'Account' --output text | tr -d '\r')
+    local aws_user=$(aws sts get-caller-identity --query 'Arn' --output text | tr -d '\r')
     log_success "AWS credentials are valid"
     log_info "AWS Account: $aws_account"
     log_info "AWS User/Role: $aws_user"
@@ -145,7 +145,7 @@ get_stack_status() {
         --stack-name "$stack_name" \
         --region "$AWS_REGION" \
         --query 'Stacks[0].StackStatus' \
-        --output text 2>/dev/null || echo "NONE"
+        --output text 2>/dev/null | tr -d '\r' || echo "NONE"
 }
 
 # Wait for stack operation to complete
@@ -237,7 +237,7 @@ upload_template_to_s3() {
     local stack_name=${2:-$STACK_NAME}
     log_info "Uploading template '$template_file' to S3 (template exceeds size limit for direct upload)" >&2
     
-    local aws_account=$(aws sts get-caller-identity --query 'Account' --output text)
+    local aws_account=$(aws sts get-caller-identity --query 'Account' --output text | tr -d '\r')
     local bucket_name="cfn-templates-${aws_account}-${AWS_REGION}"
     local template_key="trading-bot-ide/${stack_name}-$(date +%Y%m%d-%H%M%S).yaml"
     
@@ -252,8 +252,12 @@ upload_template_to_s3() {
     fi
     
     # Upload template
+    local template_source="$template_file"
+    if aws --version 2>&1 | grep -qi windows && [[ "$template_file" == /mnt/* ]]; then
+        template_source=$(wslpath -w "$template_file")
+    fi
     log_info "Uploading template to s3://${bucket_name}/${template_key}" >&2
-    aws s3 cp "$template_file" "s3://${bucket_name}/${template_key}" --region "$AWS_REGION" >&2
+    aws s3 cp "$template_source" "s3://${bucket_name}/${template_key}" --region "$AWS_REGION" >&2
     
     # Return the S3 URL (only this goes to stdout)
     echo "https://${bucket_name}.s3.${AWS_REGION}.amazonaws.com/${template_key}"
@@ -533,7 +537,9 @@ retrieve_password() {
         --output text 2>/dev/null); then
         
         if command -v jq &> /dev/null; then
-            password=$(echo "$password" | jq -r '.password' 2>/dev/null || echo "$password")
+            password=$(echo "$password" | tr -d '\r' | jq -r '.password' 2>/dev/null || echo "$password")
+        else
+            password=$(echo "$password" | tr -d '\r')
         fi
         
         if [ -n "$password" ] && [ "$password" != "null" ]; then
@@ -577,7 +583,7 @@ main() {
         --stack-name "$IAM_STACK_NAME" \
         --region "$AWS_REGION" \
         --query "Stacks[0].Outputs[?OutputKey=='InstanceProfileName'].OutputValue" \
-        --output text 2>/dev/null)
+        --output text 2>/dev/null | tr -d '\r')
 
     if [ -z "$INSTANCE_PROFILE_NAME" ] || [ "$INSTANCE_PROFILE_NAME" = "None" ]; then
         log_error "Instance profile name not available from IAM stack outputs."
@@ -640,7 +646,7 @@ main() {
         --stack-name "$STACK_NAME" \
         --region "$AWS_REGION" \
         --query "Stacks[0].Outputs[?OutputKey=='InstancePublicDnsName'].OutputValue" \
-        --output text 2>/dev/null)
+        --output text 2>/dev/null | tr -d '\r')
 
     if [ -z "$instance_dns" ] || [ "$instance_dns" = "None" ]; then
         log_error "Instance public DNS name not found in base stack outputs."
@@ -661,7 +667,7 @@ main() {
         --stack-name "$CLOUDFRONT_STACK_NAME" \
         --region "$AWS_REGION" \
         --query "Stacks[0].Outputs[?OutputKey=='IdeUrl'].OutputValue" \
-        --output text 2>/dev/null || true)
+        --output text 2>/dev/null | tr -d '\r' || true)
     if [ -n "$ide_url" ] && [ "$ide_url" != "None" ]; then
         log_success "IDE URL: $ide_url"
     fi

@@ -344,6 +344,84 @@ resource "helm_release" "kube_prometheus_stack" {
   ]
 }
 
+# ---------------------------------------------------------------------------
+# Path A: data-collector (standalone EC2 + S3 archive + optional RDS hot store)
+# Intentionally NOT wired into EKS / k8s manifests.
+# ---------------------------------------------------------------------------
+
+locals {
+  data_collector_enabled = var.enable_data_collector
+  data_collector_name    = "${local.name}-data-collector"
+  data_collector_bucket  = var.data_collector_s3_bucket != "" ? var.data_collector_s3_bucket : "${local.name}-data-archive-${data.aws_caller_identity.current.account_id}"
+  data_collector_rds_name = "${local.name}-data-collector-rds"
+  data_collector_secret_name = "${local.data_collector_rds_name}/postgres"
+}
+
+data "aws_caller_identity" "current" {}
+
+module "data_collector_ec2" {
+  source = "../../modules/data-collector-ec2"
+  count  = local.data_collector_enabled ? 1 : 0
+
+  name                      = local.data_collector_name
+  region                    = var.aws_region
+  vpc_id                    = module.vpc.vpc_id
+  vpc_cidr                  = var.vpc_cidr
+  subnet_id                 = module.vpc.public_subnet_ids[0]
+  instance_type             = var.data_collector_instance_type
+  ssh_cidr_blocks           = var.data_collector_ssh_cidr_blocks
+  key_name                  = var.data_collector_key_name
+  s3_bucket_name            = local.data_collector_bucket
+  s3_bucket_arn             = "arn:aws:s3:::${local.data_collector_bucket}"
+  s3_prefix                 = "trades"
+  bitso_book                = var.data_collector_bitso_book
+  hot_retention_days        = var.data_collector_hot_retention_days
+  enable_postgres           = var.enable_data_collector_rds
+  postgres_secret_name      = var.enable_data_collector_rds ? local.data_collector_secret_name : ""
+  postgres_secret_arn_pattern = var.enable_data_collector_rds ? "arn:aws:secretsmanager:${var.aws_region}:${data.aws_caller_identity.current.account_id}:secret:${local.data_collector_secret_name}*" : ""
+
+  tags = {
+    Project   = var.project
+    Env       = var.env
+    Component = "data-collector"
+  }
+}
+
+module "data_archive_s3" {
+  source = "../../modules/data-archive-s3"
+  count  = local.data_collector_enabled ? 1 : 0
+
+  bucket_name         = local.data_collector_bucket
+  prefix              = "trades"
+  collector_role_arn  = module.data_collector_ec2[0].iam_role_arn
+  ia_transition_days  = 90
+
+  tags = {
+    Project   = var.project
+    Env       = var.env
+    Component = "data-archive"
+  }
+}
+
+module "data_collector_rds" {
+  source = "../../modules/data-collector-rds"
+  count  = local.data_collector_enabled && var.enable_data_collector_rds ? 1 : 0
+
+  name                        = local.data_collector_rds_name
+  vpc_id                      = module.vpc.vpc_id
+  subnet_ids                  = module.vpc.private_subnet_ids
+  collector_security_group_id = module.data_collector_ec2[0].security_group_id
+  instance_class              = var.data_collector_rds_instance_class
+  allocated_storage           = var.data_collector_rds_storage_gb
+  backup_retention_days       = 7
+
+  tags = {
+    Project   = var.project
+    Env       = var.env
+    Component = "data-collector-rds"
+  }
+}
+
 output "cluster_name" { value = module.eks.cluster_name }
 output "cluster_endpoint" { value = module.eks.cluster_endpoint }
 output "ci_role_arn" { value = module.ci_github_oidc.role_arn }

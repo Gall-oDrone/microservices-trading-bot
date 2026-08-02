@@ -95,16 +95,25 @@ func (ws *WebSocketConn) Receive() chan interface{} {
 	return ws.inbox
 }
 
-// WebSocketConn creates a websocket handler and establishes a connection with
-// Bitso's websocket servers.
+// NewWebSocketConn creates a websocket handler and establishes a connection with
+// Bitso's default websocket servers.
 func NewWebSocketConn() (*WebSocketConn, error) {
+	return NewWebSocketConnWithURL(wssURL)
+}
+
+// NewWebSocketConnWithURL creates a websocket handler connected to the given URL.
+func NewWebSocketConnWithURL(url string) (*WebSocketConn, error) {
+	if url == "" {
+		url = wssURL
+	}
+
 	ws := &WebSocketConn{
-		endpoint: wssURL,
+		endpoint: url,
 		inbox:    make(chan interface{}, 8),
 	}
 
 	var err error
-	ws.conn, _, err = websocket.DefaultDialer.Dial(wssURL, nil)
+	ws.conn, _, err = websocket.DefaultDialer.Dial(url, nil)
 	if err != nil {
 		return nil, err
 	}
