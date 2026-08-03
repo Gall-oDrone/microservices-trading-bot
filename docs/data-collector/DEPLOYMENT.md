@@ -101,6 +101,28 @@ secret `${project}-${env}-data-collector-rds/postgres` (field `dsn`).
    aws s3 ls s3://<bucket>/trades/book=btc_mxn/ --recursive | tail
    ```
 
+## Teardown
+
+To remove **only** the data-collector (EC2 + S3 archive + optional RDS) without
+touching EKS/VPC or the rest of the environment, use the scoped cleanup script:
+
+```bash
+cd infrastructure/terraform/scripts/cleanup
+
+# Dry check: resolve names/ids, no deletes
+CLEANUP_VALIDATE_ONLY=1 ./cleanup-data-collector.sh development
+
+# Full teardown (prompts before deleting)
+./cleanup-data-collector.sh development
+
+# Keep the Parquet archive, remove compute + RDS only
+KEEP_S3_ARCHIVE=1 ./cleanup-data-collector.sh development
+```
+
+It empties the archive bucket (which has `force_destroy=false`), disables RDS
+deletion protection, runs a **targeted** `terraform destroy` of the three
+data-collector modules, and falls back to manual AWS deletion for any leftovers.
+
 ## Secrets convention
 
 Aligned with the rest of this repo: credentials live in **AWS Secrets Manager**
