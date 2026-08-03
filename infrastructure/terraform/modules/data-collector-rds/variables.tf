@@ -32,8 +32,10 @@ variable "max_allocated_storage" {
 }
 
 variable "engine_version" {
-  type    = string
-  default = "16.4"
+  type = string
+  # Major-only so RDS selects a currently-supported minor (specific minors like
+  # 16.4 get deprecated and removed over time).
+  default = "16"
 }
 
 variable "db_name" {

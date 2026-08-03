@@ -242,7 +242,8 @@ resource "aws_instance" "collector" {
   user_data                   = local.user_data
 
   root_block_device {
-    volume_size = 8
+    # AL2023 arm64 AMI's root snapshot requires >= 30 GB.
+    volume_size = 30
     volume_type = "gp3"
     encrypted   = true
   }

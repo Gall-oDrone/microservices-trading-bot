@@ -8,7 +8,7 @@ archiver. This is **not** deployed to EKS.
 | Component | Spec | Rough cost |
 |-----------|------|------------|
 | EC2 | `t4g.nano` | ~$3 |
-| EBS | 8 GB gp3 | ~$0.60 |
+| EBS | 30 GB gp3 (AL2023 arm64 AMI minimum) | ~$2.40 |
 | S3 | Parquet + IA after 90d | pennies–few $ |
 | RDS (optional) | `db.t4g.micro`, 20 GB gp3, Single-AZ, 7d backups | ~$12–15 |
 | **Total** | RDS on | **~$15–20** |
