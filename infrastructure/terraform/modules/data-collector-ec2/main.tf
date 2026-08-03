@@ -176,9 +176,19 @@ locals {
   user_data = <<-EOF
     #!/bin/bash
     set -euo pipefail
+
+    # t4g.nano has only 512 MB RAM; dnf OOM-kills while loading repo metadata.
+    # Add a 1 GiB swapfile before any package work so installs succeed.
+    if [ ! -f /swapfile ]; then
+      dd if=/dev/zero of=/swapfile bs=1M count=1024
+      chmod 600 /swapfile
+      mkswap /swapfile
+      swapon /swapfile
+      echo '/swapfile none swap sw 0 0' >> /etc/fstab
+    fi
+
     # jq only: the collector runs the binary natively via systemd (no Docker),
-    # and the AWS CLI is preinstalled on AL2023. Installing docker OOM-kills the
-    # t4g.nano (512 MB) and aborts user-data.
+    # and the AWS CLI is preinstalled on AL2023.
     dnf install -y jq
 
     mkdir -p /opt/data-collector /etc/data-collector /var/log/data-collector
