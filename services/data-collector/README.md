@@ -111,6 +111,17 @@ services/data-collector/
 WebSocket reconnect/backoff mirrors `services/market-data/internal/websocket`
 and uses `bitso.NewWebSocketConnWithURL` from `shared/pkg/bitso`.
 
+## Deploy & ops
+
+Standalone EC2 + S3 (+ optional RDS) — **not** on EKS. See:
+
+- [`docs/data-collector/DEPLOYMENT.md`](../../docs/data-collector/DEPLOYMENT.md) — cost, apply sequence, scripted deploy, teardown
+- [`docs/data-collector/MANUAL-RUNBOOK-2026-08-03.md`](../../docs/data-collector/MANUAL-RUNBOOK-2026-08-03.md) — copy-paste manual apply/cleanup
+- [`docs/data-collector/PATH-A-VERIFICATION-2026-08-03.md`](../../docs/data-collector/PATH-A-VERIFICATION-2026-08-03.md) — end-to-end verification + fixes
+
+One-shot deploy: `infrastructure/terraform/scripts/deploy/deploy-data-collector.sh development`.
+Teardown: `infrastructure/terraform/scripts/cleanup/cleanup-data-collector.sh development`.
+
 ## Non-goals
 
 No order placement, no strategy logic, no Kafka/Redis, no trading API keys.

@@ -4,6 +4,14 @@ Status note for the Cursor Agent / EC2 follow-up. This document captures the
 prompt that drove Path A and what remains before the collector is considered
 fully verified.
 
+> ✅ **Update (2026-08-03): the deferred work below is DONE.** Toolchain steps,
+> `terraform apply`, and both sinks were verified end-to-end on live AWS. See
+> [`PATH-A-VERIFICATION-2026-08-03.md`](./PATH-A-VERIFICATION-2026-08-03.md) for
+> evidence and the bugs fixed, and
+> [`MANUAL-RUNBOOK-2026-08-03.md`](./MANUAL-RUNBOOK-2026-08-03.md) for the
+> manual apply/cleanup procedure. The rest of this file is kept as the original
+> historical record.
+
 ## Prompt summary (what Path A is)
 
 Standalone **data-collection** service (not trading) that:
