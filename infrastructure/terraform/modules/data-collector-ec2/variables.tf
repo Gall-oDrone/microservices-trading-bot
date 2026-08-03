@@ -56,6 +56,18 @@ variable "s3_prefix" {
   default = "trades"
 }
 
+variable "deploy_prefix" {
+  type        = string
+  description = "S3 key prefix the instance may read the binary from (deploy staging)"
+  default     = "deploy"
+}
+
+variable "enable_ssm" {
+  type        = bool
+  description = "Attach AmazonSSMManagedInstanceCore so the binary can be deployed and the box managed via SSM (no SSH needed)"
+  default     = true
+}
+
 variable "bitso_ws_url" {
   type    = string
   default = "wss://ws.bitso.com"

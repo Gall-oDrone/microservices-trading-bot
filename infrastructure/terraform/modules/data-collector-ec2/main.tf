@@ -126,6 +126,16 @@ resource "aws_iam_role_policy" "collector" {
           ]
         },
         {
+          Sid    = "S3ReadDeployBinary"
+          Effect = "Allow"
+          Action = [
+            "s3:GetObject"
+          ]
+          Resource = [
+            "${var.s3_bucket_arn}/${var.deploy_prefix}/*"
+          ]
+        },
+        {
           Sid    = "CloudWatchLogs"
           Effect = "Allow"
           Action = [
@@ -152,6 +162,14 @@ resource "aws_iam_role_policy" "collector" {
 resource "aws_iam_instance_profile" "collector" {
   name = "${var.name}-profile"
   role = aws_iam_role.collector.name
+}
+
+# SSM enables SSH-less binary deploy (Run Command) and shell access (Session
+# Manager) over HTTPS egress only. IAM-gated on the caller; no inbound ports.
+resource "aws_iam_role_policy_attachment" "ssm" {
+  count      = var.enable_ssm ? 1 : 0
+  role       = aws_iam_role.collector.name
+  policy_arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
 }
 
 locals {
