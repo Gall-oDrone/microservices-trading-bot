@@ -3,6 +3,7 @@ package bitso
 import (
 	"encoding/json"
 	"log"
+	"strings"
 
 	"github.com/gorilla/websocket"
 )
@@ -18,20 +19,52 @@ type WebSocketReply struct {
 	Payload  interface{} `json:"payload,omitempty"`
 }
 
+// WebSocketTradePayload is a single trade entry within a "trades" message.
+type WebSocketTradePayload struct {
+	TID               uint64   `json:"i"`
+	Amount            Monetary `json:"a"`
+	Price             Monetary `json:"r"`
+	Value             Monetary `json:"v"`
+	MakerSide         string   `json:"t"`
+	CreationTimestamp uint64   `json:"x"`
+	MakerOrderID      string   `json:"mo"`
+	TakerOrderID      string   `json:"to"`
+}
+
+// UnmarshalJSON tolerates Bitso sending the maker-side field ("t") as a JSON
+// number (0=buy, 1=sell) — the wire format — while keeping MakerSide a string
+// ("0"/"1") for existing consumers. A quoted string is also accepted.
+func (p *WebSocketTradePayload) UnmarshalJSON(b []byte) error {
+	type alias struct {
+		TID               uint64          `json:"i"`
+		Amount            Monetary        `json:"a"`
+		Price             Monetary        `json:"r"`
+		Value             Monetary        `json:"v"`
+		MakerSide         json.RawMessage `json:"t"`
+		CreationTimestamp uint64          `json:"x"`
+		MakerOrderID      string          `json:"mo"`
+		TakerOrderID      string          `json:"to"`
+	}
+	var a alias
+	if err := json.Unmarshal(b, &a); err != nil {
+		return err
+	}
+	p.TID = a.TID
+	p.Amount = a.Amount
+	p.Price = a.Price
+	p.Value = a.Value
+	p.CreationTimestamp = a.CreationTimestamp
+	p.MakerOrderID = a.MakerOrderID
+	p.TakerOrderID = a.TakerOrderID
+	p.MakerSide = strings.Trim(string(a.MakerSide), `"`)
+	return nil
+}
+
 // WebSocketTrade represents a message from the "trades" channel.
 type WebSocketTrade struct {
 	Book    Book
-	Payload []struct {
-		TID               uint64   `json:"i"`
-		Amount            Monetary `json:"a"`
-		Price             Monetary `json:"r"`
-		Value             Monetary `json:"v"`
-		MakerSide         string   `json:"t"`
-		CreationTimestamp uint64   `json:"x"`
-		MakerOrderID      string   `json:"mo"`
-		TakerOrderID      string   `json:"to"`
-	}
-	Sent uint64 `json:"sent"`
+	Payload []WebSocketTradePayload
+	Sent    uint64 `json:"sent"`
 }
 
 // WebSocketDiffOrder represents a message from the "diff-orders" channel.
