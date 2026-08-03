@@ -194,10 +194,10 @@ ssm_run() {
     cid=$(aws ssm send-command \
         --instance-ids "$INSTANCE_ID" \
         --region "$AWS_REGION" \
-        --document-name "AWS-RunShellCommand" \
+        --document-name "AWS-RunShellScript" \
         --comment "$desc" \
         --parameters "commands=echo $b64 | base64 -d | bash" \
-        --query 'Command.CommandId' --output text 2>/dev/null) || return 1
+        --query 'Command.CommandId' --output text) || return 1
 
     waited=0
     status="Pending"

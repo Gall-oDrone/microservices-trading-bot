@@ -176,8 +176,10 @@ locals {
   user_data = <<-EOF
     #!/bin/bash
     set -euo pipefail
-    dnf install -y docker jq awscli
-    systemctl enable --now docker
+    # jq only: the collector runs the binary natively via systemd (no Docker),
+    # and the AWS CLI is preinstalled on AL2023. Installing docker OOM-kills the
+    # t4g.nano (512 MB) and aborts user-data.
+    dnf install -y jq
 
     mkdir -p /opt/data-collector /etc/data-collector /var/log/data-collector
 
