@@ -66,13 +66,13 @@ module "redis" {
   source = "../../modules/redis"
   count  = var.enable_redis ? 1 : 0
 
-  region          = var.aws_region
-  name            = "${local.name}-redis"
-  vpc_id          = module.vpc.vpc_id
-  subnet_ids      = module.vpc.private_subnet_ids
-  node_type       = "cache.t3.micro"
+  region             = var.aws_region
+  name               = "${local.name}-redis"
+  vpc_id             = module.vpc.vpc_id
+  subnet_ids         = module.vpc.private_subnet_ids
+  node_type          = "cache.t3.micro"
   num_cache_clusters = 1
-  engine_version  = "7.1"
+  engine_version     = "7.1"
 }
 
 module "iam_irsa" {
@@ -84,9 +84,9 @@ module "iam_irsa" {
   oidc_provider_arn = module.eks.oidc_provider_arn
 
   irsa_policies = {
-    external-dns   = ["arn:aws:iam::aws:policy/AmazonRoute53FullAccess"]
-    alb            = ["arn:aws:iam::aws:policy/ElasticLoadBalancingFullAccess"]
-    cert-manager   = ["arn:aws:iam::aws:policy/AmazonRoute53FullAccess"]
+    external-dns = ["arn:aws:iam::aws:policy/AmazonRoute53FullAccess"]
+    alb          = ["arn:aws:iam::aws:policy/ElasticLoadBalancingFullAccess"]
+    cert-manager = ["arn:aws:iam::aws:policy/AmazonRoute53FullAccess"]
     external-secrets = [
       "arn:aws:iam::aws:policy/SecretsManagerReadWrite",
       "arn:aws:iam::aws:policy/AmazonSSMReadOnlyAccess"
@@ -163,7 +163,7 @@ resource "helm_release" "aws_load_balancer_controller" {
 # This prevents other Helm releases from failing due to webhook not being available
 resource "time_sleep" "wait_for_alb_controller_webhook" {
   depends_on = [helm_release.aws_load_balancer_controller]
-  
+
   create_duration = "90s"
 }
 
@@ -282,7 +282,7 @@ module "ci_github_oidc" {
   region               = var.aws_region
   repo                 = var.github_repo
   role_name            = "${local.name}-github-actions"
-  allowed_environments  = ["development"]
+  allowed_environments = ["development"]
   permissions = [
     "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryPowerUser",
     "arn:aws:iam::aws:policy/AmazonEKSClusterPolicy"
@@ -308,16 +308,16 @@ resource "helm_release" "kube_prometheus_stack" {
         adminPassword = "admin"
         service       = { type = "ClusterIP" }
         ingress = {
-          enabled         = true
+          enabled          = true
           ingressClassName = "alb"
           annotations = {
-            "alb.ingress.kubernetes.io/group.name"  = "monitoring"
-            "alb.ingress.kubernetes.io/scheme"      = "internet-facing"
-            "alb.ingress.kubernetes.io/target-type" = "ip"
+            "alb.ingress.kubernetes.io/group.name"   = "monitoring"
+            "alb.ingress.kubernetes.io/scheme"       = "internet-facing"
+            "alb.ingress.kubernetes.io/target-type"  = "ip"
             "alb.ingress.kubernetes.io/listen-ports" = "[{\"HTTP\": 80}]"
           }
-          hosts = ["grafana.local"] # Placeholder FQDN so ALB accepts host condition (single label "grafana" is invalid)
-          path  = "/"
+          hosts    = ["grafana.local"] # Placeholder FQDN so ALB accepts host condition (single label "grafana" is invalid)
+          path     = "/"
           pathType = "Prefix"
         }
       }
@@ -350,10 +350,10 @@ resource "helm_release" "kube_prometheus_stack" {
 # ---------------------------------------------------------------------------
 
 locals {
-  data_collector_enabled = var.enable_data_collector
-  data_collector_name    = "${local.name}-data-collector"
-  data_collector_bucket  = var.data_collector_s3_bucket != "" ? var.data_collector_s3_bucket : "${local.name}-data-archive-${data.aws_caller_identity.current.account_id}"
-  data_collector_rds_name = "${local.name}-data-collector-rds"
+  data_collector_enabled     = var.enable_data_collector
+  data_collector_name        = "${local.name}-data-collector"
+  data_collector_bucket      = var.data_collector_s3_bucket != "" ? var.data_collector_s3_bucket : "${local.name}-data-archive-${data.aws_caller_identity.current.account_id}"
+  data_collector_rds_name    = "${local.name}-data-collector-rds"
   data_collector_secret_name = "${local.data_collector_rds_name}/postgres"
 }
 
@@ -363,21 +363,21 @@ module "data_collector_ec2" {
   source = "../../modules/data-collector-ec2"
   count  = local.data_collector_enabled ? 1 : 0
 
-  name                      = local.data_collector_name
-  region                    = var.aws_region
-  vpc_id                    = module.vpc.vpc_id
-  vpc_cidr                  = var.vpc_cidr
-  subnet_id                 = module.vpc.public_subnet_ids[0]
-  instance_type             = var.data_collector_instance_type
-  ssh_cidr_blocks           = var.data_collector_ssh_cidr_blocks
-  key_name                  = var.data_collector_key_name
-  s3_bucket_name            = local.data_collector_bucket
-  s3_bucket_arn             = "arn:aws:s3:::${local.data_collector_bucket}"
-  s3_prefix                 = "trades"
-  bitso_book                = var.data_collector_bitso_book
-  hot_retention_days        = var.data_collector_hot_retention_days
-  enable_postgres           = var.enable_data_collector_rds
-  postgres_secret_name      = var.enable_data_collector_rds ? local.data_collector_secret_name : ""
+  name                        = local.data_collector_name
+  region                      = var.aws_region
+  vpc_id                      = module.vpc.vpc_id
+  vpc_cidr                    = var.vpc_cidr
+  subnet_id                   = module.vpc.public_subnet_ids[0]
+  instance_type               = var.data_collector_instance_type
+  ssh_cidr_blocks             = var.data_collector_ssh_cidr_blocks
+  key_name                    = var.data_collector_key_name
+  s3_bucket_name              = local.data_collector_bucket
+  s3_bucket_arn               = "arn:aws:s3:::${local.data_collector_bucket}"
+  s3_prefix                   = "trades"
+  bitso_book                  = var.data_collector_bitso_book
+  hot_retention_days          = var.data_collector_hot_retention_days
+  enable_postgres             = var.enable_data_collector_rds
+  postgres_secret_name        = var.enable_data_collector_rds ? local.data_collector_secret_name : ""
   postgres_secret_arn_pattern = var.enable_data_collector_rds ? "arn:aws:secretsmanager:${var.aws_region}:${data.aws_caller_identity.current.account_id}:secret:${local.data_collector_secret_name}*" : ""
 
   tags = {
@@ -391,10 +391,10 @@ module "data_archive_s3" {
   source = "../../modules/data-archive-s3"
   count  = local.data_collector_enabled ? 1 : 0
 
-  bucket_name         = local.data_collector_bucket
-  prefix              = "trades"
-  collector_role_arn  = module.data_collector_ec2[0].iam_role_arn
-  ia_transition_days  = 90
+  bucket_name        = local.data_collector_bucket
+  prefix             = "trades"
+  collector_role_arn = module.data_collector_ec2[0].iam_role_arn
+  ia_transition_days = 90
 
   tags = {
     Project   = var.project

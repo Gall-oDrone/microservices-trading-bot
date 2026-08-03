@@ -7,15 +7,17 @@ import (
 	"bitso-trading-platform/shared/pkg/bitso"
 )
 
-// Trade is a normalized trade record for persistence.
+// Trade is a normalized trade record for persistence. Parquet encoding is
+// handled by a dedicated schema in the sink package (parquet-go cannot encode
+// time.Time directly), so only JSON tags live here.
 type Trade struct {
-	Book          string    `json:"book" parquet:"name=book, type=BYTE_ARRAY, convertedtype=UTF8, encoding=PLAIN_DICTIONARY"`
-	TID           int64     `json:"tid" parquet:"name=tid, type=INT64"`
-	Price         float64   `json:"price" parquet:"name=price, type=DOUBLE"`
-	Amount        float64   `json:"amount" parquet:"name=amount, type=DOUBLE"`
-	MakerSide     string    `json:"maker_side" parquet:"name=maker_side, type=BYTE_ARRAY, convertedtype=UTF8, encoding=PLAIN_DICTIONARY"`
-	ExchangeTS    time.Time `json:"exchange_ts" parquet:"name=exchange_ts, type=INT64, convertedtype=TIMESTAMP_MILLIS"`
-	ReceivedAt    time.Time `json:"received_at" parquet:"name=received_at, type=INT64, convertedtype=TIMESTAMP_MILLIS"`
+	Book       string    `json:"book"`
+	TID        int64     `json:"tid"`
+	Price      float64   `json:"price"`
+	Amount     float64   `json:"amount"`
+	MakerSide  string    `json:"maker_side"`
+	ExchangeTS time.Time `json:"exchange_ts"`
+	ReceivedAt time.Time `json:"received_at"`
 }
 
 // GapRecord captures a WebSocket outage window for later query.

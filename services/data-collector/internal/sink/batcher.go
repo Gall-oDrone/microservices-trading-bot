@@ -200,6 +200,31 @@ func (b *ParquetBatcher) requeue(batch []models.Trade) {
 	b.buffer = append(batch, b.buffer...)
 }
 
+// parquetTrade is the on-disk Parquet schema. parquet-go cannot encode Go
+// time.Time directly, so timestamps are stored as epoch milliseconds (INT64
+// TIMESTAMP_MILLIS).
+type parquetTrade struct {
+	Book       string  `parquet:"name=book, type=BYTE_ARRAY, convertedtype=UTF8, encoding=PLAIN_DICTIONARY"`
+	TID        int64   `parquet:"name=tid, type=INT64"`
+	Price      float64 `parquet:"name=price, type=DOUBLE"`
+	Amount     float64 `parquet:"name=amount, type=DOUBLE"`
+	MakerSide  string  `parquet:"name=maker_side, type=BYTE_ARRAY, convertedtype=UTF8, encoding=PLAIN_DICTIONARY"`
+	ExchangeTS int64   `parquet:"name=exchange_ts, type=INT64, convertedtype=TIMESTAMP_MILLIS"`
+	ReceivedAt int64   `parquet:"name=received_at, type=INT64, convertedtype=TIMESTAMP_MILLIS"`
+}
+
+func toParquetTrade(t models.Trade) parquetTrade {
+	return parquetTrade{
+		Book:       t.Book,
+		TID:        t.TID,
+		Price:      t.Price,
+		Amount:     t.Amount,
+		MakerSide:  t.MakerSide,
+		ExchangeTS: t.ExchangeTS.UTC().UnixMilli(),
+		ReceivedAt: t.ReceivedAt.UTC().UnixMilli(),
+	}
+}
+
 func encodeParquet(trades []models.Trade, prefix string, now time.Time) ([]byte, string, error) {
 	if len(trades) == 0 {
 		return nil, "", fmt.Errorf("empty batch")
@@ -215,14 +240,14 @@ func encodeParquet(trades []models.Trade, prefix string, now time.Time) ([]byte,
 	)
 
 	buf := new(bytes.Buffer)
-	pw, err := writer.NewParquetWriterFromWriter(buf, new(models.Trade), 4)
+	pw, err := writer.NewParquetWriterFromWriter(buf, new(parquetTrade), 4)
 	if err != nil {
 		return nil, "", fmt.Errorf("parquet writer: %w", err)
 	}
 	pw.CompressionType = parquet.CompressionCodec_SNAPPY
 
 	for i := range trades {
-		if err := pw.Write(trades[i]); err != nil {
+		if err := pw.Write(toParquetTrade(trades[i])); err != nil {
 			_ = pw.WriteStop()
 			return nil, "", fmt.Errorf("parquet write row: %w", err)
 		}
