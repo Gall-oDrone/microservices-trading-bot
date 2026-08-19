@@ -185,6 +185,20 @@ wait_for_ssm() {
     exit 1
 }
 
+# Block until cloud-init/user-data has finished on the instance. The SSM agent
+# comes Online before user-data completes, so without this the binary deploy can
+# race the systemd unit being written (and the Postgres DSN/secret setup).
+wait_for_cloud_init() {
+    print_info "⏳ Waiting for cloud-init/user-data to finish on the instance..."
+    # `cloud-init status --wait` blocks until done; exit 2 = finished with warnings.
+    if ssm_run "wait for cloud-init" 'cloud-init status --wait || [ $? -eq 2 ]'; then
+        print_success "cloud-init finished: $(echo "$LAST_SSM_OUT" | tr -d '\n')"
+    else
+        print_warning "cloud-init reported an error (continuing; deploy will (re)write the unit)"
+        echo "$LAST_SSM_OUT"; echo "$LAST_SSM_ERR"
+    fi
+}
+
 # ssm_run <description> <remote-bash-script>. Populates LAST_SSM_OUT/LAST_SSM_ERR.
 ssm_run() {
     local desc="$1"
@@ -316,6 +330,7 @@ main() {
     read_outputs
     stage_binary_to_s3
     wait_for_ssm
+    wait_for_cloud_init
     deploy_binary
     verify_health
     verify_s3
