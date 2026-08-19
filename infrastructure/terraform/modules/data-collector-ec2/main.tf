@@ -209,21 +209,51 @@ locals {
     ENABLE_POSTGRES=${var.enable_postgres ? "true" : "false"}
     ENVEOF
 
-    %{ if var.postgres_secret_name != "" ~}
-    SECRET_JSON=$(aws secretsmanager get-secret-value --secret-id "${var.postgres_secret_name}" --region "${var.region}" --query SecretString --output text)
-    POSTGRES_DSN=$(echo "$SECRET_JSON" | jq -r '.dsn')
-    echo "POSTGRES_DSN=$POSTGRES_DSN" >> /etc/data-collector/env
-    %{ endif ~}
+    # Resolve the Postgres DSN at SERVICE START (ExecStartPre), not at boot.
+    # A targeted apply can create the instance before the RDS secret *version*
+    # exists, so a boot-time fetch would fail (ResourceNotFoundException) and,
+    # under 'set -euo pipefail', abort user-data before the unit is even written.
+    # Fetching on each start (with retries) removes that race and also handles
+    # reboots and secret rotation. The helper is invoked via 'bash <file>' so it
+    # does not depend on a column-0 shebang or the executable bit.
+    %{if var.postgres_secret_name != ""~}
+    cat >/usr/local/bin/data-collector-fetch-secret.sh <<'FETCH'
+    #!/bin/bash
+    set -uo pipefail
+    SECRET_ID="${var.postgres_secret_name}"
+    REGION="${var.region}"
+    OUT=/etc/data-collector/postgres.env
+    for attempt in $(seq 1 30); do
+      SECRET_JSON=$(aws secretsmanager get-secret-value --secret-id "$SECRET_ID" --region "$REGION" --query SecretString --output text 2>/dev/null) || SECRET_JSON=""
+      if [ -n "$SECRET_JSON" ]; then
+        DSN=$(echo "$SECRET_JSON" | jq -r '.dsn')
+        if [ -n "$DSN" ] && [ "$DSN" != "null" ]; then
+          umask 077
+          echo "POSTGRES_DSN=$DSN" > "$OUT"
+          exit 0
+        fi
+      fi
+      echo "data-collector: waiting for secret $SECRET_ID (attempt $attempt/30)..." >&2
+      sleep 10
+    done
+    echo "data-collector: ERROR could not resolve Postgres secret $SECRET_ID" >&2
+    exit 1
+    FETCH
+    %{endif~}
 
     cat >/etc/systemd/system/data-collector.service <<'UNIT'
     [Unit]
     Description=Bitso BTC-MXN intraday data collector
-    After=network-online.target docker.service
+    After=network-online.target
     Wants=network-online.target
 
     [Service]
     Type=simple
     EnvironmentFile=/etc/data-collector/env
+    EnvironmentFile=-/etc/data-collector/postgres.env
+    %{if var.postgres_secret_name != ""~}
+    ExecStartPre=/bin/bash /usr/local/bin/data-collector-fetch-secret.sh
+    %{endif~}
     # Binary is expected at /opt/data-collector/data-collector (deploy separately).
     ExecStart=/opt/data-collector/data-collector
     Restart=always
