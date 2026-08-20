@@ -118,6 +118,13 @@ func (s *Service) Start(ctx context.Context) error {
 		select {
 		case <-ctx.Done():
 			return s.shutdown(context.Background())
+		case err := <-s.ws.Fatal():
+			// WebSocket gave up after exhausting reconnect attempts. Fail fast
+			// so main exits non-zero and systemd (Restart=always) launches a
+			// fresh process instead of leaving a zombie behind a 503 /healthz.
+			s.logger.Printf("websocket manager fatal, exiting to force restart: %v", err)
+			_ = s.shutdown(context.Background())
+			return fmt.Errorf("websocket manager stopped: %w", err)
 		case msg, ok := <-s.ws.GetTradesStream():
 			if !ok {
 				return s.shutdown(context.Background())

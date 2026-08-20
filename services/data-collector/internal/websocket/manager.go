@@ -31,6 +31,13 @@ type Manager struct {
 	stopChan    chan struct{}
 	wg          sync.WaitGroup
 
+	// fatalChan delivers a terminal error when the manager has permanently
+	// given up (reconnect attempts exhausted). Consumers must surface this so
+	// the process exits and systemd (Restart=always) starts a fresh instance,
+	// rather than leaving a live-but-dead zombie behind a passing /healthz.
+	fatalChan chan error
+	fatalOnce sync.Once
+
 	books    []*bitso.Book
 	channels []string
 
@@ -76,6 +83,7 @@ func NewManager(config *ManagerConfig) *Manager {
 		reconnectMaxDelay: maxDelay,
 		tradesStream:      make(chan *bitso.WebSocketTrade, 100),
 		stopChan:          make(chan struct{}),
+		fatalChan:         make(chan error, 1),
 		onDisconnect:      config.OnDisconnect,
 		onReconnect:       config.OnReconnect,
 	}
@@ -165,6 +173,7 @@ func (m *Manager) messageLoop(ctx context.Context) {
 				}
 				if err := m.reconnect(ctx); err != nil {
 					m.logger.Printf("Reconnection failed: %v", err)
+					m.signalFatal(fmt.Errorf("websocket permanently disconnected: %w", err))
 					return
 				}
 				if m.onReconnect != nil {
@@ -235,6 +244,28 @@ func (m *Manager) calculateBackoff(attempt int) time.Duration {
 // GetTradesStream returns the trades stream channel.
 func (m *Manager) GetTradesStream() <-chan *bitso.WebSocketTrade {
 	return m.tradesStream
+}
+
+// Fatal returns a channel that receives a single terminal error when the
+// manager has permanently stopped (reconnect attempts exhausted). Callers
+// should treat this as a signal to shut down the process so it can be
+// restarted clean, instead of blocking forever on GetTradesStream.
+func (m *Manager) Fatal() <-chan error {
+	return m.fatalChan
+}
+
+// signalFatal delivers err on fatalChan exactly once and never blocks. A
+// context/stop-driven shutdown does not signal fatal; only exhausted reconnects
+// do, so a normal Stop() will not force a process exit.
+func (m *Manager) signalFatal(err error) {
+	m.fatalOnce.Do(func() {
+		select {
+		case <-m.stopChan:
+			// Manager is being stopped intentionally; not a fatal condition.
+		default:
+			m.fatalChan <- err
+		}
+	})
 }
 
 // IsConnected returns the current connection status.

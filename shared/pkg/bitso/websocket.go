@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"log"
 	"strings"
+	"sync"
 
 	"github.com/gorilla/websocket"
 )
@@ -120,7 +121,8 @@ type WebSocketConn struct {
 	endpoint string
 	conn     *websocket.Conn
 
-	inbox chan interface{}
+	inbox     chan interface{}
+	closeOnce sync.Once
 }
 
 // Receive returns a channel where received messages are sent.
@@ -152,6 +154,11 @@ func NewWebSocketConnWithURL(url string) (*WebSocketConn, error) {
 	}
 
 	go func() {
+		// Closing inbox signals consumers that the reader has stopped so they
+		// can trigger reconnect logic (ok == false on the receive channel).
+		// Without this, a dropped socket (e.g. 1006 abnormal closure) left the
+		// reader dead while consumers blocked forever on a live channel.
+		defer close(ws.inbox)
 		defer ws.Close()
 		for {
 			_, data, err := ws.conn.ReadMessage()
@@ -209,12 +216,18 @@ func NewWebSocketConnWithURL(url string) (*WebSocketConn, error) {
 	return ws, nil
 }
 
-// Close closes the active connection with Bitso's websocket servers.
+// Close closes the active connection with Bitso's websocket servers. It is safe
+// to call multiple times and from multiple goroutines: the underlying socket is
+// closed at most once (the reader goroutine's defer and consumer shutdown paths
+// may both invoke it).
 func (ws *WebSocketConn) Close() error {
-	if ws.conn != nil {
-		return ws.conn.Close()
-	}
-	return nil
+	var err error
+	ws.closeOnce.Do(func() {
+		if ws.conn != nil {
+			err = ws.conn.Close()
+		}
+	})
+	return err
 }
 
 // Subscribe subscribes to a messages channel.
