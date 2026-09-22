@@ -82,8 +82,11 @@ func runCompact(ctx context.Context, st archive.Store, opts archive.Options, log
 
 	srcFiles, srcBytes, srcRows, dstFiles, dstBytes, dstRows := sum.Totals()
 	counts := map[archive.Status]int{}
+	var dupTIDs, otherDay int
 	for _, p := range sum.Partitions {
 		counts[p.Status]++
+		dupTIDs += p.DuplicateTIDs
+		otherDay += p.OtherDayRows
 	}
 	fmt.Println()
 	fmt.Println("=== compaction summary (validated partitions) ===")
@@ -99,6 +102,7 @@ func runCompact(ctx context.Context, st archive.Store, opts archive.Options, log
 			float64(srcRows)/float64(srcFiles), float64(srcBytes)/1024/float64(srcFiles),
 			float64(dstRows)/float64(dstFiles), float64(dstBytes)/1024/float64(dstFiles))
 	}
+	fmt.Printf("info:   %d duplicate TIDs, %d rows filed under an adjacent day (kept as-is)\n", dupTIDs, otherDay)
 
 	if sum.Failed() > 0 || srcRows != dstRows {
 		fmt.Println("RESULT: FAILED — do not cut over; see per-partition errors above")

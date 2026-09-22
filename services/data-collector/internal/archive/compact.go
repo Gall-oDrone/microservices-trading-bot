@@ -70,6 +70,7 @@ type Manifest struct {
 	CompactedBytes    int64     `json:"compacted_bytes"`
 	CompactedRows     int       `json:"compacted_rows"`
 	DuplicateTIDs     int       `json:"duplicate_tids"`
+	OtherDayRows      int       `json:"other_day_rows"`
 	CreatedAt         time.Time `json:"created_at"`
 }
 
@@ -95,7 +96,12 @@ type PartitionReport struct {
 	CompactedBytes int64
 	CompactedRows  int
 	DuplicateTIDs  int
-	Err            error
+	// OtherDayRows counts rows whose exchange timestamp falls on a different
+	// UTC day than their partition. Older collector builds filed a whole
+	// batch under its first trade's day, so batches spanning midnight left a
+	// few such rows. They are kept in place so row counts reconcile.
+	OtherDayRows int
+	Err          error
 }
 
 // Summary aggregates a compaction run.
@@ -263,6 +269,7 @@ func compactPartition(ctx context.Context, st Store, opts *Options, p partition)
 			rep.CompactedBytes = m.CompactedBytes
 			rep.CompactedRows = m.CompactedRows
 			rep.DuplicateTIDs = m.DuplicateTIDs
+			rep.OtherDayRows = m.OtherDayRows
 			return rep
 		}
 	}
@@ -273,6 +280,7 @@ func compactPartition(ctx context.Context, st Store, opts *Options, p partition)
 	}
 	rep.SourceRows = len(rows)
 	rep.DuplicateTIDs = countDuplicateTIDs(rows)
+	rep.OtherDayRows = countOtherDayRows(rows, p.day)
 	if len(rows) == 0 {
 		return fail(fmt.Errorf("partition has %d files but 0 rows", len(p.objects)))
 	}
@@ -325,6 +333,7 @@ func compactPartition(ctx context.Context, st Store, opts *Options, p partition)
 		CompactedBytes:    rep.CompactedBytes,
 		CompactedRows:     rep.CompactedRows,
 		DuplicateTIDs:     rep.DuplicateTIDs,
+		OtherDayRows:      rep.OtherDayRows,
 		CreatedAt:         opts.Now().UTC(),
 	}
 	body, err := json.MarshalIndent(m, "", "  ")
@@ -433,6 +442,16 @@ func countDuplicateTIDs(rows []models.Trade) int {
 	return dups
 }
 
+func countOtherDayRows(rows []models.Trade, day time.Time) int {
+	n := 0
+	for _, r := range rows {
+		if !r.ExchangeTS.UTC().Truncate(24 * time.Hour).Equal(day) {
+			n++
+		}
+	}
+	return n
+}
+
 func sameRows(want, got []models.Trade) error {
 	if len(want) != len(got) {
 		return fmt.Errorf("row count: source=%d compacted=%d", len(want), len(got))
@@ -462,6 +481,9 @@ func logReport(l *log.Logger, r PartitionReport) {
 		r.CompactedFiles, r.CompactedRows, r.CompactedBytes)
 	if r.DuplicateTIDs > 0 {
 		msg += fmt.Sprintf(" duplicate_tids=%d", r.DuplicateTIDs)
+	}
+	if r.OtherDayRows > 0 {
+		msg += fmt.Sprintf(" other_day_rows=%d", r.OtherDayRows)
 	}
 	if r.Err != nil {
 		msg += " error=" + r.Err.Error()

@@ -168,6 +168,29 @@ func TestCompactFailsPartitionOnUnreadableSource(t *testing.T) {
 	}
 }
 
+func TestCompactReportsRowsFiledUnderPreviousDay(t *testing.T) {
+	st := archive.NewMemStore()
+	var tid int64 = 1
+	d1 := time.Date(2026, 8, 19, 0, 0, 0, 0, time.UTC)
+	seedDay(t, st, d1, 2, 2, &tid)
+	// Pre-fix batches that crossed midnight were filed under the first trade's day.
+	next := d1.Add(24*time.Hour + 10*time.Second)
+	data, _ := sink.EncodeParquet([]models.Trade{
+		{Book: "btc_mxn", TID: 500, ExchangeTS: d1.Add(24*time.Hour - time.Second), ReceivedAt: next},
+		{Book: "btc_mxn", TID: 501, ExchangeTS: next, ReceivedAt: next},
+	})
+	_ = st.Put(context.Background(), sink.PartitionDir("trades", "btc_mxn", d1)+"/trades-midnight.parquet", data)
+
+	sum, _ := archive.Compact(context.Background(), st, opts())
+	if len(sum.Partitions) != 1 {
+		t.Fatalf("partitions=%v", byStatus(sum))
+	}
+	p := sum.Partitions[0]
+	if p.Status != archive.StatusCompacted || p.SourceRows != 6 || p.CompactedRows != 6 || p.OtherDayRows != 1 {
+		t.Fatalf("report=%+v", p)
+	}
+}
+
 func TestCutoverReplacesSmallFilesWithValidatedOutput(t *testing.T) {
 	st := archive.NewMemStore()
 	var tid int64 = 1
