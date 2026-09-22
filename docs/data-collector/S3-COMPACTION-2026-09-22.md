@@ -42,6 +42,20 @@ are still in the Postgres hot store for 7 days.
 Rollback on the instance: `/opt/data-collector/data-collector.prev` and
 `/etc/data-collector/env.prev`.
 
+### Verified after deploy
+
+The first object written by the fixed collector (2026-09-22 19:25:54 UTC,
+exactly one hour after the first post-restart trade) held **764 rows in
+15,362 bytes**, versus 2.6 rows / 2.3 KiB per file before. It was a busy
+afternoon; quieter hours will be closer to 50–200 rows. `/metrics` showed
+`data_collector_s3_flush_failures_total 0`, and `/healthz` was healthy.
+Check later flushes with:
+
+```bash
+curl -s localhost:8085/metrics | grep -E '^data_collector_s3_flush_rows_(sum|count)'
+grep 'S3 flush ok' /var/log/data-collector/stdout.log | tail
+```
+
 ## One-time compaction (run 2026-09-22, non-destructive)
 
 `services/data-collector/cmd/compact-archive` rebuilds each settled UTC day
