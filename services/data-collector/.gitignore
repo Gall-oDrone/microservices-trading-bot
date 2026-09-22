@@ -1,5 +1,6 @@
 # Compiled binary (cross-compiled for the collector EC2; deploy via SCP/SSM, do not commit)
 /data-collector
+/compact-archive
 
 # Local env files
 .env
