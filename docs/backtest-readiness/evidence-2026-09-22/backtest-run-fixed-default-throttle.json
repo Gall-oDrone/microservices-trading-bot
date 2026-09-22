@@ -1,0 +1,190 @@
+[
+  {
+    "strategy": "mean_reversion",
+    "overall": {
+      "strategy_name": "mean_reversion_btc_mxn_backtest",
+      "book": "btc_mxn",
+      "start_time": "2026-08-19T15:40:05.394Z",
+      "end_time": "2026-09-22T18:24:50.047Z",
+      "total_trades": 0,
+      "winning_trades": 0,
+      "losing_trades": 0,
+      "win_rate": 0,
+      "average_trade": 0,
+      "average_win": 0,
+      "average_loss": 0,
+      "profit_factor": 0,
+      "total_pnl": 0,
+      "gross_profits": 0,
+      "gross_losses": 0,
+      "max_drawdown": 0,
+      "max_drawdown_pct": 0,
+      "sharpe_ratio": 0,
+      "sortino_ratio": 0,
+      "average_hold_time": 0,
+      "max_hold_time": 0,
+      "ticks_processed": 70708
+    },
+    "by_regime": {},
+    "unattributed_trades": 0
+  },
+  {
+    "strategy": "momentum",
+    "overall": {
+      "strategy_name": "momentum_btc_mxn_backtest",
+      "book": "btc_mxn",
+      "start_time": "2026-08-19T15:40:05.394Z",
+      "end_time": "2026-09-22T18:24:50.047Z",
+      "total_trades": 0,
+      "winning_trades": 0,
+      "losing_trades": 0,
+      "win_rate": 0,
+      "average_trade": 0,
+      "average_win": 0,
+      "average_loss": 0,
+      "profit_factor": 0,
+      "total_pnl": 0,
+      "gross_profits": 0,
+      "gross_losses": 0,
+      "max_drawdown": 0,
+      "max_drawdown_pct": 0,
+      "sharpe_ratio": 0,
+      "sortino_ratio": 0,
+      "average_hold_time": 0,
+      "max_hold_time": 0,
+      "ticks_processed": 70708
+    },
+    "by_regime": {},
+    "unattributed_trades": 0
+  },
+  {
+    "strategy": "limit_profit",
+    "overall": {
+      "strategy_name": "limit_profit_btc_mxn_backtest",
+      "book": "btc_mxn",
+      "start_time": "2026-08-19T15:40:05.394Z",
+      "end_time": "2026-09-22T18:24:50.047Z",
+      "total_trades": 2,
+      "winning_trades": 1,
+      "losing_trades": 1,
+      "win_rate": 50,
+      "average_trade": 26.332111095000016,
+      "average_win": 56.32937758999998,
+      "average_loss": 3.6651553999999438,
+      "profit_factor": 15.368892022968751,
+      "total_pnl": 52.66422219000003,
+      "gross_profits": 56.32937758999998,
+      "gross_losses": 3.6651553999999438,
+      "max_drawdown": 12.258875535000696,
+      "max_drawdown_pct": 0.012252900067217319,
+      "sharpe_ratio": 9.854086085509962,
+      "sortino_ratio": 0,
+      "average_hold_time": 44805989500000,
+      "max_hold_time": 87195024000000,
+      "ticks_processed": 70708
+    },
+    "by_regime": {
+      "trending_up": {
+        "regime": "trending_up",
+        "trades": 1,
+        "wins": 0,
+        "losses": 1,
+        "net_pnl": -3.6651553999999438,
+        "gross_win": 0,
+        "gross_loss": 3.6651553999999438,
+        "supported": false
+      },
+      "unlabelled": {
+        "regime": "unlabelled",
+        "trades": 1,
+        "wins": 1,
+        "losses": 0,
+        "net_pnl": 56.32937758999998,
+        "gross_win": 56.32937758999998,
+        "gross_loss": 0,
+        "supported": false
+      }
+    },
+    "unattributed_trades": 1
+  },
+  {
+    "strategy": "random_baseline",
+    "overall": {
+      "strategy_name": "random_baseline_btc_mxn_backtest",
+      "book": "btc_mxn",
+      "start_time": "2026-08-19T15:40:05.394Z",
+      "end_time": "2026-09-22T18:24:50.047Z",
+      "total_trades": 95,
+      "winning_trades": 3,
+      "losing_trades": 92,
+      "win_rate": 3.1578947368421053,
+      "average_trade": -12.73374905994737,
+      "average_win": 2.0005767166667296,
+      "average_loss": 13.21421620483696,
+      "profit_factor": 0.004936819276404116,
+      "total_pnl": -1209.706160695,
+      "gross_profits": 6.0017301500001885,
+      "gross_losses": 1215.7078908450003,
+      "max_drawdown": 2040.966840945024,
+      "max_drawdown_pct": 2.040966840945024,
+      "sharpe_ratio": -13.138106874170402,
+      "sortino_ratio": -13.12872642427159,
+      "average_hold_time": 4385369263157,
+      "max_hold_time": 32160825000000,
+      "ticks_processed": 70708
+    },
+    "by_regime": {
+      "low_vol_range": {
+        "regime": "low_vol_range",
+        "trades": 64,
+        "wins": 2,
+        "losses": 62,
+        "net_pnl": -854.8821240500007,
+        "gross_win": 2.201721545000076,
+        "gross_loss": 857.0838455950006,
+        "supported": true
+      },
+      "neutral": {
+        "regime": "neutral",
+        "trades": 15,
+        "wins": 0,
+        "losses": 15,
+        "net_pnl": -176.6463083799999,
+        "gross_win": 0,
+        "gross_loss": 176.6463083799999,
+        "supported": false
+      },
+      "trending_down": {
+        "regime": "trending_down",
+        "trades": 8,
+        "wins": 1,
+        "losses": 7,
+        "net_pnl": -83.10349382499962,
+        "gross_win": 3.8000086050001123,
+        "gross_loss": 86.90350242999975,
+        "supported": false
+      },
+      "trending_up": {
+        "regime": "trending_up",
+        "trades": 7,
+        "wins": 0,
+        "losses": 7,
+        "net_pnl": -84.37387250499995,
+        "gross_win": 0,
+        "gross_loss": 84.37387250499995,
+        "supported": false
+      },
+      "unlabelled": {
+        "regime": "unlabelled",
+        "trades": 1,
+        "wins": 0,
+        "losses": 1,
+        "net_pnl": -10.700361935000092,
+        "gross_win": 0,
+        "gross_loss": 10.700361935000092,
+        "supported": false
+      }
+    },
+    "unattributed_trades": 1
+  }
+]

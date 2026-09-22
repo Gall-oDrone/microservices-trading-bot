@@ -50,13 +50,21 @@ type BacktestResult struct {
 
 // SignalRecord captures a signal emitted during backtest.
 type SignalRecord struct {
-	Timestamp  time.Time              `json:"timestamp"`
-	Side       string                 `json:"side"`
-	Price      float64                `json:"price"`
-	Amount     float64                `json:"amount"`
-	Reason     string                 `json:"reason"`
-	PnL        float64                `json:"pnl,omitempty"`
-	Metadata   map[string]interface{} `json:"metadata,omitempty"`
+	Timestamp time.Time `json:"timestamp"`
+	// TickTime is the SIMULATED time of the replayed trade that produced this
+	// signal. It is distinct from Timestamp because strategies stamp
+	// Signal.Timestamp with time.Now() — during a historical replay that is the
+	// wall-clock moment of the backtest run, not the market moment. Any
+	// time-based analysis (per-regime attribution, hold times, session
+	// bucketing) must use TickTime or it will silently attribute every trade to
+	// the instant the backtest happened to execute.
+	TickTime time.Time              `json:"tick_time"`
+	Side     string                 `json:"side"`
+	Price    float64                `json:"price"`
+	Amount   float64                `json:"amount"`
+	Reason   string                 `json:"reason"`
+	PnL      float64                `json:"pnl,omitempty"`
+	Metadata map[string]interface{} `json:"metadata,omitempty"`
 }
 
 // Runner executes a strategy against historical data.
@@ -171,6 +179,7 @@ func (r *Runner) Run(ctx context.Context) (*BacktestResult, error) {
 		// Record signal
 		record := SignalRecord{
 			Timestamp: signal.Timestamp,
+			TickTime:  trade.Timestamp,
 			Side:      signal.Side,
 			Price:     price,
 			Amount:    signal.Amount,
@@ -237,6 +246,28 @@ func (r *Runner) Run(ctx context.Context) (*BacktestResult, error) {
 
 			inPosition = false
 			positionSize = 0
+
+			// Notify the strategy that the exit filled.
+			//
+			// This mirrors the BUY notification above and is required for
+			// correctness, not just completeness: OrderFillAware strategies set
+			// PendingSell when they emit an exit and clear it only when a sell
+			// fill is reported. Without this callback PendingSell stays set
+			// forever, OnTick short-circuits, and the strategy executes exactly
+			// one round trip for the entire replay regardless of its length.
+			if fillAware, ok := r.strategy.(strategies.OrderFillAware); ok {
+				eventID := ""
+				if eid, ok := signal.Metadata["event_id"].(string); ok {
+					eventID = eid
+				}
+				fillAware.OnOrderFilled(strategies.OrderFill{
+					EventID:      eventID,
+					Book:         r.strategy.GetConfig().Book,
+					Side:         "sell",
+					AveragePrice: price,
+					FilledAmount: signal.Amount,
+				})
+			}
 		}
 
 		result.Signals = append(result.Signals, record)

@@ -73,5 +73,11 @@ golang_server/consumer-logger/.env
 
 # Keep example files (templates)
 !.env.example
-!**/.env.examplek8s/base/secret.yaml
+!**/.env.example
+
+# Kubernetes rendered secrets (never commit)
+k8s/base/secret.yaml
 k8s/overlays/*/secret.yaml
+
+# Local tooling installed into the workspace (AWS CLI, etc.) - never commit
+.tools/

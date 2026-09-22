@@ -1,0 +1,54 @@
+DATA SOURCE : s3:///trades (parquet archive)
+LOAD STATS  : source=s3:///trades (parquet archive) book=btc_mxn window=[2026-08-19T00:00:00Z..2026-09-22T23:59:59Z] objects=26600/26600 (failed=0) rows=70708 dup=0 out_of_range=0 invalid=0 returned=70708 span=[2026-08-19T15:40:05Z..2026-09-22T18:24:50Z]
+
+running mean_reversion   ... 0 closed trades, net 0.00 MXN
+running momentum         ... 0 closed trades, net 0.00 MXN
+running limit_profit     ... [90m2026-09-22T19:23:58Z[0m [32mINF[0m [1minternal/logger/logger.go:76[0m[36m >[0m [1mlimit_profit holding: exit not triggered (compare vs take_profit_threshold)[0m [36mbook=[0mbtc_mxn [36mbuy_fee_r=[0m0 [36mcompare_price=[0m1162840 [36mentry=[0m1163322.16 [36mexit_price_ref=[0mlast [36mfee_model=[0mmanual_estimate [36msell_fee_r=[0m0 [36mstrategy=[0mlimit_profit_btc_mxn_backtest [36mtake_profit_threshold=[0m1168322.16
+1 closed trades, net 56.33 MXN
+running random_baseline  ... 95 closed trades, net -1209.71 MXN
+
+====================================================================================================
+BACKTEST RESULTS  book=btc_mxn  window=2026-08-19..2026-09-22T23:59:59Z
+fees: 65 bps per leg, slippage 10 bps | min samples for a supported verdict: 30
+====================================================================================================
+
+STRATEGY             TRADES     WINS      WIN%  NET P&L (MXN)   PROFIT FAC    MAX DD%
+----------------------------------------------------------------------------------------------------
+mean_reversion            0        0      0.0%           0.00         0.00      0.00%
+momentum                  0        0      0.0%           0.00         0.00      0.00%
+limit_profit              1        1    100.0%          56.33         0.00      0.00%
+random_baseline          95        3      3.2%       -1209.71         0.00      2.04%
+
+
+PER-REGIME BREAKDOWN (attributed at entry time)
+----------------------------------------------------------------------------------------------------
+
+MEAN_REVERSION
+  no closed trades
+
+MOMENTUM
+  no closed trades
+
+LIMIT_PROFIT
+  REGIME             TRADES     WIN%        NET P&L      AVG/TRADE   VERDICT
+  low_vol_range           1   100.0%          56.33        56.3294   DIRECTIONAL ONLY — insufficient samples
+
+RANDOM_BASELINE
+  REGIME             TRADES     WIN%        NET P&L      AVG/TRADE   VERDICT
+  low_vol_range          64     3.1%        -854.88       -13.3575   supported by adequate samples
+  neutral                15     0.0%        -176.65       -11.7764   DIRECTIONAL ONLY — insufficient samples
+  trending_down           8    12.5%         -83.10       -10.3879   DIRECTIONAL ONLY — insufficient samples
+  trending_up             7     0.0%         -84.37       -12.0534   DIRECTIONAL ONLY — insufficient samples
+  unlabelled              1     0.0%         -10.70       -10.7004   DIRECTIONAL ONLY — insufficient samples
+
+
+VS RANDOM-SIGNAL BASELINE (net P&L per closed trade)
+----------------------------------------------------------------------------------------------------
+  random_baseline      -12.7337 MXN/trade over 95 trades
+  mean_reversion         0.0000 MXN/trade over 0 trades  (+12.7337 vs baseline — better than random)
+  momentum               0.0000 MXN/trade over 0 trades  (+12.7337 vs baseline — better than random)
+  limit_profit          56.3294 MXN/trade over 1 trades  (+69.0631 vs baseline — better than random)
+
+====================================================================================================
+
+wrote JSON results to /usr/local/google/home/gdiegofernando/.gemini/jetski/brain/c7493600-2d6e-4f5a-8832-01a42a855edd/scratch/backtest_results.json

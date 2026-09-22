@@ -15,12 +15,15 @@ import (
 
 // MeanReversionConfig holds configuration for the mean reversion strategy
 type MeanReversionConfig struct {
-	LookbackPeriod     int     `json:"lookback_period" yaml:"lookback_period"`
-	EntryThreshold     float64 `json:"entry_threshold" yaml:"entry_threshold"`
-	ExitThreshold      float64 `json:"exit_threshold" yaml:"exit_threshold"`
-	MinSignalInterval  int     `json:"min_signal_interval" yaml:"min_signal_interval"`
-	PositionSize       float64 `json:"position_size" yaml:"position_size"`
-	MaxPositionValue   float64 `json:"max_position_value" yaml:"max_position_value"`
+	LookbackPeriod       int     `json:"lookback_period" yaml:"lookback_period"`
+	EntryThreshold       float64 `json:"entry_threshold" yaml:"entry_threshold"`
+	ExitThreshold        float64 `json:"exit_threshold" yaml:"exit_threshold"`
+	MinSignalInterval    int     `json:"min_signal_interval" yaml:"min_signal_interval"`
+	PositionSize         float64 `json:"position_size" yaml:"position_size"`
+	MaxPositionValue     float64 `json:"max_position_value" yaml:"max_position_value"`
+	MinNetProfitBPS      float64 `json:"min_net_profit_bps" yaml:"min_net_profit_bps"`
+	FallbackRoundTripBPS float64 `json:"fallback_round_trip_bps" yaml:"fallback_round_trip_bps"`
+	StopLossBPS          float64 `json:"stop_loss_bps" yaml:"stop_loss_bps"`
 }
 
 // DefaultMeanReversionConfig returns conservative default configuration
@@ -41,6 +44,8 @@ type MeanReversionStrategy struct {
 	*BaseEnhancedStrategy
 	mrConfig MeanReversionConfig
 	fees     PositionFeeRates
+	feeGate  FeeGate
+	provider MakerTakerFeeProvider
 	mu       sync.RWMutex
 }
 
@@ -78,6 +83,15 @@ func (s *MeanReversionStrategy) Initialize(config StrategyConfig, indicatorSvc *
 		if v, ok := params["min_signal_interval"].(float64); ok {
 			s.mrConfig.MinSignalInterval = int(v)
 		}
+		if v, ok := params["min_net_profit_bps"].(float64); ok {
+			s.mrConfig.MinNetProfitBPS = v
+		}
+		if v, ok := params["fallback_round_trip_bps"].(float64); ok {
+			s.mrConfig.FallbackRoundTripBPS = v
+		}
+		if v, ok := params["stop_loss_bps"].(float64); ok {
+			s.mrConfig.StopLossBPS = v
+		}
 	}
 
 	s.mrConfig.PositionSize = ResolvePositionSize(
@@ -86,7 +100,35 @@ func (s *MeanReversionStrategy) Initialize(config StrategyConfig, indicatorSvc *
 		s.mrConfig.MaxPositionValue = config.Sizing.MaxPositionValue
 	}
 
+	s.feeGate = NewFeeGate(s.provider, s.mrConfig.FallbackRoundTripBPS)
+
 	return nil
+}
+
+// SetFeeRatesProvider sets the fee provider.
+func (s *MeanReversionStrategy) SetFeeRatesProvider(provider MakerTakerFeeProvider) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.provider = provider
+	s.feeGate = NewFeeGate(provider, s.mrConfig.FallbackRoundTripBPS)
+}
+
+// entryClearsCost reports whether an expected move from entryPrice to
+// expectedExit covers the round-trip fee plus the configured MinNetProfitBPS
+// margin.
+//
+// When neither a fee provider nor a fallback estimate is configured the gate
+// is a no-op and returns true. That keeps every existing deployment and test
+// on exactly its current behaviour: fee gating only takes effect once it has
+// been deliberately switched on with real inputs.
+func (s *MeanReversionStrategy) entryClearsCost(dir PositionDirection, entryPrice, expectedExit float64) bool {
+	if !s.feeGate.HasRates() {
+		return true
+	}
+	minNet := entryPrice * s.mrConfig.MinNetProfitBPS / 10000.0
+	ok, _, _ := s.feeGate.EntryClearsCost(
+		context.Background(), s.config.Book, dir, entryPrice, expectedExit, minNet)
+	return ok
 }
 
 // OnTick processes a new trade tick and generates signals
@@ -160,6 +202,13 @@ func (s *MeanReversionStrategy) canGenerateSignal() bool {
 // generateEntrySignal generates entry signals based on Bollinger Bands
 func (s *MeanReversionStrategy) generateEntrySignal(price float64, bb *indicators.BollingerBands) (*Signal, error) {
 	if price < bb.Lower {
+		// The reversion target is the middle band — that is where
+		// generateExitSignal will close. Gate the entry on whether that move
+		// actually clears round-trip fees.
+		if !s.entryClearsCost(DirectionLong, price, bb.Middle) {
+			return nil, nil
+		}
+
 		confidence := s.calculateConfidence(price, bb)
 		s.RecordSignal()
 		eventID := uuid.New().String()
@@ -185,6 +234,14 @@ func (s *MeanReversionStrategy) generateEntrySignal(price float64, bb *indicator
 	}
 
 	if price > bb.Upper {
+		// Short entry: sell high now, buy back at the middle band. This is a
+		// SHORT round-trip, so it must be evaluated with short fee arithmetic —
+		// scoring it as a long would compare a high entry against a lower exit
+		// and suppress every short unconditionally.
+		if !s.entryClearsCost(DirectionShort, price, bb.Middle) {
+			return nil, nil
+		}
+
 		confidence := s.calculateConfidence(price, bb)
 		s.RecordSignal()
 		eventID := uuid.New().String()
@@ -216,12 +273,73 @@ func (s *MeanReversionStrategy) generateEntrySignal(price float64, bb *indicator
 func (s *MeanReversionStrategy) generateExitSignal(price float64, bb *indicators.BollingerBands, state *StrategyState) (*Signal, error) {
 	deviations := s.getDeviations(price, bb)
 
+	// STOP-LOSS logic
+	if state.HasPosition && state.EntryPrice > 0 && s.mrConfig.StopLossBPS > 0 {
+		var drawdownBPS float64
+		if state.PositionSide == "BUY" || state.PositionSide == "LONG" {
+			drawdownBPS = (state.EntryPrice - price) / state.EntryPrice * 10000.0
+		} else {
+			drawdownBPS = (price - state.EntryPrice) / state.EntryPrice * 10000.0
+		}
+
+		if drawdownBPS > s.mrConfig.StopLossBPS {
+			var side string
+			if state.PositionSide == "BUY" || state.PositionSide == "LONG" {
+				side = "SELL"
+			} else {
+				side = "BUY"
+			}
+			pnl := s.calculateUnrealizedPnL(price, state)
+			eventID := uuid.New().String()
+			s.RecordSignal()
+			s.UpdateState(func(st *StrategyState) {
+				st.PendingSell = true
+				st.PendingSellSince = time.Now()
+				st.PendingSellEventID = eventID
+			})
+
+			return &Signal{
+				Strategy:   s.Name(),
+				Book:       s.config.Book,
+				Side:       side,
+				Amount:     state.PositionSize,
+				Price:      price,
+				Confidence: 0.9,
+				Reason:     fmt.Sprintf("Stop-loss triggered (drawdown %.2f BPS > %.2f)", drawdownBPS, s.mrConfig.StopLossBPS),
+				Timestamp:  time.Now(),
+				Metadata: map[string]interface{}{
+					"upper_band":     bb.Upper,
+					"middle_band":    bb.Middle,
+					"lower_band":     bb.Lower,
+					"entry_price":    state.EntryPrice,
+					"unrealized_pnl": pnl,
+					"signal_type":    "exit",
+					"exit_reason":    "stop_loss",
+					"event_id":       eventID,
+				},
+			}, nil
+		}
+	}
+
 	if math.Abs(deviations) < s.mrConfig.ExitThreshold {
 		var side string
 		if state.PositionSide == "BUY" || state.PositionSide == "LONG" {
 			side = "SELL"
 		} else {
 			side = "BUY"
+		}
+
+		if state.EntryPrice > 0 {
+			dir := DirectionLong
+			if state.PositionSide != "BUY" && state.PositionSide != "LONG" {
+				dir = DirectionShort
+			}
+			// A voluntary take-profit must not realize a net loss. Stop-loss is
+			// evaluated above and returns before reaching here, so this guard
+			// cannot block a risk exit.
+			if ok, _, _ := s.feeGate.ExitIsNetProfitable(context.Background(), s.config.Book, dir, state.EntryPrice, price); !ok {
+				return nil, nil
+			}
 		}
 
 		pnl := s.calculateUnrealizedPnL(price, state)

@@ -1,0 +1,90 @@
+=== ws_gaps audit ===
+Captured: 2026-09-22
+Source:   RDS `trades` database, `ws_gaps` table (collector-written)
+Method:   AWS SSM Run Command on the collector instance i-00c71eec12a1c52d7.
+          The RDS instance is not publicly accessible, so psql was run inside the VPC.
+          The DSN was read on the instance from Secrets Manager
+          (secret id: mtb-development-data-collector-rds/postgres, JSON key "dsn")
+          and was never echoed.
+
+Note: `ws_gaps` is NOT subject to the 7-day retention that applies to the `trades`
+table -- rows are present for the full 2026-08-20 .. 2026-09-22 span.
+
+=== ws_gaps SUMMARY (all rows) ===
+gaps|min_ms|max_ms|avg_ms|total_outage_s
+103|4367|12370|7097|731.0
+(1 row)
+
+=== ws_gaps BY DURATION BUCKET ===
+bucket|gaps
+a. <5s|10
+b. 5-10s|86
+c. 10-15s|7
+(3 rows)
+
+-- note: the ">=15s" bucket returned no rows at all.
+
+=== ws_gaps BY DAY ===
+day|gaps|max_ms|total_outage_s
+2026-08-20|1|6420|6.4
+2026-08-21|4|6605|23.4
+2026-08-24|3|5988|16.0
+2026-08-25|3|7891|18.8
+2026-08-26|3|9845|26.9
+2026-08-27|3|8306|19.7
+2026-08-28|5|7110|28.7
+2026-08-29|1|5075|5.1
+2026-08-30|1|5715|5.7
+2026-08-31|2|10137|19.8
+2026-09-01|4|7503|24.7
+2026-09-02|9|8673|61.6
+2026-09-03|4|9156|29.9
+2026-09-04|4|9973|30.8
+2026-09-07|1|6417|6.4
+2026-09-08|5|10756|41.3
+2026-09-09|3|8989|25.4
+2026-09-10|4|9646|33.5
+2026-09-11|3|5895|16.1
+2026-09-12|6|12370|54.0
+2026-09-13|1|8972|9.0
+2026-09-14|4|5858|21.1
+2026-09-15|3|6257|16.5
+2026-09-16|7|9239|47.5
+2026-09-17|6|10851|45.0
+2026-09-18|2|8477|15.5
+2026-09-19|3|8859|20.5
+2026-09-21|3|10629|23.1
+2026-09-22|5|10400|38.7
+(29 rows)
+
+=== 10 LONGEST GAPS ===
+book|gap_start|gap_end|duration_ms
+btc_mxn|2026-09-12 10:54:24.515225+00|2026-09-12 10:54:36.886054+00|12370
+btc_mxn|2026-09-12 09:31:42.892236+00|2026-09-12 09:31:54.360927+00|11468
+btc_mxn|2026-09-17 12:19:30.212277+00|2026-09-17 12:19:41.063739+00|10851
+btc_mxn|2026-09-08 09:04:48.596839+00|2026-09-08 09:04:59.352923+00|10756
+btc_mxn|2026-09-21 12:06:16.778879+00|2026-09-21 12:06:27.408438+00|10629
+btc_mxn|2026-09-22 21:18:27.103684+00|2026-09-22 21:18:37.50388+00|10400
+btc_mxn|2026-08-31 06:41:10.409887+00|2026-08-31 06:41:20.546967+00|10137
+btc_mxn|2026-09-04 23:21:12.576275+00|2026-09-04 23:21:22.55017+00|9973
+btc_mxn|2026-09-12 14:31:15.504957+00|2026-09-12 14:31:25.426062+00|9921
+btc_mxn|2026-08-26 00:26:12.33923+00|2026-08-26 00:26:22.185017+00|9845
+(10 rows)
+
+=== GAPS OVERLAPPING THE HIGH-VOLUME / HIGH-VOL DAYS OF INTEREST ===
+day|gaps|max_ms
+2026-08-21|4|6605
+2026-08-26|3|9845
+2026-09-21|3|10629
+(3 rows)
+
+=== INTERPRETATION ===
+Total outage across the 34-day archive window is 731.0 s, i.e. ~0.025% of elapsed
+time. The longest single outage is 12.4 s -- well under one 1m bar. No gap reaches
+15 s. On the three days singled out in the regime analysis (2026-08-21 and
+2026-09-21 volume spikes, 2026-08-26 the only day containing any high_vol
+snapshots) the worst gap is 10.6 s.
+
+Conclusion: WebSocket gaps cannot explain the absence of high-volatility regimes in
+the archive. The quiet market is a real property of the period, not an artefact of
+missing data.

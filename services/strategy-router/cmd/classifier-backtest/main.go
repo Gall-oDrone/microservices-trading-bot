@@ -21,12 +21,21 @@ import (
 	"bitso-trading-platform/strategy-router/internal/classifier"
 )
 
+// labelledSnapshot pairs a decoded snapshot with the optional SnapshotAt field
+// that offline generators (cmd/regime-snapshots in strategy-executor) attach.
+// classifier.Snapshot itself has no timestamp, so it is read separately.
+type labelledSnapshot struct {
+	snap classifier.Snapshot
+	at   string
+}
+
 func main() {
 	url := flag.String("url", "", "strategy-executor base URL (fetches live snapshots)")
 	book := flag.String("book", "btc_mxn", "book for live fetch or snapshot label")
 	samples := flag.Int("samples", 50, "number of live snapshots when -url is set")
 	interval := flag.Duration("interval", 2*time.Second, "pause between live samples")
 	stdin := flag.Bool("stdin", false, "read JSONL snapshots from stdin")
+	labels := flag.String("labels", "", "also write a `snapshot_at,regime` CSV here (offline attribution)")
 	flag.Parse()
 
 	th := classifier.Thresholds{
@@ -39,20 +48,37 @@ func main() {
 		EMADistEntry:  0.10,
 	}
 
-	var snaps []classifier.Snapshot
+	var snaps []labelledSnapshot
 	if *stdin {
 		snaps = readJSONL(os.Stdin)
 	} else if *url != "" {
-		snaps = fetchLive(*url, *book, *samples, *interval)
+		for _, s := range fetchLive(*url, *book, *samples, *interval) {
+			snaps = append(snaps, labelledSnapshot{snap: s})
+		}
 	} else {
 		fmt.Fprintln(os.Stderr, "provide -url or -stdin")
 		os.Exit(2)
 	}
 
+	var labelFile *os.File
+	if *labels != "" {
+		f, err := os.Create(*labels)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "create labels file: %v\n", err)
+			os.Exit(1)
+		}
+		defer f.Close()
+		labelFile = f
+		fmt.Fprintln(labelFile, "snapshot_at,regime")
+	}
+
 	counts := map[string]int{}
 	for _, s := range snaps {
-		d := classifier.Classify(s, th)
+		d := classifier.Classify(s.snap, th)
 		counts[d.Regime]++
+		if labelFile != nil && s.at != "" {
+			fmt.Fprintf(labelFile, "%s,%s\n", s.at, d.Regime)
+		}
 	}
 
 	fmt.Printf("classifier-backtest: %d snapshots for book=%s\n", len(snaps), *book)
@@ -67,14 +93,23 @@ func main() {
 	}
 }
 
-func readJSONL(r io.Reader) []classifier.Snapshot {
-	var out []classifier.Snapshot
+func readJSONL(r io.Reader) []labelledSnapshot {
+	var out []labelledSnapshot
 	sc := bufio.NewScanner(r)
+	// Offline snapshot files are line-oriented but can exceed bufio's 64 KiB
+	// default if a generator ever widens the shape; raise the cap so a long
+	// line is not silently dropped from the distribution.
+	sc.Buffer(make([]byte, 0, 64*1024), 1024*1024)
 	for sc.Scan() {
 		var s classifier.Snapshot
-		if json.Unmarshal(sc.Bytes(), &s) == nil {
-			out = append(out, s)
+		if json.Unmarshal(sc.Bytes(), &s) != nil {
+			continue
 		}
+		var meta struct {
+			SnapshotAt string `json:"SnapshotAt"`
+		}
+		_ = json.Unmarshal(sc.Bytes(), &meta)
+		out = append(out, labelledSnapshot{snap: s, at: meta.SnapshotAt})
 	}
 	return out
 }

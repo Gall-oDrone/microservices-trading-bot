@@ -1,0 +1,39 @@
+# Regime distribution — full archive 2026-08-19 .. 2026-09-22
+
+## 1m bars / 30s cadence (live-faithful: INDICATORS_BAR_INTERVAL=1m, ROUTER_INTERVAL_SEC=30)
+classifier-backtest: 98874 snapshots for book=btc_mxn
+  high_vol           14  (  0.0%)
+  low_vol_range    70252  ( 71.1%)
+  neutral          14796  ( 15.0%)
+  trending_down    6780  (  6.9%)
+  trending_up      7032  (  7.1%)
+
+## 15m bars / 15m cadence
+classifier-backtest: 3196 snapshots for book=btc_mxn
+  low_vol_range    1633  ( 51.1%)
+  neutral           497  ( 15.6%)
+  trending_down     516  ( 16.1%)
+  trending_up       550  ( 17.2%)
+
+## 1h bars / 1h cadence (macro)
+classifier-backtest: 786 snapshots for book=btc_mxn
+  high_vol            3  (  0.4%)
+  low_vol_range      59  (  7.5%)
+  neutral           207  ( 26.3%)
+  trending_down     283  ( 36.0%)
+  trending_up       234  ( 29.8%)
+
+## Aug 21 only (trade-count spike day) — 1m/30s
+classifier-backtest: 2880 snapshots for book=btc_mxn
+  low_vol_range    1960  ( 68.1%)
+  neutral           450  ( 15.6%)
+  trending_down     212  (  7.4%)
+  trending_up       258  (  9.0%)
+
+## Aug 26 only (only day containing any high_vol) — 1m/30s
+classifier-backtest: 2880 snapshots for book=btc_mxn
+  high_vol           14  (  0.5%)
+  low_vol_range    1966  ( 68.3%)
+  neutral           514  ( 17.8%)
+  trending_down     180  (  6.2%)
+  trending_up       206  (  7.2%)

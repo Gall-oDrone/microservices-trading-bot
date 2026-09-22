@@ -1,0 +1,320 @@
+{
+  "book": "btc_mxn",
+  "days": [
+    {
+      "day": "2026-08-19",
+      "trades": 598,
+      "snapshots": 954,
+      "unhealthy_snapshots": 605,
+      "atr_pct_min": 0.03602079770994236,
+      "atr_pct_max": 0.17567663670476286,
+      "atr_pct_mean": 0.08917454291527274
+    },
+    {
+      "day": "2026-08-20",
+      "trades": 1241,
+      "snapshots": 2880,
+      "unhealthy_snapshots": 1916,
+      "atr_pct_min": 0.017012944010504828,
+      "atr_pct_max": 0.48970075038382965,
+      "atr_pct_mean": 0.08411945449307212
+    },
+    {
+      "day": "2026-08-21",
+      "trades": 4594,
+      "snapshots": 2880,
+      "unhealthy_snapshots": 40,
+      "atr_pct_min": 0.0190832204628667,
+      "atr_pct_max": 0.25755555683291287,
+      "atr_pct_mean": 0.09881748927916642
+    },
+    {
+      "day": "2026-08-22",
+      "trades": 2209,
+      "snapshots": 2880,
+      "unhealthy_snapshots": 159,
+      "atr_pct_min": 0.003715263178073685,
+      "atr_pct_max": 0.20798450311967195,
+      "atr_pct_mean": 0.06470466855354493
+    },
+    {
+      "day": "2026-08-23",
+      "trades": 1756,
+      "snapshots": 2880,
+      "unhealthy_snapshots": 251,
+      "atr_pct_min": 0.00704189487073012,
+      "atr_pct_max": 0.14618285425510297,
+      "atr_pct_mean": 0.060449175904321945
+    },
+    {
+      "day": "2026-08-24",
+      "trades": 2754,
+      "snapshots": 2880,
+      "unhealthy_snapshots": 126,
+      "atr_pct_min": 0.028191095771417395,
+      "atr_pct_max": 0.1852909528617291,
+      "atr_pct_mean": 0.08160275447655228
+    },
+    {
+      "day": "2026-08-25",
+      "trades": 2609,
+      "snapshots": 2880,
+      "unhealthy_snapshots": 106,
+      "atr_pct_min": 0.009012095963185493,
+      "atr_pct_max": 0.16238578642461088,
+      "atr_pct_mean": 0.08528374024880152
+    },
+    {
+      "day": "2026-08-26",
+      "trades": 1964,
+      "snapshots": 2880,
+      "unhealthy_snapshots": 245,
+      "atr_pct_min": 0.009720916108009727,
+      "atr_pct_max": 2.2542418864737312,
+      "atr_pct_mean": 0.09545415195764263
+    },
+    {
+      "day": "2026-08-27",
+      "trades": 1781,
+      "snapshots": 2880,
+      "unhealthy_snapshots": 285,
+      "atr_pct_min": 0.009043248290812477,
+      "atr_pct_max": 0.14750004044105036,
+      "atr_pct_mean": 0.07448934587101431
+    },
+    {
+      "day": "2026-08-28",
+      "trades": 2237,
+      "snapshots": 2880,
+      "unhealthy_snapshots": 127,
+      "atr_pct_min": 0.008738504330242584,
+      "atr_pct_max": 0.2266164963281718,
+      "atr_pct_mean": 0.06647790665538884
+    },
+    {
+      "day": "2026-08-29",
+      "trades": 1375,
+      "snapshots": 2880,
+      "unhealthy_snapshots": 228,
+      "atr_pct_min": 0.013748719318165854,
+      "atr_pct_max": 0.10123026845293753,
+      "atr_pct_mean": 0.0461314127309445
+    },
+    {
+      "day": "2026-08-30",
+      "trades": 1764,
+      "snapshots": 2880,
+      "unhealthy_snapshots": 190,
+      "atr_pct_min": 0.0007068220090314813,
+      "atr_pct_max": 0.13305652312790772,
+      "atr_pct_mean": 0.04399776191121455
+    },
+    {
+      "day": "2026-08-31",
+      "trades": 1925,
+      "snapshots": 2880,
+      "unhealthy_snapshots": 244,
+      "atr_pct_min": 0.029175667469319006,
+      "atr_pct_max": 0.8957125794954631,
+      "atr_pct_mean": 0.0891129758150046
+    },
+    {
+      "day": "2026-09-01",
+      "trades": 2296,
+      "snapshots": 2880,
+      "unhealthy_snapshots": 137,
+      "atr_pct_min": 0.012305809645823493,
+      "atr_pct_max": 0.261303969078077,
+      "atr_pct_mean": 0.06204542931291691
+    },
+    {
+      "day": "2026-09-02",
+      "trades": 1514,
+      "snapshots": 2880,
+      "unhealthy_snapshots": 282,
+      "atr_pct_min": 0.019852234656314124,
+      "atr_pct_max": 0.13897474393458498,
+      "atr_pct_mean": 0.06972094995617574
+    },
+    {
+      "day": "2026-09-03",
+      "trades": 2654,
+      "snapshots": 2880,
+      "unhealthy_snapshots": 141,
+      "atr_pct_min": 0.012047190831197483,
+      "atr_pct_max": 0.15616128718270633,
+      "atr_pct_mean": 0.06530808532487609
+    },
+    {
+      "day": "2026-09-04",
+      "trades": 1841,
+      "snapshots": 2880,
+      "unhealthy_snapshots": 172,
+      "atr_pct_min": 0.017870281303677196,
+      "atr_pct_max": 0.20107986283511067,
+      "atr_pct_mean": 0.07204900397878801
+    },
+    {
+      "day": "2026-09-05",
+      "trades": 1344,
+      "snapshots": 2880,
+      "unhealthy_snapshots": 323,
+      "atr_pct_min": 0.006474483058206953,
+      "atr_pct_max": 0.08796164784983045,
+      "atr_pct_mean": 0.04066017063929831
+    },
+    {
+      "day": "2026-09-06",
+      "trades": 1240,
+      "snapshots": 2880,
+      "unhealthy_snapshots": 336,
+      "atr_pct_min": 0.0057019487291644156,
+      "atr_pct_max": 0.09939029611147836,
+      "atr_pct_mean": 0.03820222628380744
+    },
+    {
+      "day": "2026-09-07",
+      "trades": 1662,
+      "snapshots": 2880,
+      "unhealthy_snapshots": 205,
+      "atr_pct_min": 0.015964346305493156,
+      "atr_pct_max": 0.10933939945331198,
+      "atr_pct_mean": 0.049373997372923216
+    },
+    {
+      "day": "2026-09-08",
+      "trades": 1804,
+      "snapshots": 2880,
+      "unhealthy_snapshots": 226,
+      "atr_pct_min": 0.018057495194857383,
+      "atr_pct_max": 0.12067557745520446,
+      "atr_pct_mean": 0.055641866494081545
+    },
+    {
+      "day": "2026-09-09",
+      "trades": 1735,
+      "snapshots": 2880,
+      "unhealthy_snapshots": 232,
+      "atr_pct_min": 0.016062207773868485,
+      "atr_pct_max": 0.14183957310077508,
+      "atr_pct_mean": 0.0669500880580705
+    },
+    {
+      "day": "2026-09-10",
+      "trades": 1998,
+      "snapshots": 2880,
+      "unhealthy_snapshots": 351,
+      "atr_pct_min": 0.01696534439958557,
+      "atr_pct_max": 0.15547866138691974,
+      "atr_pct_mean": 0.05782646207310502
+    },
+    {
+      "day": "2026-09-11",
+      "trades": 1838,
+      "snapshots": 2880,
+      "unhealthy_snapshots": 222,
+      "atr_pct_min": 0.014984087270551996,
+      "atr_pct_max": 0.27317952480369884,
+      "atr_pct_mean": 0.0775377360131968
+    },
+    {
+      "day": "2026-09-12",
+      "trades": 1346,
+      "snapshots": 2880,
+      "unhealthy_snapshots": 377,
+      "atr_pct_min": 0.010923903974759123,
+      "atr_pct_max": 0.09575605103388346,
+      "atr_pct_mean": 0.037274401657519364
+    },
+    {
+      "day": "2026-09-13",
+      "trades": 1275,
+      "snapshots": 2880,
+      "unhealthy_snapshots": 365,
+      "atr_pct_min": 0.0007831463498404829,
+      "atr_pct_max": 0.11526548040056463,
+      "atr_pct_mean": 0.04034007902819928
+    },
+    {
+      "day": "2026-09-14",
+      "trades": 1994,
+      "snapshots": 2880,
+      "unhealthy_snapshots": 191,
+      "atr_pct_min": 0.018581378925213717,
+      "atr_pct_max": 0.13411591059096115,
+      "atr_pct_mean": 0.06480150788699833
+    },
+    {
+      "day": "2026-09-15",
+      "trades": 2358,
+      "snapshots": 2880,
+      "unhealthy_snapshots": 190,
+      "atr_pct_min": 0.013096810673891379,
+      "atr_pct_max": 0.40684171064976044,
+      "atr_pct_mean": 0.07575545316055117
+    },
+    {
+      "day": "2026-09-16",
+      "trades": 1701,
+      "snapshots": 2880,
+      "unhealthy_snapshots": 232,
+      "atr_pct_min": 0.012284007772390065,
+      "atr_pct_max": 0.23836880780281638,
+      "atr_pct_mean": 0.06528632345396983
+    },
+    {
+      "day": "2026-09-17",
+      "trades": 2015,
+      "snapshots": 2880,
+      "unhealthy_snapshots": 173,
+      "atr_pct_min": 0.01507140159325411,
+      "atr_pct_max": 0.20122660372848877,
+      "atr_pct_mean": 0.07797394601584393
+    },
+    {
+      "day": "2026-09-18",
+      "trades": 2878,
+      "snapshots": 2880,
+      "unhealthy_snapshots": 179,
+      "atr_pct_min": 0.0077235822859754374,
+      "atr_pct_max": 0.2314645063714321,
+      "atr_pct_mean": 0.050764197300055186
+    },
+    {
+      "day": "2026-09-19",
+      "trades": 2300,
+      "snapshots": 2880,
+      "unhealthy_snapshots": 183,
+      "atr_pct_min": 0.00047748566402838814,
+      "atr_pct_max": 0.07002590632851935,
+      "atr_pct_mean": 0.031158944737748294
+    },
+    {
+      "day": "2026-09-20",
+      "trades": 1612,
+      "snapshots": 2880,
+      "unhealthy_snapshots": 251,
+      "atr_pct_min": 0.010919472361031222,
+      "atr_pct_max": 0.08853934805604037,
+      "atr_pct_mean": 0.03850013763132765
+    },
+    {
+      "day": "2026-09-21",
+      "trades": 4243,
+      "snapshots": 2880,
+      "unhealthy_snapshots": 49,
+      "atr_pct_min": 0.012268434482906146,
+      "atr_pct_max": 0.20614468976652692,
+      "atr_pct_mean": 0.061118700868941604
+    },
+    {
+      "day": "2026-09-22",
+      "trades": 2253,
+      "snapshots": 2880,
+      "unhealthy_snapshots": 833,
+      "atr_pct_min": 0.013813116373503385,
+      "atr_pct_max": 0.18795087970522087,
+      "atr_pct_mean": 0.052119326812943206
+    }
+  ]
+}
