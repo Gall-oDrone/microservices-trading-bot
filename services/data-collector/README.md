@@ -32,8 +32,21 @@ not depend on Kafka, Redis, or the trading microservices.
 | S3 Parquet | Forever / cheap archive | Lifecycle → STANDARD_IA after 90 days (Terraform) |
 | Postgres | Hot queries | `HOT_RETENTION_DAYS` (default 7); rows older than that are pruned |
 
-Flush to S3 happens on `FLUSH_INTERVAL` (default 60s) **or**
-`FLUSH_MAX_ROWS` (default 500), whichever comes first.
+A Parquet object is written when the buffer reaches `FLUSH_MAX_ROWS`
+(default 5000) **or** its oldest row has waited `FLUSH_INTERVAL` (default
+`1h`), whichever comes first. Each flush writes one object per UTC day
+partition, and a graceful shutdown (SIGTERM) flushes whatever is buffered.
+`btc_mxn` averages about 1–3 trades/minute, so minute-scale intervals produce
+single-digit-row files; at `1h` expect roughly 50–200 rows per file. A hard
+kill loses at most one interval of S3 data, which is still in Postgres for
+`HOT_RETENTION_DAYS`.
+
+### Compacting the archive
+
+`cmd/compact-archive` merges each settled day's small files into one
+validated Parquet file under `trades_compacted/`, and optionally cuts the
+source partitions over to it. See
+`docs/data-collector/S3-COMPACTION-2026-09-22.md`.
 
 ## HTTP contracts
 
@@ -52,6 +65,7 @@ Prometheus text exposition. Key series:
 - `data_collector_trades_received_total`
 - `data_collector_ws_reconnects_total`
 - `data_collector_s3_flush_failures_total`
+- `data_collector_s3_flush_rows` (histogram of rows per Parquet object)
 - `data_collector_postgres_write_failures_total`
 - `data_collector_seconds_since_last_trade`
 

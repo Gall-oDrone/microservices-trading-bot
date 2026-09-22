@@ -168,7 +168,9 @@ aws ssm get-command-invocation --command-id "$CID" --instance-id "$IID" \
 
 ### 3.2 S3 archive (from anywhere with creds)
 
-Flush happens every 60s or 500 rows, so wait ~2 min:
+Since 2026-09-22 a flush happens once the oldest buffered row is 1h old or
+5000 rows are buffered, so the first object appears about an hour after the
+first trade (restarting the service also flushes):
 
 ```bash
 aws s3 ls "s3://$BUCKET/trades/book=$BITSO_BOOK/" --recursive --region "$AWS_REGION" | tail
@@ -312,6 +314,6 @@ aws ec2 describe-nat-gateways --region "$AWS_REGION" \
 | Instance never `Online` in SSM; unit missing | `dnf` OOM-killed on 512 MB `t4g.nano` | user-data adds a 1 GiB swapfile before `dnf`; installs only `jq` |
 | `aws ssm send-command` → `InvalidDocument` | wrong document name | use `AWS-RunShellScript` |
 | `/healthz` = `503 waiting for first trade` | just started / low volume | wait for the first `btc_mxn` trade |
-| No Parquet in S3 yet | flush interval not reached | wait 60s+ or 500 rows; re-run the §3.2 `aws s3 ls` |
+| No Parquet in S3 yet | flush interval not reached | wait up to `FLUSH_INTERVAL` (1h) after the first trade; re-run the §3.2 `aws s3 ls` |
 | `terraform destroy` won't delete bucket | `force_destroy=false` + non-empty | empty it first (§4.1 step 1) |
 | State lock error | stale local lock | `terraform force-unlock <ID>` / remove `.terraform.tfstate.lock.info` |
