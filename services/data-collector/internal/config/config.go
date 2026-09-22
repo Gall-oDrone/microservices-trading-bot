@@ -10,6 +10,14 @@ import (
 	"github.com/joho/godotenv"
 )
 
+// btc_mxn averages ~1-3 trades/minute, so a minutes-scale interval yields
+// single-digit-row Parquet files. At one hour a file holds roughly 50-200
+// rows; FlushMaxRows only caps memory during bursts.
+const (
+	DefaultFlushInterval = time.Hour
+	DefaultFlushMaxRows  = 5000
+)
+
 // Config holds all configuration for the data-collector service.
 type Config struct {
 	ServiceName string
@@ -22,18 +30,20 @@ type Config struct {
 	WSReconnectInterval time.Duration
 	WSReconnectMaxDelay time.Duration
 
-	// S3 archive
-	S3Bucket          string
-	S3Prefix          string
-	S3Region          string
-	FlushInterval     time.Duration
-	FlushMaxRows      int
-	EnableS3          bool
+	// S3 archive. A Parquet object is written when the buffer holds
+	// FlushMaxRows rows or its oldest row has waited FlushInterval,
+	// whichever comes first.
+	S3Bucket      string
+	S3Prefix      string
+	S3Region      string
+	FlushInterval time.Duration
+	FlushMaxRows  int
+	EnableS3      bool
 
 	// Postgres hot store
-	PostgresDSN           string
-	HotRetentionDays      int
-	EnablePostgres        bool
+	PostgresDSN            string
+	HotRetentionDays       int
+	EnablePostgres         bool
 	PostgresWriteBatchSize int
 
 	// Health / dead-man's switch
@@ -63,8 +73,8 @@ func LoadConfig() (*Config, error) {
 		S3Bucket:      getEnv("S3_BUCKET", ""),
 		S3Prefix:      getEnv("S3_PREFIX", "trades"),
 		S3Region:      getEnv("AWS_REGION", "us-east-1"),
-		FlushInterval: getEnvAsDuration("FLUSH_INTERVAL", 60*time.Second),
-		FlushMaxRows:  getEnvAsInt("FLUSH_MAX_ROWS", 500),
+		FlushInterval: getEnvAsDuration("FLUSH_INTERVAL", DefaultFlushInterval),
+		FlushMaxRows:  getEnvAsInt("FLUSH_MAX_ROWS", DefaultFlushMaxRows),
 		EnableS3:      getEnvAsBool("ENABLE_S3", true),
 
 		PostgresDSN:            getEnv("POSTGRES_DSN", ""),
@@ -100,6 +110,9 @@ func (c *Config) Validate() error {
 	}
 	if c.FlushMaxRows < 1 {
 		return fmt.Errorf("FLUSH_MAX_ROWS must be >= 1")
+	}
+	if c.FlushInterval <= 0 {
+		return fmt.Errorf("FLUSH_INTERVAL must be > 0")
 	}
 	if c.HotRetentionDays < 1 {
 		return fmt.Errorf("HOT_RETENTION_DAYS must be >= 1")

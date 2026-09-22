@@ -79,13 +79,15 @@ variable "bitso_book" {
 }
 
 variable "flush_interval" {
-  type    = string
-  default = "60s"
+  description = "Max age of the oldest buffered trade before an S3 Parquet flush (Go duration)."
+  type        = string
+  default     = "1h"
 }
 
 variable "flush_max_rows" {
-  type    = number
-  default = 500
+  description = "Buffered rows that force an S3 Parquet flush before flush_interval elapses."
+  type        = number
+  default     = 5000
 }
 
 variable "hot_retention_days" {

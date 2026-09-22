@@ -13,12 +13,13 @@ type Collector struct {
 	TradesReceived     prometheus.Counter
 	WSReconnects       prometheus.Counter
 	S3FlushFailures    prometheus.Counter
+	S3FlushRows        prometheus.Histogram
 	PostgresFailures   prometheus.Counter
 	TimeSinceLastTrade prometheus.Gauge
 
-	mu           sync.RWMutex
-	lastTradeAt  time.Time
-	hasTrade     bool
+	mu          sync.RWMutex
+	lastTradeAt time.Time
+	hasTrade    bool
 }
 
 // New creates and registers Prometheus metrics.
@@ -35,6 +36,11 @@ func New() *Collector {
 		S3FlushFailures: promauto.NewCounter(prometheus.CounterOpts{
 			Name: "data_collector_s3_flush_failures_total",
 			Help: "Total number of S3/Parquet flush failures",
+		}),
+		S3FlushRows: promauto.NewHistogram(prometheus.HistogramOpts{
+			Name:    "data_collector_s3_flush_rows",
+			Help:    "Rows per Parquet object written to S3",
+			Buckets: []float64{1, 5, 10, 25, 50, 100, 250, 500, 1000, 2500, 5000},
 		}),
 		PostgresFailures: promauto.NewCounter(prometheus.CounterOpts{
 			Name: "data_collector_postgres_write_failures_total",

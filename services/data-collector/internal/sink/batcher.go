@@ -1,17 +1,14 @@
 package sink
 
 import (
-	"bytes"
 	"context"
 	"fmt"
+	"sort"
 	"sync"
 	"time"
 
 	"bitso-trading-platform/data-collector/internal/clock"
 	"bitso-trading-platform/data-collector/internal/models"
-
-	"github.com/xitongsys/parquet-go/parquet"
-	"github.com/xitongsys/parquet-go/writer"
 )
 
 // ObjectSink stores opaque objects (e.g. Parquet files) by key.
@@ -58,28 +55,38 @@ func (m *MemObjectSink) CallCount() int {
 	return m.calls
 }
 
-// ParquetBatcher batches trades and flushes Parquet files to an ObjectSink.
+const (
+	minAgeCheckInterval = 10 * time.Millisecond
+	maxAgeCheckInterval = 30 * time.Second
+	stopFlushAttempts   = 3
+)
+
+// ParquetBatcher buffers trades and writes one Parquet object per day
+// partition when either the buffer reaches maxRows or its oldest row has
+// waited maxAge, whichever happens first.
 type ParquetBatcher struct {
-	sink         ObjectSink
-	prefix       string
-	flushEvery   time.Duration
-	maxRows      int
-	clock        clock.Clock
-	onFlushFail  func(error)
-	onFlushOK    func(key string, n int)
+	sink        ObjectSink
+	prefix      string
+	maxAge      time.Duration
+	maxRows     int
+	clock       clock.Clock
+	onFlushFail func(error)
+	onFlushOK   func(key string, rows int)
 
 	mu      sync.Mutex
 	buffer  []models.Trade
+	firstAt time.Time // when the oldest buffered row was added
 	stopCh  chan struct{}
 	wg      sync.WaitGroup
 	started bool
 }
 
-// NewParquetBatcher creates a batcher. flushEvery and maxRows trigger flushes.
+// NewParquetBatcher creates a batcher. maxAge is the longest a buffered row
+// may wait before a time-based flush; maxRows triggers a size-based flush.
 func NewParquetBatcher(
 	sink ObjectSink,
 	prefix string,
-	flushEvery time.Duration,
+	maxAge time.Duration,
 	maxRows int,
 	clk clock.Clock,
 	onFlushFail func(error),
@@ -93,7 +100,7 @@ func NewParquetBatcher(
 	return &ParquetBatcher{
 		sink:        sink,
 		prefix:      prefix,
-		flushEvery:  flushEvery,
+		maxAge:      maxAge,
 		maxRows:     maxRows,
 		clock:       clk,
 		onFlushFail: onFlushFail,
@@ -101,7 +108,12 @@ func NewParquetBatcher(
 	}
 }
 
-// Start begins the time-based flush loop.
+// OnFlush registers a callback invoked after each object is written.
+func (b *ParquetBatcher) OnFlush(fn func(key string, rows int)) {
+	b.onFlushOK = fn
+}
+
+// Start begins the loop that enforces the maxAge trigger.
 func (b *ParquetBatcher) Start() {
 	b.mu.Lock()
 	if b.started {
@@ -114,20 +126,34 @@ func (b *ParquetBatcher) Start() {
 	b.wg.Add(1)
 	go func() {
 		defer b.wg.Done()
-		ticker := time.NewTicker(b.flushEvery)
+		ticker := time.NewTicker(ageCheckInterval(b.maxAge))
 		defer ticker.Stop()
 		for {
 			select {
 			case <-b.stopCh:
 				return
 			case <-ticker.C:
-				_ = b.Flush(context.Background())
+				_ = b.FlushIfDue(context.Background())
 			}
 		}
 	}()
 }
 
-// Stop flushes remaining data and stops the timer loop.
+// ageCheckInterval bounds how late a time-based flush can fire relative to
+// maxAge (at most 10%, never more than 30s).
+func ageCheckInterval(maxAge time.Duration) time.Duration {
+	d := maxAge / 10
+	if d < minAgeCheckInterval {
+		return minAgeCheckInterval
+	}
+	if d > maxAgeCheckInterval {
+		return maxAgeCheckInterval
+	}
+	return d
+}
+
+// Stop halts the age loop and flushes everything still buffered, retrying a
+// few times so a transient S3 error on shutdown does not drop the batch.
 func (b *ParquetBatcher) Stop(ctx context.Context) error {
 	b.mu.Lock()
 	if b.started {
@@ -136,15 +162,33 @@ func (b *ParquetBatcher) Stop(ctx context.Context) error {
 	}
 	b.mu.Unlock()
 	b.wg.Wait()
-	return b.Flush(ctx)
+
+	var err error
+	for attempt := 1; attempt <= stopFlushAttempts; attempt++ {
+		if err = b.Flush(ctx); err == nil {
+			return nil
+		}
+		if attempt == stopFlushAttempts {
+			break
+		}
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("final flush: %w (context: %v)", err, ctx.Err())
+		case <-time.After(time.Duration(attempt) * time.Second):
+		}
+	}
+	return fmt.Errorf("final flush after %d attempts: %w", stopFlushAttempts, err)
 }
 
-// Add appends trades and may flush if the row threshold is hit.
+// Add appends trades and flushes if the row threshold is reached.
 func (b *ParquetBatcher) Add(ctx context.Context, trades []models.Trade) error {
 	if len(trades) == 0 {
 		return nil
 	}
 	b.mu.Lock()
+	if len(b.buffer) == 0 {
+		b.firstAt = b.clock.Now()
+	}
 	b.buffer = append(b.buffer, trades...)
 	shouldFlush := len(b.buffer) >= b.maxRows
 	b.mu.Unlock()
@@ -154,14 +198,26 @@ func (b *ParquetBatcher) Add(ctx context.Context, trades []models.Trade) error {
 	return nil
 }
 
-// BufferLen returns the current in-memory row count (for tests).
+// FlushIfDue flushes when the oldest buffered row has waited at least maxAge.
+func (b *ParquetBatcher) FlushIfDue(ctx context.Context) error {
+	b.mu.Lock()
+	due := len(b.buffer) > 0 && b.clock.Now().Sub(b.firstAt) >= b.maxAge
+	b.mu.Unlock()
+	if !due {
+		return nil
+	}
+	return b.Flush(ctx)
+}
+
+// BufferLen returns the current in-memory row count.
 func (b *ParquetBatcher) BufferLen() int {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	return len(b.buffer)
 }
 
-// Flush writes the current buffer as a Parquet object.
+// Flush writes the buffer as one Parquet object per book/day partition.
+// Rows from partitions that fail to write are requeued.
 func (b *ParquetBatcher) Flush(ctx context.Context) error {
 	b.mu.Lock()
 	if len(b.buffer) == 0 {
@@ -169,91 +225,82 @@ func (b *ParquetBatcher) Flush(ctx context.Context) error {
 		return nil
 	}
 	batch := b.buffer
+	firstAt := b.firstAt
 	b.buffer = nil
+	b.firstAt = time.Time{}
 	b.mu.Unlock()
 
-	data, key, err := encodeParquet(batch, b.prefix, b.clock.Now())
-	if err != nil {
-		b.requeue(batch)
+	stamp := b.clock.Now().UTC().Format("20060102T150405.000")
+	var failed []models.Trade
+	var firstErr error
+	for _, g := range groupByPartition(batch, b.prefix) {
+		key := fmt.Sprintf("%s/trades-%s-%d.parquet", g.dir, stamp, g.trades[0].TID)
+		err := b.put(ctx, key, g.trades)
+		if err == nil {
+			if b.onFlushOK != nil {
+				b.onFlushOK(key, len(g.trades))
+			}
+			continue
+		}
+		failed = append(failed, g.trades...)
+		if firstErr == nil {
+			firstErr = err
+		}
 		if b.onFlushFail != nil {
 			b.onFlushFail(err)
 		}
-		return err
 	}
-
-	if err := b.sink.Put(ctx, key, data); err != nil {
-		b.requeue(batch)
-		if b.onFlushFail != nil {
-			b.onFlushFail(err)
-		}
-		return err
+	if len(failed) > 0 {
+		b.requeue(failed, firstAt)
 	}
-	if b.onFlushOK != nil {
-		b.onFlushOK(key, len(batch))
-	}
-	return nil
+	return firstErr
 }
 
-func (b *ParquetBatcher) requeue(batch []models.Trade) {
+func (b *ParquetBatcher) put(ctx context.Context, key string, trades []models.Trade) error {
+	data, err := EncodeParquet(trades)
+	if err != nil {
+		return err
+	}
+	return b.sink.Put(ctx, key, data)
+}
+
+func (b *ParquetBatcher) requeue(batch []models.Trade, firstAt time.Time) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
+	if len(b.buffer) == 0 || firstAt.Before(b.firstAt) {
+		b.firstAt = firstAt
+	}
 	b.buffer = append(batch, b.buffer...)
 }
 
-// parquetTrade is the on-disk Parquet schema. parquet-go cannot encode Go
-// time.Time directly, so timestamps are stored as epoch milliseconds (INT64
-// TIMESTAMP_MILLIS).
-type parquetTrade struct {
-	Book       string  `parquet:"name=book, type=BYTE_ARRAY, convertedtype=UTF8, encoding=PLAIN_DICTIONARY"`
-	TID        int64   `parquet:"name=tid, type=INT64"`
-	Price      float64 `parquet:"name=price, type=DOUBLE"`
-	Amount     float64 `parquet:"name=amount, type=DOUBLE"`
-	MakerSide  string  `parquet:"name=maker_side, type=BYTE_ARRAY, convertedtype=UTF8, encoding=PLAIN_DICTIONARY"`
-	ExchangeTS int64   `parquet:"name=exchange_ts, type=INT64, convertedtype=TIMESTAMP_MILLIS"`
-	ReceivedAt int64   `parquet:"name=received_at, type=INT64, convertedtype=TIMESTAMP_MILLIS"`
+// PartitionDir returns the Hive-style partition directory for a book and day,
+// e.g. trades/book=btc_mxn/year=2026/month=07/day=25.
+func PartitionDir(prefix, book string, day time.Time) string {
+	d := day.UTC()
+	return fmt.Sprintf("%s/book=%s/year=%04d/month=%02d/day=%02d",
+		prefix, book, d.Year(), int(d.Month()), d.Day())
 }
 
-func toParquetTrade(t models.Trade) parquetTrade {
-	return parquetTrade{
-		Book:       t.Book,
-		TID:        t.TID,
-		Price:      t.Price,
-		Amount:     t.Amount,
-		MakerSide:  t.MakerSide,
-		ExchangeTS: t.ExchangeTS.UTC().UnixMilli(),
-		ReceivedAt: t.ReceivedAt.UTC().UnixMilli(),
-	}
+type partitionGroup struct {
+	dir    string
+	trades []models.Trade
 }
 
-func encodeParquet(trades []models.Trade, prefix string, now time.Time) ([]byte, string, error) {
-	if len(trades) == 0 {
-		return nil, "", fmt.Errorf("empty batch")
-	}
-
-	// Partition by the first trade's exchange day (stable within a flush).
-	t0 := trades[0].ExchangeTS.UTC()
-	key := fmt.Sprintf("%s/book=%s/year=%04d/month=%02d/day=%02d/trades-%s.parquet",
-		prefix,
-		trades[0].Book,
-		t0.Year(), int(t0.Month()), t0.Day(),
-		now.UTC().Format("20060102T150405.000"),
-	)
-
-	buf := new(bytes.Buffer)
-	pw, err := writer.NewParquetWriterFromWriter(buf, new(parquetTrade), 4)
-	if err != nil {
-		return nil, "", fmt.Errorf("parquet writer: %w", err)
-	}
-	pw.CompressionType = parquet.CompressionCodec_SNAPPY
-
-	for i := range trades {
-		if err := pw.Write(toParquetTrade(trades[i])); err != nil {
-			_ = pw.WriteStop()
-			return nil, "", fmt.Errorf("parquet write row: %w", err)
+// groupByPartition splits trades by book and exchange-timestamp UTC day so a
+// batch spanning midnight never lands in the wrong day partition.
+func groupByPartition(trades []models.Trade, prefix string) []partitionGroup {
+	idx := make(map[string]int)
+	var groups []partitionGroup
+	for _, t := range trades {
+		dir := PartitionDir(prefix, t.Book, t.ExchangeTS)
+		i, ok := idx[dir]
+		if !ok {
+			i = len(groups)
+			idx[dir] = i
+			groups = append(groups, partitionGroup{dir: dir})
 		}
+		groups[i].trades = append(groups[i].trades, t)
 	}
-	if err := pw.WriteStop(); err != nil {
-		return nil, "", fmt.Errorf("parquet write stop: %w", err)
-	}
-	return buf.Bytes(), key, nil
+	sort.Slice(groups, func(i, j int) bool { return groups[i].dir < groups[j].dir })
+	return groups
 }

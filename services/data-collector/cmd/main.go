@@ -57,6 +57,11 @@ func main() {
 			met.S3FlushFailures.Inc()
 		},
 	)
+	batcher.OnFlush(func(key string, rows int) {
+		logger.Printf("S3 flush ok rows=%d key=%s", rows, key)
+		met.S3FlushRows.Observe(float64(rows))
+	})
+	logger.Printf("S3 flush policy: max_rows=%d max_age=%s", cfg.FlushMaxRows, cfg.FlushInterval)
 
 	var hotStore sink.TradeWriter = sink.NopTradeWriter{}
 	if cfg.EnablePostgres {

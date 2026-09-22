@@ -179,7 +179,13 @@ func (s *Service) stalenessLoop(ctx context.Context) {
 	}
 }
 
-func (s *Service) shutdown(ctx context.Context) error {
+// shutdownTimeout stays under systemd's default 90s TimeoutStopSec so the
+// final flush finishes before SIGKILL.
+const shutdownTimeout = 60 * time.Second
+
+func (s *Service) shutdown(parent context.Context) error {
+	ctx, cancel := context.WithTimeout(parent, shutdownTimeout)
+	defer cancel()
 	_ = s.ws.Stop()
 	if s.batcher != nil {
 		if err := s.batcher.Stop(ctx); err != nil {
