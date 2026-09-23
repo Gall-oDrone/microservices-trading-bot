@@ -1,0 +1,24 @@
+DATA SOURCE : s3:///trades (parquet archive)
+LOAD STATS  : source=s3:///trades (parquet archive) book=btc_mxn window=[2026-08-19T00:00:00Z..2026-09-22T23:59:59Z] objects=26600/26600 (failed=0) rows=70708 dup=0 out_of_range=0 invalid=0 returned=70708 span=[2026-08-19T15:40:05Z..2026-09-22T18:24:50Z]
+
+running mean_reversion   ... 4 closed trades, net 64.13 MXN
+
+====================================================================================================
+BACKTEST RESULTS  book=btc_mxn  window=2026-08-19..2026-09-22T23:59:59Z
+fees: 65 bps per leg, slippage 10 bps | min samples for a supported verdict: 30
+====================================================================================================
+
+STRATEGY             TRADES     WINS      WIN%  NET P&L (MXN)   PROFIT FAC    MAX DD%
+----------------------------------------------------------------------------------------------------
+mean_reversion            4        4    100.0%          64.13         0.00      0.00%
+
+PER-REGIME BREAKDOWN (attributed at entry time)
+----------------------------------------------------------------------------------------------------
+
+MEAN_REVERSION
+  REGIME             TRADES     WIN%        NET P&L      AVG/TRADE   VERDICT
+  neutral                 4   100.0%          64.13        16.0337   DIRECTIONAL ONLY — insufficient samples
+
+====================================================================================================
+
+wrote JSON results to /usr/local/google/home/gdiegofernando/.gemini/jetski/brain/c7493600-2d6e-4f5a-8832-01a42a855edd/scratch/backtest_gate_on.json

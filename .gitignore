@@ -81,3 +81,9 @@ k8s/overlays/*/secret.yaml
 
 # Local tooling installed into the workspace (AWS CLI, etc.) - never commit
 .tools/
+
+# Go binaries accidentally produced by `go build ./cmd/...` in a service dir
+services/*/backtest-archive
+services/*/regime-snapshots
+services/*/edge-analysis
+services/*/classifier-backtest

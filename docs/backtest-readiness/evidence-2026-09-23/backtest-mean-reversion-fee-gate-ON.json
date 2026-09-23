@@ -1,0 +1,42 @@
+[
+  {
+    "strategy": "mean_reversion",
+    "overall": {
+      "strategy_name": "mean_reversion_btc_mxn_backtest",
+      "book": "btc_mxn",
+      "start_time": "2026-08-19T15:40:05.394Z",
+      "end_time": "2026-09-22T18:24:50.047Z",
+      "total_trades": 4,
+      "winning_trades": 4,
+      "losing_trades": 0,
+      "win_rate": 100,
+      "average_trade": 16.03373928375003,
+      "average_win": 16.03373928375003,
+      "average_loss": 0,
+      "profit_factor": 0,
+      "total_pnl": 64.13495713500012,
+      "gross_profits": 64.13495713500012,
+      "gross_losses": 0,
+      "max_drawdown": 0,
+      "max_drawdown_pct": 0,
+      "sharpe_ratio": 59.45896717910707,
+      "sortino_ratio": 0,
+      "average_hold_time": 354102663250000,
+      "max_hold_time": 1215112352000000,
+      "ticks_processed": 70708
+    },
+    "by_regime": {
+      "neutral": {
+        "regime": "neutral",
+        "trades": 4,
+        "wins": 4,
+        "losses": 0,
+        "net_pnl": 64.13495713500012,
+        "gross_win": 64.13495713500012,
+        "gross_loss": 0,
+        "supported": false
+      }
+    },
+    "unattributed_trades": 0
+  }
+]

@@ -1,0 +1,40 @@
+LOAD: source=s3:///trades (parquet archive) book=btc_mxn window=[2026-08-19T00:00:00Z..2026-09-22T23:59:59Z] objects=26600/26600 (failed=0) rows=70708 dup=0 out_of_range=0 invalid=0 returned=70708 span=[2026-08-19T15:40:05Z..2026-09-22T18:24:50Z]
+
+====================================================================================================
+EDGE vs COST  book=btc_mxn  bars=1m0s (26594 bars)  window=2026-08-19T15:40:00Z .. 2026-09-22T18:24:00Z
+cost model: 65 bps commission + 10 bps slippage per leg => 150 bps ROUND TRIP
+====================================================================================================
+
+1. AVAILABLE MOVE vs ROUND-TRIP COST
+   |forward return| in bps, by holding horizon. 'PAYS' = share of windows whose move
+   exceeds the 150 bps round trip -- i.e. the share that could profit even with PERFECT timing.
+
+   HORIZON         N   MEDIAN      P75      P90      P99      MAX       PAYS
+   ---------------------------------------------------------------------------------
+   1m0s        26593      3.0      6.9     13.0     34.6   1893.5      0.01%
+   5m0s        26589      5.9     12.3     21.1     50.6   1897.8      0.05%
+   15m0s       26579      9.9     19.7     33.2     81.4   1881.1      0.21%
+   1h0m0s      26542     18.9     36.8     61.2    160.4   1929.3      1.18%
+   4h0m0s      26399     37.0     72.1    120.6    376.4   1940.6      7.02%
+   24h0m0s     25629    101.1    212.5    462.4    678.8   2274.2     36.67%
+
+2. PERFECT-FORESIGHT ORACLE (hard upper bound on ANY strategy)
+   Optimal trading with complete knowledge of all future prices, by cost level.
+   No strategy can beat these numbers on this data. Zero latency, perfect fills assumed.
+
+   COST LEVEL          PER LEG   ORACLE MAX  ORACLE TRADES   NOTE
+   ----------------------------------------------------------------------------------------------
+   frictionless             0b     1471.49x           6431   theoretical ceiling, no costs at all
+   10 bps/leg              10b       15.04x            824   major-exchange taker (e.g. Binance-class)
+   25 bps/leg              25b        4.36x            206   current backtest engine DEFAULT
+   50 bps/leg              50b        2.52x             58   Bitso MAKER (post-only limit orders)
+   65 bps/leg              65b        2.22x             32   Bitso retail TAKER
+   65+10 configured        75b        2.10x             25   as configured, incl. slippage
+
+   Read this as: the oracle's return is the ENTIRE opportunity available. A realistic
+   strategy captures a small fraction of it. If the oracle is near 1.00x, the market is
+   unwinnable at that cost and signal quality is irrelevant.
+
+3. BUY AND HOLD REFERENCE (one round trip, no signal at all)
+   entry 1162860.00 -> exit 1497720.00  |  gross 1.2880x (+28.80%)  |  net of one round trip 1.2687x (+26.87%)
+
