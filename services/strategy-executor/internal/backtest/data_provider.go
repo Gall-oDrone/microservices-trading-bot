@@ -160,3 +160,18 @@ func (p *BacktestDataProvider) IsExhausted() bool {
 	defer p.mu.RUnlock()
 	return p.cursor >= len(p.trades)
 }
+
+// FirstTimestamp returns the timestamp of the earliest trade without advancing
+// the cursor. ok is false when there are no trades.
+//
+// The runner uses it to seed the simulated clock before strategy.Start(), so
+// that anything a strategy derives from "now" at start-up (daily loss reset
+// boundaries, for example) is anchored to market time rather than wall time.
+func (p *BacktestDataProvider) FirstTimestamp() (time.Time, bool) {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	if len(p.trades) == 0 {
+		return time.Time{}, false
+	}
+	return p.trades[0].Timestamp, true
+}

@@ -21,19 +21,19 @@ import (
 // Exit threshold uses Bitso GET /fees with configurable maker/taker per leg when credentials exist;
 // otherwise entry + min_profit + manual fee_addon.
 type LimitProfitConfig struct {
-	Reference            string  // "last_trade" or "vwap"
-	EntryOffset          float64 // absolute quote-currency offset added to reference for BUY limit
-	EntryOffsetBPS       float64 // if >0, entry_offset = reference * EntryOffsetBPS / 10000 (takes precedence)
-	MinProfit            float64 // absolute quote-currency profit target above break-even
-	MinProfitBPS         float64 // if >0, min_profit = entry * MinProfitBPS / 10000 (takes precedence)
-	Fee                  float64 // extra margin on top of computed threshold (slippage buffer)
-	FeeBPS               float64 // manual mode only
-	UseBitsoFees         bool
-	BuyLiquidity         string // "maker" | "taker" — expected role for the buy leg (default maker)
-	SellLiquidity        string // "maker" | "taker" — expected role for the sell leg (default taker)
-	ExitPriceReference   string // "last" | "bid" | "mid" | "min_last_bid" — price vs threshold
-	PositionSize         float64
-	MinSignalInterval    int
+	Reference          string  // "last_trade" or "vwap"
+	EntryOffset        float64 // absolute quote-currency offset added to reference for BUY limit
+	EntryOffsetBPS     float64 // if >0, entry_offset = reference * EntryOffsetBPS / 10000 (takes precedence)
+	MinProfit          float64 // absolute quote-currency profit target above break-even
+	MinProfitBPS       float64 // if >0, min_profit = entry * MinProfitBPS / 10000 (takes precedence)
+	Fee                float64 // extra margin on top of computed threshold (slippage buffer)
+	FeeBPS             float64 // manual mode only
+	UseBitsoFees       bool
+	BuyLiquidity       string // "maker" | "taker" — expected role for the buy leg (default maker)
+	SellLiquidity      string // "maker" | "taker" — expected role for the sell leg (default taker)
+	ExitPriceReference string // "last" | "bid" | "mid" | "min_last_bid" — price vs threshold
+	PositionSize       float64
+	MinSignalInterval  int
 	// PendingBuyTimeoutSeconds: if >0, clear local pending BUY state after this long without a fill (see docs).
 	PendingBuyTimeoutSeconds int
 	// PendingSellTimeoutSeconds: if >0, attempt to cancel a stale resting SELL and clear pending-sell
@@ -104,7 +104,7 @@ type LimitProfitStrategy struct {
 	positionSellFeeRate float64
 
 	// Partial fill tracking.
-	targetOrderSize    float64 // original order size from entry signal
+	targetOrderSize     float64 // original order size from entry signal
 	cumulativeFilledAmt float64 // sum of partial fills received
 
 	// Trailing stop tracking.
@@ -370,7 +370,7 @@ func (s *LimitProfitStrategy) applyPersistedLocked(p *limitProfitPersisted) {
 			})
 		} else {
 			s.UpdateState(func(out *StrategyState) {
-				out.PendingBuySince = time.Now()
+				out.PendingBuySince = s.now()
 			})
 		}
 	}
@@ -431,12 +431,12 @@ func (s *LimitProfitStrategy) shouldResetDailyLoss() bool {
 	if s.dailyLossResetTime.IsZero() {
 		return true
 	}
-	return time.Now().UTC().After(s.dailyLossResetTime)
+	return s.now().UTC().After(s.dailyLossResetTime)
 }
 
 // nextDailyResetTime calculates the next reset time based on DailyLossResetHourUTC.
 func (s *LimitProfitStrategy) nextDailyResetTime() time.Time {
-	now := time.Now().UTC()
+	now := s.now().UTC()
 	resetHour := s.lpConfig.DailyLossResetHourUTC
 	if resetHour < 0 || resetHour > 23 {
 		resetHour = 0
@@ -516,7 +516,7 @@ func (s *LimitProfitStrategy) OnTick(tick *indicators.Trade) (*Signal, error) {
 				if since.IsZero() {
 					since = state.LastSignalTime
 				}
-				if !since.IsZero() && time.Since(since) >= time.Duration(s.lpConfig.PendingBuyTimeoutSeconds)*time.Second {
+				if !since.IsZero() && s.now().Sub(since) >= time.Duration(s.lpConfig.PendingBuyTimeoutSeconds)*time.Second {
 					eid := state.PendingEventID
 					cancelSuccess := true
 					if eid != "" && s.pendingBuyCancel != nil {
@@ -525,7 +525,7 @@ func (s *LimitProfitStrategy) OnTick(tick *indicators.Trade) (*Signal, error) {
 					if cancelSuccess {
 						// Record pending buy duration metric.
 						if s.metrics != nil && s.metrics.PendingBuyDuration != nil {
-							s.metrics.PendingBuyDuration(s.Name(), book, time.Since(since).Seconds())
+							s.metrics.PendingBuyDuration(s.Name(), book, s.now().Sub(since).Seconds())
 						}
 						s.UpdateState(func(st *StrategyState) {
 							st.PendingBuy = false
@@ -563,7 +563,7 @@ func (s *LimitProfitStrategy) OnTick(tick *indicators.Trade) (*Signal, error) {
 		posSize := s.computePositionSize(ctx, book)
 
 		eventID := uuid.New().String()
-		now := time.Now()
+		now := s.now()
 		s.RecordSignal()
 		s.UpdateState(func(st *StrategyState) {
 			st.PendingBuy = true
@@ -606,7 +606,7 @@ func (s *LimitProfitStrategy) OnTick(tick *indicators.Trade) (*Signal, error) {
 				"limit_profit entry: ref=%.2f (%s) + offset=%.2f → buy limit %.2f (size=%.6f)",
 				ref, s.lpConfig.Reference, entryOffset, buyPrice, posSize,
 			),
-			Timestamp: time.Now(),
+			Timestamp: s.now(),
 			Metadata:  meta,
 		}, nil
 	}
@@ -660,7 +660,7 @@ func (s *LimitProfitStrategy) OnTick(tick *indicators.Trade) (*Signal, error) {
 
 	// Max position hold time check.
 	if s.lpConfig.MaxPositionHoldSeconds > 0 && !state.EntryTime.IsZero() {
-		if time.Since(state.EntryTime) >= time.Duration(s.lpConfig.MaxPositionHoldSeconds)*time.Second {
+		if s.now().Sub(state.EntryTime) >= time.Duration(s.lpConfig.MaxPositionHoldSeconds)*time.Second {
 			return s.emitPositionExit(ctx, tickPrice, comparePrice, refLabel, entry, threshold, buyR, sellR, feeModel, manualAddon, "max_hold"), nil
 		}
 	}
@@ -672,8 +672,8 @@ func (s *LimitProfitStrategy) OnTick(tick *indicators.Trade) (*Signal, error) {
 
 	// Periodic observability: last trade (or chosen exit ref) vs thresholds. No SELL is emitted
 	// until take-profit, stop-loss, trailing, max-hold, or circuit-breaker fires — this is expected.
-	if s.lastHoldDiagLog.IsZero() || time.Since(s.lastHoldDiagLog) >= 60*time.Second {
-		s.lastHoldDiagLog = time.Now()
+	if s.lastHoldDiagLog.IsZero() || s.now().Sub(s.lastHoldDiagLog) >= 60*time.Second {
+		s.lastHoldDiagLog = s.now()
 		logTh := threshold
 		if math.IsInf(logTh, 0) {
 			logTh = 0
@@ -729,7 +729,7 @@ func (s *LimitProfitStrategy) emitPositionExit(
 
 	// Record position hold duration metric.
 	if s.metrics != nil && s.metrics.PositionHoldDuration != nil && !state.EntryTime.IsZero() {
-		s.metrics.PositionHoldDuration(s.Name(), book, time.Since(state.EntryTime).Seconds())
+		s.metrics.PositionHoldDuration(s.Name(), book, s.now().Sub(state.EntryTime).Seconds())
 	}
 
 	// Record exit signal metric.
@@ -746,7 +746,7 @@ func (s *LimitProfitStrategy) emitPositionExit(
 	// until the exchange reports the fill. Position state, trailing stop, buy-fee overrides,
 	// and the RecordTradeWithPnL call are deferred to handleSellFillLocked.
 	eventID := uuid.New().String()
-	now := time.Now()
+	now := s.now()
 	s.RecordSignal()
 	s.UpdateState(func(st *StrategyState) {
 		st.PendingSell = true
@@ -827,7 +827,7 @@ func (s *LimitProfitStrategy) emitPositionExit(
 		Price:      signalPrice, // Use compare price when exit ref is bid/mid for execution alignment.
 		Confidence: 0.85,
 		Reason:     reason,
-		Timestamp:  time.Now(),
+		Timestamp:  s.now(),
 		Metadata:   meta,
 	}
 }
@@ -910,7 +910,7 @@ func (s *LimitProfitStrategy) handleBuyFillLocked(fill OrderFill) {
 			s.pendingOrderCount = 0
 		}
 		if s.metrics != nil && s.metrics.PendingBuyDuration != nil && !st.PendingBuySince.IsZero() {
-			s.metrics.PendingBuyDuration(s.Name(), s.config.Book, time.Since(st.PendingBuySince).Seconds())
+			s.metrics.PendingBuyDuration(s.Name(), s.config.Book, s.now().Sub(st.PendingBuySince).Seconds())
 		}
 	}
 
@@ -1021,7 +1021,7 @@ func (s *LimitProfitStrategy) handlePendingSellTimeoutLocked(ctx context.Context
 	if since.IsZero() {
 		return
 	}
-	if time.Since(since) < time.Duration(s.lpConfig.PendingSellTimeoutSeconds)*time.Second {
+	if s.now().Sub(since) < time.Duration(s.lpConfig.PendingSellTimeoutSeconds)*time.Second {
 		return
 	}
 
@@ -1035,7 +1035,7 @@ func (s *LimitProfitStrategy) handlePendingSellTimeoutLocked(ctx context.Context
 	}
 	s.logger().
 		WithStr("event_id", eid).
-		WithFloat64("age_seconds", time.Since(since).Seconds()).
+		WithFloat64("age_seconds", s.now().Sub(since).Seconds()).
 		Warn("pending sell timed out; cleared local state to allow re-emit")
 	s.UpdateState(func(out *StrategyState) {
 		out.PendingSell = false
@@ -1315,7 +1315,7 @@ func (s *LimitProfitStrategy) canEmitSignal() bool {
 	if s.lpConfig.MinSignalInterval <= 0 {
 		return true
 	}
-	return time.Since(state.LastSignalTime).Seconds() >= float64(s.lpConfig.MinSignalInterval)
+	return s.now().Sub(state.LastSignalTime).Seconds() >= float64(s.lpConfig.MinSignalInterval)
 }
 
 // OnBar forwards to OnTick using close as price.

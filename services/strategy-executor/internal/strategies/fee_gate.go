@@ -51,6 +51,17 @@ func NewFeeGate(provider MakerTakerFeeProvider, fallbackRoundTripBPS float64) Fe
 	return FeeGate{provider: provider, fallbackRoundTripBPS: fallbackRoundTripBPS}
 }
 
+// DefaultFallbackRoundTripBPS is the round-trip cost strategies assume when no
+// live fee provider answers: Bitso retail taker, 65 bps on each of two legs.
+//
+// It is non-zero ON PURPOSE. The gate used to default to "off unless
+// configured", and as a result it was silently inactive in every backtest --
+// mean_reversion measured 700 trades / -7,291 MXN ungated against 4 trades /
+// +64 MXN gated over the same data. An unconfigured strategy deciding whether
+// to risk money should assume the real cost, not zero. To opt out, set
+// fallback_round_trip_bps to 0 explicitly (with no provider injected).
+const DefaultFallbackRoundTripBPS = 130.0
+
 // HasRates reports whether the gate can produce usable rates at all. Callers
 // use this to preserve exact legacy behaviour when fee gating is unconfigured.
 func (g FeeGate) HasRates() bool {

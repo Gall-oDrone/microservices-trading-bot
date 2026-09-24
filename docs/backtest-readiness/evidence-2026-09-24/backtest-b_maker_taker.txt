@@ -1,0 +1,64 @@
+DATA SOURCE : s3:///trades (parquet archive)
+LOAD STATS  : source=s3:///trades (parquet archive) book=btc_mxn window=[2026-08-19T00:00:00Z..2026-09-22T23:59:59Z] objects=26600/26600 (failed=0) rows=70708 dup=0 out_of_range=0 invalid=0 returned=70708 span=[2026-08-19T15:40:05Z..2026-09-22T18:24:50Z]
+
+running mean_reversion   ... 4 closed trades, net 29.39 MXN
+running momentum         ... 0 closed trades, net 0.00 MXN
+10 closed trades, net 92.45 MXN
+running random_baseline  ... 95 closed trades, net -2142.78 MXN
+running buy_and_hold     ... 1 closed trades, net 314.75 MXN
+
+====================================================================================================
+BACKTEST RESULTS  book=btc_mxn  window=2026-08-19..2026-09-22T23:59:59Z
+fees: buy 60.00 bps, sell 78.00 bps (source: bitso api https://stage.bitso.com/api (btc_mxn: maker 60.00 bps, taker 78.00 bps; buy=maker, sell=taker)), slippage 10 bps | fee rates injected into strategies
+min samples for a supported verdict: 30
+====================================================================================================
+
+STRATEGY             TRADES     WINS      WIN%  NET P&L (MXN)   PROFIT FAC    MAX DD%
+----------------------------------------------------------------------------------------------------
+mean_reversion            4        4    100.0%          29.39         0.00      0.00%
+momentum                  0        0      0.0%           0.00         0.00      0.00%
+limit_profit             10        9     90.0%          92.45         9.93      0.01%
+random_baseline          95        0      0.0%       -2142.78         0.00      2.14%
+buy_and_hold              1        1    100.0%         314.75         0.00      0.00%
+
+
+PER-REGIME BREAKDOWN (attributed at entry time)
+----------------------------------------------------------------------------------------------------
+
+MEAN_REVERSION
+  REGIME             TRADES     WIN%        NET P&L      AVG/TRADE   VERDICT
+  neutral                 4   100.0%          29.39         7.3465   DIRECTIONAL ONLY — insufficient samples
+
+MOMENTUM
+  no closed trades
+
+LIMIT_PROFIT
+  REGIME             TRADES     WIN%        NET P&L      AVG/TRADE   VERDICT
+  neutral                 7   100.0%          48.67         6.9533   DIRECTIONAL ONLY — insufficient samples
+  trending_up             2    50.0%          -3.98        -1.9888   DIRECTIONAL ONLY — insufficient samples
+  unlabelled              1   100.0%          47.75        47.7535   DIRECTIONAL ONLY — insufficient samples
+
+RANDOM_BASELINE
+  REGIME             TRADES     WIN%        NET P&L      AVG/TRADE   VERDICT
+  low_vol_range          64     0.0%       -1484.68       -23.1981   supported by adequate samples
+  neutral                15     0.0%        -323.28       -21.5523   DIRECTIONAL ONLY — insufficient samples
+  trending_down           8     0.0%        -162.31       -20.2890   DIRECTIONAL ONLY — insufficient samples
+  trending_up             7     0.0%        -153.31       -21.9019   DIRECTIONAL ONLY — insufficient samples
+  unlabelled              1     0.0%         -19.19       -19.1935   DIRECTIONAL ONLY — insufficient samples
+
+BUY_AND_HOLD
+  REGIME             TRADES     WIN%        NET P&L      AVG/TRADE   VERDICT
+  unlabelled              1   100.0%         314.75       314.7532   DIRECTIONAL ONLY — insufficient samples
+
+
+VS RANDOM-SIGNAL BASELINE (net P&L per closed trade)
+----------------------------------------------------------------------------------------------------
+  random_baseline      -22.5556 MXN/trade over 95 trades
+  mean_reversion         7.3465 MXN/trade over 4 trades  (+29.9021 vs baseline — better than random)
+  momentum               0.0000 MXN/trade over 0 trades  (+22.5556 vs baseline — better than random)
+  limit_profit           9.2449 MXN/trade over 10 trades  (+31.8005 vs baseline — better than random)
+  buy_and_hold         314.7532 MXN/trade over 1 trades  (+337.3087 vs baseline — better than random)
+
+====================================================================================================
+
+wrote JSON results to <scratch>/b_maker_taker.json

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"bitso-trading-platform/strategy-executor/internal/indicators"
+
 	"github.com/google/uuid"
 )
 
@@ -33,10 +34,22 @@ type MomentumConfig struct {
 	// trading-engine should skip execution. Mirrors limit_profit semantics.
 	DryRun bool `json:"dry_run" yaml:"dry_run"`
 	// Lifecycle controls (0 = disabled) — see docs/LIMIT-PROFIT-ROBUSTNESS.md.
-	StopLossQuote           float64 `json:"stop_loss_quote" yaml:"stop_loss_quote"`
-	MaxPositionHoldSeconds  int     `json:"max_position_hold_seconds" yaml:"max_position_hold_seconds"`
-	MaxDailyLossQuote       float64 `json:"max_daily_loss_quote" yaml:"max_daily_loss_quote"`
-	DailyLossResetHourUTC   int     `json:"daily_loss_reset_hour_utc" yaml:"daily_loss_reset_hour_utc"`
+	StopLossQuote          float64 `json:"stop_loss_quote" yaml:"stop_loss_quote"`
+	MaxPositionHoldSeconds int     `json:"max_position_hold_seconds" yaml:"max_position_hold_seconds"`
+	MaxDailyLossQuote      float64 `json:"max_daily_loss_quote" yaml:"max_daily_loss_quote"`
+	DailyLossResetHourUTC  int     `json:"daily_loss_reset_hour_utc" yaml:"daily_loss_reset_hour_utc"`
+	// Fee gating (see fee_gate.go).
+	//
+	// MinNetProfitBPS is the net margin, over round-trip cost, an entry's
+	// expected move must clear. FallbackRoundTripBPS is the assumed total
+	// round-trip cost used when no live fee provider answers; setting it to 0
+	// with no provider disables the gate entirely. ExpectedMoveATRMult sizes
+	// the expected move: momentum has no explicit price target, so the move it
+	// can reasonably hope to capture is taken as a multiple of ATR, the same
+	// volatility measure the regime router classifies on.
+	MinNetProfitBPS      float64 `json:"min_net_profit_bps" yaml:"min_net_profit_bps"`
+	FallbackRoundTripBPS float64 `json:"fallback_round_trip_bps" yaml:"fallback_round_trip_bps"`
+	ExpectedMoveATRMult  float64 `json:"expected_move_atr_mult" yaml:"expected_move_atr_mult"`
 }
 
 // DefaultMomentumConfig returns default configuration
@@ -51,6 +64,9 @@ func DefaultMomentumConfig() MomentumConfig {
 		MaxPositionValue:  15000,
 		MinConfidence:     0.0,
 		DryRun:            false,
+		// Fee gate ON by default; see DefaultFallbackRoundTripBPS.
+		FallbackRoundTripBPS: DefaultFallbackRoundTripBPS,
+		ExpectedMoveATRMult:  1.0,
 	}
 }
 
@@ -58,14 +74,16 @@ func DefaultMomentumConfig() MomentumConfig {
 // Implements OrderFillAware for realized-fee P&L (POINT-11).
 type MomentumStrategy struct {
 	*BaseEnhancedStrategy
-	momConfig           MomentumConfig
-	fees                PositionFeeRates
-	dailyRealizedLoss   float64
+	momConfig             MomentumConfig
+	fees                  PositionFeeRates
+	dailyRealizedLoss     float64
 	circuitBreakerTripped bool
-	lastRSI             float64
-	lastEMA             float64
-	metrics             *MomentumMetrics
-	mu                  sync.RWMutex
+	lastRSI               float64
+	lastEMA               float64
+	metrics               *MomentumMetrics
+	provider              MakerTakerFeeProvider
+	feeGate               FeeGate
+	mu                    sync.RWMutex
 }
 
 // MomentumMetrics holds Prometheus metric callbacks for the momentum strategy
@@ -87,10 +105,51 @@ func (s *MomentumStrategy) SetMetrics(m *MomentumMetrics) {
 
 // NewMomentumStrategy creates a new momentum strategy
 func NewMomentumStrategy() *MomentumStrategy {
-	return &MomentumStrategy{
+	s := &MomentumStrategy{
 		BaseEnhancedStrategy: NewBaseEnhancedStrategy("momentum", "1.0.0"),
 		momConfig:            DefaultMomentumConfig(),
 	}
+	s.feeGate = NewFeeGate(nil, s.momConfig.FallbackRoundTripBPS)
+	return s
+}
+
+// SetFeeRatesProvider injects a live maker/taker fee source for the fee gate.
+// The live registry calls this for every strategy that implements it.
+func (s *MomentumStrategy) SetFeeRatesProvider(provider MakerTakerFeeProvider) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.provider = provider
+	s.feeGate = NewFeeGate(provider, s.momConfig.FallbackRoundTripBPS)
+}
+
+// entryClearsCost reports whether the expected move -- ExpectedMoveATRMult x
+// ATR in the entry direction -- covers round-trip cost plus MinNetProfitBPS.
+//
+// With the gate active, an unavailable ATR blocks the entry: without a
+// volatility estimate there is no expected move to weigh against a known,
+// certain cost. With the gate disabled it always passes.
+func (s *MomentumStrategy) entryClearsCost(dir PositionDirection, price float64) bool {
+	if !s.feeGate.HasRates() {
+		return true
+	}
+	svc := s.GetIndicatorService()
+	if svc == nil || s.momConfig.ExpectedMoveATRMult <= 0 {
+		return false
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	atr, err := svc.GetATR(ctx, s.config.Book)
+	if err != nil || atr == nil || atr.Value <= 0 {
+		return false
+	}
+	move := s.momConfig.ExpectedMoveATRMult * atr.Value
+	expectedExit := price + move
+	if dir == DirectionShort {
+		expectedExit = price - move
+	}
+	minNet := price * s.momConfig.MinNetProfitBPS / 10000.0
+	ok, _, _ := s.feeGate.EntryClearsCost(ctx, s.config.Book, dir, price, expectedExit, minNet)
+	return ok
 }
 
 // NewMomentumStrategyFactory returns a factory function for momentum strategy
@@ -140,6 +199,15 @@ func (s *MomentumStrategy) Initialize(config StrategyConfig, indicatorSvc *indic
 		if v, ok := params["daily_loss_reset_hour_utc"].(float64); ok {
 			s.momConfig.DailyLossResetHourUTC = int(v)
 		}
+		if v, ok := params["min_net_profit_bps"].(float64); ok {
+			s.momConfig.MinNetProfitBPS = v
+		}
+		if v, ok := params["fallback_round_trip_bps"].(float64); ok {
+			s.momConfig.FallbackRoundTripBPS = v
+		}
+		if v, ok := params["expected_move_atr_mult"].(float64); ok {
+			s.momConfig.ExpectedMoveATRMult = v
+		}
 	}
 
 	s.momConfig.PositionSize = ResolvePositionSize(
@@ -148,6 +216,8 @@ func (s *MomentumStrategy) Initialize(config StrategyConfig, indicatorSvc *indic
 	if config.Sizing.MaxPositionValue > 0 {
 		s.momConfig.MaxPositionValue = config.Sizing.MaxPositionValue
 	}
+
+	s.feeGate = NewFeeGate(s.provider, s.momConfig.FallbackRoundTripBPS)
 
 	return nil
 }
@@ -217,7 +287,7 @@ func (s *MomentumStrategy) OnTick(tick *indicators.Trade) (*Signal, error) {
 	}
 
 	if s.momConfig.MaxPositionHoldSeconds > 0 && !state.EntryTime.IsZero() {
-		if time.Since(state.EntryTime) >= time.Duration(s.momConfig.MaxPositionHoldSeconds)*time.Second {
+		if s.now().Sub(state.EntryTime) >= time.Duration(s.momConfig.MaxPositionHoldSeconds)*time.Second {
 			return s.emitExit(price, rsi, ema, &state, "max_hold")
 		}
 	}
@@ -242,7 +312,7 @@ func (s *MomentumStrategy) canGenerateSignal() bool {
 		return true
 	}
 
-	elapsed := time.Since(state.LastSignalTime)
+	elapsed := s.now().Sub(state.LastSignalTime)
 	return elapsed.Seconds() >= float64(s.momConfig.MinSignalInterval)
 }
 
@@ -251,6 +321,9 @@ func (s *MomentumStrategy) generateEntrySignal(price, rsi, ema float64) (*Signal
 	if rsi < s.momConfig.OversoldLevel && price > ema {
 		confidence := s.calculateConfidence(rsi, price, ema, "BUY")
 		if confidence < s.momConfig.MinConfidence {
+			return nil, nil
+		}
+		if !s.entryClearsCost(DirectionLong, price) {
 			return nil, nil
 		}
 		s.RecordSignal()
@@ -267,7 +340,7 @@ func (s *MomentumStrategy) generateEntrySignal(price, rsi, ema float64) (*Signal
 			Price:      price,
 			Confidence: confidence,
 			Reason:     fmt.Sprintf("RSI oversold (%.2f) with price above EMA (%.2f > %.2f)", rsi, price, ema),
-			Timestamp:  time.Now(),
+			Timestamp:  s.now(),
 			Metadata:   meta,
 		}, nil
 	}
@@ -275,6 +348,9 @@ func (s *MomentumStrategy) generateEntrySignal(price, rsi, ema float64) (*Signal
 	if rsi > s.momConfig.OverboughtLevel && price < ema {
 		confidence := s.calculateConfidence(rsi, price, ema, "SELL")
 		if confidence < s.momConfig.MinConfidence {
+			return nil, nil
+		}
+		if !s.entryClearsCost(DirectionShort, price) {
 			return nil, nil
 		}
 		s.RecordSignal()
@@ -291,7 +367,7 @@ func (s *MomentumStrategy) generateEntrySignal(price, rsi, ema float64) (*Signal
 			Price:      price,
 			Confidence: confidence,
 			Reason:     fmt.Sprintf("RSI overbought (%.2f) with price below EMA (%.2f < %.2f)", rsi, price, ema),
-			Timestamp:  time.Now(),
+			Timestamp:  s.now(),
 			Metadata:   meta,
 		}, nil
 	}
@@ -317,10 +393,24 @@ func (s *MomentumStrategy) signalMetadata(rsi, ema float64, signalType string) m
 }
 
 // generateExitSignal emits an exit when RSI returns to neutral.
+//
+// This is the VOLUNTARY exit, so with the fee gate active it refuses to close
+// at a net loss after round-trip fees and keeps holding instead. Stop-loss,
+// max-hold and circuit-breaker exits are risk overrides handled in OnTick
+// before this is reached, and remain free to realize a loss.
 func (s *MomentumStrategy) generateExitSignal(price, rsi, ema float64, state *StrategyState) (*Signal, error) {
 	rsiNeutral := rsi > s.momConfig.OversoldLevel && rsi < s.momConfig.OverboughtLevel
 	if !rsiNeutral {
 		return nil, nil
+	}
+	if s.feeGate.HasRates() && state.EntryPrice > 0 {
+		dir := DirectionLong
+		if state.PositionSide == "SELL" || state.PositionSide == "SHORT" {
+			dir = DirectionShort
+		}
+		if ok, _, _ := s.feeGate.ExitIsNetProfitable(context.Background(), s.config.Book, dir, state.EntryPrice, price); !ok {
+			return nil, nil
+		}
 	}
 	return s.emitExit(price, rsi, ema, state, "take_profit")
 }
@@ -345,7 +435,7 @@ func (s *MomentumStrategy) emitExit(price, rsi, ema float64, state *StrategyStat
 	}
 	s.UpdateState(func(st *StrategyState) {
 		st.PendingSell = true
-		st.PendingSellSince = time.Now()
+		st.PendingSellSince = s.now()
 		st.PendingSellEventID = eventID
 	})
 
@@ -372,7 +462,7 @@ func (s *MomentumStrategy) emitExit(price, rsi, ema float64, state *StrategyStat
 		Price:      price,
 		Confidence: 0.75,
 		Reason:     reason,
-		Timestamp:  time.Now(),
+		Timestamp:  s.now(),
 		Metadata:   meta,
 	}, nil
 }
@@ -471,7 +561,7 @@ func (s *MomentumStrategy) finalizeExitFillLocked(fill OrderFill) {
 
 	if s.metrics != nil {
 		if s.metrics.PositionHoldDuration != nil && !st.EntryTime.IsZero() {
-			s.metrics.PositionHoldDuration(s.Name(), s.config.Book, time.Since(st.EntryTime).Seconds())
+			s.metrics.PositionHoldDuration(s.Name(), s.config.Book, s.now().Sub(st.EntryTime).Seconds())
 		}
 		if s.metrics.DailyRealizedPnL != nil {
 			s.metrics.DailyRealizedPnL(s.Name(), s.config.Book, -s.dailyRealizedLoss)
@@ -495,7 +585,7 @@ func (s *MomentumStrategy) maybeResetDailyLossLocked() {
 	if s.momConfig.MaxDailyLossQuote <= 0 {
 		return
 	}
-	now := time.Now().UTC()
+	now := s.now().UTC()
 	if now.Hour() == s.momConfig.DailyLossResetHourUTC && now.Minute() < 2 {
 		s.dailyRealizedLoss = 0
 		s.circuitBreakerTripped = false
@@ -577,7 +667,7 @@ func (s *MomentumStrategy) IsWithinSchedule() bool {
 		}
 	}
 
-	now := time.Now().In(loc)
+	now := s.now().In(loc)
 
 	if len(schedule.ActiveDays) > 0 {
 		dayName := now.Weekday().String()[:3]

@@ -34,11 +34,12 @@ func TestMeanReversionStrategy_Initialize(t *testing.T) {
 		Enabled: true,
 		Book:    "btc_mxn",
 		Parameters: map[string]interface{}{
-			"lookback_period":     float64(30),
-			"entry_threshold":     float64(2.5),
-			"exit_threshold":      float64(0.3),
-			"min_signal_interval": float64(120),
-			"position_size":       float64(0.005),
+			"fallback_round_trip_bps": float64(0), // signal-logic test: opt out of the fee gate (covered in mean_reversion_fee_gate_test.go)
+			"lookback_period":         float64(30),
+			"entry_threshold":         float64(2.5),
+			"exit_threshold":          float64(0.3),
+			"min_signal_interval":     float64(120),
+			"position_size":           float64(0.005),
 		},
 		Sizing: SizingConfig{
 			Method:           "fixed",
@@ -105,9 +106,10 @@ func TestMeanReversionStrategy_OnTick_BuySignal(t *testing.T) {
 		Book:    "btc_mxn",
 		Enabled: true,
 		Parameters: map[string]interface{}{
-			"entry_threshold":     float64(2.0),
-			"exit_threshold":      float64(0.5),
-			"min_signal_interval": float64(0),
+			"fallback_round_trip_bps": float64(0), // signal-logic test: opt out of the fee gate (covered in mean_reversion_fee_gate_test.go)
+			"entry_threshold":         float64(2.0),
+			"exit_threshold":          float64(0.5),
+			"min_signal_interval":     float64(0),
 		},
 		Sizing: SizingConfig{
 			MaxPositionSize: 0.001,
@@ -171,9 +173,10 @@ func TestMeanReversionStrategy_OnTick_SellSignal(t *testing.T) {
 		Book:    "btc_mxn",
 		Enabled: true,
 		Parameters: map[string]interface{}{
-			"entry_threshold":     float64(2.0),
-			"exit_threshold":      float64(0.5),
-			"min_signal_interval": float64(0),
+			"fallback_round_trip_bps": float64(0), // signal-logic test: opt out of the fee gate (covered in mean_reversion_fee_gate_test.go)
+			"entry_threshold":         float64(2.0),
+			"exit_threshold":          float64(0.5),
+			"min_signal_interval":     float64(0),
 		},
 		Sizing: SizingConfig{
 			MaxPositionSize: 0.001,
@@ -225,9 +228,10 @@ func TestMeanReversionStrategy_OnTick_NoSignal(t *testing.T) {
 		Book:    "btc_mxn",
 		Enabled: true,
 		Parameters: map[string]interface{}{
-			"entry_threshold":     float64(2.0),
-			"exit_threshold":      float64(0.5),
-			"min_signal_interval": float64(0),
+			"fallback_round_trip_bps": float64(0), // signal-logic test: opt out of the fee gate (covered in mean_reversion_fee_gate_test.go)
+			"entry_threshold":         float64(2.0),
+			"exit_threshold":          float64(0.5),
+			"min_signal_interval":     float64(0),
 		},
 	}
 
@@ -272,9 +276,10 @@ func TestMeanReversionStrategy_ExitSignal(t *testing.T) {
 		Book:    "btc_mxn",
 		Enabled: true,
 		Parameters: map[string]interface{}{
-			"entry_threshold":     float64(2.0),
-			"exit_threshold":      float64(0.5),
-			"min_signal_interval": float64(0),
+			"fallback_round_trip_bps": float64(0), // signal-logic test: opt out of the fee gate (covered in mean_reversion_fee_gate_test.go)
+			"entry_threshold":         float64(2.0),
+			"exit_threshold":          float64(0.5),
+			"min_signal_interval":     float64(0),
 		},
 		Sizing: SizingConfig{
 			MaxPositionSize: 0.001,

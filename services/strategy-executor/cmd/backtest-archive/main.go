@@ -38,6 +38,8 @@ import (
 	"bitso-trading-platform/strategy-executor/internal/backtest"
 	"bitso-trading-platform/strategy-executor/internal/backtest/loader"
 	"bitso-trading-platform/strategy-executor/internal/indicators"
+
+	"bitso-trading-platform/shared/pkg/bitso"
 )
 
 // MinSamplesDefault is the floor below which a per-regime result is treated as
@@ -61,6 +63,16 @@ func main() {
 	minSamples := flag.Int("min-samples", MinSamplesDefault, "closed trades required before a per-regime result is called supported")
 	paramsJSON := flag.String("params", "", "JSON object of strategy parameters applied to every strategy (e.g. '{\"min_signal_interval\":0}')")
 	jsonOut := flag.String("json", "", "write the full result set as JSON here")
+
+	// Cost-structure modelling (backtest only; live order placement is not
+	// affected by any of these).
+	buyCommissionBPS := flag.Float64("buy-commission-bps", 0, "buy-leg commission in bps; overrides -commission-bps for the buy leg when set")
+	sellCommissionBPS := flag.Float64("sell-commission-bps", 0, "sell-leg commission in bps; overrides -commission-bps for the sell leg when set")
+	feesFromBitso := flag.Bool("fees-from-bitso", false, "fetch the account's real maker/taker rates for -book from Bitso (reads BITSO_KEY / BITSO_SECRET from the environment)")
+	buyLiquidity := flag.String("buy-liquidity", "taker", "with -fees-from-bitso: role assumed for the buy leg (maker|taker)")
+	sellLiquidity := flag.String("sell-liquidity", "taker", "with -fees-from-bitso: role assumed for the sell leg (maker|taker)")
+	bitsoBaseURL := flag.String("bitso-api-base-url", envOr("BITSO_API_BASE_URL", "https://stage.bitso.com/api"), "with -fees-from-bitso: Bitso API prefix (defaults to stage, matching the services' k8s config)")
+	disableFeeRates := flag.Bool("disable-fee-rates", false, "do not inject backtest fee rates into strategies (reproduces the pre-fix, fee-blind harness)")
 	flag.Parse()
 
 	params := map[string]interface{}{}
@@ -71,27 +83,109 @@ func main() {
 		}
 	}
 
+	feeSource := "flags"
+	if *feesFromBitso {
+		buyBPS, sellBPS, desc, err := fetchBitsoLegRates(*bitsoBaseURL, *book, *buyLiquidity, *sellLiquidity)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "backtest-archive: -fees-from-bitso: %v\n", err)
+			os.Exit(1)
+		}
+		// Explicit per-leg flags still win, so a single leg can be pinned.
+		if *buyCommissionBPS == 0 {
+			*buyCommissionBPS = buyBPS
+		}
+		if *sellCommissionBPS == 0 {
+			*sellCommissionBPS = sellBPS
+		}
+		feeSource = desc
+	}
+
 	if err := run(runArgs{
 		archiveDir: *archiveDir, bucket: *bucket, region: *region, prefix: *prefix,
 		book: *book, fromS: *fromS, toS: *toS, labelsPath: *labelsPath,
 		strategies: splitCSV(*stratList), commissionBPS: *commissionBPS,
 		slippageBPS: *slippageBPS, initialBalance: *initialBalance,
 		minSamples: *minSamples, jsonOut: *jsonOut, params: params,
+		buyCommissionBPS: *buyCommissionBPS, sellCommissionBPS: *sellCommissionBPS,
+		disableFeeRates: *disableFeeRates, feeSource: feeSource,
 	}); err != nil {
 		fmt.Fprintf(os.Stderr, "backtest-archive: %v\n", err)
 		os.Exit(1)
 	}
 }
 
+// fetchBitsoLegRates asks Bitso for the account's fee schedule and returns the
+// per-leg commission in bps for the requested maker/taker roles.
+//
+// Credentials are read from the environment and never written anywhere. The
+// returned description contains only the rates, so it is safe to print.
+func fetchBitsoLegRates(baseURL, book, buyRole, sellRole string) (buyBPS, sellBPS float64, desc string, err error) {
+	key, secret := os.Getenv("BITSO_KEY"), os.Getenv("BITSO_SECRET")
+	if key == "" || secret == "" {
+		return 0, 0, "", fmt.Errorf("BITSO_KEY and BITSO_SECRET must be set in the environment")
+	}
+	c := bitso.NewClient()
+	if baseURL != "" {
+		c.SetAPIBaseURL(baseURL)
+	}
+	c.SetAuth(key, secret)
+	cf, err := c.Fees(nil)
+	if err != nil {
+		return 0, 0, "", fmt.Errorf("fetch fees: %w", err)
+	}
+	f := bitso.LookupFeeByBook(cf, book)
+	if f == nil {
+		return 0, 0, "", fmt.Errorf("no fee row for book %q", book)
+	}
+	maker, taker := f.MakerTakerDecimalRates()
+	pick := func(role string) (float64, error) {
+		switch strings.ToLower(role) {
+		case bitso.LiquidityMaker:
+			return maker * 1e4, nil
+		case bitso.LiquidityTaker:
+			return taker * 1e4, nil
+		}
+		return 0, fmt.Errorf("liquidity role must be maker or taker, got %q", role)
+	}
+	if buyBPS, err = pick(buyRole); err != nil {
+		return 0, 0, "", err
+	}
+	if sellBPS, err = pick(sellRole); err != nil {
+		return 0, 0, "", err
+	}
+	desc = fmt.Sprintf("bitso api %s (%s: maker %.2f bps, taker %.2f bps; buy=%s, sell=%s)",
+		baseURL, book, maker*1e4, taker*1e4, buyRole, sellRole)
+	return buyBPS, sellBPS, desc, nil
+}
+
+func envOr(k, def string) string {
+	if v := os.Getenv(k); v != "" {
+		return v
+	}
+	return def
+}
+
 type runArgs struct {
-	archiveDir, bucket, region, prefix string
-	book, fromS, toS, labelsPath       string
-	strategies                         []string
-	commissionBPS, slippageBPS         float64
-	initialBalance                     float64
-	minSamples                         int
-	jsonOut                            string
-	params                             map[string]interface{}
+	archiveDir, bucket, region, prefix  string
+	book, fromS, toS, labelsPath        string
+	strategies                          []string
+	commissionBPS, slippageBPS          float64
+	buyCommissionBPS, sellCommissionBPS float64
+	disableFeeRates                     bool
+	feeSource                           string
+	initialBalance                      float64
+	minSamples                          int
+	jsonOut                             string
+	params                              map[string]interface{}
+}
+
+// legBPS reports the effective commission for each leg, mirroring
+// RunnerConfig.legCommissionBPS: per-leg values apply when either is set.
+func (a runArgs) legBPS() (buy, sell float64) {
+	if a.buyCommissionBPS != 0 || a.sellCommissionBPS != 0 {
+		return a.buyCommissionBPS, a.sellCommissionBPS
+	}
+	return a.commissionBPS, a.commissionBPS
 }
 
 // regimeStat accumulates closed round-trips for one (strategy, regime) pair.
@@ -176,12 +270,15 @@ func run(a runArgs) error {
 	for _, sType := range a.strategies {
 		fmt.Printf("running %-16s ... ", sType)
 		res, err := backtest.RunHistorical(ctx, trades, backtest.EngineConfig{
-			Book:           a.book,
-			StrategyType:   sType,
-			Parameters:     a.params,
-			InitialBalance: a.initialBalance,
-			SlippageBPS:    a.slippageBPS,
-			CommissionBPS:  a.commissionBPS,
+			Book:              a.book,
+			StrategyType:      sType,
+			Parameters:        a.params,
+			InitialBalance:    a.initialBalance,
+			SlippageBPS:       a.slippageBPS,
+			CommissionBPS:     a.commissionBPS,
+			BuyCommissionBPS:  a.buyCommissionBPS,
+			SellCommissionBPS: a.sellCommissionBPS,
+			DisableFeeRates:   a.disableFeeRates,
 		})
 		if err != nil {
 			fmt.Printf("FAILED: %v\n", err)
@@ -364,8 +461,14 @@ func loadLabels(path string) (*regimeTimeline, error) {
 func printReport(reports []*strategyReport, a runArgs) {
 	fmt.Printf("\n%s\n", strings.Repeat("=", 100))
 	fmt.Printf("BACKTEST RESULTS  book=%s  window=%s..%s\n", a.book, a.fromS, a.toS)
-	fmt.Printf("fees: %.0f bps per leg, slippage %.0f bps | min samples for a supported verdict: %d\n",
-		a.commissionBPS, a.slippageBPS, a.minSamples)
+	buyBPS, sellBPS := a.legBPS()
+	feeRates := "injected into strategies"
+	if a.disableFeeRates {
+		feeRates = "NOT injected (fee-blind strategies)"
+	}
+	fmt.Printf("fees: buy %.2f bps, sell %.2f bps (source: %s), slippage %.0f bps | fee rates %s\n",
+		buyBPS, sellBPS, a.feeSource, a.slippageBPS, feeRates)
+	fmt.Printf("min samples for a supported verdict: %d\n", a.minSamples)
 	fmt.Printf("%s\n\n", strings.Repeat("=", 100))
 
 	fmt.Printf("%-18s %8s %8s %9s %14s %12s %10s\n", "STRATEGY", "TRADES", "WINS", "WIN%", "NET P&L (MXN)", "PROFIT FAC", "MAX DD%")

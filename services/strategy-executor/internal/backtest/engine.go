@@ -18,6 +18,49 @@ type EngineConfig struct {
 	InitialBalance float64
 	SlippageBPS    float64
 	CommissionBPS  float64
+	// BuyCommissionBPS / SellCommissionBPS override CommissionBPS per leg
+	// (see RunnerConfig). Used to model maker vs taker fee schedules.
+	BuyCommissionBPS  float64
+	SellCommissionBPS float64
+	// DisableFeeRates skips injecting fee rates into the strategy, reproducing
+	// the pre-2026-09-24 behaviour in which fee gates silently no-opped during
+	// backtests. Only useful to measure what the gate is worth.
+	DisableFeeRates bool
+}
+
+// backtestFeeRates tells a strategy the cost the RUNNER will actually charge.
+//
+// Each leg's rate is commission plus slippage. Slippage belongs in here even
+// though it is not an exchange fee: the runner moves every fill price against
+// the strategy by SlippageBPS, so a strategy that budgets only commission would
+// accept trades that it believes clear their cost and that the runner then
+// books as losses. Liquidity roles (maker/taker) requested by the strategy are
+// ignored; the runner prices legs, not roles, and this reports those legs.
+type backtestFeeRates struct {
+	buy, sell float64
+}
+
+func newBacktestFeeRates(rc RunnerConfig) backtestFeeRates {
+	return backtestFeeRates{
+		buy:  (rc.legCommissionBPS("BUY") + rc.SlippageBPS) / 10000,
+		sell: (rc.legCommissionBPS("SELL") + rc.SlippageBPS) / 10000,
+	}
+}
+
+// MakerTakerRatesForBook implements strategies.MakerTakerFeeProvider. Every
+// consumer reads the first value as the buy leg and the second as the sell leg.
+func (f backtestFeeRates) MakerTakerRatesForBook(context.Context, string) (float64, float64, bool) {
+	return f.buy, f.sell, true
+}
+
+// FeeDecimalsForLegs implements strategies.BookFeeResolver.
+func (f backtestFeeRates) FeeDecimalsForLegs(context.Context, string, string, string) (float64, float64, bool) {
+	return f.buy, f.sell, true
+}
+
+// feeRatesSetter matches the live registry's injection interface.
+type feeRatesSetter interface {
+	SetFeeRatesProvider(strategies.MakerTakerFeeProvider)
 }
 
 // strategyFactories maps a strategy type to its constructor. These are the same
@@ -73,13 +116,28 @@ func RunHistorical(ctx context.Context, trades []indicators.Trade, cfg EngineCon
 	if name == "" {
 		name = fmt.Sprintf("%s_%s_backtest", cfg.StrategyType, cfg.Book)
 	}
+	params := cfg.Parameters
+	if !cfg.DisableFeeRates && cfg.StrategyType == "limit_profit" {
+		// limit_profit only consults a fee provider when use_bitso_fees is
+		// true (it defaults to false for the live service). Default it on in
+		// backtests so the exit threshold prices the fees the runner charges,
+		// unless the caller set it explicitly.
+		if _, set := params["use_bitso_fees"]; !set {
+			cp := make(map[string]interface{}, len(params)+1)
+			for k, v := range params {
+				cp[k] = v
+			}
+			cp["use_bitso_fees"] = true
+			params = cp
+		}
+	}
 	scfg := strategies.StrategyConfig{
 		Name:       name,
 		Type:       cfg.StrategyType,
 		Version:    "1.0.0",
 		Enabled:    true,
 		Book:       cfg.Book,
-		Parameters: cfg.Parameters,
+		Parameters: params,
 	}
 	if err := strat.Initialize(scfg, indSvc); err != nil {
 		return nil, fmt.Errorf("initialize strategy: %w", err)
@@ -87,10 +145,12 @@ func RunHistorical(ctx context.Context, trades []indicators.Trade, cfg EngineCon
 
 	provider := NewBacktestDataProvider(trades)
 	runnerCfg := RunnerConfig{
-		InitialBalance:  cfg.InitialBalance,
-		SlippageBPS:     cfg.SlippageBPS,
-		CommissionBPS:   cfg.CommissionBPS,
-		FillProbability: 1.0,
+		InitialBalance:    cfg.InitialBalance,
+		SlippageBPS:       cfg.SlippageBPS,
+		CommissionBPS:     cfg.CommissionBPS,
+		BuyCommissionBPS:  cfg.BuyCommissionBPS,
+		SellCommissionBPS: cfg.SellCommissionBPS,
+		FillProbability:   1.0,
 		BeforeTick: func(ctx context.Context, t *indicators.Trade) {
 			replay.Observe(*t)
 			comp.computeInto(ctx, store, replay, cfg.Book)
@@ -98,6 +158,14 @@ func RunHistorical(ctx context.Context, trades []indicators.Trade, cfg EngineCon
 	}
 	if runnerCfg.InitialBalance <= 0 {
 		runnerCfg.InitialBalance = DefaultRunnerConfig().InitialBalance
+	}
+
+	// Give the strategy the same cost the runner will charge. Without this the
+	// fee gates had no rates and silently no-opped in every backtest.
+	if !cfg.DisableFeeRates {
+		if fs, ok := strat.(feeRatesSetter); ok {
+			fs.SetFeeRatesProvider(newBacktestFeeRates(runnerCfg))
+		}
 	}
 
 	runner := NewRunner(strat, provider, runnerCfg)

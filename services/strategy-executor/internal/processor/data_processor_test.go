@@ -55,19 +55,15 @@ func TestProcessor_ProcessTradeEvent(t *testing.T) {
 
 	// Create a test trade event
 	tradeEvent := &models.TradeEvent{
-		ID:           12345,
-		Book:         "btc_mxn",
-		Price:        1000.0,
-		Amount:       0.5,
-		Value:        500.0,
-		MakerOrderID: "maker-123",
-		TakerOrderID: "taker-456",
-		MakerSide:    "buy",
-		Timestamp:    time.Now(),
-		CreatedAt:    uint64(time.Now().UnixMilli()),
-		ReceivedAt:   time.Now(),
-		Source:       "test",
-		Metadata:     map[string]interface{}{"test": true},
+		ID:              12345,
+		Book:            "btc_mxn",
+		Price:           1000.0,
+		Amount:          0.5,
+		Value:           500.0,
+		MakerSide:       "buy",
+		Timestamp:       time.Now(),
+		CreatedAtMillis: time.Now().UnixMilli(),
+		ReceivedAt:      time.Now(),
 	}
 
 	// Process the event
@@ -199,7 +195,6 @@ func TestProcessor_GetStatistics(t *testing.T) {
 		Amount:    0.5,
 		Value:     500.0,
 		Timestamp: time.Now(),
-		Source:    "test",
 	}
 
 	processor.ProcessTradeEvent(tradeEvent)

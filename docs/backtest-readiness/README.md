@@ -27,6 +27,7 @@ Read these in order.
 |---|---|---|
 | [`BACKTEST-READINESS-ASSESSMENT-2026-09-22.md`](BACKTEST-READINESS-ASSESSMENT-2026-09-22.md) | 2026-09-22 | Archive loader, fee-gating review, regime-diversity analysis, WebSocket gap audit, and the first honest backtest + random baseline run. **Verdict: the archive cannot support a `high_vol` conclusion, and all three live strategies lose money after real fees.** |
 | [`PATH-TO-PROFITABILITY-2026-09-23.md`](PATH-TO-PROFITABILITY-2026-09-23.md) | 2026-09-23 | Answers *why* they lose, using a move-size distribution and a perfect-foresight oracle. **Verdict: a horizon/cost mismatch, not a tuning problem** — at 1m bars the cost is 50× the median move. Ranks the fixes, and shows that simply enabling the existing fee gate swings `mean_reversion` from −7,291 to +64 MXN. |
+| [`HARNESS-FIXES-AND-REMEASURE-2026-09-24.md`](HARNESS-FIXES-AND-REMEASURE-2026-09-24.md) | 2026-09-24 | Implements R1 (fee gate on by default, `momentum` gated), R2 (two-leg commission, simulated clock, `buy_and_hold` baseline, processor tests) and R4 (maker/taker in the backtest, real Bitso rates), then re-measures. **Verdict: the fixed harness doubles every ungated loss; gated strategies are near break-even on 3–11 trades, and buy-and-hold beats them all by ~10×.** Real stage fees are 60/78 bps, not 50/65. |
 
 ## Evidence
 
@@ -35,6 +36,7 @@ next to the document that cites it:
 
 - [`evidence-2026-09-22/`](evidence-2026-09-22/) — regime distribution, daily ATR coverage, `ws_gaps` audit, backtest runs
 - [`evidence-2026-09-23/`](evidence-2026-09-23/) — edge analysis (move distribution + oracle), fee-gate-enabled backtest
+- [`evidence-2026-09-24/`](evidence-2026-09-24/) — six-scenario re-measure on the fixed harness (Bitso maker/taker rates, flat 65 bps, fee-blind, fully ungated)
 
 Evidence files are committed verbatim (only ANSI colour codes and per-tick log spam are stripped) so
 the numbers in the reports can be checked without re-running a 6-minute backtest.

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"bitso-trading-platform/strategy-executor/internal/indicators"
+
 	"github.com/google/uuid"
 )
 
@@ -35,6 +36,8 @@ func DefaultMeanReversionConfig() MeanReversionConfig {
 		MinSignalInterval: 60,
 		PositionSize:      0.001,
 		MaxPositionValue:  15000,
+		// Fee gate ON by default; see DefaultFallbackRoundTripBPS.
+		FallbackRoundTripBPS: DefaultFallbackRoundTripBPS,
 	}
 }
 
@@ -51,10 +54,12 @@ type MeanReversionStrategy struct {
 
 // NewMeanReversionStrategy creates a new mean reversion strategy
 func NewMeanReversionStrategy() *MeanReversionStrategy {
-	return &MeanReversionStrategy{
+	s := &MeanReversionStrategy{
 		BaseEnhancedStrategy: NewBaseEnhancedStrategy("mean_reversion", "1.0.0"),
 		mrConfig:             DefaultMeanReversionConfig(),
 	}
+	s.feeGate = NewFeeGate(nil, s.mrConfig.FallbackRoundTripBPS)
+	return s
 }
 
 // NewMeanReversionStrategyFactory returns a factory function for mean reversion strategy
@@ -117,10 +122,10 @@ func (s *MeanReversionStrategy) SetFeeRatesProvider(provider MakerTakerFeeProvid
 // expectedExit covers the round-trip fee plus the configured MinNetProfitBPS
 // margin.
 //
-// When neither a fee provider nor a fallback estimate is configured the gate
-// is a no-op and returns true. That keeps every existing deployment and test
-// on exactly its current behaviour: fee gating only takes effect once it has
-// been deliberately switched on with real inputs.
+// The gate is ON by default (FallbackRoundTripBPS defaults to
+// DefaultFallbackRoundTripBPS). It becomes a no-op, returning true, only when
+// fallback_round_trip_bps is explicitly set to 0 and no fee provider has been
+// injected.
 func (s *MeanReversionStrategy) entryClearsCost(dir PositionDirection, entryPrice, expectedExit float64) bool {
 	if !s.feeGate.HasRates() {
 		return true
@@ -195,7 +200,7 @@ func (s *MeanReversionStrategy) canGenerateSignal() bool {
 		return true
 	}
 
-	elapsed := time.Since(state.LastSignalTime)
+	elapsed := s.now().Sub(state.LastSignalTime)
 	return elapsed.Seconds() >= float64(s.mrConfig.MinSignalInterval)
 }
 
@@ -221,7 +226,7 @@ func (s *MeanReversionStrategy) generateEntrySignal(price float64, bb *indicator
 			Price:      price,
 			Confidence: confidence,
 			Reason:     fmt.Sprintf("Price %.2f below lower band %.2f (%.2f std devs)", price, bb.Lower, s.getDeviations(price, bb)),
-			Timestamp:  time.Now(),
+			Timestamp:  s.now(),
 			Metadata: map[string]interface{}{
 				"upper_band":  bb.Upper,
 				"middle_band": bb.Middle,
@@ -254,7 +259,7 @@ func (s *MeanReversionStrategy) generateEntrySignal(price float64, bb *indicator
 			Price:      price,
 			Confidence: confidence,
 			Reason:     fmt.Sprintf("Price %.2f above upper band %.2f (%.2f std devs)", price, bb.Upper, s.getDeviations(price, bb)),
-			Timestamp:  time.Now(),
+			Timestamp:  s.now(),
 			Metadata: map[string]interface{}{
 				"upper_band":  bb.Upper,
 				"middle_band": bb.Middle,
@@ -294,7 +299,7 @@ func (s *MeanReversionStrategy) generateExitSignal(price float64, bb *indicators
 			s.RecordSignal()
 			s.UpdateState(func(st *StrategyState) {
 				st.PendingSell = true
-				st.PendingSellSince = time.Now()
+				st.PendingSellSince = s.now()
 				st.PendingSellEventID = eventID
 			})
 
@@ -306,7 +311,7 @@ func (s *MeanReversionStrategy) generateExitSignal(price float64, bb *indicators
 				Price:      price,
 				Confidence: 0.9,
 				Reason:     fmt.Sprintf("Stop-loss triggered (drawdown %.2f BPS > %.2f)", drawdownBPS, s.mrConfig.StopLossBPS),
-				Timestamp:  time.Now(),
+				Timestamp:  s.now(),
 				Metadata: map[string]interface{}{
 					"upper_band":     bb.Upper,
 					"middle_band":    bb.Middle,
@@ -347,7 +352,7 @@ func (s *MeanReversionStrategy) generateExitSignal(price float64, bb *indicators
 		s.RecordSignal()
 		s.UpdateState(func(st *StrategyState) {
 			st.PendingSell = true
-			st.PendingSellSince = time.Now()
+			st.PendingSellSince = s.now()
 			st.PendingSellEventID = eventID
 		})
 
@@ -359,7 +364,7 @@ func (s *MeanReversionStrategy) generateExitSignal(price float64, bb *indicators
 			Price:      price,
 			Confidence: 0.8,
 			Reason:     fmt.Sprintf("Price returned to mean (%.2f std devs from middle)", deviations),
-			Timestamp:  time.Now(),
+			Timestamp:  s.now(),
 			Metadata: map[string]interface{}{
 				"upper_band":     bb.Upper,
 				"middle_band":    bb.Middle,
@@ -520,7 +525,7 @@ func (s *MeanReversionStrategy) IsWithinSchedule() bool {
 		}
 	}
 
-	now := time.Now().In(loc)
+	now := s.now().In(loc)
 
 	if len(schedule.ActiveDays) > 0 {
 		dayName := now.Weekday().String()[:3]

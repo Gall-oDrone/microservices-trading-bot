@@ -66,29 +66,29 @@ type StrategyState struct {
 
 // StrategyMetrics represents performance metrics for a strategy
 type StrategyMetrics struct {
-	TotalPnL          float64   `json:"total_pnl"`
-	DailyPnL          float64   `json:"daily_pnl"`
-	MaxDrawdown       float64   `json:"max_drawdown"`
-	DrawdownPercent   float64   `json:"drawdown_percent"`
-	WinRate           float64   `json:"win_rate"`
-	ProfitFactor      float64   `json:"profit_factor"`
-	SharpeRatio       float64   `json:"sharpe_ratio"`
-	AvgTradeDuration  float64   `json:"avg_trade_duration_seconds"`
-	TradesPerDay      float64   `json:"trades_per_day"`
-	LastUpdated       time.Time `json:"last_updated"`
+	TotalPnL         float64   `json:"total_pnl"`
+	DailyPnL         float64   `json:"daily_pnl"`
+	MaxDrawdown      float64   `json:"max_drawdown"`
+	DrawdownPercent  float64   `json:"drawdown_percent"`
+	WinRate          float64   `json:"win_rate"`
+	ProfitFactor     float64   `json:"profit_factor"`
+	SharpeRatio      float64   `json:"sharpe_ratio"`
+	AvgTradeDuration float64   `json:"avg_trade_duration_seconds"`
+	TradesPerDay     float64   `json:"trades_per_day"`
+	LastUpdated      time.Time `json:"last_updated"`
 }
 
 // StrategyConfig holds configuration for a strategy
 type StrategyConfig struct {
-	Name              string                 `json:"name" yaml:"name"`
-	Type              string                 `json:"type" yaml:"type"`
-	Version           string                 `json:"version" yaml:"version"`
-	Enabled           bool                   `json:"enabled" yaml:"enabled"`
-	Book              string                 `json:"book" yaml:"book"`
-	Parameters        map[string]interface{} `json:"parameters" yaml:"parameters"`
-	Sizing            SizingConfig           `json:"sizing" yaml:"sizing"`
-	Risk              RiskConfig             `json:"risk" yaml:"risk"`
-	Schedule          ScheduleConfig         `json:"schedule" yaml:"schedule"`
+	Name       string                 `json:"name" yaml:"name"`
+	Type       string                 `json:"type" yaml:"type"`
+	Version    string                 `json:"version" yaml:"version"`
+	Enabled    bool                   `json:"enabled" yaml:"enabled"`
+	Book       string                 `json:"book" yaml:"book"`
+	Parameters map[string]interface{} `json:"parameters" yaml:"parameters"`
+	Sizing     SizingConfig           `json:"sizing" yaml:"sizing"`
+	Risk       RiskConfig             `json:"risk" yaml:"risk"`
+	Schedule   ScheduleConfig         `json:"schedule" yaml:"schedule"`
 }
 
 // SizingConfig holds position sizing configuration
@@ -120,12 +120,12 @@ func ResolvePositionSize(parameters map[string]interface{}, maxPositionSize floa
 
 // RiskConfig holds risk management configuration
 type RiskConfig struct {
-	MaxDailyLoss        float64 `json:"max_daily_loss" yaml:"max_daily_loss"`
-	MaxDrawdownPct      float64 `json:"max_drawdown_pct" yaml:"max_drawdown_pct"`
-	MaxTradesPerDay     int     `json:"max_trades_per_day" yaml:"max_trades_per_day"`
-	MaxConsecutiveLoss  int     `json:"max_consecutive_losses" yaml:"max_consecutive_losses"`
-	MinTimeBetweenTrades int    `json:"min_time_between_trades" yaml:"min_time_between_trades"`
-	CooldownAfterLoss   int     `json:"cooldown_after_loss" yaml:"cooldown_after_loss"`
+	MaxDailyLoss         float64 `json:"max_daily_loss" yaml:"max_daily_loss"`
+	MaxDrawdownPct       float64 `json:"max_drawdown_pct" yaml:"max_drawdown_pct"`
+	MaxTradesPerDay      int     `json:"max_trades_per_day" yaml:"max_trades_per_day"`
+	MaxConsecutiveLoss   int     `json:"max_consecutive_losses" yaml:"max_consecutive_losses"`
+	MinTimeBetweenTrades int     `json:"min_time_between_trades" yaml:"min_time_between_trades"`
+	CooldownAfterLoss    int     `json:"cooldown_after_loss" yaml:"cooldown_after_loss"`
 }
 
 // ScheduleConfig holds trading schedule configuration
@@ -202,6 +202,8 @@ type BaseEnhancedStrategy struct {
 	state        StrategyState
 	metrics      StrategyMetrics
 	running      bool
+	// clock supplies "now". nil means the wall clock; see clock.go.
+	clock Clock
 }
 
 // NewBaseEnhancedStrategy creates a new base strategy
@@ -283,13 +285,13 @@ func (s *BaseEnhancedStrategy) UpdateState(update func(*StrategyState)) {
 // UpdateMetrics updates the strategy metrics
 func (s *BaseEnhancedStrategy) UpdateMetrics(update func(*StrategyMetrics)) {
 	update(&s.metrics)
-	s.metrics.LastUpdated = time.Now()
+	s.metrics.LastUpdated = s.now()
 }
 
 // RecordSignal records a signal generation
 func (s *BaseEnhancedStrategy) RecordSignal() {
 	s.state.SignalCount++
-	s.state.LastSignalTime = time.Now()
+	s.state.LastSignalTime = s.now()
 }
 
 // RecordTrade records a trade without updating P&L metrics (kept for backward compatibility).
@@ -317,7 +319,7 @@ func (s *BaseEnhancedStrategy) RecordTradeWithPnL(profitable bool, realizedPnL f
 
 	s.metrics.TotalPnL += realizedPnL
 	s.metrics.DailyPnL += realizedPnL
-	s.metrics.LastUpdated = time.Now()
+	s.metrics.LastUpdated = s.now()
 }
 
 // SetPosition sets the current position
@@ -326,7 +328,7 @@ func (s *BaseEnhancedStrategy) SetPosition(side string, size, price float64) {
 	s.state.PositionSide = side
 	s.state.PositionSize = size
 	s.state.EntryPrice = price
-	s.state.EntryTime = time.Now()
+	s.state.EntryTime = s.now()
 }
 
 // ClearPosition clears the current position

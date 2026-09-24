@@ -125,11 +125,26 @@ func TestMeanReversion_EntryGateRespectsMinNetProfitBPS(t *testing.T) {
 	}
 }
 
-// TestMeanReversion_UngatedBehaviourUnchanged is the regression guard for every
-// existing deployment: with no fee provider and no fallback, the strategy must
-// behave exactly as it did before fee gating existed.
-func TestMeanReversion_UngatedBehaviourUnchanged(t *testing.T) {
+// TestMeanReversion_GateOnByDefault asserts the fee gate is ACTIVE with no
+// configuration at all. The gate used to default to off, and nothing asserted
+// otherwise, so it silently no-opped in every backtest. This test exists so
+// that regression cannot recur unnoticed.
+func TestMeanReversion_GateOnByDefault(t *testing.T) {
 	s := newGatedMeanReversion(t, nil, nil)
+	if !s.feeGate.HasRates() {
+		t.Fatal("fee gate must be active by default (DefaultFallbackRoundTripBPS)")
+	}
+	// ~20 bps expected move against a 130 bps default round trip.
+	bb := &indicators.BollingerBands{Upper: 1_004_000, Middle: 1_002_000, Lower: 1_000_500}
+	if sig, _ := s.generateEntrySignal(1_000_000, bb); sig != nil {
+		t.Fatalf("default gate must suppress an entry that cannot cover cost, got %s", sig.Reason)
+	}
+}
+
+// TestMeanReversion_ExplicitOptOutDisablesGate: setting
+// fallback_round_trip_bps to 0 with no provider restores ungated behaviour.
+func TestMeanReversion_ExplicitOptOutDisablesGate(t *testing.T) {
+	s := newGatedMeanReversion(t, nil, map[string]interface{}{"fallback_round_trip_bps": float64(0)})
 
 	// A move far too small to cover real fees. Ungated, it must still fire.
 	bb := &indicators.BollingerBands{Upper: 1_004_000, Middle: 1_002_000, Lower: 1_000_500}
@@ -138,7 +153,7 @@ func TestMeanReversion_UngatedBehaviourUnchanged(t *testing.T) {
 		t.Fatalf("generateEntrySignal: %v", err)
 	}
 	if sig == nil {
-		t.Fatal("with no fee provider configured the gate must be a no-op and preserve legacy behaviour")
+		t.Fatal("with the gate explicitly opted out, a sub-cost entry must still fire")
 	}
 	if sig.Side != "BUY" {
 		t.Errorf("side = %q, want BUY", sig.Side)

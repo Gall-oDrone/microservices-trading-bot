@@ -292,7 +292,6 @@ func TestFilterIntegration(t *testing.T) {
 		Amount:    0.5,
 		Value:     500.0,
 		Timestamp: time.Now(),
-		Source:    "test",
 	}
 
 	err := processor.ProcessTradeEvent(tradeEvent)

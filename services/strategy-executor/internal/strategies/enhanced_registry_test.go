@@ -246,6 +246,9 @@ func TestEnhancedRegistry_ProcessTick(t *testing.T) {
 		Enabled: true,
 		Parameters: map[string]interface{}{
 			"min_signal_interval": float64(0),
+			// Tick-routing test: the 1,185,000 -> 1,200,000 move is ~127 bps,
+			// below the default 130 bps round trip, so opt out of the fee gate.
+			"fallback_round_trip_bps": float64(0),
 		},
 	}
 

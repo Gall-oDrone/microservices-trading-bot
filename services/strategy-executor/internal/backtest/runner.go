@@ -78,13 +78,39 @@ type Runner struct {
 type RunnerConfig struct {
 	InitialBalance float64 // Starting quote balance
 	SlippageBPS    float64 // Slippage in basis points
-	CommissionBPS  float64 // Commission in basis points
+	CommissionBPS  float64 // Commission in basis points, both legs unless overridden below
+	// BuyCommissionBPS / SellCommissionBPS override CommissionBPS per leg when
+	// either is non-zero. This models mixed liquidity, e.g. a resting maker buy
+	// followed by a taker sell. Leaving both at zero keeps the single-rate
+	// behaviour, so existing callers are unaffected.
+	BuyCommissionBPS  float64
+	SellCommissionBPS float64
 	FillProbability float64 // Probability of limit orders filling (0-1)
 	// BeforeTick, when set, runs immediately before each strategy.OnTick call.
 	// Used by the historical engine to advance the indicator window so indicators
 	// reflect only past data at each replayed tick (no look-ahead).
 	BeforeTick func(ctx context.Context, trade *indicators.Trade)
+	// DisableEndOfRunClose, when true, leaves a position that is still open when
+	// the data runs out unaccounted for (the pre-2026-09-24 behaviour). By
+	// default the runner closes it at the last trade price so that its P&L is
+	// counted rather than silently dropped.
+	DisableEndOfRunClose bool
 }
+
+// legCommissionBPS returns the commission rate for one leg.
+func (c RunnerConfig) legCommissionBPS(side string) float64 {
+	if c.BuyCommissionBPS == 0 && c.SellCommissionBPS == 0 {
+		return c.CommissionBPS
+	}
+	if side == "BUY" {
+		return c.BuyCommissionBPS
+	}
+	return c.SellCommissionBPS
+}
+
+// ExitReasonEndOfBacktest tags the synthetic close the runner performs when a
+// position is still open at the end of the replay.
+const ExitReasonEndOfBacktest = "end_of_backtest"
 
 // DefaultRunnerConfig returns default configuration.
 func DefaultRunnerConfig() RunnerConfig {
@@ -112,6 +138,23 @@ func (r *Runner) Run(ctx context.Context) (*BacktestResult, error) {
 		Signals:      []SignalRecord{},
 	}
 
+	// Drive the strategy with SIMULATED market time.
+	//
+	// Strategies throttle signals (MinSignalInterval), time out pending orders
+	// and time-box positions by comparing against "now". With the wall clock, a
+	// multi-week replay that completes in minutes lets through only a handful
+	// of signals, and the result measures CPU speed rather than strategy
+	// behaviour. The clock is seeded from the first trade BEFORE Start() so
+	// that start-up computations are anchored to market time too.
+	var simNow time.Time
+	if first, ok := r.provider.FirstTimestamp(); ok {
+		simNow = first
+	}
+	if ca, ok := r.strategy.(strategies.ClockAware); ok {
+		ca.SetClock(func() time.Time { return simNow })
+		defer ca.SetClock(nil)
+	}
+
 	// Start the strategy
 	if err := r.strategy.Start(ctx); err != nil {
 		return nil, fmt.Errorf("failed to start strategy: %w", err)
@@ -130,9 +173,56 @@ func (r *Runner) Run(ctx context.Context) (*BacktestResult, error) {
 		holdTimes     []time.Duration
 		entryTime     time.Time
 		entryPrice    float64
+		entryFee      float64
 		positionSize  float64
 		inPosition    bool
+		lastTrade     *indicators.Trade
 	)
+
+	// closePosition books a completed round trip and returns its P&L.
+	//
+	// Per-trade P&L is net of BOTH commission legs. The entry commission was
+	// already debited from balance when the position opened, so only the exit
+	// side (gross move less exit commission) is credited here; charging the
+	// entry fee again would double-count it in the balance.
+	closePosition := func(exitPrice, exitFee float64, at time.Time) float64 {
+		exitNet := (exitPrice-entryPrice)*positionSize - exitFee
+		pnl := exitNet - entryFee
+
+		totalPnL += pnl
+		if pnl > 0 {
+			result.WinningTrades++
+			grossProfits += pnl
+		} else {
+			result.LosingTrades++
+			grossLosses += math.Abs(pnl)
+		}
+		result.TotalTrades++
+		returns = append(returns, pnl/balance*100)
+		if pnl < 0 {
+			negReturns = append(negReturns, pnl/balance*100)
+		}
+
+		holdTime := at.Sub(entryTime)
+		holdTimes = append(holdTimes, holdTime)
+		if holdTime > result.MaxHoldTime {
+			result.MaxHoldTime = holdTime
+		}
+
+		balance += exitNet
+		if balance > peakBalance {
+			peakBalance = balance
+		}
+		dd := (peakBalance - balance) / peakBalance * 100
+		if dd > maxDrawdown {
+			maxDrawdown = dd
+		}
+
+		inPosition = false
+		positionSize = 0
+		entryFee = 0
+		return pnl
+	}
 
 	// Process each trade
 	for !r.provider.IsExhausted() {
@@ -146,6 +236,8 @@ func (r *Runner) Run(ctx context.Context) (*BacktestResult, error) {
 		}
 		result.EndTime = trade.Timestamp
 		result.TicksProcessed++
+		simNow = trade.Timestamp
+		lastTrade = trade
 
 		// Advance indicator window before the strategy reads indicators.
 		if r.config.BeforeTick != nil {
@@ -173,8 +265,8 @@ func (r *Runner) Run(ctx context.Context) (*BacktestResult, error) {
 			}
 		}
 
-		// Apply commission
-		commission := price * signal.Amount * r.config.CommissionBPS / 10000
+		// Apply commission at this leg's rate.
+		commission := price * signal.Amount * r.config.legCommissionBPS(signal.Side) / 10000
 
 		// Record signal
 		record := SignalRecord{
@@ -193,6 +285,7 @@ func (r *Runner) Run(ctx context.Context) (*BacktestResult, error) {
 			entryPrice = price
 			positionSize = signal.Amount
 			inPosition = true
+			entryFee = commission
 			balance -= commission
 
 			// Simulate fill notification if strategy supports it
@@ -212,40 +305,7 @@ func (r *Runner) Run(ctx context.Context) (*BacktestResult, error) {
 
 		} else if signal.Side == "SELL" && inPosition {
 			// Exit
-			pnl := (price - entryPrice) * positionSize - commission
-			record.PnL = pnl
-
-			totalPnL += pnl
-			if pnl > 0 {
-				result.WinningTrades++
-				grossProfits += pnl
-			} else {
-				result.LosingTrades++
-				grossLosses += math.Abs(pnl)
-			}
-			result.TotalTrades++
-			returns = append(returns, pnl/balance*100)
-			if pnl < 0 {
-				negReturns = append(negReturns, pnl/balance*100)
-			}
-
-			holdTime := trade.Timestamp.Sub(entryTime)
-			holdTimes = append(holdTimes, holdTime)
-			if holdTime > result.MaxHoldTime {
-				result.MaxHoldTime = holdTime
-			}
-
-			balance += pnl
-			if balance > peakBalance {
-				peakBalance = balance
-			}
-			dd := (peakBalance - balance) / peakBalance * 100
-			if dd > maxDrawdown {
-				maxDrawdown = dd
-			}
-
-			inPosition = false
-			positionSize = 0
+			record.PnL = closePosition(price, commission, trade.Timestamp)
 
 			// Notify the strategy that the exit filled.
 			//
@@ -271,6 +331,33 @@ func (r *Runner) Run(ctx context.Context) (*BacktestResult, error) {
 		}
 
 		result.Signals = append(result.Signals, record)
+	}
+
+	// Close out a position that is still open when the data runs out.
+	//
+	// Previously such a position was silently dropped: its entry commission hit
+	// the balance but its mark-to-market gain or loss never reached the
+	// results. That biases every strategy that happens to be holding at the
+	// end, and makes a buy-and-hold baseline report zero trades. The close is
+	// charged slippage and commission like any other exit.
+	if inPosition && lastTrade != nil && !r.config.DisableEndOfRunClose {
+		price := lastTrade.Price
+		if r.config.SlippageBPS > 0 {
+			price -= price * r.config.SlippageBPS / 10000
+		}
+		amount := positionSize
+		fee := price * amount * r.config.legCommissionBPS("SELL") / 10000
+		pnl := closePosition(price, fee, lastTrade.Timestamp)
+		result.Signals = append(result.Signals, SignalRecord{
+			Timestamp: lastTrade.Timestamp,
+			TickTime:  lastTrade.Timestamp,
+			Side:      "SELL",
+			Price:     price,
+			Amount:    amount,
+			Reason:    ExitReasonEndOfBacktest,
+			PnL:       pnl,
+			Metadata:  map[string]interface{}{"exit_reason": ExitReasonEndOfBacktest},
+		})
 	}
 
 	// Calculate final statistics
