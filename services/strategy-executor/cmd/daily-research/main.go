@@ -41,6 +41,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"bitso-trading-platform/strategy-executor/internal/yahoo"
 )
 
 type bar struct {
@@ -64,8 +66,9 @@ func (d newsDay) score() float64 {
 }
 
 func main() {
-	pricesDir := flag.String("prices", "", "local dir with the btc-usd daily CSV partitions (month=/day= files)")
-	newsDir := flag.String("news", "", "local dir with the transformed news daily CSV partitions")
+	pricesDir := flag.String("prices", "", "btc-usd daily CSV partitions dir (month=/day= files), or the compacted yahoo_crypto_daily.parquet")
+	newsDir := flag.String("news", "", "transformed news daily CSV partitions dir, or the compacted news_crypto_agentic.parquet")
+	book := flag.String("book", "btc-usd", "with a .parquet -prices file: the book to load")
 	tickers := flag.String("tickers", "BTC,BTC-USD", "news llm_ticker values to keep")
 	windows := flag.String("windows", "2025-01-01:2025-12-31,2026-08-01:2026-12-31", "comma-separated from:to windows, each run independently (first = in-sample)")
 	buyBPS := flag.Float64("buy-bps", 78, "buy-leg commission bps (Bitso btc_mxn taker, production)")
@@ -82,7 +85,7 @@ func main() {
 		fmt.Fprintln(os.Stderr, "daily-research: -prices is required")
 		os.Exit(2)
 	}
-	bars, err := loadBars(*pricesDir)
+	bars, err := loadBars(*pricesDir, *book)
 	if err != nil {
 		fail(err)
 	}
@@ -359,7 +362,10 @@ func calendarGaps(bs []bar) string {
 // Loading
 // ---------------------------------------------------------------------------
 
-func loadBars(dir string) ([]bar, error) {
+func loadBars(dir, book string) ([]bar, error) {
+	if strings.HasSuffix(dir, ".parquet") {
+		return loadBarsParquet(dir, book)
+	}
 	byDate := map[string]bar{}
 	err := walkCSV(dir, func(path string, header []string, row []string) error {
 		get := fieldGetter(header, row)
@@ -398,6 +404,9 @@ func loadBars(dir string) ([]bar, error) {
 }
 
 func loadNews(dir string, keep map[string]bool) (map[string]newsDay, error) {
+	if strings.HasSuffix(dir, ".parquet") {
+		return loadNewsParquet(dir, keep)
+	}
 	seen := map[string]bool{}
 	out := map[string]newsDay{}
 	err := walkCSV(dir, func(_ string, header []string, row []string) error {
@@ -433,6 +442,58 @@ func loadNews(dir string, keep map[string]bool) (map[string]newsDay, error) {
 		return nil
 	})
 	return out, err
+}
+
+// loadBarsParquet reads one book from the compacted prices file written by
+// cmd/yahoo-compact. That file is already deduplicated on (book, date).
+func loadBarsParquet(path, book string) ([]bar, error) {
+	rows, _, err := yahoo.ReadPricesFile(path)
+	if err != nil {
+		return nil, err
+	}
+	var out []bar
+	for _, r := range rows {
+		if r.Book == book {
+			out = append(out, bar{Date: r.Day(), Open: r.Open, High: r.High, Low: r.Low, Close: r.Close})
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Date.Before(out[j].Date) })
+	if len(out) == 0 {
+		return nil, fmt.Errorf("no %s bars in %s", book, path)
+	}
+	return out, nil
+}
+
+// loadNewsParquet aggregates the compacted news file written by
+// cmd/yahoo-compact. That file is already deduplicated on the canonical
+// article URL, so no id-based de-duplication is applied here (the id column
+// is shared by distinct articles and would drop real rows).
+func loadNewsParquet(path string, keep map[string]bool) (map[string]newsDay, error) {
+	rows, _, err := yahoo.ReadNewsFile(path)
+	if err != nil {
+		return nil, err
+	}
+	out := map[string]newsDay{}
+	for _, r := range rows {
+		if r.LLMTicker == nil || !keep[*r.LLMTicker] || r.Datetime == nil ||
+			r.LLMOverallSentiment == nil || r.LLMConfidence == nil {
+			continue
+		}
+		day := r.Time().Format("2006-01-02")
+		nd := out[day]
+		nd.N++
+		nd.SentSum += *r.LLMOverallSentiment * *r.LLMConfidence
+		if r.LLMSignal != nil {
+			switch *r.LLMSignal {
+			case "bullish":
+				nd.Bullish++
+			case "bearish":
+				nd.Bearish++
+			}
+		}
+		out[day] = nd
+	}
+	return out, nil
 }
 
 func walkCSV(dir string, fn func(path string, header, row []string) error) error {
