@@ -52,7 +52,13 @@ func NewFeeGate(provider MakerTakerFeeProvider, fallbackRoundTripBPS float64) Fe
 }
 
 // DefaultFallbackRoundTripBPS is the round-trip cost strategies assume when no
-// live fee provider answers: Bitso retail taker, 65 bps on each of two legs.
+// live fee provider answers: Bitso btc_mxn taker, 78 bps on each of two legs.
+//
+// 78 bps is the production taker rate returned by GET /v3/fees on 2026-09-25
+// (maker was 60 bps); the older 65 bps figure in the fee_compute fixtures is
+// stale. Taker is used for both legs because the fallback cannot know which
+// role a fill will take, and underestimating cost is the dangerous direction.
+// Slippage is NOT included, matching what a live provider returns.
 //
 // It is non-zero ON PURPOSE. The gate used to default to "off unless
 // configured", and as a result it was silently inactive in every backtest --
@@ -60,7 +66,7 @@ func NewFeeGate(provider MakerTakerFeeProvider, fallbackRoundTripBPS float64) Fe
 // +64 MXN gated over the same data. An unconfigured strategy deciding whether
 // to risk money should assume the real cost, not zero. To opt out, set
 // fallback_round_trip_bps to 0 explicitly (with no provider injected).
-const DefaultFallbackRoundTripBPS = 130.0
+const DefaultFallbackRoundTripBPS = 156.0
 
 // HasRates reports whether the gate can produce usable rates at all. Callers
 // use this to preserve exact legacy behaviour when fee gating is unconfigured.

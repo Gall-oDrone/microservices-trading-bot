@@ -288,3 +288,20 @@ func TestFeeGate_InvalidPricesDegradeSafely(t *testing.T) {
 		})
 	}
 }
+
+// TestDefaultFallbackCoversProductionTaker pins the fallback to the production
+// btc_mxn taker rate confirmed via GET /v3/fees on 2026-09-25 (78 bps/leg).
+// An underestimated fallback lets sub-cost trades through whenever the live
+// fee provider is absent, so lowering it should be a deliberate, reviewed act.
+func TestDefaultFallbackCoversProductionTaker(t *testing.T) {
+	const productionTakerBPS = 78.0
+	if DefaultFallbackRoundTripBPS < 2*productionTakerBPS {
+		t.Fatalf("DefaultFallbackRoundTripBPS = %.0f, below the production taker round trip %.0f",
+			DefaultFallbackRoundTripBPS, 2*productionTakerBPS)
+	}
+	g := NewFeeGate(nil, DefaultFallbackRoundTripBPS)
+	buy, sell, src := g.RoundTripRates(context.Background(), "btc_mxn")
+	if src != FeeSourceFallback || math.Abs(buy-0.0078) > 1e-12 || math.Abs(sell-0.0078) > 1e-12 {
+		t.Fatalf("fallback legs = %v/%v (%s), want 0.0078/0.0078 (fallback)", buy, sell, src)
+	}
+}

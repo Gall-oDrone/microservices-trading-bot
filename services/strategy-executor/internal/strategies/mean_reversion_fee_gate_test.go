@@ -134,7 +134,7 @@ func TestMeanReversion_GateOnByDefault(t *testing.T) {
 	if !s.feeGate.HasRates() {
 		t.Fatal("fee gate must be active by default (DefaultFallbackRoundTripBPS)")
 	}
-	// ~20 bps expected move against a 130 bps default round trip.
+	// ~20 bps expected move against the 156 bps default round trip.
 	bb := &indicators.BollingerBands{Upper: 1_004_000, Middle: 1_002_000, Lower: 1_000_500}
 	if sig, _ := s.generateEntrySignal(1_000_000, bb); sig != nil {
 		t.Fatalf("default gate must suppress an entry that cannot cover cost, got %s", sig.Reason)

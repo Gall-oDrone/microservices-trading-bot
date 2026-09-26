@@ -88,6 +88,25 @@ func (p *ReplayProvider) GetRecentBars(ctx context.Context, book, interval strin
 	return out, nil
 }
 
+// barsFrom returns a copy of bars[from:] together with the total bar count.
+// Unlike GetRecentBars(…, 0) it does not copy the whole history, so callers
+// that track how many bars they have already consumed stay O(1) per tick.
+func (p *ReplayProvider) barsFrom(from int) ([]indicators.OHLCV, int) {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+
+	total := len(p.bars)
+	if from < 0 {
+		from = 0
+	}
+	if from >= total {
+		return nil, total
+	}
+	out := make([]indicators.OHLCV, total-from)
+	copy(out, p.bars[from:])
+	return out, total
+}
+
 // GetBookTicker returns the last observed trade price as last, with a synthetic
 // symmetric spread for strategies that compare against bid/ask.
 func (p *ReplayProvider) GetBookTicker(ctx context.Context, book string) (bid, ask, last float64, ok bool) {

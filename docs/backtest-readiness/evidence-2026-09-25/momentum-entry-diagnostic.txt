@@ -1,0 +1,8 @@
+    momentum_diagnostic_test.go:115: window 2026-08-19T00:00:00Z .. 2026-09-22T23:59:59Z: 70708 ticks, 70591 with RSI+EMA ready; RSI range [1.42, 99.30]
+    momentum_diagnostic_test.go:117: LONG : RSI<30 on 4413 ticks (6.25%); price>EMA on 36527 (51.74%); BOTH on 0 (0.0000%); of those, clear the 150 bps gate: 0
+    momentum_diagnostic_test.go:119:        closest miss: when RSI was oversold, price was at least 1.19 bps BELOW the EMA
+    momentum_diagnostic_test.go:120: SHORT: RSI>70 on 4547 ticks (6.44%); price<EMA on 34064 (48.26%); BOTH on 0 (0.0000%); of those, clear the 150 bps gate: 0
+    momentum_diagnostic_test.go:122:        closest miss: when RSI was overbought, price was at least 2.30 bps ABOVE the EMA
+--- PASS: TestMomentumEntryConditionDiagnostic (9.00s)
+PASS
+ok  	bitso-trading-platform/strategy-executor/internal/backtest	9.021s

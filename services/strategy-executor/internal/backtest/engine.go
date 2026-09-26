@@ -109,7 +109,7 @@ func RunHistorical(ctx context.Context, trades []indicators.Trade, cfg EngineCon
 	indCfg.MaxStaleness = 100 * 365 * 24 * time.Hour
 	indSvc := indicators.NewService(indCfg, store, replay, nil)
 
-	comp := newIndicatorComputer(indCfg)
+	comp := newIncrementalIndicators(indCfg)
 
 	strat := factory()
 	name := cfg.StrategyName
@@ -181,6 +181,11 @@ func RunHistorical(ctx context.Context, trades []indicators.Trade, cfg EngineCon
 // indicatorComputer recomputes indicators from the replay window and writes them
 // to the in-memory store, mirroring indicators.Service.ComputeAndStore but
 // without any global Prometheus side effects.
+//
+// It recomputes from the full bar history on every tick (O(n^2) over a run) and
+// is no longer used by RunHistorical. It is kept as the reference
+// implementation that incrementalIndicators must match bit-for-bit; see
+// TestIncrementalIndicatorsMatchFullRecompute.
 type indicatorComputer struct {
 	cfg       *indicators.ServiceConfig
 	sma       *indicators.SMA
