@@ -22,6 +22,14 @@ sample, and Aug–Sep 2026 as a separate out-of-sample check.
 > window did not change. The conclusion held. See
 > [§6 Correction](#6-correction-2026-09-27).
 
+> [!WARNING]
+> **Superseded for the trend rule (2026-09-27).** This study's price file started on 2025-01-01, so
+> SMA50 could not trade until ~Feb 20. With 2024 history the rule is warm from day one, and 2025
+> becomes **−14.51%, losing to holding by 6.5 pp**. The §1.1 "hint" was a cold-start artefact. On
+> 2018–2026 data the trend rule does beat holding after costs, for a different reason (drawdown
+> control across a cycle). See
+> [`FULL-HISTORY-DAILY-STUDY-2026-09-27.md`](FULL-HISTORY-DAILY-STUDY-2026-09-27.md).
+
 ---
 
 ## 1. Answer

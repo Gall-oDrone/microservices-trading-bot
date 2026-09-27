@@ -1,0 +1,135 @@
+====================================================================================================
+YAHOO_CRYPTO_DAILY_PRICES
+====================================================================================================
+source      : s3://test-financial-stocks-bucket/stocks/crypto/
+files read  : 101766 (failed 0)
+rows read   : 121461  [full_record=19318 hive_layout=35578 legacy_layout=66565]
+invalid     : 594   excluded: 1
+dedup       : 120866 candidates -> 101388 unique  (dropped 19478: 19203 identical, 275 superseded by a different version)
+conflicts   : 265 keys had versions with different values
+  e.g.      : ape-usd 2025-09-07: 2 versions, close 0.583988..0.584991, kept stocks/crypto/book=ape-usd/year=2025/month=09/day=07/format=csv/20250907-ape-usd.csv
+  e.g.      : atom-usd 2025-10-06: 2 versions, close 4.1449..4.2732, kept stocks/crypto/book=atom-usd/year=2025/month=10/day=06/format=csv/20251006-atom-usd.csv
+  e.g.      : aave-usd 2025-10-06: 2 versions, close 284.97..297.34, kept stocks/crypto/book=aave-usd/year=2025/month=10/day=06/format=csv/20251006-aave-usd.csv
+  e.g.      : ape-usd 2025-08-17: 2 versions, close 0.626359..0.64429, kept stocks/crypto/book=ape-usd/year=2025/month=08/day=17/format=csv/20250817-ape-usd.csv
+  e.g.      : ape-usd 2025-09-01: 2 versions, close 0.548981..0.557031, kept stocks/crypto/book=ape-usd/year=2025/month=09/day=01/format=csv/20250901-ape-usd.csv
+  e.g.      : atom-usd 2025-03-09: 2 versions, close 3.8022..3.8281, kept stocks/crypto/book=atom-usd/year=2025/month=03/day=09/format=csv/20250309-atom-usd.csv
+  e.g.      : atom-usd 2025-10-12: 2 versions, close 3.489..3.5224, kept stocks/crypto/book=atom-usd/year=2025/month=10/day=12/format=csv/20251012-atom-usd.csv
+  e.g.      : ada-usd 2025-09-28: 2 versions, close 0.790015..0.808166, kept stocks/crypto/book=ada-usd/year=2025/month=09/day=28/format=csv/20250928-ada-usd.csv
+max close disagreement within a key: 387.876%
+span        : 2018-01-01 .. 2026-09-27, 60 books
+output      : /usr/local/google/home/gdiegofernando/.gemini/jetski/brain/c7493600-2d6e-4f5a-8832-01a42a855edd/scratch/compact/out/yahoo_crypto_daily.parquet (3350.6 KB)
+
+  BOOK              ROWS        FIRST         LAST  MISSING
+  aave-usd          2066   2020-10-06   2026-08-23       82
+  ada-usd           3154   2018-01-01   2026-09-27       38
+  algo-usd          1216   2023-01-22   2026-08-09       80
+  ape-usd           1691   2020-10-06   2026-08-09      443
+  arb-usd            273   2023-10-10   2026-08-23      776
+  atom-usd          2675   2019-03-14   2026-09-27       80
+  avax-usd          2132   2020-07-13   2026-09-27      136
+  axs-usd           1228   2023-01-22   2026-08-09       68
+  bal-usd           2148   2020-06-24   2026-07-19       69
+  bar-usd           2159   2020-06-24   2026-09-27      128
+  bat-usd           3076   2018-01-01   2026-08-09       67
+  bch-usd           1278   2023-01-22   2026-09-27       67
+  bonk-usd           523   2024-12-08   2026-05-31       17
+  btc-usd           3072   2018-01-01   2026-09-27      120
+                   gap 2023-08-26..2023-08-27 (2d)
+                   gap 2023-09-15..2023-09-15 (1d)
+                   gap 2023-11-05..2023-11-05 (1d)
+                   gap 2023-11-18..2023-11-19 (2d)
+                   gap 2023-12-30..2023-12-30 (1d)
+                   gap 2024-01-13..2024-01-13 (1d)
+                   gap 2024-01-31..2024-02-03 (4d)
+                   gap 2024-02-24..2024-02-24 (1d)
+                   gap 2024-03-10..2024-03-10 (1d)
+                   gap 2024-03-28..2024-03-28 (1d)
+                   gap 2024-04-20..2024-04-20 (1d)
+                   gap 2024-05-05..2024-05-05 (1d)
+                   gap 2024-05-12..2024-05-13 (2d)
+                   gap 2024-05-16..2024-05-19 (4d)
+                   gap 2024-05-25..2024-05-27 (3d)
+                   gap 2024-06-02..2024-06-02 (1d)
+                   gap 2024-06-04..2024-08-19 (77d)
+                   gap 2024-08-30..2024-08-30 (1d)
+                   gap 2025-08-09..2025-08-09 (1d)
+                   gap 2026-06-15..2026-06-27 (13d)
+                   gap 2026-08-29..2026-08-29 (1d)
+  chz-usd           2524   2019-07-01   2026-08-09       73
+  crv-usd           2149   2020-08-14   2026-08-09       38
+  doge-usd          1265   2023-01-22   2026-09-27       80
+  dot-usd           2130   2020-08-20   2026-08-23       65
+  dydx-usd          1733   2021-09-09   2026-08-23       77
+  enj-usd           1266   2023-01-22   2026-09-27       79
+  eth-btc           3129   2018-01-01   2026-09-06       42
+  eth-usd           3048   2018-01-01   2026-09-27      144
+  eur-usd             12   2026-08-03   2026-09-06       23
+  fet-usd            567   2025-01-12   2026-08-23       22
+  floki-usd          610   2024-11-17   2026-08-23       35
+  ftm-usd            679   2023-01-22   2025-01-13       44
+  gala-usd          2012   2020-09-18   2026-08-23      154
+  grt-usd            388   2020-06-19   2022-04-01      264
+  hbar-usd           593   2025-01-26   2026-09-27       17
+  ldo-usd           1266   2023-01-22   2026-08-23       44
+  link-usd          3110   2018-01-01   2026-09-27       82
+  lrc-usd           1217   2023-01-22   2026-08-09       79
+  ltc-usd           1174   2023-05-02   2026-09-27       71
+  mana-usd          3109   2018-01-01   2026-09-27       83
+  matic-usd          743   2023-01-22   2025-03-24       50
+  mkr-usd           2756   2018-01-01   2025-09-01       45
+  near-usd          1177   2023-05-02   2026-09-27       68
+  neiro-usd          307   2024-11-24   2025-11-04       39
+  omg-usd           1229   2023-01-22   2026-08-09       67
+  ondo-usd           580   2025-02-09   2026-09-27       16
+  paxg-usd          2497   2019-09-26   2026-09-27       62
+  psg-usd           2221   2020-06-11   2026-09-27       79
+  qnt-usd           2843   2018-08-10   2026-08-09       79
+  render-usd         587   2024-12-23   2026-08-23       22
+  sand-usd          1394   2022-08-09   2026-08-09       68
+  shib-usd          1799   2021-04-17   2026-05-31       72
+  sky-usd             53   2025-09-01   2026-07-26      276
+  snx-usd           1250   2023-01-22   2026-08-09       46
+  sol-usd           2287   2020-04-10   2026-09-27       75
+  sushi-usd         2107   2020-08-28   2026-08-09       66
+  tigres-usd        1092   2023-01-04   2026-03-01       61
+  ton-usd            233   2025-03-02   2026-08-23      307
+  trx-usd           3165   2018-01-01   2026-09-27       27
+  tusd-btc          3004   2018-03-06   2026-09-27      124
+  uni-usd           1879   2019-10-21   2025-04-13      123
+  virtual-usd        548   2025-01-26   2026-08-23       27
+  wif-usd            609   2024-12-01   2026-08-23       22
+  xlm-usd           3152   2018-01-01   2026-09-27       40
+  xrp-usd           3032   2018-01-01   2026-09-27      160
+  yfi-usd           2172   2020-07-22   2026-08-09       38
+
+====================================================================================================
+YAHOO_CRYPTO_NEWS_LLM_SCORED
+====================================================================================================
+source      : s3://test-financial-news-bucket/news/transformed/crypto/agentic=true/
+files read  : 607 (failed 0)
+rows read   : 52549  [daily_csv=15493 daily_jsonl=7137 rollup_csv=29919]
+invalid     : 0   excluded: 0
+dedup       : 52549 candidates -> 18166 unique  (dropped 34383: 29184 identical, 5199 superseded by a different version)
+conflicts   : 4875 keys had versions with different values
+  e.g.      : https://finance.yahoo.com/economy/articles/billionaire-vc-bill-tai-thinks-131500536.html: 2 versions, kept news/transformed/crypto/agentic=true/year=2026/month=09/day=11/format=csv/news_transformed_y2026_m09_d11.csv (daily_csv)
+  e.g.      : https://finance.yahoo.com/economy/articles/ceo-australia-largest-bank-sees-054305364.html: 2 versions, kept news/transformed/crypto/agentic=true/year=2026/month=05/day=26/format=csv/news_transformed_y2026_m05_d26.csv (daily_csv)
+  e.g.      : https://finance.yahoo.com/economy/articles/china-exports-rise-23-9-113913090.html: 2 versions, kept news/transformed/crypto/agentic=true/year=2026/month=08/day=07/format=csv/news_transformed_y2026_m08_d07.csv (daily_csv)
+  e.g.      : https://finance.yahoo.com/economy/articles/elon-musk-says-ai-double-230000563.html: 2 versions, kept news/transformed/crypto/agentic=true/year=2026/month=09/day=18/format=csv/news_transformed_y2026_m09_d18.csv (daily_csv)
+  e.g.      : https://finance.yahoo.com/economy/articles/japan-escaped-30-economic-slump-182120506.html: 2 versions, kept news/transformed/crypto/agentic=true/year=2026/month=08/day=12/format=csv/news_transformed_y2026_m08_d12.csv (daily_csv)
+  e.g.      : https://finance.yahoo.com/economy/articles/us-flash-pmis-forecast-confirm-101139730.html: 2 versions, kept news/transformed/crypto/agentic=true/year=2026/month=06/day=23/format=csv/news_transformed_y2026_m06_d23.csv (daily_csv)
+  e.g.      : https://finance.yahoo.com/economy/policy/articles/3-central-banks-could-raise-113200273.html: 2 versions, kept news/transformed/crypto/agentic=true/year=2026/month=09/day=10/format=csv/news_transformed_y2026_m09_d10.csv (daily_csv)
+  e.g.      : https://finance.yahoo.com/economy/policy/articles/3-fed-rate-hikes-now-064640485.html: 2 versions, kept news/transformed/crypto/agentic=true/year=2026/month=06/day=23/format=csv/news_transformed_y2026_m06_d23.csv (daily_csv)
+id as a key : 468 ids are shared by >1 article URL; 216 URLs appear under >1 id
+dropped from: rollup_csv=29320 daily_jsonl=5005 daily_csv=58
+differing   : LLMFinancialMetrics=5198 Content=5191 MinsRead=5062 CreatedAt=4835 LLMKeyFacts=3139 LLMNoveltyScore=1175 LLMImmediacy=1169 LLMImpactStrength=1113 LLMUncertaintyScore=980 LLMConfidence=920 LLMRiskScore=909 LLMEntities=814 LLMSurpriseScore=801 LLMForwardSentiment=723 LLMOverallSentiment=554 ID=384 LLMImpactLevel=330 LLMSectors=245 Datetime=200 LLMImpactHorizon=178 Headline=169 LLMTicker=152 LLMSignal=134 LLMEventType=118 LLMSentimentLabel=118 Summary=117 Author=47 LLMActionable=45
+span        : 2024-11-20T12:11:00Z .. 2026-09-27T14:25:30Z
+  2024 : 599 articles
+  2025 : 7860 articles
+  2026 : 9707 articles
+scored      : 18162 of 18166; without datetime: 0
+output      : /usr/local/google/home/gdiegofernando/.gemini/jetski/brain/c7493600-2d6e-4f5a-8832-01a42a855edd/scratch/compact/out/news_crypto_agentic.parquet (27.1 MB)
+
+
+real	0m22.646s
+user	0m12.668s
+sys	0m14.427s
