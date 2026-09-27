@@ -33,7 +33,6 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"math"
 	"math/rand"
 	"os"
 	"path/filepath"
@@ -403,45 +402,21 @@ func loadBars(dir, book string) ([]bar, error) {
 	return out, nil
 }
 
+// loadNews reads scored news from either the compacted Parquet file or a
+// local copy of the CSV partitions. Both paths apply the same rule: one row
+// per canonical article URL (yahoo.DedupNews). De-duplicating on the id
+// column is WRONG -- ids are shared by distinct articles, and doing so
+// silently discarded ~3,100 real articles in the first 2026-09-26 run.
 func loadNews(dir string, keep map[string]bool) (map[string]newsDay, error) {
 	if strings.HasSuffix(dir, ".parquet") {
 		return loadNewsParquet(dir, keep)
 	}
-	seen := map[string]bool{}
-	out := map[string]newsDay{}
-	err := walkCSV(dir, func(_ string, header []string, row []string) error {
-		get := fieldGetter(header, row)
-		id := get("id")
-		if id == "" || seen[id] { // the partitions contain ~20% duplicate rows
-			return nil
-		}
-		seen[id] = true
-		if !keep[get("llm_ticker")] {
-			return nil
-		}
-		ts, err := time.Parse(time.RFC3339, get("datetime"))
-		if err != nil {
-			return nil
-		}
-		sent, err1 := strconv.ParseFloat(get("llm_overall_sentiment"), 64)
-		conf, err2 := strconv.ParseFloat(get("llm_confidence"), 64)
-		if err1 != nil || err2 != nil || math.IsNaN(sent) || math.IsNaN(conf) {
-			return nil // unscored rows ("None"/"nan") carry no signal
-		}
-		day := ts.UTC().Format("2006-01-02")
-		nd := out[day]
-		nd.N++
-		nd.SentSum += sent * conf
-		switch get("llm_signal") {
-		case "bullish":
-			nd.Bullish++
-		case "bearish":
-			nd.Bearish++
-		}
-		out[day] = nd
-		return nil
-	})
-	return out, err
+	cands, _, err := yahoo.ReadNews(dir, "")
+	if err != nil {
+		return nil, err
+	}
+	rows, _ := yahoo.DedupNews(cands)
+	return aggregateNews(rows, keep), nil
 }
 
 // loadBarsParquet reads one book from the compacted prices file written by
@@ -473,6 +448,12 @@ func loadNewsParquet(path string, keep map[string]bool) (map[string]newsDay, err
 	if err != nil {
 		return nil, err
 	}
+	return aggregateNews(rows, keep), nil
+}
+
+// aggregateNews sums scored, ticker-matching articles per UTC publication
+// day. Unscored rows carry no signal and are skipped.
+func aggregateNews(rows []yahoo.NewsRow, keep map[string]bool) map[string]newsDay {
 	out := map[string]newsDay{}
 	for _, r := range rows {
 		if r.LLMTicker == nil || !keep[*r.LLMTicker] || r.Datetime == nil ||
@@ -493,7 +474,7 @@ func loadNewsParquet(path string, keep map[string]bool) (map[string]newsDay, err
 		}
 		out[day] = nd
 	}
-	return out, nil
+	return out
 }
 
 func walkCSV(dir string, fn func(path string, header, row []string) error) error {

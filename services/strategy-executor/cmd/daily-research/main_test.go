@@ -91,15 +91,22 @@ func TestRandomWant_MatchesTripCount(t *testing.T) {
 	}
 }
 
-func TestLoadNews_DedupesAndFilters(t *testing.T) {
+func TestLoadNews_DedupesByURLAndFilters(t *testing.T) {
 	dir := t.TempDir()
-	csv := "id,datetime,llm_ticker,llm_overall_sentiment,llm_confidence,llm_signal\n" +
-		"1,2025-01-01T10:00:00.000Z,BTC,0.8,0.5,bullish\n" +
-		"1,2025-01-01T10:00:00.000Z,BTC,0.8,0.5,bullish\n" + // duplicate id
-		"2,2025-01-01T11:00:00.000Z,XRP,-1,1,bearish\n" + // other ticker
-		"3,2025-01-01T12:00:00.000Z,BTC-USD,None,0.9,neutral\n" + // unscored
-		"4,2025-01-02T00:30:00.000Z,BTC-USD,-0.4,1,bearish\n"
-	if err := os.WriteFile(filepath.Join(dir, "a.csv"), []byte(csv), 0o644); err != nil {
+	csv := "id,href,datetime,llm_ticker,llm_overall_sentiment,llm_confidence,llm_signal\n" +
+		"1,https://finance.yahoo.com/news/a.html,2025-01-01T10:00:00.000Z,BTC,0.8,0.5,bullish\n" +
+		// Same article again, only a tracking query differs: a true duplicate.
+		"1,https://finance.yahoo.com/news/a.html?pl2=topic-stream,2025-01-01T10:00:00.000Z,BTC,0.8,0.5,bullish\n" +
+		// SAME id, DIFFERENT article: must be kept. De-duplicating on id
+		// dropped ~3,100 real articles like this one in the first study run.
+		"1,https://finance.yahoo.com/news/b.html,2025-01-01T11:00:00.000Z,BTC,0.2,1,bullish\n" +
+		"2,https://finance.yahoo.com/news/c.html,2025-01-01T11:30:00.000Z,XRP,-1,1,bearish\n" + // other ticker
+		"3,https://finance.yahoo.com/news/d.html,2025-01-01T12:00:00.000Z,BTC-USD,None,0.9,neutral\n" + // unscored
+		"4,https://finance.yahoo.com/news/e.html,2025-01-02T00:30:00.000Z,BTC-USD,-0.4,1,bearish\n"
+	if err := os.MkdirAll(filepath.Join(dir, "year=2025", "month=01", "day=01", "format=csv"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "year=2025", "month=01", "day=01", "format=csv", "a.csv"), []byte(csv), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	news, err := loadNews(dir, map[string]bool{"BTC": true, "BTC-USD": true})
@@ -107,10 +114,11 @@ func TestLoadNews_DedupesAndFilters(t *testing.T) {
 		t.Fatal(err)
 	}
 	d1, d2 := news["2025-01-01"], news["2025-01-02"]
-	if d1.N != 1 || math.Abs(d1.score()-0.4) > 1e-12 {
-		t.Fatalf("day1 = %+v (score %.3f), want 1 item scoring 0.4", d1, d1.score())
+	// Day 1 keeps a.html (0.8*0.5=0.4) and b.html (0.2*1=0.2): mean 0.3.
+	if d1.N != 2 || math.Abs(d1.score()-0.3) > 1e-12 {
+		t.Fatalf("day1 = %+v (score %.3f), want 2 articles scoring 0.3", d1, d1.score())
 	}
 	if d2.N != 1 || math.Abs(d2.score()+0.4) > 1e-12 {
-		t.Fatalf("day2 = %+v, want 1 item scoring -0.4", d2)
+		t.Fatalf("day2 = %+v, want 1 article scoring -0.4", d2)
 	}
 }

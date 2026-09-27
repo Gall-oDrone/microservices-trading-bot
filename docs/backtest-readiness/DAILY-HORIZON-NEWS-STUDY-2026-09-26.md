@@ -15,6 +15,13 @@ uses **a year of Yahoo Finance BTC-USD daily bars and LLM-scored crypto news** t
 Scope was agreed beforehand: offline research only, no changes to the live bot, 2025 as the primary
 sample, and Aug–Sep 2026 as a separate out-of-sample check.
 
+> [!IMPORTANT]
+> **Corrected 2026-09-27.** The first version de-duplicated news by the `id` column, which is not
+> unique per article, and so silently dropped ~18% of the BTC news (676 of 3,857 articles). All news
+> numbers below are the corrected ones. Price-only results (buy-and-hold, trend) and the out-of-sample
+> window did not change. The conclusion held. See
+> [§6 Correction](#6-correction-2026-09-27).
+
 ---
 
 ## 1. Answer
@@ -25,10 +32,11 @@ sample, and Aug–Sep 2026 as a separate out-of-sample check.
 |---|---:|---:|---:|---:|---:|---:|---:|
 | `buy_and_hold` | **−8.94%** | 1 | 99.7% | 32.2% | 1.7% | — | — |
 | `trend_sma50` (long while close > SMA50) | **−3.96%** | 10 | 40.4% | 22.5% | **18.3%** | **+4.98 pp** | 84.5% |
-| `news_sentiment` (long while 3-day score > 0) | **−49.36%** | 25 | 66.8% | 53.9% | **31.7%** | **−40.42 pp** | 14.9% |
-| `trend_and_news` (both) | −22.65% | 19 | 28.0% | 28.8% | 30.9% | −13.71 pp | 75.8% |
+| `news_sentiment` (long while 3-day score > 0) | **−50.12%** | 17 | 73.1% | 54.5% | **19.9%** | **−41.18 pp** | **2.6%** |
+| `trend_and_news` (both) | −15.34% | 14 | 34.1% | 24.8% | 23.8% | −6.40 pp | 75.3% |
 
-Evidence: [`evidence-2026-09-26/daily-research-bitso-costs.txt`](evidence-2026-09-26/daily-research-bitso-costs.txt).
+Evidence: [`daily-research-bitso-costs-corrected-2026-09-27.txt`](evidence-2026-09-26/daily-research-bitso-costs-corrected-2026-09-27.txt)
+(superseded original: [`daily-research-bitso-costs.txt`](evidence-2026-09-26/daily-research-bitso-costs.txt)).
 
 ### 1.1 The trend rule: a hint, not a finding
 
@@ -40,7 +48,7 @@ should clear 95%. A result this good happens to 1 random strategy in 6.
 
 | `trend_sma50`, 2025 | Return |
 |---|---:|
-| Frictionless ([evidence](evidence-2026-09-26/daily-research-frictionless.txt)) | **+14.61%** |
+| Frictionless ([evidence](evidence-2026-09-26/daily-research-frictionless-corrected-2026-09-27.txt)) | **+14.61%** |
 | After Bitso costs | **−3.96%** |
 
 Ten round trips at 176 bps cost **18.3 percentage points**, enough to turn a rule that beat holding by
@@ -49,16 +57,17 @@ enormously. It still isn't enough for a rule that trades about monthly on a reta
 
 ### 1.2 The news rule: consistently wrong
 
-Going long after net-positive BTC news lost **49%**, and **21% even with zero costs**. It did worse
-than 85% of random strategies with the same trade count. In other words, the news was more often
+Going long after net-positive BTC news lost **50%**, and **33% even with zero costs**. It did worse
+than **97.4%** of random strategies with the same trade count. In other words, the news was more often
 wrong than right about the next few days' direction.
 
 Several explanations fit and can't be told apart here:
 - The news is **lagging**: it reports moves that have already happened, so positive coverage clusters
   near local tops.
-- It has a **bullish bias**: 58% of scored items are `bullish`, so "positive" is the normal state and
-  carries little information.
 - The **scores are noisy** at a 1–3 day horizon, even if they carry information over longer periods.
+
+A third explanation in the first version, a bullish bias ("58% of items are `bullish`"), **did not
+survive the correction**: with every article counted, 50.1% are `bullish` and 41.7% `bearish`.
 
 > [!WARNING]
 > It is tempting to flip the rule and trade *against* the news. **Do not act on that from this data.**
@@ -100,16 +109,20 @@ New CLI: [`cmd/daily-research`](../../services/strategy-executor/cmd/daily-resea
 - **Price file columns:** the precomputed `sma_20` uses closes up to and including the same day, with no
   future data (304/304 rows verified). The CLI still recomputes its own indicators from raw closes
   rather than trusting the file's columns.
-- **News de-duplication:** the daily partitions hold 15,331 rows but only 12,222 unique ids. They are
-  de-duplicated by id.
-- **News filtering:** only `llm_ticker` ∈ {`BTC`, `BTC-USD`} is used (3,181 of the unique items). Rows
-  whose scores are `None`/`nan` are dropped.
+- **News de-duplication:** the daily partitions hold 15,331 rows and 15,274 unique articles, keyed by
+  canonical URL (host lower-cased; query, fragment and trailing slash removed). Only 57 rows are true
+  duplicates; the `id` column is **not** a key (§6). The rule is shared with `yahoo-compact` via
+  [`internal/yahoo`](../../services/strategy-executor/internal/yahoo/).
+- **News filtering:** only `llm_ticker` ∈ {`BTC`, `BTC-USD`} is used: 3,857 articles over 417 days
+  (1,682 in 2025). All are scored; rows whose scores are `None`/`nan` would be dropped.
+- **Input formats:** the CLI reads either the daily CSV partitions or the compacted Parquet files built
+  by `yahoo-compact`. Both give **byte-identical output** (checked 2026-09-27, costs and frictionless).
 - **News score:** `llm_overall_sentiment × llm_confidence`, averaged per UTC day.
 
 **Tests:** [`main_test.go`](../../services/strategy-executor/cmd/daily-research/main_test.go) covers
 next-open fills and both-leg costs, the final close-out, a window seeded by the prior day's decision,
 the SMA restarting after gaps, random strategies matching the trade count exactly, and news
-de-duplication and filtering.
+de-duplication by URL (including two different articles that share an `id`) and filtering.
 
 ---
 
@@ -154,4 +167,36 @@ cd services/strategy-executor
 go run ./cmd/daily-research -prices ../../yahoo/prices -news ../../yahoo/news
 go run ./cmd/daily-research -prices ../../yahoo/prices -news ../../yahoo/news \
   -buy-bps 0 -sell-bps 0 -slippage-bps 0        # frictionless reference
+
+# same result from the compacted files
+go run ./cmd/yahoo-compact -prices-dir ../../yahoo/prices -news-dir ../../yahoo/news -out-dir ../../yahoo/out
+go run ./cmd/daily-research -prices ../../yahoo/out/yahoo_crypto_daily.parquet \
+  -news ../../yahoo/out/news_crypto_agentic.parquet
 ```
+
+---
+
+## 6. Correction (2026-09-27)
+
+**What was wrong.** The first version de-duplicated news by the `id` column and described the removed
+rows as duplicates ("15,331 rows but only 12,222 unique ids"). But `id` is not unique per article:
+**382 ids are shared by more than one article URL**, hiding 3,109 distinct articles. Only 57 rows
+were genuine duplicates. For BTC news, the study used 3,181 articles instead of 3,857, and 57 days
+that did have BTC news were treated as having none (360 news days instead of 417).
+
+**What changed.** `daily-research` now de-duplicates by canonical URL, using the same rule as
+`yahoo-compact` (`internal/yahoo`). The test now includes two articles with the same `id` and
+different URLs, and requires both to be kept.
+
+| 2025, Bitso costs | Before | After |
+|---|---:|---:|
+| `news_sentiment` return / trips / beats random | −49.36% / 25 / 14.9% | **−50.12% / 17 / 2.6%** |
+| `news_sentiment` frictionless | −21.21% | **−32.63%** |
+| `trend_and_news` return / trips / beats random | −22.65% / 19 / 75.8% | **−15.34% / 14 / 75.3%** |
+| `buy_and_hold`, `trend_sma50`, out-of-sample | unchanged | unchanged |
+
+**Did the conclusion hold?** Yes, and the news result got stronger. With the full data the news rule
+is worse than 97.4% of random same-trade-count strategies (was 85%), so the "anti-informative at
+1–3 days" reading is now outside the usual 95% band rather than a hint. The bullish-bias explanation
+was withdrawn (§1.2). The contrarian warning stands: this result was found in 2025, so it must be
+tested on data the rule has not seen before anyone acts on it.
