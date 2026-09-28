@@ -17,6 +17,13 @@ bars**, which is 8.7 years instead of 1.
 
 Same rules, same parameters, same costs. **Nothing was tuned.**
 
+> [!WARNING]
+> **Did not transfer to `btc_mxn` (checked the same day).** On Bitso's own `btc_mxn` daily candles
+> the same rule trades 104 times instead of 77 and **loses to holding over 2018–2026 at every Bitso
+> fee level**: +130% vs +374% at taker, +235% vs +376% at maker + slippage. The §4 recommendation
+> to pursue it is withdrawn. See
+> [`BTC-MXN-TREND-CHECK-2026-09-27.md`](BTC-MXN-TREND-CHECK-2026-09-27.md).
+
 ---
 
 ## 1. Answer

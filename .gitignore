@@ -89,6 +89,7 @@ services/*/edge-analysis
 services/*/classifier-backtest
 services/*/daily-research
 services/*/yahoo-compact
+services/*/bitso-daily
 
 # scripts/yahoo-refresh.sh work dir: ~1 GB of synced S3 partitions + builds
 .yahoo-refresh/
