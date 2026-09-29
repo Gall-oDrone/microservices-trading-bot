@@ -1,0 +1,64 @@
+ARCHIVE : source=s3:///trades (parquet archive) book=btc_mxn window=[2026-07-31T06:00:00Z..2026-09-28T06:00:00Z] objects=26749/26749 (failed=0) rows=84986 dup=0 out_of_range=1471 invalid=0 returned=83515 span=[2026-08-19T15:40:05Z..2026-09-28T05:58:36Z]
+COVERAGE: 2026-08-19T15:40:05Z .. 2026-09-28T05:58:36Z (83515 prints)
+
+=== 1. Bitso daily candles vs daily bars rebuilt from our archived trades ===
+day         open bp  high bp   low bp close bp  trades %  volume %  max gap
+2026-08-20    447.1      0.0    413.7      0.0     73.4%     73.1%  9h53m0s  <- gap
+2026-08-21      0.0      0.0      0.0      0.0    100.1%    100.0%    15m0s
+2026-08-22      0.0      0.0      0.0      0.0    100.1%    100.0%    19m0s
+2026-08-23      0.0      0.0      0.0      0.0    100.0%    100.0%    21m0s
+2026-08-24      0.0      0.0      0.0      0.0    100.1%    100.0%    25m0s
+2026-08-25      0.0      0.0      0.0      0.0    100.0%    100.0%    17m0s
+2026-08-26      0.0      0.0      0.0      0.0    100.0%    100.0%    20m0s
+2026-08-27      0.0      0.0      0.0      0.0    100.1%    100.0%    31m0s
+2026-08-28      0.0      0.0      0.0      0.0    100.1%    100.0%    19m0s
+2026-08-29      0.0      0.0      0.0      0.0    100.2%    100.1%    20m0s
+2026-08-30      0.0      0.0      0.0      0.0    100.1%    100.0%    24m0s
+2026-08-31      0.0      0.0      0.0      0.0    100.0%    100.1%    20m0s
+2026-09-01      0.0      0.0      0.0      0.0    100.1%    100.0%    21m0s
+2026-09-02      0.0      0.0      0.0      0.0    100.3%    100.0%    30m0s
+2026-09-03      0.0      0.0      0.0      0.0    100.0%    100.0%    15m0s
+2026-09-04      0.0      0.0      0.0      0.0    100.2%    100.0%    18m0s
+2026-09-05      0.0      0.0      0.0      0.0    100.1%    100.0%    32m0s
+2026-09-06      0.0      0.0      0.0      0.0    100.1%    100.0%    50m0s
+2026-09-07     -2.5      0.0      0.0      0.0    100.1%    100.0%    23m0s
+2026-09-08      0.0      0.0      0.0      0.0    100.3%    100.0%    31m0s
+2026-09-09      0.0      0.0      0.0      0.0    100.2%    100.0%    20m0s
+2026-09-10      0.0      0.0      0.0      0.0    100.3%    100.0%    39m0s
+2026-09-11      0.0      0.0      0.0      0.0    100.2%    100.0%    18m0s
+2026-09-12      0.0      0.0      0.0      0.0    100.1%    100.0%    41m0s
+2026-09-13      0.0      0.0      0.0      0.0     99.8%     98.2%    38m0s
+2026-09-14      0.0      0.0      0.0      0.0    100.0%    100.0%    20m0s
+2026-09-15      0.0      0.0      0.0      0.0    100.1%    100.0%    20m0s
+2026-09-16      0.0      0.0      0.0      4.6    100.0%    100.0%    23m0s
+2026-09-17      0.0      0.0      0.0      0.0     99.9%    100.0%    21m0s
+2026-09-18      0.0      0.0      0.0      0.0    100.0%    100.0%    18m0s
+2026-09-19      0.0      0.0      0.0      0.0     99.7%    100.0%    28m0s
+2026-09-20      0.0      0.0      0.0      0.0    100.2%    100.0%    27m0s
+2026-09-21      0.0      0.0      0.0      0.0    100.2%    100.3%    10m0s
+2026-09-22      1.9      0.0      0.0      0.0    100.2%    100.1%    18m0s
+2026-09-23      0.0      0.0      0.0      0.0    100.0%     99.9%    16m0s
+2026-09-24      0.0      0.0      0.0      0.0    100.2%    100.2%    26m0s
+2026-09-25      0.0      0.0      0.0      0.0    100.0%    100.0%    20m0s
+2026-09-26      0.0      0.0      0.0      0.0    100.1%    100.0%    29m0s
+
+median |diff| bps: open 0.0  high 0.0  low 0.0  close 0.0 | median share of Bitso's trades 100.1%, volume 100.0%
+max |diff| bps   : open 447.1  high 0.0  low 413.7  close 4.6 | days with a trade-free stretch > 1h0m0s: 1 of 38
+
+=== 2. Executing at the daily open (small orders; trade prints only) ===
+days: 38 | typical print size: median 0.00063 BTC, p90 0.00642 BTC
+
+Market order, VWAP of first 15m0s vs candle open (positive = worse than the open):
+  buy : mean   -2.8 bps  median   -1.4 bps  (n=35)
+  sell: mean   -0.1 bps  median   +0.0 bps  (n=37)
+  => cost per leg of a small market order beyond the fee ~ -1.5 bps (the studies assume 10)
+
+Maker limit at the open price, share of 76 legs (buy+sell) filled by:
+  5m0s  trade-through  31.6%   touch  52.6%
+  15m0s trade-through  60.5%   touch  72.4%
+  1h0m0s trade-through  76.3%   touch  82.9%
+  4h0m0s trade-through  82.9%   touch  88.2%
+
+Maker-then-chase (rest at the open price; cross at the last print if unfilled after 1h0m0s):
+  filled as maker 76.3% of legs; average cost per leg incl. fee 68.5 bps (median 60.0)
+  compare: studies' maker+slippage 70 bps, taker+slippage 88 bps per leg
