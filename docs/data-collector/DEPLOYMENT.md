@@ -1,7 +1,7 @@
 # Data collector — development deployment
 
-Standalone EC2 + S3 (+ optional RDS) path for the Bitso `btc_mxn` trade
-archiver. This is **not** deployed to EKS.
+Standalone EC2 + S3 (+ optional RDS) path for the Bitso `btc_mxn` and
+`btc_usd` trade archiver. This is **not** deployed to EKS.
 
 ## Expected monthly cost (us-east-1, approximate)
 
@@ -63,7 +63,7 @@ Useful variables (see `variables.tf`):
 - `data_collector_s3_bucket` (default derived from account id)
 - `data_collector_rds_instance_class` / `data_collector_rds_storage_gb`
 - `data_collector_hot_retention_days` (default `7`)
-- `data_collector_bitso_book` (default `btc_mxn`)
+- `data_collector_bitso_book` (default `btc_mxn,btc_usd`)
 
 ## One-shot automated deploy (recommended)
 
@@ -134,19 +134,23 @@ Health/metrics bind to `:8085` but the security group exposes them only
    # aws ssm list-command-invocations --command-id <id> --details
    ```
 
-   Expect `{"status":"healthy",...}` within a few minutes on `btc_mxn`.
+   Expect `{"status":"healthy",...}` within a few minutes once either book
+   prints a trade (`btc_usd` is typically faster than `btc_mxn`).
 
 2. **S3 archive (from anywhere with creds)**
 
    ```bash
    BUCKET=$(terraform output -raw data_archive_bucket)
    aws s3 ls "s3://$BUCKET/trades/book=btc_mxn/" --recursive | tail
+   aws s3 ls "s3://$BUCKET/trades/book=btc_usd/" --recursive | tail
    ```
 
 3. **Hot Postgres** — RDS is private, so query it from the instance (install
    `psql` first via SSM, DSN comes from Secrets Manager on the box):
 
    ```sql
+   SELECT book, count(*) FROM trades GROUP BY book ORDER BY book;
+
    SELECT book, tid, price, amount, maker_side, exchange_ts, received_at
    FROM trades ORDER BY received_at DESC LIMIT 20;
 

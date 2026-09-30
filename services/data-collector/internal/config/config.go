@@ -16,6 +16,10 @@ import (
 const (
 	DefaultFlushInterval = time.Hour
 	DefaultFlushMaxRows  = 5000
+	// DefaultBitsoBooks is a comma-separated list. Keep BITSO_BOOK as the env
+	// name so existing instance env files stay compatible; the value may now
+	// list more than one book.
+	DefaultBitsoBooks = "btc_mxn,btc_usd"
 )
 
 // Config holds all configuration for the data-collector service.
@@ -24,7 +28,10 @@ type Config struct {
 	HTTPPort    string
 
 	BitsoWSURL string
-	BitsoBook  string
+	// BitsoBook is the raw BITSO_BOOK env value (comma-separated).
+	BitsoBook string
+	// BitsoBooks is the parsed, de-duplicated list of books to subscribe to.
+	BitsoBooks []string
 
 	WSReconnectAttempts int
 	WSReconnectInterval time.Duration
@@ -64,7 +71,7 @@ func LoadConfig() (*Config, error) {
 		HTTPPort:    getEnv("HTTP_PORT", "8085"),
 
 		BitsoWSURL: getEnv("BITSO_WS_URL", "wss://ws.bitso.com"),
-		BitsoBook:  getEnv("BITSO_BOOK", "btc_mxn"),
+		BitsoBook:  getEnv("BITSO_BOOK", DefaultBitsoBooks),
 
 		WSReconnectAttempts: getEnvAsInt("WS_RECONNECT_ATTEMPTS", 10),
 		WSReconnectInterval: getEnvAsDuration("WS_RECONNECT_INTERVAL", 5*time.Second),
@@ -85,6 +92,13 @@ func LoadConfig() (*Config, error) {
 		HealthStaleAfter: getEnvAsDuration("HEALTH_STALE_AFTER", 5*time.Minute),
 	}
 
+	books, err := ParseBooks(cfg.BitsoBook)
+	if err != nil {
+		return nil, err
+	}
+	cfg.BitsoBooks = books
+	cfg.BitsoBook = strings.Join(books, ",")
+
 	return cfg, cfg.Validate()
 }
 
@@ -99,8 +113,8 @@ func (c *Config) Validate() error {
 	if c.BitsoWSURL == "" {
 		return fmt.Errorf("BITSO_WS_URL is required")
 	}
-	if c.BitsoBook == "" {
-		return fmt.Errorf("BITSO_BOOK is required")
+	if len(c.BitsoBooks) == 0 {
+		return fmt.Errorf("BITSO_BOOK is required (comma-separated, e.g. btc_mxn,btc_usd)")
 	}
 	if c.EnableS3 && c.S3Bucket == "" {
 		return fmt.Errorf("S3_BUCKET is required when ENABLE_S3=true")
@@ -118,6 +132,32 @@ func (c *Config) Validate() error {
 		return fmt.Errorf("HOT_RETENTION_DAYS must be >= 1")
 	}
 	return nil
+}
+
+// ParseBooks splits a comma-separated BITSO_BOOK value into unique, lowercased
+// major_minor pairs. Empty entries are skipped; invalid format is an error.
+func ParseBooks(raw string) ([]string, error) {
+	seen := make(map[string]struct{})
+	var out []string
+	for _, part := range strings.Split(raw, ",") {
+		book := strings.ToLower(strings.TrimSpace(part))
+		if book == "" {
+			continue
+		}
+		pieces := strings.Split(book, "_")
+		if len(pieces) != 2 || pieces[0] == "" || pieces[1] == "" {
+			return nil, fmt.Errorf("invalid book format: %s (expected major_minor)", book)
+		}
+		if _, ok := seen[book]; ok {
+			continue
+		}
+		seen[book] = struct{}{}
+		out = append(out, book)
+	}
+	if len(out) == 0 {
+		return nil, fmt.Errorf("BITSO_BOOK is required (comma-separated, e.g. btc_mxn,btc_usd)")
+	}
+	return out, nil
 }
 
 func getEnv(key, defaultValue string) string {

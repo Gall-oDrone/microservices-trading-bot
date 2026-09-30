@@ -12,33 +12,32 @@ import (
 func TestDetectorProducesGapsFromDisconnectReconnect(t *testing.T) {
 	clk := &clock.FakeClock{T: time.Date(2026, 7, 25, 12, 0, 0, 0, time.UTC)}
 	var emitted []models.GapRecord
-	d := gap.NewDetector("btc_mxn", clk, func(g models.GapRecord) {
+	d := gap.NewDetector([]string{"btc_mxn"}, clk, func(g models.GapRecord) {
 		emitted = append(emitted, g)
 	})
 
 	d.OnDisconnect()
 	clk.Advance(90 * time.Second)
-	rec := d.OnReconnect()
-	if rec == nil {
-		t.Fatal("expected gap record")
+	recs := d.OnReconnect()
+	if len(recs) != 1 {
+		t.Fatalf("expected 1 gap record, got %d", len(recs))
 	}
-	if rec.Book != "btc_mxn" {
-		t.Fatalf("book=%s", rec.Book)
+	if recs[0].Book != "btc_mxn" {
+		t.Fatalf("book=%s", recs[0].Book)
 	}
-	if rec.Duration != 90*time.Second {
-		t.Fatalf("duration=%s", rec.Duration)
+	if recs[0].Duration != 90*time.Second {
+		t.Fatalf("duration=%s", recs[0].Duration)
 	}
 	if len(emitted) != 1 {
 		t.Fatalf("emitted=%d", len(emitted))
 	}
 
-	// Second disconnect/reconnect
 	clk.Advance(10 * time.Second)
 	d.OnDisconnect()
 	clk.Advance(5 * time.Second)
-	rec2 := d.OnReconnect()
-	if rec2 == nil || rec2.Duration != 5*time.Second {
-		t.Fatalf("unexpected second gap: %+v", rec2)
+	recs2 := d.OnReconnect()
+	if len(recs2) != 1 || recs2[0].Duration != 5*time.Second {
+		t.Fatalf("unexpected second gap: %+v", recs2)
 	}
 	gaps := d.Gaps()
 	if len(gaps) != 2 {
@@ -46,9 +45,26 @@ func TestDetectorProducesGapsFromDisconnectReconnect(t *testing.T) {
 	}
 }
 
+func TestDetectorEmitsOneGapPerBook(t *testing.T) {
+	clk := &clock.FakeClock{T: time.Date(2026, 7, 25, 12, 0, 0, 0, time.UTC)}
+	d := gap.NewDetector([]string{"btc_mxn", "btc_usd"}, clk, nil)
+	d.OnDisconnect()
+	clk.Advance(time.Minute)
+	recs := d.OnReconnect()
+	if len(recs) != 2 {
+		t.Fatalf("got %d gaps, want 2", len(recs))
+	}
+	if recs[0].Book != "btc_mxn" || recs[1].Book != "btc_usd" {
+		t.Fatalf("books=%s,%s", recs[0].Book, recs[1].Book)
+	}
+	if recs[0].Duration != time.Minute || recs[1].Duration != time.Minute {
+		t.Fatalf("durations=%s,%s", recs[0].Duration, recs[1].Duration)
+	}
+}
+
 func TestDetectorIgnoresReconnectWithoutDisconnect(t *testing.T) {
 	clk := &clock.FakeClock{T: time.Now().UTC()}
-	d := gap.NewDetector("btc_mxn", clk, nil)
+	d := gap.NewDetector([]string{"btc_mxn"}, clk, nil)
 	if d.OnReconnect() != nil {
 		t.Fatal("expected nil gap")
 	}
@@ -56,13 +72,13 @@ func TestDetectorIgnoresReconnectWithoutDisconnect(t *testing.T) {
 
 func TestDetectorIdempotentDisconnect(t *testing.T) {
 	clk := &clock.FakeClock{T: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)}
-	d := gap.NewDetector("btc_mxn", clk, nil)
+	d := gap.NewDetector([]string{"btc_mxn"}, clk, nil)
 	d.OnDisconnect()
 	clk.Advance(time.Minute)
-	d.OnDisconnect() // should not move start
+	d.OnDisconnect()
 	clk.Advance(time.Minute)
-	rec := d.OnReconnect()
-	if rec.Duration != 2*time.Minute {
-		t.Fatalf("duration=%s want 2m", rec.Duration)
+	recs := d.OnReconnect()
+	if len(recs) != 1 || recs[0].Duration != 2*time.Minute {
+		t.Fatalf("duration=%v want 2m", recs)
 	}
 }

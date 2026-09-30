@@ -7,8 +7,8 @@ not depend on Kafka, Redis, or the trading microservices.
 ## What it does
 
 1. Connects to Bitso's public WebSocket (`wss://ws.bitso.com` by default).
-2. Subscribes to the `trades` channel for a configurable book (default
-   `btc_mxn`).
+2. Subscribes to the `trades` channel for configurable books (default
+   `btc_mxn,btc_usd`).
 3. Persists every trade to two sinks:
    - **S3** — durable Parquet archive, partitioned
      `trades/book=<book>/year=YYYY/month=MM/day=DD/*.parquet`
@@ -22,7 +22,7 @@ not depend on Kafka, Redis, or the trading microservices.
 
 | Env | Default | Notes |
 |-----|---------|-------|
-| `BITSO_BOOK` | `btc_mxn` | Single book for now; change without code changes |
+| `BITSO_BOOK` | `btc_mxn,btc_usd` | Comma-separated Bitso books; each is subscribed independently |
 | `BITSO_WS_URL` | `wss://ws.bitso.com` | Public feed; no API keys required |
 
 ## Sinks and retention
@@ -36,16 +36,17 @@ A Parquet object is written when the buffer reaches `FLUSH_MAX_ROWS`
 (default 5000) **or** its oldest row has waited `FLUSH_INTERVAL` (default
 `1h`), whichever comes first. Each flush writes one object per UTC day
 partition, and a graceful shutdown (SIGTERM) flushes whatever is buffered.
-`btc_mxn` averages about 1–3 trades/minute, so minute-scale intervals produce
-single-digit-row files; at `1h` expect roughly 50–200 rows per file. A hard
-kill loses at most one interval of S3 data, which is still in Postgres for
-`HOT_RETENTION_DAYS`.
+`btc_mxn` averages about 1–3 trades/minute and `btc_usd` is typically more
+active; minute-scale intervals produce tiny files. At `1h` expect tens to
+hundreds of rows per book per file. Each book is written to its own Hive
+partition (`book=btc_mxn`, `book=btc_usd`). A hard kill loses at most one
+interval of S3 data, which is still in Postgres for `HOT_RETENTION_DAYS`.
 
 ### Compacting the archive
 
 `cmd/compact-archive` merges each settled day's small files into one
-validated Parquet file under `trades_compacted/`, and optionally cuts the
-source partitions over to it. See
+validated Parquet file under `trades_compacted/` (default books:
+`btc_mxn,btc_usd`), and optionally cuts the source partitions over to it. See
 `docs/data-collector/S3-COMPACTION-2026-09-22.md`.
 
 ## HTTP contracts
@@ -83,7 +84,7 @@ cd services/data-collector
 export ENABLE_S3=false
 export ENABLE_POSTGRES=false
 export HTTP_PORT=8085
-export BITSO_BOOK=btc_mxn
+export BITSO_BOOK=btc_mxn,btc_usd
 
 go run ./cmd
 ```

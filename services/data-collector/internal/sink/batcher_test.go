@@ -216,6 +216,40 @@ func TestParquetBatcherSplitsBatchAcrossMidnight(t *testing.T) {
 	}
 }
 
+func TestParquetBatcherSplitsByBook(t *testing.T) {
+	mem := sink.NewMemObjectSink()
+	clk := &clock.FakeClock{T: time.Date(2026, 9, 30, 12, 0, 0, 0, time.UTC)}
+	b := sink.NewParquetBatcher(mem, "trades", time.Hour, 1000, clk, nil)
+	ctx := context.Background()
+
+	mxn := sampleTrade(clk.Now())
+	mxn.Book = "btc_mxn"
+	mxn.TID = 1
+	usd := sampleTrade(clk.Now())
+	usd.Book = "btc_usd"
+	usd.TID = 1
+	_ = b.Add(ctx, []models.Trade{mxn, usd})
+	if err := b.Flush(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	var dirs []string
+	for k := range mem.Objects {
+		dirs = append(dirs, k[:strings.LastIndex(k, "/")])
+	}
+	sort.Strings(dirs)
+	want := []string{
+		"trades/book=btc_mxn/year=2026/month=09/day=30",
+		"trades/book=btc_usd/year=2026/month=09/day=30",
+	}
+	if len(dirs) != 2 || dirs[0] != want[0] || dirs[1] != want[1] {
+		t.Fatalf("partitions=%v want %v", dirs, want)
+	}
+	if got := batchSizes(t, mem); len(got) != 2 || got[0] != 1 || got[1] != 1 {
+		t.Fatalf("batch sizes=%v want [1 1]", got)
+	}
+}
+
 // feed simulates the collector: for each trade the clock advances by gap,
 // the age check runs (as the Start loop would), then the trade is added.
 func feed(b *sink.ParquetBatcher, clk *clock.FakeClock, n int, gap time.Duration, nextTID *int64) {

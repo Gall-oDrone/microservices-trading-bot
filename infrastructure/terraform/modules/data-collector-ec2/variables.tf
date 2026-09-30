@@ -74,8 +74,9 @@ variable "bitso_ws_url" {
 }
 
 variable "bitso_book" {
-  type    = string
-  default = "btc_mxn"
+  type        = string
+  description = "Comma-separated Bitso books to subscribe (trades channel)"
+  default     = "btc_mxn,btc_usd"
 }
 
 variable "flush_interval" {

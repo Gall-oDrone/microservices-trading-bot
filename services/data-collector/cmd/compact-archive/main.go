@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"bitso-trading-platform/data-collector/internal/archive"
+	"bitso-trading-platform/data-collector/internal/config"
 )
 
 func main() {
@@ -31,7 +32,7 @@ func main() {
 		region  = flag.String("region", envOr("AWS_REGION", "us-east-1"), "AWS region")
 		src     = flag.String("source-prefix", envOr("S3_PREFIX", "trades"), "prefix holding the collector's small files")
 		dst     = flag.String("dest-prefix", "trades_compacted", "prefix for compacted output")
-		book    = flag.String("book", envOr("BITSO_BOOK", "btc_mxn"), "book partition to process")
+		book    = flag.String("book", envOr("BITSO_BOOK", "btc_mxn,btc_usd"), "comma-separated book partition(s) to process")
 		settle  = flag.Duration("settle", 2*time.Hour, "wait this long after a UTC day ends before compacting it")
 		workers = flag.Int("workers", 32, "concurrent S3 downloads")
 		force   = flag.Bool("force", false, "rebuild partitions even if their manifest is current")
@@ -42,6 +43,10 @@ func main() {
 	if *bucket == "" {
 		log.Fatal("-bucket (or S3_BUCKET) is required")
 	}
+	books, err := config.ParseBooks(*book)
+	if err != nil {
+		log.Fatalf("-book: %v", err)
+	}
 
 	logger := log.New(os.Stdout, "", log.LstdFlags)
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
@@ -51,30 +56,39 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	opts := archive.Options{
-		SourcePrefix: *src,
-		DestPrefix:   *dst,
-		Book:         *book,
-		Settle:       *settle,
-		Workers:      *workers,
-		Force:        *force,
-		DryRun:       *dryRun,
-		Logger:       logger,
-	}
 
-	if *cutover {
-		runCutover(ctx, st, opts, logger)
-		return
+	failed := false
+	for _, b := range books {
+		opts := archive.Options{
+			SourcePrefix: *src,
+			DestPrefix:   *dst,
+			Book:         b,
+			Settle:       *settle,
+			Workers:      *workers,
+			Force:        *force,
+			DryRun:       *dryRun,
+			Logger:       logger,
+		}
+		if *cutover {
+			runCutover(ctx, st, opts, logger)
+			continue
+		}
+		if err := runCompact(ctx, st, opts, logger, *bucket); err != nil {
+			failed = true
+		}
 	}
-	runCompact(ctx, st, opts, logger, *bucket)
+	if failed {
+		os.Exit(1)
+	}
 }
 
-func runCompact(ctx context.Context, st archive.Store, opts archive.Options, logger *log.Logger, bucket string) {
+func runCompact(ctx context.Context, st archive.Store, opts archive.Options, logger *log.Logger, bucket string) error {
 	logger.Printf("compacting s3://%s/%s/book=%s/ -> s3://%s/%s/book=%s/ (dry_run=%v)",
 		bucket, opts.SourcePrefix, opts.Book, bucket, opts.DestPrefix, opts.Book, opts.DryRun)
 	sum, err := archive.Compact(ctx, st, opts)
 	if err != nil {
-		log.Fatal(err)
+		log.Printf("compact book=%s: %v", opts.Book, err)
+		return err
 	}
 	for _, k := range sum.Ignored {
 		logger.Printf("ignored non-partition object: %s", k)
@@ -105,14 +119,15 @@ func runCompact(ctx context.Context, st archive.Store, opts archive.Options, log
 	fmt.Printf("info:   %d duplicate TIDs, %d rows filed under an adjacent day (kept as-is)\n", dupTIDs, otherDay)
 
 	if sum.Failed() > 0 || srcRows != dstRows {
-		fmt.Println("RESULT: FAILED — do not cut over; see per-partition errors above")
-		os.Exit(1)
+		fmt.Printf("RESULT: FAILED book=%s — do not cut over; see per-partition errors above\n", opts.Book)
+		return fmt.Errorf("compaction failed for book %s", opts.Book)
 	}
 	if opts.DryRun {
-		fmt.Println("RESULT: dry run only, nothing written")
-		return
+		fmt.Printf("RESULT: dry run only for book=%s, nothing written\n", opts.Book)
+		return nil
 	}
-	fmt.Println("RESULT: OK — original small files untouched. Review, then run with -cutover to replace them.")
+	fmt.Printf("RESULT: OK book=%s — original small files untouched. Review, then run with -cutover to replace them.\n", opts.Book)
+	return nil
 }
 
 func runCutover(ctx context.Context, st archive.Store, opts archive.Options, logger *log.Logger) {

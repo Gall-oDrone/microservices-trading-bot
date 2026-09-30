@@ -61,7 +61,7 @@ func New(
 		hotStore: hotStore,
 	}
 
-	s.gaps = gap.NewDetector(cfg.BitsoBook, clk, func(g models.GapRecord) {
+	s.gaps = gap.NewDetector(cfg.BitsoBooks, clk, func(g models.GapRecord) {
 		logger.Printf("WS_GAP book=%s start=%s end=%s duration=%s",
 			g.Book, g.Start.Format(time.RFC3339), g.End.Format(time.RFC3339), g.Duration)
 		if err := hotStore.WriteGap(context.Background(), g); err != nil {
@@ -92,7 +92,7 @@ func New(
 
 // Start connects, subscribes to trades, and processes the stream until ctx is done.
 func (s *Service) Start(ctx context.Context) error {
-	book, err := parseBook(s.cfg.BitsoBook)
+	books, err := parseBooks(s.cfg.BitsoBooks)
 	if err != nil {
 		return err
 	}
@@ -104,7 +104,7 @@ func (s *Service) Start(ctx context.Context) error {
 	if err := s.ws.Connect(ctx); err != nil {
 		return err
 	}
-	if err := s.ws.Subscribe([]*bitso.Book{book}, []string{"trades"}); err != nil {
+	if err := s.ws.Subscribe(books, []string{"trades"}); err != nil {
 		return err
 	}
 	if err := s.ws.Start(ctx); err != nil {
@@ -113,7 +113,7 @@ func (s *Service) Start(ctx context.Context) error {
 
 	go s.stalenessLoop(ctx)
 
-	s.logger.Printf("Collecting trades for book=%s", s.cfg.BitsoBook)
+	s.logger.Printf("Collecting trades for books=%s", s.cfg.BitsoBook)
 	for {
 		select {
 		case <-ctx.Done():
@@ -137,6 +137,7 @@ func (s *Service) Start(ctx context.Context) error {
 func (s *Service) handleTrade(ctx context.Context, msg *bitso.WebSocketTrade) {
 	now := s.clock.Now()
 	trades := models.FromBitsoWebSocketTrade(msg, now)
+	trades = filterSubscribed(trades, s.cfg.BitsoBooks)
 	if len(trades) == 0 {
 		return
 	}
@@ -196,6 +197,21 @@ func (s *Service) shutdown(parent context.Context) error {
 	return nil
 }
 
+func parseBooks(bookStrs []string) ([]*bitso.Book, error) {
+	out := make([]*bitso.Book, 0, len(bookStrs))
+	for _, s := range bookStrs {
+		b, err := parseBook(s)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, b)
+	}
+	if len(out) == 0 {
+		return nil, fmt.Errorf("at least one book is required")
+	}
+	return out, nil
+}
+
 func parseBook(bookStr string) (*bitso.Book, error) {
 	parts := strings.Split(strings.TrimSpace(bookStr), "_")
 	if len(parts) != 2 {
@@ -207,4 +223,21 @@ func parseBook(bookStr string) (*bitso.Book, error) {
 		return nil, fmt.Errorf("invalid currency in book: %s", bookStr)
 	}
 	return bitso.NewBook(major, minor), nil
+}
+
+func filterSubscribed(trades []models.Trade, books []string) []models.Trade {
+	if len(trades) == 0 || len(books) == 0 {
+		return trades
+	}
+	ok := make(map[string]struct{}, len(books))
+	for _, b := range books {
+		ok[b] = struct{}{}
+	}
+	out := trades[:0]
+	for _, t := range trades {
+		if _, allowed := ok[t.Book]; allowed {
+			out = append(out, t)
+		}
+	}
+	return out
 }

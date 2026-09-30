@@ -87,8 +87,9 @@ variable "data_collector_hot_retention_days" {
 }
 
 variable "data_collector_bitso_book" {
-  type    = string
-  default = "btc_mxn"
+  type        = string
+  description = "Comma-separated Bitso books to subscribe (trades channel)"
+  default     = "btc_mxn,btc_usd"
 }
 
 variable "data_collector_ssh_cidr_blocks" {

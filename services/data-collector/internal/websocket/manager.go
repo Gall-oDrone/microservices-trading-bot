@@ -81,7 +81,7 @@ func NewManager(config *ManagerConfig) *Manager {
 		reconnectAttempts: attempts,
 		reconnectInterval: interval,
 		reconnectMaxDelay: maxDelay,
-		tradesStream:      make(chan *bitso.WebSocketTrade, 100),
+		tradesStream:      make(chan *bitso.WebSocketTrade, 256),
 		stopChan:          make(chan struct{}),
 		fatalChan:         make(chan error, 1),
 		onDisconnect:      config.OnDisconnect,

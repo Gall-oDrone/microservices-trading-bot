@@ -26,6 +26,7 @@ func main() {
 	if err != nil {
 		logger.Fatalf("config: %v", err)
 	}
+	logger.Printf("subscribing to trades books=%s", cfg.BitsoBook)
 
 	clk := clock.RealClock{}
 	met := metrics.New()

@@ -10,22 +10,24 @@ import (
 
 // Detector tracks disconnect/reconnect windows and produces GapRecords.
 type Detector struct {
-	book  string
+	books []string
 	clock clock.Clock
 
-	mu             sync.Mutex
-	disconnectAt   *time.Time
-	gaps           []models.GapRecord
-	onGap          func(models.GapRecord)
+	mu           sync.Mutex
+	disconnectAt *time.Time
+	gaps         []models.GapRecord
+	onGap        func(models.GapRecord)
 }
 
-// NewDetector creates a gap detector for the given book.
-func NewDetector(book string, clk clock.Clock, onGap func(models.GapRecord)) *Detector {
+// NewDetector creates a gap detector. One GapRecord is emitted per book on
+// reconnect, because a WebSocket outage affects every subscribed book.
+func NewDetector(books []string, clk clock.Clock, onGap func(models.GapRecord)) *Detector {
 	if clk == nil {
 		clk = clock.RealClock{}
 	}
+	copied := append([]string(nil), books...)
 	return &Detector{
-		book:  book,
+		books: copied,
 		clock: clk,
 		onGap: onGap,
 	}
@@ -42,8 +44,8 @@ func (d *Detector) OnDisconnect() {
 	d.disconnectAt = &now
 }
 
-// OnReconnect closes an open outage and emits a GapRecord.
-func (d *Detector) OnReconnect() *models.GapRecord {
+// OnReconnect closes an open outage and emits one GapRecord per book.
+func (d *Detector) OnReconnect() []models.GapRecord {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
@@ -55,18 +57,22 @@ func (d *Detector) OnReconnect() *models.GapRecord {
 	start := *d.disconnectAt
 	d.disconnectAt = nil
 
-	rec := models.GapRecord{
-		Book:      d.book,
-		Start:     start,
-		End:       end,
-		Duration:  end.Sub(start),
-		CreatedAt: end,
+	out := make([]models.GapRecord, 0, len(d.books))
+	for _, book := range d.books {
+		rec := models.GapRecord{
+			Book:      book,
+			Start:     start,
+			End:       end,
+			Duration:  end.Sub(start),
+			CreatedAt: end,
+		}
+		d.gaps = append(d.gaps, rec)
+		if d.onGap != nil {
+			d.onGap(rec)
+		}
+		out = append(out, rec)
 	}
-	d.gaps = append(d.gaps, rec)
-	if d.onGap != nil {
-		d.onGap(rec)
-	}
-	return &rec
+	return out
 }
 
 // Gaps returns a copy of recorded gaps.

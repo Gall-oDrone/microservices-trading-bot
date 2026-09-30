@@ -40,7 +40,7 @@ case "${1:-}" in
         echo ""
         echo "Environment variables:"
         echo "  AWS_REGION              AWS region (default: us-east-1)"
-        echo "  BITSO_BOOK              Book to verify in S3 path (default: btc_mxn)"
+        echo "  BITSO_BOOK              Comma-separated books to verify in S3 (default: btc_mxn,btc_usd)"
         echo "  DEPLOY_AUTO_CONFIRM=yes Skip the apply confirmation prompt"
         echo "  PLAN_ONLY=1             Show the targeted plan and exit (no apply)"
         echo "  SKIP_APPLY=1            Skip terraform apply; deploy binary + verify against existing infra"
@@ -57,7 +57,7 @@ esac
 
 ENVIRONMENT="${1:-development}"
 AWS_REGION="${AWS_REGION:-us-east-1}"
-BITSO_BOOK="${BITSO_BOOK:-btc_mxn}"
+BITSO_BOOK="${BITSO_BOOK:-btc_mxn,btc_usd}"
 S3_FLUSH_WAIT_SECONDS="${S3_FLUSH_WAIT_SECONDS:-120}"
 ENV_DIR="$TERRAFORM_ROOT/envs/${ENVIRONMENT}"
 SVC_DIR="$REPO_ROOT/services/data-collector"
@@ -277,14 +277,25 @@ REMOTE
 verify_s3() {
     print_info "🔍 Waiting ${S3_FLUSH_WAIT_SECONDS}s for first S3 Parquet flush, then checking bucket..."
     sleep "$S3_FLUSH_WAIT_SECONDS"
-    local out
-    out=$(aws s3 ls "s3://$BUCKET_NAME/trades/book=$BITSO_BOOK/" --recursive --region "$AWS_REGION" 2>/dev/null || echo "")
-    if [ -n "$out" ]; then
-        print_success "S3 archive objects found under trades/book=$BITSO_BOOK/:"
-        echo "$out" | tail -5
-    else
-        print_warning "No S3 objects yet (low trade volume or flush interval not reached)."
-        print_info "Re-check later: aws s3 ls s3://$BUCKET_NAME/trades/book=$BITSO_BOOK/ --recursive"
+    local found=0
+    local book
+    IFS=',' read -ra BOOKS <<< "$BITSO_BOOK"
+    for book in "${BOOKS[@]}"; do
+        book="$(echo "$book" | tr -d '[:space:]')"
+        [ -z "$book" ] && continue
+        local out
+        out=$(aws s3 ls "s3://$BUCKET_NAME/trades/book=$book/" --recursive --region "$AWS_REGION" 2>/dev/null || echo "")
+        if [ -n "$out" ]; then
+            found=1
+            print_success "S3 archive objects found under trades/book=$book/:"
+            echo "$out" | tail -5
+        else
+            print_warning "No S3 objects yet for book=$book (low volume or flush interval not reached)."
+            print_info "Re-check later: aws s3 ls s3://$BUCKET_NAME/trades/book=$book/ --recursive"
+        fi
+    done
+    if [ "$found" -eq 0 ]; then
+        print_warning "No S3 objects yet for any subscribed book."
     fi
 }
 
@@ -303,7 +314,8 @@ fi
 DSN=\$(aws secretsmanager get-secret-value --secret-id '$RDS_SECRET_ARN' --region $AWS_REGION --query SecretString --output text | jq -r '.dsn')
 echo "TRADES_COUNT:"; psql "\$DSN" -tAc 'SELECT count(*) FROM trades;' 2>&1 || echo "(query failed)"
 echo "GAPS_COUNT:";   psql "\$DSN" -tAc 'SELECT count(*) FROM ws_gaps;' 2>&1 || echo "(query failed)"
-echo "LATEST_TRADES:"; psql "\$DSN" -c 'SELECT book,tid,price,amount,maker_side,exchange_ts FROM trades ORDER BY received_at DESC LIMIT 3;' 2>&1 || true
+echo "LATEST_TRADES:"; psql "\$DSN" -c 'SELECT book,tid,price,amount,maker_side,exchange_ts FROM trades ORDER BY received_at DESC LIMIT 6;' 2>&1 || true
+echo "BOOKS:"; psql "\$DSN" -c 'SELECT book, count(*) FROM trades GROUP BY book ORDER BY book;' 2>&1 || true
 REMOTE
 )
     if ssm_run "verify postgres sink" "$remote"; then
