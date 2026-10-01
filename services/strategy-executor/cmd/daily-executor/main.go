@@ -299,9 +299,9 @@ func finishBook(o options, ex dailyexec.Exchange, led *ledger, rec *record) erro
 			return fmt.Errorf("stage %s: %w (nothing recorded; re-run today to resume)", action, err)
 		}
 		st.Leg = &res
-		st.PositionAfter = applyFill(pos, action, res.Filled)
-		logf("stage: %s filled %.8f/%.8f BTC (maker %.8f, market %.8f) avg %.2f fees %v -> holds %s %.8f BTC",
-			action, res.Filled, res.Target, res.MakerFilled, res.TakerFilled, res.AvgPrice, res.Fees, st.PositionAfter.State, st.PositionAfter.BTC)
+		st.PositionAfter = applyFill(pos, res.BaseDelta)
+		logf("stage: %s filled %.8f/%.8f BTC gross (maker %.8f, market %.8f) avg %.2f fees %v, net BTC %+.8f -> holds %s %.8f BTC",
+			action, res.Filled, res.Target, res.MakerFilled, res.TakerFilled, res.AvgPrice, res.Fees, res.BaseDelta, st.PositionAfter.State, st.PositionAfter.BTC)
 	}
 	rec.Stage = st
 	rec.RecordedAt = time.Now().UTC().Format(time.RFC3339)

@@ -70,12 +70,23 @@ type Leg struct {
 }
 
 // Result is what happened, suitable for the ledger.
+//
+// Filled, MakerFilled and TakerFilled are gross trade amounts as Bitso reports
+// them; they decide when the leg is done. On a buy Bitso takes its fee out of
+// the BTC received, so the account changes by BaseDelta (fills minus fees in
+// the base currency), not by Filled. Positions must use BaseDelta.
+//
+// Bitso sizes market and limit orders differently: a limit buy for X BTC
+// trades X gross (X minus fee received), while a market buy for X BTC trades
+// X/(1-fee) gross so that X arrives. A market fallback can therefore show
+// Filled slightly above Target; the funds check's buffer covers it.
 type Result struct {
 	Side        string             `json:"side"`
 	Target      float64            `json:"target_btc"`
 	Filled      float64            `json:"filled_btc"`
 	MakerFilled float64            `json:"maker_btc"`
 	TakerFilled float64            `json:"taker_btc"`
+	BaseDelta   float64            `json:"base_delta"` // net change of the base balance: + on buys, - on sells
 	AvgPrice    float64            `json:"avg_price"`
 	Notional    float64            `json:"notional"` // quote currency, before fees
 	Fees        map[string]float64 `json:"fees"`
@@ -136,7 +147,7 @@ func Run(ex Exchange, clk Clock, cfg Config, leg Leg, logf func(string, ...any))
 		if err != nil {
 			return res, fmt.Errorf("trades %s: %w", tk, err)
 		}
-		summarize(&res, mFills, tFills, oids)
+		summarize(&res, base, mFills, tFills, oids)
 		remaining := floor8(leg.Qty - res.Filled)
 
 		if active != nil {
@@ -176,7 +187,7 @@ func Run(ex Exchange, clk Clock, cfg Config, leg Leg, logf func(string, ...any))
 				if mFills, err = ex.TradesByOrigin(mk); err != nil {
 					return res, fmt.Errorf("trades %s: %w", mk, err)
 				}
-				summarize(&res, mFills, tFills, oids)
+				summarize(&res, base, mFills, tFills, oids)
 				if remaining = floor8(leg.Qty - res.Filled); remaining <= dust {
 					return finish(&res, clk, oids, "filled at cancel"), nil
 				}
@@ -250,7 +261,7 @@ func marketFallback(ex Exchange, clk Clock, cfg Config, leg Leg, quote, tk strin
 		if err != nil {
 			return *res, fmt.Errorf("trades %s: %w", tk, err)
 		}
-		summarize(res, mFills, tFills, oids)
+		summarize(res, parts[0], mFills, tFills, oids)
 		if floor8(leg.Qty-res.Filled) <= dust {
 			break
 		}
@@ -296,7 +307,7 @@ func checkFunds(ex Exchange, side, base, quote string, qty, price, buffer float6
 	return nil
 }
 
-func summarize(res *Result, maker, taker []bitsostage.Trade, oids map[string]bool) {
+func summarize(res *Result, base string, maker, taker []bitsostage.Trade, oids map[string]bool) {
 	res.MakerFilled, res.TakerFilled, res.Notional = 0, 0, 0
 	res.Fees = map[string]float64{}
 	for _, t := range maker {
@@ -312,6 +323,11 @@ func summarize(res *Result, maker, taker []bitsostage.Trade, oids map[string]boo
 		oids[t.Oid] = true
 	}
 	res.Filled = res.MakerFilled + res.TakerFilled
+	res.BaseDelta = res.Filled
+	if res.Side == "sell" {
+		res.BaseDelta = -res.Filled
+	}
+	res.BaseDelta = math.Round((res.BaseDelta-res.Fees[base])*1e8) / 1e8
 	res.AvgPrice = 0
 	if res.Filled > 0 {
 		res.AvgPrice = res.Notional / res.Filled

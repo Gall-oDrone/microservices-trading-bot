@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"sort"
@@ -66,15 +67,11 @@ func planAction(target string, pos position, size float64) (action string, qty f
 	}
 }
 
-// applyFill returns the position after a leg.
-func applyFill(pos position, action string, filled float64) position {
-	btc := pos.BTC
-	switch action {
-	case "buy":
-		btc += filled
-	case "sell":
-		btc -= filled
-	}
+// applyFill returns the position after a leg. delta is the leg's net change
+// of the BTC balance (dailyexec.Result.BaseDelta): positive on buys, after
+// Bitso has taken its fee out of the BTC received; negative on sells.
+func applyFill(pos position, delta float64) position {
+	btc := math.Round((pos.BTC+delta)*1e8) / 1e8
 	if btc < btcDust {
 		return position{State: "flat", BTC: 0}
 	}

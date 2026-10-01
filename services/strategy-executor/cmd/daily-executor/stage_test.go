@@ -30,13 +30,14 @@ func TestPlanAction(t *testing.T) {
 }
 
 func TestApplyFill(t *testing.T) {
-	if p := applyFill(flatPos(), "buy", 0.0006); p.State != "long" || p.BTC != 0.0006 {
-		t.Fatalf("partial buy: %+v", p)
+	// First stage run, btc_usd: 0.001 bought, 0.0000025 BTC fee -> 0.0009975 held.
+	if p := applyFill(flatPos(), 0.0009975); p.State != "long" || p.BTC != 0.0009975 {
+		t.Fatalf("net buy: %+v", p)
 	}
-	if p := applyFill(position{"long", 0.001}, "sell", 0.001); p.State != "flat" || p.BTC != 0 {
+	if p := applyFill(position{"long", 0.0009975}, -0.0009975); p.State != "flat" || p.BTC != 0 {
 		t.Fatalf("full sell: %+v", p)
 	}
-	if p := applyFill(position{"long", 0.001}, "sell", 0.0004); p.State != "long" || p.BTC < 0.00059999 || p.BTC > 0.00060001 {
+	if p := applyFill(position{"long", 0.001}, -0.0004); p.State != "long" || p.BTC < 0.00059999 || p.BTC > 0.00060001 {
 		t.Fatalf("partial sell keeps the rest: %+v", p)
 	}
 }

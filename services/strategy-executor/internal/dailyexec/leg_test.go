@@ -36,6 +36,10 @@ type fakeExchange struct {
 	placed         []bitsostage.OrderRequest
 	cancels        int
 	nextID         int
+	// btcFeeRate > 0 models Bitso as observed on stage: buys pay the fee in
+	// BTC out of the amount received, and a market buy for X trades
+	// X/(1-fee) gross so that X arrives. Sells pay the fee in the quote.
+	btcFeeRate float64
 }
 
 func newFake(t *testing.T, clk *fakeClock) *fakeExchange {
@@ -66,6 +70,9 @@ func (f *fakeExchange) PlaceOrder(o bitsostage.OrderRequest) (string, error) {
 	f.nextID++
 	oid := fmt.Sprintf("oid%d", f.nextID)
 	qty := num(o.Major)
+	if o.Type == "market" && o.Side == "buy" && f.btcFeeRate > 0 {
+		qty = math.Round(qty/(1-f.btcFeeRate)*1e8) / 1e8
+	}
 	ord := &fakeOrder{OpenOrder: bitsostage.OpenOrder{Oid: oid, OriginID: o.OriginID, Book: o.Book, Side: o.Side,
 		Price: num(o.Price), Original: qty, Unfilled: qty, CreatedAt: f.clk.Now()}, req: o}
 	f.orders = append(f.orders, ord)
@@ -85,8 +92,12 @@ func (f *fakeExchange) fill(o *fakeOrder, qty, price float64) {
 		return
 	}
 	o.Unfilled -= qty
+	fee, cur := qty*price*0.003, "usd"
+	if f.btcFeeRate > 0 && o.Side == "buy" {
+		fee, cur = math.Round(qty*f.btcFeeRate*1e8)/1e8, "btc"
+	}
 	f.trades = append(f.trades, bitsostage.Trade{Oid: o.Oid, OriginID: o.OriginID, Book: o.Book, Side: o.Side,
-		Major: qty, Minor: qty * price, Price: price, Fee: qty * price * 0.003, FeeCurrency: "usd"})
+		Major: qty, Minor: qty * price, Price: price, Fee: fee, FeeCurrency: cur})
 }
 
 func (f *fakeExchange) OpenOrders(string) ([]bitsostage.OpenOrder, error) {
@@ -201,6 +212,55 @@ func TestSellRestsAtAsk(t *testing.T) {
 	}
 	if ex.placed[0].Price != "101" || ex.placed[0].Side != "sell" {
 		t.Fatalf("sell must rest at the ask: %+v", ex.placed[0])
+	}
+}
+
+// Reproduces the first stage run (btc_mxn, 2026-10-01): a tiny maker fill,
+// then a market fallback that Bitso grosses up so the requested amount
+// arrives after its BTC fee. The position must follow the BTC actually
+// received (BaseDelta), not the gross trade amounts (Filled).
+func TestBuyBaseDeltaIsNetOfBTCFees(t *testing.T) {
+	clk := &fakeClock{t0}
+	ex := newFake(t, clk)
+	ex.btcFeeRate = 0.0078
+	filledOnce := false
+	ex.onPoll = func(f *fakeExchange) {
+		if o := f.openMaker(); o != nil && !filledOnce {
+			f.fill(o, 0.0000012, o.Price)
+			filledOnce = true
+		}
+	}
+	res, err := Run(ex, clk, testCfg(), leg("buy"), nolog)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !res.Fallback || len(ex.placed) != 2 || ex.placed[1].Major != "0.00099880" {
+		t.Fatalf("want one maker + one market for the remainder: %+v placed=%+v", res, ex.placed)
+	}
+	if res.Filled <= res.Target {
+		t.Fatalf("grossed-up market buy should trade more than the target: %+v", res)
+	}
+	want := math.Round((res.Filled-res.Fees["btc"])*1e8) / 1e8
+	if res.BaseDelta != want || math.Abs(res.BaseDelta-0.00099999) > 2e-8 {
+		t.Fatalf("base delta %.8f, want %.8f (~0.00099999); filled %.8f fees %v", res.BaseDelta, want, res.Filled, res.Fees)
+	}
+}
+
+func TestSellBaseDeltaIsMinusFilled(t *testing.T) {
+	clk := &fakeClock{t0}
+	ex := newFake(t, clk)
+	ex.btcFeeRate = 0.0078 // sells pay the fee in the quote currency
+	ex.onPoll = func(f *fakeExchange) {
+		if o := f.openMaker(); o != nil {
+			f.fill(o, o.Unfilled, o.Price)
+		}
+	}
+	res, err := Run(ex, clk, testCfg(), leg("sell"), nolog)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.BaseDelta != -0.001 || res.Fees["btc"] != 0 {
+		t.Fatalf("sell: base delta %.8f fees %v", res.BaseDelta, res.Fees)
 	}
 }
 
