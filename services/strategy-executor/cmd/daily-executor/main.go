@@ -9,24 +9,35 @@
 //
 //  1. fetches Bitso PRODUCTION daily candles (public, no keys), because the
 //     forward tests are judged on real market prices;
+//
 //  2. refuses to act on stale data (the last closed bar must be yesterday,
 //     Mexico City time);
+//
 //  3. applies the rule with internal/dailyrule, the same code as
 //     cmd/daily-research, the registered evaluation engine;
+//
 //  4. updates the paper account with daily-research's exact arithmetic;
-//  5. appends one line per book per day to an append-only JSONL ledger, and
+//
+//  5. with -stage, trades a fixed BTC size on Bitso STAGE (internal/dailyexec:
+//     post-only limit at the best price, market fallback after the maker
+//     timeout), tracking the position from its own fills;
+//
+//  6. appends one line per book per day to an append-only JSONL ledger, and
 //     never writes a second line for the same day.
 //
-// Phase 1 is dry-run only: it prints what it would do and places no orders.
-// Orders on Bitso stage (post-only limit, market fallback after a timeout)
-// arrive in phase 2 behind an explicit flag.
+//     go run ./cmd/daily-executor                               # dry run: decide and record, no orders
+//     go run ./cmd/daily-executor -as-of 2026-09-30T06:05:00Z   # what that day's run decided
+//     go run ./cmd/daily-executor -stage -ledger ./stage/ledger.jsonl   # trade on Bitso stage
 //
-//	go run ./cmd/daily-executor                          # today's decision, both books
-//	go run ./cmd/daily-executor -as-of 2026-09-30T06:05:00Z  # what that day's run decided
+// Stage credentials come from STAGE_BITSO_API_KEY / STAGE_BITSO_API_SECRET,
+// loaded from -env-file (default ~/.config/microservices-trading-bot/
+// bitso-stage.env, which must be chmod 600) when not already in the
+// environment. The stage client refuses any base URL other than stage.
 //
 // Exit status: 0 when every book was decided (or already recorded), 1 when
 // any book failed (stale or missing candles, fetch error, data changed since
-// it was recorded), 2 on bad usage. DAILY_EXECUTOR_DISABLED=1 exits 0 at once.
+// it was recorded, order error), 2 on bad usage. DAILY_EXECUTOR_DISABLED=1
+// exits 0 at once.
 package main
 
 import (
@@ -39,38 +50,60 @@ import (
 	"path/filepath"
 	"runtime/debug"
 	"strings"
+	"sync"
 	"time"
 
 	"bitso-trading-platform/strategy-executor/internal/bitsodaily"
+	"bitso-trading-platform/strategy-executor/internal/bitsostage"
+	"bitso-trading-platform/strategy-executor/internal/dailyexec"
 )
+
+type options struct {
+	ledgerPath, candlesDir, baseURL string
+	noRecord, stage                 bool
+	size                            float64
+	exec                            dailyexec.Config
+}
 
 func main() {
 	books := flag.String("books", "btc_mxn,btc_usd", "comma-separated books (each must have a frozen spec)")
-	ledgerPath := flag.String("ledger", "./daily-executor-data/ledger.jsonl", "append-only JSONL ledger")
-	candlesDir := flag.String("candles-dir", "", "where fetched candles are saved (default: <ledger dir>/candles)")
-	baseURL := flag.String("candles-base-url", bitsodaily.DefaultBaseURL, "Bitso API for candles (production; the forward tests are judged on it)")
-	asOf := flag.String("as-of", "", "RFC3339 time to run as (default now); candles that had not closed by then are ignored")
-	noRecord := flag.Bool("no-record", false, "print the decision but do not write the ledger")
-	stage := flag.Bool("stage", false, "place orders on Bitso stage (not available until phase 2)")
+	var o options
+	flag.StringVar(&o.ledgerPath, "ledger", "./daily-executor-data/ledger.jsonl", "append-only JSONL ledger")
+	flag.StringVar(&o.candlesDir, "candles-dir", "", "where fetched candles are saved (default: <ledger dir>/candles)")
+	flag.StringVar(&o.baseURL, "candles-base-url", bitsodaily.DefaultBaseURL, "Bitso API for candles (production; the forward tests are judged on it)")
+	asOf := flag.String("as-of", "", "RFC3339 time to run as (default now); dry run only")
+	flag.BoolVar(&o.noRecord, "no-record", false, "print the decision but do not write the ledger (dry run only)")
+	flag.BoolVar(&o.stage, "stage", false, "place orders on Bitso STAGE")
+	flag.Float64Var(&o.size, "size", 0.001, "BTC bought per entry on stage (max 0.01)")
+	envFile := flag.String("env-file", defaultEnvFile(), "file with STAGE_BITSO_API_KEY / STAGE_BITSO_API_SECRET (chmod 600)")
+	o.exec = dailyexec.DefaultConfig()
+	flag.DurationVar(&o.exec.MakerTimeout, "maker-timeout", o.exec.MakerTimeout, "rest the post-only order this long before the market fallback")
+	flag.DurationVar(&o.exec.Poll, "poll", o.exec.Poll, "how often to check fills")
 	flag.Parse()
 
 	if os.Getenv("DAILY_EXECUTOR_DISABLED") == "1" {
 		fmt.Println("daily-executor: DAILY_EXECUTOR_DISABLED=1, exiting without doing anything")
 		return
 	}
-	if *stage {
-		usage("-stage is not implemented yet (phase 2); this build only runs dry")
-	}
 	now := time.Now().UTC()
 	if *asOf != "" {
+		if o.stage {
+			usage("-as-of cannot be combined with -stage: orders are placed now")
+		}
 		t, err := time.Parse(time.RFC3339, *asOf)
 		if err != nil {
 			usage(fmt.Sprintf("-as-of: %v", err))
 		}
 		now = t.UTC()
 	}
-	if *candlesDir == "" {
-		*candlesDir = filepath.Join(filepath.Dir(*ledgerPath), "candles")
+	if o.stage && o.noRecord {
+		usage("-no-record cannot be combined with -stage: every order must be recorded")
+	}
+	if o.size <= 0 || o.size > maxSize {
+		usage(fmt.Sprintf("-size must be in (0, %v]", maxSize))
+	}
+	if o.candlesDir == "" {
+		o.candlesDir = filepath.Join(filepath.Dir(o.ledgerPath), "candles")
 	}
 	var specs []bookSpec
 	for _, b := range strings.Split(*books, ",") {
@@ -88,100 +121,194 @@ func main() {
 		usage("no books")
 	}
 
-	led, err := openLedger(*ledgerPath)
+	lock, err := lockFile(o.ledgerPath + ".lock")
+	if err != nil {
+		fail(err)
+	}
+	defer lock.Close()
+
+	var ex dailyexec.Exchange
+	mode := "dry-run"
+	if o.stage {
+		mode = "stage"
+		if *envFile != "" {
+			if err := loadEnvFile(*envFile); err != nil {
+				fail(err)
+			}
+		}
+		secret := os.Getenv("STAGE_BITSO_API_SECRET")
+		if secret == "" {
+			secret = os.Getenv("STAGE_BITSO_APISECRET") // legacy name used by order-management
+		}
+		base := os.Getenv("BITSO_API_BASE_URL")
+		if base == "" {
+			base = bitsostage.StageBaseURL
+		}
+		c, err := bitsostage.New(base, os.Getenv("STAGE_BITSO_API_KEY"), secret)
+		if err != nil {
+			fail(err)
+		}
+		ex = c
+	}
+
+	led, err := openLedger(o.ledgerPath)
 	if err != nil {
 		fail(err)
 	}
 	version := codeVersion()
-	fmt.Printf("daily-executor %s | as of %s (Mexico City %s) | mode dry-run | ledger %s\n",
-		version, now.Format(time.RFC3339), now.In(bitsodaily.Mexico).Format("2006-01-02 15:04"), *ledgerPath)
+	fmt.Printf("daily-executor %s | as of %s (Mexico City %s) | mode %s | ledger %s\n",
+		version, now.Format(time.RFC3339), now.In(bitsodaily.Mexico).Format("2006-01-02 15:04"), mode, o.ledgerPath)
 
+	// Step 1, sequential: candles, decision, paper account, integrity checks.
 	client := &http.Client{Timeout: 30 * time.Second}
 	failed := false
+	var pending []*record
 	for _, s := range specs {
-		if err := runBook(client, *baseURL, *candlesDir, s, now, led, version, *noRecord); err != nil {
+		rec, err := prepareBook(client, o, s, now, led, version, mode)
+		if err != nil {
 			fmt.Printf("\n[%s] FAILED: %v\n", s.Book, err)
 			failed = true
+			continue
+		}
+		if rec != nil {
+			pending = append(pending, rec)
 		}
 	}
+
+	// Step 2: record (dry run), or trade then record (stage). Books trade in
+	// parallel because a leg can rest for up to the maker timeout.
+	var wg sync.WaitGroup
+	var mu sync.Mutex
+	for _, rec := range pending {
+		wg.Add(1)
+		go func(rec *record) {
+			defer wg.Done()
+			if err := finishBook(o, ex, led, rec); err != nil {
+				mu.Lock()
+				fmt.Printf("\n[%s] FAILED: %v\n", rec.Book, err)
+				failed = true
+				mu.Unlock()
+			}
+		}(rec)
+	}
+	wg.Wait()
 	if failed {
 		os.Exit(1)
 	}
 }
 
-func runBook(client *http.Client, baseURL, candlesDir string, s bookSpec, now time.Time, led *ledger, version string, noRecord bool) error {
+// prepareBook returns the day's record, or nil when it is already recorded.
+func prepareBook(client *http.Client, o options, s bookSpec, now time.Time, led *ledger, version, mode string) (*record, error) {
 	from, err := time.Parse("2006-01-02", s.HistoryFrom)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	cs, err := bitsodaily.FetchRange(client, baseURL, s.Book, from, now, 365*bitsodaily.Day)
+	cs, err := bitsodaily.FetchRange(client, o.baseURL, s.Book, from, now, 365*bitsodaily.Day)
 	if err != nil {
-		return fmt.Errorf("fetch candles: %w", err)
+		return nil, fmt.Errorf("fetch candles: %w", err)
 	}
 	rows, _ := bitsodaily.ToRows(cs, now)
 	if len(rows) == 0 {
-		return fmt.Errorf("no closed candles returned")
+		return nil, fmt.Errorf("no closed candles returned")
 	}
-	csvPath := filepath.Join(candlesDir, fmt.Sprintf("%s_daily_%s.csv", s.Book, rows[len(rows)-1].Date))
+	csvPath := filepath.Join(o.candlesDir, fmt.Sprintf("%s_daily_%s.csv", s.Book, rows[len(rows)-1].Date))
 	if err := bitsodaily.WriteCSV(csvPath, s.Book, rows); err != nil {
-		return fmt.Errorf("save candles: %w", err)
+		return nil, fmt.Errorf("save candles: %w", err)
 	}
 	sum, err := fileSHA256(csvPath)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	bars, err := toBars(rows)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	d, pts, err := decide(bars, now)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	p, err := paper(bars, pts, s.ForwardStart, s.LegCostBps)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	recent := rows
 	if len(recent) > 60 {
 		recent = recent[len(recent)-60:]
 	}
-	rec := record{
-		RecordedAt:  time.Now().UTC().Format(time.RFC3339),
+	rec := &record{
 		CodeVersion: version,
-		Mode:        "dry-run",
+		Mode:        mode,
 		Book:        s.Book,
 		Prereg:      s.Prereg,
 		Decision:    d,
 		Paper:       p,
 		Candles: candleInfo{
-			Source: baseURL + "/api/v3/ohlc", First: rows[0].Date, Last: rows[len(rows)-1].Date,
+			Source: o.baseURL + "/api/v3/ohlc", First: rows[0].Date, Last: rows[len(rows)-1].Date,
 			Bars: len(rows), RecentGaps: bitsodaily.Gaps(recent), SHA256Short: sum[:16],
 		},
 	}
-	printRecord(rec, csvPath)
+	printRecord(*rec, csvPath)
 
 	// Data integrity (pre-registration §5): a day already recorded must not
 	// change. If Bitso revised a candle, stop and surface it.
 	if prev, ok := led.get(s.Book, d.BarDate); ok {
 		if prev.Decision.Signal != d.Signal || prev.Decision.Close != d.Close {
-			return fmt.Errorf("%s was recorded as %s at close %v, candles now say %s at %v: investigate before continuing",
+			return nil, fmt.Errorf("%s was recorded as %s at close %v, candles now say %s at %v: investigate before continuing",
 				d.BarDate, prev.Decision.Signal, prev.Decision.Close, d.Signal, d.Close)
 		}
-		fmt.Printf("  ledger     : %s already recorded at %s, unchanged; nothing written\n", d.BarDate, prev.RecordedAt)
-		return nil
+		if prev.Mode != mode {
+			return nil, fmt.Errorf("%s is already recorded in %s mode in this ledger; use a separate -ledger for %s", d.BarDate, prev.Mode, mode)
+		}
+		fmt.Printf("  ledger     : %s already recorded at %s, unchanged; nothing to do\n", d.BarDate, prev.RecordedAt)
+		return nil, nil
 	}
 	if err := checkHistory(led, s.Book, rows); err != nil {
-		return err
+		return nil, err
 	}
-	if noRecord {
-		fmt.Println("  ledger     : -no-record, nothing written")
+	return rec, nil
+}
+
+// finishBook trades on stage when enabled, then appends the record.
+func finishBook(o options, ex dailyexec.Exchange, led *ledger, rec *record) error {
+	if !o.stage {
+		if o.noRecord {
+			fmt.Printf("[%s] ledger: -no-record, nothing written\n", rec.Book)
+			return nil
+		}
+		rec.RecordedAt = time.Now().UTC().Format(time.RFC3339)
+		if err := led.append(*rec); err != nil {
+			return err
+		}
+		fmt.Printf("[%s] ledger: recorded (dry run, no order placed)\n", rec.Book)
 		return nil
 	}
-	if err := led.append(rec); err != nil {
+
+	pos := lastStagePosition(led, rec.Book)
+	action, qty := planAction(rec.Decision.Signal, pos, o.size)
+	st := &stageInfo{Env: bitsostage.StageBaseURL, Target: rec.Decision.Signal, Action: action, PositionBefore: pos, PositionAfter: pos}
+	logf := func(format string, args ...any) {
+		fmt.Printf("[%s] %s "+format+"\n", append([]any{rec.Book, time.Now().UTC().Format("15:04:05Z")}, args...)...)
+	}
+	logf("stage: rule says %s, executor holds %s (%.8f BTC) -> %s %.8f BTC", rec.Decision.Signal, pos.State, pos.BTC, action, qty)
+	if action != "none" {
+		leg := dailyexec.Leg{Book: rec.Book, Side: action, Qty: qty, FillDate: rec.Decision.FillDate}
+		res, err := dailyexec.Run(ex, dailyexec.RealClock{}, o.exec, leg, logf)
+		if err != nil {
+			// Not recorded: the next run on the same day resumes from Bitso's
+			// trades for this leg's client ids.
+			return fmt.Errorf("stage %s: %w (nothing recorded; re-run today to resume)", action, err)
+		}
+		st.Leg = &res
+		st.PositionAfter = applyFill(pos, action, res.Filled)
+		logf("stage: %s filled %.8f/%.8f BTC (maker %.8f, market %.8f) avg %.2f fees %v -> holds %s %.8f BTC",
+			action, res.Filled, res.Target, res.MakerFilled, res.TakerFilled, res.AvgPrice, res.Fees, st.PositionAfter.State, st.PositionAfter.BTC)
+	}
+	rec.Stage = st
+	rec.RecordedAt = time.Now().UTC().Format(time.RFC3339)
+	if err := led.append(*rec); err != nil {
 		return err
 	}
-	fmt.Println("  ledger     : recorded")
+	logf("ledger: recorded")
 	return nil
 }
 
@@ -217,7 +344,7 @@ func printRecord(r record, csvPath string) {
 	fmt.Printf("  rule       : %s close %.2f vs SMA50 %.2f -> %s (was %s)\n", d.BarDate, d.Close, d.SMA, strings.ToUpper(d.Signal), d.PrevSignal)
 	fmt.Printf("  paper      : since %s, %d days, %d fills, %.0f bps/leg | position %s | equity %.4f (if closed %.4f) vs hold %.4f | max DD %.2f%%\n",
 		p.ForwardStart, p.Days, p.Fills, p.LegCostBps, p.Position, p.Equity, p.EquityClosed, p.HoldEquity, p.MaxDrawdown*100)
-	fmt.Printf("  next open  : %s -> %s (dry run: no order placed)\n", d.FillDate, strings.ToUpper(p.PendingAction))
+	fmt.Printf("  paper next : %s open -> %s\n", d.FillDate, strings.ToUpper(p.PendingAction))
 }
 
 func fileSHA256(path string) (string, error) {

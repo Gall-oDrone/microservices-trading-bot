@@ -6,18 +6,20 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync"
 )
 
 // record is one line of the append-only ledger: one book, one decision day.
 type record struct {
 	RecordedAt  string      `json:"recorded_at"`
 	CodeVersion string      `json:"code_version"`
-	Mode        string      `json:"mode"` // "dry-run" (phase 1); "stage" once orders are placed
+	Mode        string      `json:"mode"` // "dry-run" or "stage"
 	Book        string      `json:"book"`
 	Prereg      string      `json:"prereg"`
 	Decision    decision    `json:"decision"`
 	Paper       paperResult `json:"paper"`
 	Candles     candleInfo  `json:"candles"`
+	Stage       *stageInfo  `json:"stage,omitempty"`
 }
 
 type candleInfo struct {
@@ -33,6 +35,7 @@ type candleInfo struct {
 // write a second line for the same decision.
 type ledger struct {
 	path    string
+	mu      sync.Mutex
 	entries map[string]record
 }
 
@@ -69,7 +72,9 @@ func (l *ledger) get(book, barDate string) (record, bool) {
 }
 
 func (l *ledger) append(r record) error {
-	if _, dup := l.get(r.Book, r.Decision.BarDate); dup {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if _, dup := l.entries[key(r.Book, r.Decision.BarDate)]; dup {
 		return fmt.Errorf("ledger already has %s %s", r.Book, r.Decision.BarDate)
 	}
 	if err := os.MkdirAll(filepath.Dir(l.path), 0o755); err != nil {
