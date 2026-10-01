@@ -41,13 +41,12 @@ import (
 	"strings"
 	"time"
 
+	"bitso-trading-platform/strategy-executor/internal/dailyrule"
 	"bitso-trading-platform/strategy-executor/internal/yahoo"
 )
 
-type bar struct {
-	Date                   time.Time
-	Open, High, Low, Close float64
-}
+// bar is the shared daily bar type, so bars flow into dailyrule unchanged.
+type bar = dailyrule.Bar
 
 // newsDay aggregates the scored BTC news published on one UTC day.
 type newsDay struct {
@@ -143,31 +142,14 @@ func signalBuyAndHold(n int) []bool {
 	return w
 }
 
-// maxGapDays is the longest calendar gap the trend SMA will average across.
-// Short holes (a few missing days) are tolerated; the multi-month hole in the
-// 2026 data is not, because an SMA spanning it would blend prices from
-// different market regimes into one number.
-const maxGapDays = 7
-
+// signalTrend is the frozen trend rule. It lives in internal/dailyrule so that
+// cmd/daily-executor computes exactly the same signal. The SMA warm-up
+// restarts after a gap longer than dailyrule.MaxGapDays: short holes (a few
+// missing days) are tolerated; the multi-month hole in the 2026 data is not,
+// because an SMA spanning it would blend prices from different market regimes
+// into one number.
 func signalTrend(bars []bar, n int) []bool {
-	w := make([]bool, len(bars))
-	var win []float64
-	sum := 0.0
-	for i, b := range bars {
-		if i > 0 && b.Date.Sub(bars[i-1].Date) > maxGapDays*24*time.Hour {
-			win, sum = win[:0], 0 // restart warm-up after a long gap
-		}
-		win = append(win, b.Close)
-		sum += b.Close
-		if len(win) > n {
-			sum -= win[0]
-			win = win[1:]
-		}
-		if len(win) == n {
-			w[i] = b.Close > sum/float64(n)
-		}
-	}
-	return w
+	return dailyrule.Trend(bars, n)
 }
 
 func signalNews(bars []bar, news map[string]newsDay, k int, thr float64) []bool {

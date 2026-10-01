@@ -1,9 +1,12 @@
-package main
+package bitsodaily
 
 import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"reflect"
 	"strconv"
 	"testing"
 	"time"
@@ -18,11 +21,11 @@ func ms(s string) int64 {
 // (until Oct 2022), 06:00 UTC after. Both must label as the Mexico date,
 // never the previous or next UTC day.
 func TestToRows_LabelsByMexicoDate(t *testing.T) {
-	cs := []candle{
+	cs := []Candle{
 		{BucketStart: ms("2018-07-01T05:00:00Z"), FirstRate: "1", MaxRate: "2", MinRate: "0.5", LastRate: "1.5"}, // DST
 		{BucketStart: ms("2026-09-01T06:00:00Z"), FirstRate: "3", MaxRate: "4", MinRate: "2", LastRate: "3.5"},   // no DST
 	}
-	rows, dropped := toRows(cs, time.Date(2026, 9, 27, 0, 0, 0, 0, time.UTC))
+	rows, dropped := ToRows(cs, time.Date(2026, 9, 27, 0, 0, 0, 0, time.UTC))
 	if dropped != 0 || len(rows) != 2 {
 		t.Fatalf("rows=%d dropped=%d", len(rows), dropped)
 	}
@@ -39,29 +42,29 @@ func TestToRows_LabelsByMexicoDate(t *testing.T) {
 // Chunk overlaps return the same bucket twice; keep one.
 func TestToRows_DropsInProgressAndDuplicates(t *testing.T) {
 	now := time.Date(2026, 9, 27, 21, 0, 0, 0, time.UTC)
-	c := func(start string) candle {
-		return candle{BucketStart: ms(start), FirstRate: "1", MaxRate: "1", MinRate: "1", LastRate: "1"}
+	c := func(start string) Candle {
+		return Candle{BucketStart: ms(start), FirstRate: "1", MaxRate: "1", MinRate: "1", LastRate: "1"}
 	}
-	cs := []candle{c("2026-09-26T06:00:00Z"), c("2026-09-26T06:00:00Z"), c("2026-09-27T06:00:00Z")}
-	rows, dropped := toRows(cs, now)
+	cs := []Candle{c("2026-09-26T06:00:00Z"), c("2026-09-26T06:00:00Z"), c("2026-09-27T06:00:00Z")}
+	rows, dropped := ToRows(cs, now)
 	if len(rows) != 1 || rows[0].Date != "2026-09-26" || dropped != 2 {
 		t.Fatalf("rows=%+v dropped=%d", rows, dropped)
 	}
 }
 
-// fetchRange must cover [start, end) in chunks with no hole between them.
+// FetchRange must cover [start, end) in chunks with no hole between them.
 func TestFetchRange_ChunksCoverRange(t *testing.T) {
 	var spans [][2]int64
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		s, _ := strconv.ParseInt(r.URL.Query().Get("start"), 10, 64)
 		e, _ := strconv.ParseInt(r.URL.Query().Get("end"), 10, 64)
 		spans = append(spans, [2]int64{s, e})
-		_ = json.NewEncoder(w).Encode(ohlcResponse{Success: true, Payload: []candle{{BucketStart: s, FirstRate: "1", LastRate: "1"}}})
+		_ = json.NewEncoder(w).Encode(ohlcResponse{Success: true, Payload: []Candle{{BucketStart: s, FirstRate: "1", LastRate: "1"}}})
 	}))
 	defer srv.Close()
 	start := time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
-	end := start.Add(25 * day)
-	got, err := fetchRange(srv.Client(), srv.URL, "btc_mxn", start, end, 10*day)
+	end := start.Add(25 * Day)
+	got, err := FetchRange(srv.Client(), srv.URL, "btc_mxn", start, end, 10*Day)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -75,5 +78,37 @@ func TestFetchRange_ChunksCoverRange(t *testing.T) {
 		if spans[i][0] != spans[i-1][1] {
 			t.Fatalf("hole between chunks %d and %d: %v", i-1, i, spans)
 		}
+	}
+}
+
+// ReadCSV must return exactly what WriteCSV wrote, sorted by date, so the
+// executor reads the same bars from a file as it would from the API.
+func TestWriteReadCSV_RoundTrip(t *testing.T) {
+	in := []Row{
+		{Date: "2026-09-02", Open: 2, High: 3, Low: 1.5, Close: 2.5, Volume: "7", VWAP: "2.2", Trades: 9, BucketStartUTC: time.Date(2026, 9, 2, 6, 0, 0, 0, time.UTC)},
+		{Date: "2026-09-01", Open: 1, High: 1.25, Low: 0.75, Close: 1.125, Volume: "3.5", VWAP: "1.1", Trades: 4, BucketStartUTC: time.Date(2026, 9, 1, 6, 0, 0, 0, time.UTC)},
+	}
+	path := filepath.Join(t.TempDir(), "x.csv")
+	if err := WriteCSV(path, "btc_usd", in); err != nil {
+		t.Fatal(err)
+	}
+	got, err := ReadCSV(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []Row{in[1], in[0]}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("round trip:\n got %+v\nwant %+v", got, want)
+	}
+}
+
+func TestReadCSV_RejectsBadNumbers(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "bad.csv")
+	body := "date,book,open,high,low,close\n2026-09-01,btc_usd,1,2,x,1\n"
+	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ReadCSV(path); err == nil {
+		t.Fatal("expected an error for a non-numeric low")
 	}
 }

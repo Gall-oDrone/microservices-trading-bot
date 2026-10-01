@@ -93,3 +93,6 @@ services/*/bitso-daily
 
 # scripts/yahoo-refresh.sh work dir: ~1 GB of synced S3 partitions + builds
 .yahoo-refresh/
+
+# daily-executor default ledger/candles output (evidence is committed deliberately under docs/)
+daily-executor-data/
