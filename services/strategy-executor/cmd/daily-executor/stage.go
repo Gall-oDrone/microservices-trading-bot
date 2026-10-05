@@ -26,10 +26,11 @@ type position struct {
 type stageInfo struct {
 	Env            string            `json:"env"`
 	Target         string            `json:"target"` // the rule's signal
-	Action         string            `json:"action"` // "buy" | "sell" | "none"
+	Action         string            `json:"action"` // "buy" | "sell" | "none" | "blocked" (risk check, see risk.go)
 	PositionBefore position          `json:"position_before"`
 	PositionAfter  position          `json:"position_after"`
 	Leg            *dailyexec.Result `json:"leg,omitempty"`
+	Risk           *riskInfo         `json:"risk,omitempty"` // set whenever an order was planned
 }
 
 const btcDust = 1e-8
@@ -40,7 +41,10 @@ const maxSize = 0.01
 func flatPos() position { return position{State: "flat"} }
 
 // lastStagePosition is the position after the most recent stage record.
+// It locks the ledger: books finish in parallel and another may be appending.
 func lastStagePosition(l *ledger, book string) position {
+	l.mu.Lock()
+	defer l.mu.Unlock()
 	var dates []string
 	for _, r := range l.entries {
 		if r.Book == book && r.Mode == "stage" && r.Stage != nil {
@@ -51,8 +55,7 @@ func lastStagePosition(l *ledger, book string) position {
 		return flatPos()
 	}
 	sort.Strings(dates)
-	r, _ := l.get(book, dates[len(dates)-1])
-	return r.Stage.PositionAfter
+	return l.entries[key(book, dates[len(dates)-1])].Stage.PositionAfter
 }
 
 // planAction turns the rule's target and the current position into an order.

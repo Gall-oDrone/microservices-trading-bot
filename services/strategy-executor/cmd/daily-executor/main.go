@@ -36,8 +36,16 @@
 //
 // Exit status: 0 when every book was decided (or already recorded), 1 when
 // any book failed (stale or missing candles, fetch error, data changed since
-// it was recorded, order error), 2 on bad usage. DAILY_EXECUTOR_DISABLED=1
-// exits 0 at once.
+// it was recorded, order error, order blocked by the risk check), 2 on bad
+// usage. DAILY_EXECUTOR_DISABLED=1 exits 0 at once.
+//
+// Risk: with -stage, every planned order first goes through the pre-trade
+// check in shared/pkg/risk (size, position, notional, orders per day, price
+// deviation from the decision close, global halt), using -risk-policy or the
+// built-in risk.DefaultPolicy(). A blocked order is not sent and not retried:
+// the day is recorded with stage action "blocked" and the findings, and the
+// run exits 1. See risk.go. The check never changes a signal or the paper
+// account.
 package main
 
 import (
@@ -53,6 +61,7 @@ import (
 	"sync"
 	"time"
 
+	"bitso-trading-platform/shared/pkg/risk"
 	"bitso-trading-platform/strategy-executor/internal/bitsodaily"
 	"bitso-trading-platform/strategy-executor/internal/bitsostage"
 	"bitso-trading-platform/strategy-executor/internal/dailyexec"
@@ -63,6 +72,7 @@ type options struct {
 	noRecord, stage                 bool
 	size                            float64
 	exec                            dailyexec.Config
+	riskPolicy                      risk.Policy
 }
 
 func main() {
@@ -79,6 +89,7 @@ func main() {
 	o.exec = dailyexec.DefaultConfig()
 	flag.DurationVar(&o.exec.MakerTimeout, "maker-timeout", o.exec.MakerTimeout, "rest the post-only order this long before the market fallback")
 	flag.DurationVar(&o.exec.Poll, "poll", o.exec.Poll, "how often to check fills")
+	riskPolicy := flag.String("risk-policy", "", "JSON risk policy for stage orders (default: built-in shared/pkg/risk.DefaultPolicy)")
 	flag.Parse()
 
 	if os.Getenv("DAILY_EXECUTOR_DISABLED") == "1" {
@@ -105,6 +116,11 @@ func main() {
 	if o.candlesDir == "" {
 		o.candlesDir = filepath.Join(filepath.Dir(o.ledgerPath), "candles")
 	}
+	policy, err := risk.LoadPolicy(*riskPolicy)
+	if err != nil {
+		usage(err.Error())
+	}
+	o.riskPolicy = policy
 	var specs []bookSpec
 	for _, b := range strings.Split(*books, ",") {
 		b = strings.ToLower(strings.TrimSpace(b))
@@ -156,8 +172,8 @@ func main() {
 		fail(err)
 	}
 	version := codeVersion()
-	fmt.Printf("daily-executor %s | as of %s (Mexico City %s) | mode %s | ledger %s\n",
-		version, now.Format(time.RFC3339), now.In(bitsodaily.Mexico).Format("2006-01-02 15:04"), mode, o.ledgerPath)
+	fmt.Printf("daily-executor %s | as of %s (Mexico City %s) | mode %s | ledger %s | risk policy %s\n",
+		version, now.Format(time.RFC3339), now.In(bitsodaily.Mexico).Format("2006-01-02 15:04"), mode, o.ledgerPath, o.riskPolicy.Version)
 
 	// Step 1, sequential: candles, decision, paper account, integrity checks.
 	client := &http.Client{Timeout: 30 * time.Second}
@@ -290,7 +306,34 @@ func finishBook(o options, ex dailyexec.Exchange, led *ledger, rec *record) erro
 		fmt.Printf("[%s] %s "+format+"\n", append([]any{rec.Book, time.Now().UTC().Format("15:04:05Z")}, args...)...)
 	}
 	logf("stage: rule says %s, executor holds %s (%.8f BTC) -> %s %.8f BTC", rec.Decision.Signal, pos.State, pos.BTC, action, qty)
+	var blocked error
 	if action != "none" {
+		ri, err := checkRisk(o.riskPolicy, ex, led, rec, action, qty, pos)
+		if err != nil {
+			return fmt.Errorf("stage %s: %w (nothing recorded; re-run today to retry)", action, err)
+		}
+		st.Risk = ri
+		for _, f := range ri.Findings {
+			logf("risk: %s %s: %s", f.Severity, f.Rule, f.Message)
+		}
+		if !ri.Allowed {
+			started, err := legStarted(ex, rec.Book, rec.Decision.FillDate, action)
+			if err != nil {
+				return fmt.Errorf("stage %s blocked by risk policy %s, and checking for an earlier partial leg failed: %w (nothing sent, nothing recorded)", action, ri.PolicyVersion, err)
+			}
+			if started {
+				return fmt.Errorf("stage %s blocked by risk policy %s, but an earlier run already started this leg on Bitso: nothing sent, nothing recorded; resolve by hand", action, ri.PolicyVersion)
+			}
+			// Skip and record, never retry: the day is written as blocked
+			// with the position unchanged, so a re-run finds it recorded.
+			st.Action = actionBlocked
+			blocked = fmt.Errorf("stage %s %.8f BTC blocked by risk policy %s (no order sent; recorded as blocked)", action, qty, ri.PolicyVersion)
+			logf("risk: %v", blocked)
+		} else {
+			logf("risk: %s %.8f BTC at ~%.2f allowed by policy %s", action, qty, ri.Order.Price, ri.PolicyVersion)
+		}
+	}
+	if action != "none" && blocked == nil {
 		leg := dailyexec.Leg{Book: rec.Book, Side: action, Qty: qty, FillDate: rec.Decision.FillDate}
 		res, err := dailyexec.Run(ex, dailyexec.RealClock{}, o.exec, leg, logf)
 		if err != nil {
@@ -309,7 +352,7 @@ func finishBook(o options, ex dailyexec.Exchange, led *ledger, rec *record) erro
 		return err
 	}
 	logf("ledger: recorded")
-	return nil
+	return blocked
 }
 
 // checkHistory verifies that every earlier ledger day for this book still has
