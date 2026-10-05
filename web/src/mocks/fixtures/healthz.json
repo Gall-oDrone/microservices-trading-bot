@@ -1,0 +1,9 @@
+{
+  "status": "ok",
+  "version": "dev",
+  "ledger": "../strategy-executor/daily-executor-data/stage/ledger.jsonl",
+  "ledger_found": true,
+  "records": 6,
+  "policy": "built-in default (default-2026-10-03)",
+  "time": "2026-10-05T16:35:12Z"
+}

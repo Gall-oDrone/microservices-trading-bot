@@ -1,0 +1,233 @@
+{
+  "book": "btc_usd",
+  "mode": "stage",
+  "records": [
+    {
+      "recorded_at": "2026-10-01T01:00:36Z",
+      "code_version": "0e89832bbf8f",
+      "mode": "stage",
+      "book": "btc_usd",
+      "prereg": "FORWARD-TEST-PREREGISTRATION-SMA50-BTCUSD-2026-09-29.md",
+      "decision": {
+        "bar_date": "2026-09-29",
+        "fill_date": "2026-09-30",
+        "close": 83306,
+        "sma50": 76900.26000000007,
+        "signal": "long",
+        "prev_signal": "long",
+        "action": "hold"
+      },
+      "paper": {
+        "forward_start": "2026-09-29",
+        "days": 1,
+        "position": "long",
+        "fills": 1,
+        "leg_cost_bps": 40,
+        "equity": 0.9949967142343207,
+        "equity_if_closed": 0.9910167273773834,
+        "hold_equity": 0.9949967142343207,
+        "max_drawdown": 0.005003285765679322,
+        "pending_action": "hold"
+      },
+      "candles": {
+        "source": "https://api.bitso.com/api/v3/ohlc",
+        "first": "2020-04-24",
+        "last": "2026-09-29",
+        "bars": 2350,
+        "sha256_prefix": "605e1b779bb0c656"
+      },
+      "stage": {
+        "env": "https://stage.bitso.com/api",
+        "target": "long",
+        "action": "buy",
+        "position_before": {
+          "state": "flat",
+          "btc": 0
+        },
+        "position_after": {
+          "state": "long",
+          "btc": 0.0009975
+        },
+        "leg": {
+          "side": "buy",
+          "target_btc": 0.001,
+          "filled_btc": 0.001,
+          "maker_btc": 0.001,
+          "taker_btc": 0,
+          "base_delta": 0.0009975,
+          "avg_price": 83481,
+          "notional": 83.481,
+          "fees": {
+            "btc": 0.0000025
+          },
+          "maker_origin_id": "sma50-btc_usd-20260930-b-m",
+          "taker_origin_id": "sma50-btc_usd-20260930-b-t",
+          "oids": [
+            "mykZ1geAhtLuJn5X"
+          ],
+          "maker_placements": 1,
+          "market_fallback": false,
+          "shortfall_btc": 0,
+          "notes": [
+            "done: filled",
+            "2026-10-01: position corrected to net of BTC fees (was gross); reconciled with stage balance"
+          ],
+          "started": "2026-10-01T00:58:04.555980408Z",
+          "finished": "2026-10-01T01:00:36.50043561Z"
+        }
+      }
+    },
+    {
+      "recorded_at": "2026-10-01T17:46:22Z",
+      "code_version": "2e1030017900",
+      "mode": "stage",
+      "book": "btc_usd",
+      "prereg": "FORWARD-TEST-PREREGISTRATION-SMA50-BTCUSD-2026-09-29.md",
+      "decision": {
+        "bar_date": "2026-09-30",
+        "fill_date": "2026-10-01",
+        "close": 84216,
+        "sma50": 77308.88000000008,
+        "signal": "long",
+        "prev_signal": "long",
+        "action": "hold"
+      },
+      "paper": {
+        "forward_start": "2026-09-29",
+        "days": 2,
+        "position": "long",
+        "fills": 1,
+        "leg_cost_bps": 40,
+        "equity": 1.0058656433625135,
+        "equity_if_closed": 1.0018421807890634,
+        "hold_equity": 1.0058656433625135,
+        "max_drawdown": 0.005003285765679322,
+        "pending_action": "hold"
+      },
+      "candles": {
+        "source": "https://api.bitso.com/api/v3/ohlc",
+        "first": "2020-04-24",
+        "last": "2026-09-30",
+        "bars": 2351,
+        "sha256_prefix": "265ba79aae32532d"
+      },
+      "stage": {
+        "env": "https://stage.bitso.com/api",
+        "target": "long",
+        "action": "none",
+        "position_before": {
+          "state": "long",
+          "btc": 0.0009975
+        },
+        "position_after": {
+          "state": "long",
+          "btc": 0.0009975
+        }
+      }
+    },
+    {
+      "recorded_at": "2026-10-02T20:06:30Z",
+      "code_version": "2e1030017900",
+      "mode": "stage",
+      "book": "btc_usd",
+      "prereg": "FORWARD-TEST-PREREGISTRATION-SMA50-BTCUSD-2026-09-29.md",
+      "decision": {
+        "bar_date": "2026-10-01",
+        "fill_date": "2026-10-02",
+        "close": 85944,
+        "sma50": 77750.86000000007,
+        "signal": "long",
+        "prev_signal": "long",
+        "action": "hold"
+      },
+      "paper": {
+        "forward_start": "2026-09-29",
+        "days": 3,
+        "position": "long",
+        "fills": 1,
+        "leg_cost_bps": 40,
+        "equity": 1.026504664827917,
+        "equity_if_closed": 1.0223986461686054,
+        "hold_equity": 1.026504664827917,
+        "max_drawdown": 0.005003285765679322,
+        "pending_action": "hold"
+      },
+      "candles": {
+        "source": "https://api.bitso.com/api/v3/ohlc",
+        "first": "2020-04-24",
+        "last": "2026-10-01",
+        "bars": 2352,
+        "sha256_prefix": "7feabbe591c75858"
+      },
+      "stage": {
+        "env": "https://stage.bitso.com/api",
+        "target": "long",
+        "action": "none",
+        "position_before": {
+          "state": "long",
+          "btc": 0.0009975
+        },
+        "position_after": {
+          "state": "long",
+          "btc": 0.0009975
+        }
+      }
+    }
+  ],
+  "equity": [
+    {
+      "date": "2026-09-29",
+      "equity": 0.9949967142343207,
+      "hold_equity": 0.9949967142343207,
+      "max_drawdown": 0.005003285765679322,
+      "signal": "long",
+      "close": 83306,
+      "sma50": 76900.26000000007
+    },
+    {
+      "date": "2026-09-30",
+      "equity": 1.0058656433625135,
+      "hold_equity": 1.0058656433625135,
+      "max_drawdown": 0.005003285765679322,
+      "signal": "long",
+      "close": 84216,
+      "sma50": 77308.88000000008
+    },
+    {
+      "date": "2026-10-01",
+      "equity": 1.026504664827917,
+      "hold_equity": 1.026504664827917,
+      "max_drawdown": 0.005003285765679322,
+      "signal": "long",
+      "close": 85944,
+      "sma50": 77750.86000000007
+    }
+  ],
+  "fills": [
+    {
+      "bar_date": "2026-09-29",
+      "fill_date": "2026-09-30",
+      "side": "buy",
+      "target_btc": 0.001,
+      "filled_btc": 0.001,
+      "maker_btc": 0.001,
+      "taker_btc": 0,
+      "net_btc": 0.0009975,
+      "avg_price": 83481,
+      "notional": 83.481,
+      "fee_quote": 0.2087025,
+      "fee_bps": 25.000000000000004,
+      "ref_open": 83346,
+      "slippage_bps": 16.197537974227405,
+      "total_cost_bps": 41.19753797422741,
+      "assumed_leg_bps": 40,
+      "market_fallback": false,
+      "started": "2026-10-01T00:58:04Z",
+      "finished": "2026-10-01T01:00:36Z",
+      "notes": [
+        "done: filled",
+        "2026-10-01: position corrected to net of BTC fees (was gross); reconciled with stage balance"
+      ]
+    }
+  ]
+}
