@@ -97,6 +97,8 @@ type RiskCheck struct {
 	State         risk.State     `json:"state"`
 	Allowed       bool           `json:"allowed"`
 	Findings      []risk.Finding `json:"findings,omitempty"`
+	// Halt is the operator halt file in force for that run (R2), if any.
+	Halt *risk.HaltState `json:"halt,omitempty"`
 }
 
 // Leg mirrors internal/dailyexec.Result.
