@@ -10,6 +10,9 @@
 //	go run ./cmd -ledger ../strategy-executor/daily-executor-data/stage/ledger.jsonl
 //	go run ./cmd -ledgers stage=../strategy-executor/daily-executor-data/stage/ledger.jsonl,dry-run=../strategy-executor/daily-executor-data/ledger.jsonl
 //	go run ./cmd -static ../../web/dist   # also serve the built UI
+//
+// The Research page reads the study write-ups from -studies-dir
+// (default ../../docs/backtest-readiness), read-only.
 package main
 
 import (
@@ -23,6 +26,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"runtime/debug"
 	"strconv"
 	"syscall"
@@ -31,6 +35,7 @@ import (
 	"bitso-trading-platform/shared/pkg/risk"
 	"bitso-trading-platform/ui-api/internal/api"
 	"bitso-trading-platform/ui-api/internal/live"
+	"bitso-trading-platform/ui-api/internal/research"
 	"bitso-trading-platform/ui-api/internal/store"
 )
 
@@ -53,6 +58,7 @@ func main() {
 	liveOn := flag.Bool("live", env("UI_API_LIVE", "1") != "0", "stream display-only market data from Bitso's public WebSocket (UI_API_LIVE=0 disables)")
 	liveURL := flag.String("live-url", env("UI_API_LIVE_URL", live.DefaultURL), "Bitso public WebSocket URL (production; no keys)")
 	liveREST := flag.String("live-rest-url", env("UI_API_LIVE_REST_URL", live.DefaultRESTURL), "Bitso public REST API, for today's bar")
+	studiesDir := flag.String("studies-dir", env("UI_API_STUDIES_DIR", "../../docs/backtest-readiness"), "study write-ups (markdown) for the Research page")
 	flag.Parse()
 
 	if *printPolicy {
@@ -86,7 +92,8 @@ func main() {
 		}
 	}
 	srv := &api.Server{Ledgers: ledgers, Policy: pol, PolicySrc: src, StageSize: *stageSize, StaticDir: *static,
-		Version: version(), Log: logger}
+		Version: version(), Log: logger,
+		Research: &research.Index{Dir: *studiesDir, RepoRel: repoRel(*studiesDir)}}
 	ctx, stopLive := context.WithCancel(context.Background())
 	defer stopLive()
 	if *liveOn {
@@ -106,6 +113,7 @@ func main() {
 		for _, l := range ledgers {
 			logger.Printf("ledger %s: %s | candles %s", l.Name, l.Store.LedgerPath, l.Store.CandlesDir)
 		}
+		logger.Printf("studies: %s", *studiesDir)
 		logger.Printf("listening on http://%s | policy %s", *addr, src)
 		if err := hs.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			logger.Fatal(err)
@@ -120,6 +128,29 @@ func main() {
 	if err := hs.Shutdown(sctx); err != nil {
 		logger.Printf("shutdown: %v", err)
 	}
+}
+
+// repoRel reports dir relative to the git repository root (the nearest parent
+// with a .git entry), for display; it falls back to dir as given.
+func repoRel(dir string) string {
+	abs, err := filepath.Abs(dir)
+	if err != nil {
+		return filepath.ToSlash(dir)
+	}
+	for root := abs; ; {
+		if _, err := os.Stat(filepath.Join(root, ".git")); err == nil {
+			if rel, err := filepath.Rel(root, abs); err == nil {
+				return filepath.ToSlash(rel)
+			}
+			break
+		}
+		parent := filepath.Dir(root)
+		if parent == root {
+			break
+		}
+		root = parent
+	}
+	return filepath.ToSlash(dir)
 }
 
 // startLive connects one shared upstream for the forward-test books. Closed

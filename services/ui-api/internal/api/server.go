@@ -19,6 +19,7 @@ import (
 	"bitso-trading-platform/shared/pkg/dailyledger"
 	"bitso-trading-platform/shared/pkg/risk"
 	"bitso-trading-platform/ui-api/internal/live"
+	"bitso-trading-platform/ui-api/internal/research"
 	"bitso-trading-platform/ui-api/internal/store"
 )
 
@@ -43,6 +44,8 @@ type Server struct {
 	Log       *log.Logger
 	// Live is the display-only market data hub; nil disables /live and /stream.
 	Live *live.Hub
+	// Research indexes the study write-ups; nil serves an empty list.
+	Research *research.Index
 }
 
 var (
@@ -125,6 +128,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/ui/risk", s.riskStatus)
 	mux.HandleFunc("GET /api/ui/live", s.liveSnapshot)
 	mux.HandleFunc("GET /api/ui/stream", s.stream)
+	mux.HandleFunc("GET /api/ui/research/studies", s.studies)
+	mux.HandleFunc("GET /api/ui/research/studies/{name}", s.study)
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusNotFound, "no such endpoint")
 	})
