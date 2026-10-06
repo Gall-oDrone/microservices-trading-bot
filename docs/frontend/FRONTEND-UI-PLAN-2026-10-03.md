@@ -105,8 +105,8 @@ Location: `web/` at the repo root, served by Vite in development (proxying `/api
 - Per book: stage position and its notional, **realized cost per leg** (fee + slippage) vs assumed, paper drawdown vs review level, limit meters (position, entry order size, entry notional, drawdown), **the next stage order run through `risk.Check`** ("would pass" / "would be blocked" with reasons), **the executor's last recorded check** (touch price vs close, policy version, sent / blocked, blocked days), and findings.
 - Policy table: every limit per book, with its type (block or warn).
 
-### 4.3 Research and backtests (Phase 2)
-- List of studies (`docs/backtest-readiness/*.md`) with their verdicts, linked to evidence files.
+### 4.3 Research and backtests (Phase 2; study index built 2026-10-06)
+- **Built:** `/research` lists the studies (`docs/backtest-readiness/*.md`), newest first, with kind, question, summary, lineage chips and evidence count; search and kind filter live in the URL. `/research/<name>` renders the study with a table of contents, what it builds on, what links to it, and its evidence files (§8.4).
 - Strategy comparison view: return, max DD, Sharpe, trades and cost drag, development vs holdout side by side (from `weekly-research` / `daily-research` outputs, exported as JSON).
 - Backtest runs from the `backtesting` service: equity curve, trades, parameters. Pick **one** canonical engine first (see §7).
 - The volume-confirmed SMA50 variant, once pre-registered, gets its own forward-test card from its separate dry-run ledger (`ui-api -ledger …`; multi-ledger support needed, §8).
@@ -142,11 +142,13 @@ Location: `web/` at the repo root, served by Vite in development (proxying `/api
 | `GET /api/ui/ledgers` | configured ledgers (`-ledgers`) | name, path, found, records, default; every endpoint above takes `?ledger=<name>` |
 | `GET /api/ui/live?books=` | live hub (Bitso public WS) | snapshot JSON: upstream status, last trade, bid/ask, forming candle, provisional flip level. Display only; 503 with `-live=false` |
 | `GET /api/ui/stream?books=` | live hub | Server-Sent Events: `snapshot`, `book` (≤1/s per book), `status`, `heartbeat` (15 s) |
+| `GET /api/ui/research/studies` | `-studies-dir` (default `docs/backtest-readiness`) | metadata per study: kind, date, question, summary, follows, references, evidence dir; empty list if the dir is missing |
+| `GET /api/ui/research/studies/{name}` | one study file | sanitized HTML (goldmark, raw HTML dropped), h2/h3 headings, followed-by / referenced-by; 400 bad name, 404 unknown |
 
 Files are cached by mtime; the ledger is re-read only when it changes.
 
-Still to build (Phase 2–3): `/research/studies`, `/research/runs/{id}` (needs `-json` on the research
-tools), `/market/{book}/…` proxy, `/health/data`.
+Still to build (Phase 2–3): `/research/runs/{id}` (needs `-json` on the research tools),
+`/market/{book}/…` proxy, `/health/data`.
 
 ### 5.2 Contracts
 - **Go ↔ Go:** `shared/pkg/dailyledger` mirrors the executor's unexported ledger types.
@@ -269,7 +271,7 @@ returns the executor's last recorded check. The Risk page shows all of it.
 | **0. Foundations** | `web/` scaffold (Vite, TS strict, router, Query, tokens, dark theme, layout), `npm run ci`, MSW mocks from real data | `npm run build` passes; Forward tests page renders from mocks | **Done** |
 | **1. Forward tests + risk, local** | Forward-tests pages and Risk page against a local `ui-api` reading the local ledger; localhost only | Today's signal, paper vs hold, fills and fees for both books, matching the CLI output | **Done** |
 | **1b. Close-out** | GitHub Actions job (`go test` for shared, ui-api, daily-executor; `npm run ci`), Playwright smoke test, multi-ledger support in `ui-api` (stage + dry-run + future volume variant), risk step **R1** | CI runs on every PR; a blocked order is enforced and visible | **Done**: R1 (2026-10-05); CI (`operator-ui.yml`), multi-ledger, Playwright (2026-10-06) |
-| **2. Research + data health** | Study index, strategy comparison (needs `-json`), data-health page, ledger read from S3, risk **R2** + **R3** | Holdout vs development tables match the evidence files; a missed run alerts | **R2 done** (2026-10-06) |
+| **2. Research + data health** | Study index, strategy comparison (needs `-json`), data-health page, ledger read from S3, risk **R2** + **R3** | Holdout vs development tables match the evidence files; a missed run alerts | **R2 done**, **study index done** (2026-10-06) |
 | **3. Market data** | Market page via BFF proxy and SSE; candles with volume ratio | Live ticker updates within 2 s; no direct browser calls to internal services | **Live-data slice done** (2026-10-06, §8.3); Market page still to build |
 | **4. Hardening + controls** | OIDC, TLS, CORS, audit log, role-gated controls (halt, kill switch, start/stop), risk **R4** | Security review passes; every control action is audited | |
 | **5. Deploy** | Static build behind CloudFront or served by `ui-api`; k8s/compose entries; risk **R5** | Reachable only through auth over HTTPS | |
@@ -285,7 +287,7 @@ and R3 alerts follow.
 | **1b. Playwright smoke (done)** | `@playwright/test` against `vite preview` in mock mode (captured fixtures). The 3 pages, a desktop and a phone viewport. Fails on any console error or on a schema mismatch banner. 3rd job in `operator-ui.yml`. | `npm run e2e` passes locally and in CI |
 | **2. R2 halt file (done)** | See §8.2. | Setting the file halts the next run (recorded as a block) and `/risk` shows who, when, why |
 | **3. Live-data slice (done)** | See §8.3. | Cards and the detail chart update about once a second; a stale feed is visible; nothing live reaches the executor |
-| **4. Research views** | Study index from `docs/backtest-readiness/*.md`, then `-json` on the research tools and the comparison view | As in Phase 2 |
+| **4. Research views** | **4a (done):** study index from `docs/backtest-readiness/*.md` (§8.4). **4b:** `-json` on the research tools, then the comparison view | As in Phase 2 |
 
 ### 8.2 R2 halt file (design)
 
@@ -354,15 +356,40 @@ unfinished bar is labelled provisional. The decision path never reads live data.
 - Code: `services/ui-api/internal/live`, `internal/api/stream.go`; `web/src/api/live.ts`,
   `web/src/components/live.tsx`, `PriceChart` in `web/src/components/charts.tsx`.
 
+### 8.4 Research study index (as built, 2026-10-06)
+
+- **Source of truth stays the markdown.** `ui-api/internal/research` reads `-studies-dir`
+  (env `UI_API_STUDIES_DIR`); `README.md` is skipped. Parsed per file and cached by size and mtime.
+- **Metadata.** Title from the `# h1`; date from the `-YYYY-MM-DD` file suffix, overridden by a
+  `Date:` / `Date registered:` header line; kind from the name (`PREREGISTRATION` →
+  pre-registration, `ASSESSMENT`, `STUDY`/`CHECK` → study, else report); question from the first
+  plain blockquote or a `**Question.**` paragraph; summary from the first prose paragraph (after a
+  short lead-in such as `**Short answer.**`, the next one); `follows` from links in the `Follows:` /
+  `Context:` header lines, `references` from other links to studies; evidence from the
+  `evidence-<date>/` dir with the study's date.
+- **Safe rendering.** goldmark (GFM) with raw HTML dropped and only http(s)/mailto/relative links
+  kept; external links open in a new tab; links to studies become in-app routes; other repo links are
+  shown but inert (the UI does not serve repo files). The leading h1 is removed (the page has its
+  own). GitHub alerts (`> [!IMPORTANT]`) are styled.
+- **Names** are validated (no `/`, no `..`); unknown names are a 404.
+- **Fixtures** are captured from the **committed** docs only (`scripts/capture-fixtures.sh`), so
+  draft studies never land in `web/src/mocks/research/`.
+- **Tests.** Go: metadata, sanitization (script, `javascript:` links), traversal, cache refresh,
+  missing dir, handlers. Web: zod contract per fixture, filters in the URL, in-app vs inert links,
+  unknown study; Playwright: list → filter → study → follow a lineage link.
+- **Next (4b).** Agree a `-json` schema for `daily-research` / `weekly-research` (per strategy and
+  split: return, max DD, Sharpe, trades, cost drag, vs hold), write it next to the evidence, then
+  `/research/runs` and the comparison table.
+
 ---
 
 ## 9. How to run (local)
 
 ```bash
 export PATH=$PWD/.tools/node/bin:$PATH              # portable Node 22
-(cd services/ui-api && go run ./cmd) &              # 127.0.0.1:8090, stage ledger, live on
-# several ledgers, live data off:
-#   go run ./cmd -ledgers stage=<path>/ledger.jsonl,dry-run=<path>/ledger.jsonl -live=false
+(cd services/ui-api && go run ./cmd) &              # 127.0.0.1:8090, stage ledger, live on, studies from docs/backtest-readiness
+# several ledgers, live data off, another studies dir:
+#   go run ./cmd -ledgers stage=<path>/ledger.jsonl,dry-run=<path>/ledger.jsonl -live=false -studies-dir <dir>
 cd web && npm ci && npm run dev                     # http://127.0.0.1:5173
 # or, without the backend:
 npm run dev:mock
