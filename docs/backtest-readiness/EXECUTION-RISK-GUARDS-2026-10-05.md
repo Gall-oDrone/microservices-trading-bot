@@ -39,3 +39,25 @@ and the price guard apply to them. Drawdown and cost thresholds only warn and ne
 The paper account is never affected. The stage position can lag paper for the blocked day or days,
 and the UI shows those as `order_blocked`. Each such day is an execution gap, not a deviation from
 the frozen rule.
+
+## Addendum 2026-10-06: operator halt file (R2)
+
+An operator can now halt stage orders without editing the policy, by writing
+`risk-state.json` next to the ledger (for the stage forward tests:
+`services/strategy-executor/daily-executor-data/stage/risk-state.json`):
+
+```json
+{"halted": true, "reason": "exchange incident", "by": "diego", "at": "2026-10-06T01:00:00Z"}
+```
+
+- The executor reads it at the start of every run. `reason`, `by` and an RFC 3339 `at` are required
+  while halted.
+- A halt works like the policy's `halted` flag: a planned stage order is blocked and recorded, and
+  the ledger line carries `stage.risk.halt` (who, why, when). Days with no order are recorded as
+  usual, so the paper record of the forward test continues.
+- A file that cannot be read or parsed exits 2 before anything runs (fail closed).
+- To resume, delete the file or set `"halted": false`.
+- `ui-api` shows the halt read-only on `/risk` (`halt_source`, `halt_file`).
+
+The halt never touches the signal or the paper account. As with any block, each halted day with a
+planned order is an execution gap, not a deviation from the frozen rule.

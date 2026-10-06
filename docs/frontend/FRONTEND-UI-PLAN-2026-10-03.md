@@ -207,7 +207,7 @@ returns the executor's last recorded check. The Risk page shows all of it.
 |---|---|---|
 | **R0 (done)** | `shared/pkg/risk`, `shared/pkg/dailyledger`, `/api/ui/risk`, Risk page | Risk page shows limits, exposure, realized cost and the next-order check from the real ledger |
 | **R1 (done 2026-10-05)** Enforce in the daily-executor | See §6.4.1 | A blocked order leaves a ledger line with `risk.allowed=false` and no exchange order (tested with a fake exchange); `/risk` reports `enforcement: "enforced"` |
-| **R2** Halt file (next, §8.1) | `risk-state.json` next to the ledger (`{halted, reason, by, at}`), read by the executor alongside `DAILY_EXECUTOR_DISABLED`; `ui-api` shows it read-only | Setting the file halts the next run and the UI shows who set it, when and why |
+| **R2 (done 2026-10-06)** Halt file, §8.2 | `risk-state.json` next to the ledger (`{halted, reason, by, at}`), read by the executor alongside `DAILY_EXECUTOR_DISABLED`; `ui-api` shows it read-only | Setting the file halts the next run and the UI shows who set it, when and why |
 | **R3** Alerts | Alert on a missed or failed run (exit code ≠ 0), a block, or a warning. Use the existing Grafana/Alertmanager stack, or a sidecar that polls `/api/ui/risk` | A missed day pages within an hour of 06:00 Mexico City |
 | **R4** Halt from the UI | `POST /api/ui/risk/halt` and `/resume` with a required reason, an audit log (append-only JSONL), a confirmation dialog | Needs Phase 4 auth (OIDC) first; every action is audited |
 | **R5** Platform-wide | Load trading-engine `MaxDailyLoss`/`MaxDrawdownPct` from env (non-zero defaults); stop trading-engine from placing orders OM rejected; expose OM `GetCurrentExposure`; move OM and trading-engine checks onto `shared/pkg/risk`; delete the dead strategy-executor risk package | One policy format across services; the session check actually blocks |
@@ -265,7 +265,7 @@ returns the executor's last recorded check. The Risk page shows all of it.
 |---|---|---|---|
 | **0. Foundations** | `web/` scaffold (Vite, TS strict, router, Query, tokens, dark theme, layout), `npm run ci`, MSW mocks from real data | `npm run build` passes; Forward tests page renders from mocks | **Done** |
 | **1. Forward tests + risk, local** | Forward-tests pages and Risk page against a local `ui-api` reading the local ledger; localhost only | Today's signal, paper vs hold, fills and fees for both books, matching the CLI output | **Done** |
-| **1b. Close-out** | GitHub Actions job (`go test` for shared, ui-api, daily-executor; `npm run ci`), Playwright smoke test, multi-ledger support in `ui-api` (stage + dry-run + future volume variant), risk step **R1** | CI runs on every PR; a blocked order is enforced and visible | **R1 done** (2026-10-05); **CI done** (`operator-ui.yml`, 2026-10-06); Playwright and multi-ledger in progress (§8.1) |
+| **1b. Close-out** | GitHub Actions job (`go test` for shared, ui-api, daily-executor; `npm run ci`), Playwright smoke test, multi-ledger support in `ui-api` (stage + dry-run + future volume variant), risk step **R1** | CI runs on every PR; a blocked order is enforced and visible | **R1 done** (2026-10-05); **CI done** (`operator-ui.yml`, 2026-10-06); **multi-ledger done** (2026-10-06); Playwright in progress (§8.1) |
 | **2. Research + data health** | Study index, strategy comparison (needs `-json`), data-health page, ledger read from S3, risk **R2** + **R3** | Holdout vs development tables match the evidence files; a missed run alerts | |
 | **3. Market data** | Market page via BFF proxy and SSE; candles with volume ratio | Live ticker updates within 2 s; no direct browser calls to internal services | A slim **live-data slice** is pulled forward (§8.1, step 3) |
 | **4. Hardening + controls** | OIDC, TLS, CORS, audit log, role-gated controls (halt, kill switch, start/stop), risk **R4** | Security review passes; every control action is audited | |
@@ -278,9 +278,9 @@ and R3 alerts follow.
 
 | Step | Scope | Done when |
 |---|---|---|
-| **1a. Multi-ledger** | `ui-api -ledgers stage=<path>,dry-run=<path>[,…]` (`-ledger` stays as the `stage` default). Each ledger has its own store, candles dir and halt file. `GET /api/ui/ledgers` lists them; every other endpoint takes `?ledger=<name>` (default: the first). The UI has a ledger picker (URL search param `ledger`) and every card shows its ledger. | Switching the picker shows the dry-run ledger; an unknown name is a 400; fixtures and schema tests cover `/ledgers` |
+| **1a. Multi-ledger (done)** | `ui-api -ledgers stage=<path>,dry-run=<path>[,…]` (`-ledger` stays as the `stage` default). Each ledger has its own store, candles dir and halt file. `GET /api/ui/ledgers` lists them; every other endpoint takes `?ledger=<name>` (default: the first). The UI has a ledger picker (URL search param `ledger`) and every card shows its ledger. | Switching the picker shows the dry-run ledger; an unknown name is a 400; fixtures and schema tests cover `/ledgers` |
 | **1b. Playwright smoke** | `@playwright/test` against `vite preview` in mock mode (captured fixtures). The 3 pages, a desktop and a phone viewport. Fails on any console error or on a schema mismatch banner. 3rd job in `operator-ui.yml`. | `npm run e2e` passes locally and in CI |
-| **2. R2 halt file** | See §8.2. | Setting the file halts the next run (recorded as a block) and `/risk` shows who, when, why |
+| **2. R2 halt file (done)** | See §8.2. | Setting the file halts the next run (recorded as a block) and `/risk` shows who, when, why |
 | **3. Live-data slice** | See §8.3. | Cards and the detail chart update about once a second; a stale feed is visible; nothing live reaches the executor |
 | **4. Research views** | Study index from `docs/backtest-readiness/*.md`, then `-json` on the research tools and the comparison view | As in Phase 2 |
 
