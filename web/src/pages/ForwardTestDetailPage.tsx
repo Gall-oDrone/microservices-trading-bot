@@ -1,8 +1,10 @@
 import { useState } from 'react'
 import { Link, useParams } from 'react-router'
 import { useCandles, useForwardTests, useLedger, useLedgerSearch } from '../api/client'
+import { useLiveStream } from '../api/live'
 import type { Fill, LedgerRecord } from '../api/schemas'
 import { EquityChart, PriceChart } from '../components/charts'
+import { LiveStrip } from '../components/live'
 import { Badge, Banner, CardSkeleton, Empty, ErrorState, LedgerBadge, SignalPill, Stat } from '../components/ui'
 import {
   bookLabel,
@@ -177,6 +179,8 @@ export function ForwardTestDetailPage() {
   const candles = useCandles(book, days)
   const ft = summary.data?.books.find((b) => b.book === book)
   const search = useLedgerSearch()
+  const live = useLiveStream(ft ? [book] : [])
+  const snap = live.books[book]
 
   return (
     <>
@@ -243,6 +247,8 @@ export function ForwardTestDetailPage() {
         </div>
       )}
 
+      {ft && <LiveStrip ft={ft} snap={snap} live={live} large />}
+
       <div className="grid grid-2" style={{ marginBottom: 16 }}>
         <section className="card" aria-labelledby="price-h">
           <div className="card-head">
@@ -258,6 +264,11 @@ export function ForwardTestDetailPage() {
                 <span className="key" style={{ color: 'var(--long)' }}>
                   ▲ flip / ● stage fill
                 </span>
+                {snap?.provisional && (
+                  <span className="key" style={{ color: 'var(--info)' }} title={snap.provisional.label}>
+                    <span className="swatch dashed" /> flip level (provisional)
+                  </span>
+                )}
               </div>
             </div>
             <div className="seg" role="group" aria-label="Range">
@@ -276,6 +287,11 @@ export function ForwardTestDetailPage() {
               fills={ledger.data?.fills ?? []}
               quote={ft?.quote ?? 'mxn'}
               label={`${bookLabel(book)} daily candles with SMA50`}
+              live={
+                snap
+                  ? { candle: snap.candle, flip: snap.provisional?.flip_level ?? null, fresh: live.phase === 'live' }
+                  : undefined
+              }
             />
           )}
           {candles.data && (

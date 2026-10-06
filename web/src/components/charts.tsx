@@ -11,11 +11,13 @@ import {
   LineSeries,
   LineStyle,
   type IChartApi,
+  type IPriceLine,
+  type ISeriesApi,
   type SeriesMarker,
   type Time,
 } from 'lightweight-charts'
 import { useEffect, useRef } from 'react'
-import type { CandlePoint, EquityPoint, Fill } from '../api/schemas'
+import type { CandlePoint, EquityPoint, Fill, LiveCandle } from '../api/schemas'
 
 function token(name: string, fallback: string): string {
   if (typeof window === 'undefined') return fallback
@@ -46,14 +48,18 @@ function baseOptions() {
   } as const
 }
 
-function useChart(build: (chart: IChartApi) => void, deps: unknown[]) {
+/** Builds the chart when `deps` change; `build` may return a cleanup run before the chart is removed. */
+function useChart(build: (chart: IChartApi) => void | (() => void), deps: unknown[]) {
   const ref = useRef<HTMLDivElement>(null)
   useEffect(() => {
     if (!ref.current) return
     const chart = createChart(ref.current, baseOptions())
-    build(chart)
+    const done = build(chart)
     chart.timeScale().fitContent()
-    return () => chart.remove()
+    return () => {
+      done?.()
+      chart.remove()
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, deps)
   return ref
@@ -61,18 +67,30 @@ function useChart(build: (chart: IChartApi) => void, deps: unknown[]) {
 
 const t = (d: string) => d as Time
 
+/** Live (display-only) overlay for PriceChart: today's forming bar and the provisional flip level. */
+export interface LiveOverlay {
+  candle: LiveCandle | null
+  flip: number | null
+  fresh: boolean
+}
+
 /** Daily candles with SMA50, volume, and markers for signal flips and stage fills. */
 export function PriceChart({
   candles,
   fills,
   label,
   quote,
+  live,
 }: {
   candles: CandlePoint[]
   fills: Fill[]
   label: string
   quote: string
+  live?: LiveOverlay
 }) {
+  const priceRef = useRef<ISeriesApi<'Candlestick'> | null>(null)
+  const volRef = useRef<ISeriesApi<'Histogram'> | null>(null)
+  const flipRef = useRef<IPriceLine | null>(null)
   const ref = useChart(
     (chart) => {
       const long = token('--long', '#2ec4a7')
@@ -139,9 +157,58 @@ export function PriceChart({
       }
       markers.sort((x, y) => String(x.time).localeCompare(String(y.time)))
       createSeriesMarkers(price, markers)
+      priceRef.current = price
+      volRef.current = vol
+      return () => {
+        priceRef.current = null
+        volRef.current = null
+        flipRef.current = null
+      }
     },
     [candles, fills, quote],
   )
+
+  // Live overlay, applied without rebuilding the chart. Re-runs after a
+  // rebuild (candles in deps) because effects run in declaration order.
+  const c = live?.candle ?? null
+  const flip = live?.flip ?? null
+  const fresh = live?.fresh ?? false
+  useEffect(() => {
+    const price = priceRef.current
+    if (!price) return
+    const lastClosed = candles[candles.length - 1]?.date ?? ''
+    if (c && c.date > lastClosed && c.open > 0) {
+      // Translucent: a forming bar, not a closed one.
+      const up = c.close >= c.open
+      const a = fresh ? 0.5 : 0.25
+      const color = up ? `hsla(170, 62%, 48%, ${a})` : `hsla(9, 82%, 64%, ${a})`
+      price.update({
+        time: t(c.date),
+        open: c.open,
+        high: c.high,
+        low: c.low,
+        close: c.close,
+        color,
+        wickColor: color,
+      })
+      volRef.current?.update({ time: t(c.date), value: c.volume, color: 'hsla(205, 80%, 64%, 0.25)' })
+    }
+    if (flip != null && flip > 0) {
+      const opts = {
+        price: flip,
+        color: fresh ? token('--info', '#5bb4f0') : token('--text-3', '#7a8394'),
+        lineWidth: 1 as const,
+        lineStyle: LineStyle.Dashed,
+        axisLabelVisible: true,
+        title: 'flip (provisional)',
+      }
+      if (flipRef.current) flipRef.current.applyOptions(opts)
+      else flipRef.current = price.createPriceLine(opts)
+    } else if (flipRef.current) {
+      price.removePriceLine(flipRef.current)
+      flipRef.current = null
+    }
+  }, [candles, c, flip, fresh])
   return <div ref={ref} className="chart" role="img" aria-label={label} />
 }
 

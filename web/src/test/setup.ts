@@ -8,7 +8,9 @@ import { handlers } from '../mocks/handlers'
 vi.mock('lightweight-charts', () => {
   const series = () => ({
     setData: vi.fn(),
-    createPriceLine: vi.fn(),
+    update: vi.fn(),
+    createPriceLine: vi.fn(() => ({ applyOptions: vi.fn() })),
+    removePriceLine: vi.fn(),
     priceScale: () => ({ applyOptions: vi.fn() }),
   })
   return {

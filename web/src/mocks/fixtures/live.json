@@ -1,0 +1,68 @@
+{
+  "generated_at": "2026-10-06T02:23:59Z",
+  "upstream": {
+    "source": "wss://ws.bitso.com",
+    "connected": true,
+    "since": "2026-10-06T02:20:37.183756316Z",
+    "last_message_at": "2026-10-06T02:23:59.614463809Z",
+    "reconnects": 0
+  },
+  "books": [
+    {
+      "book": "btc_mxn",
+      "last": 1546560,
+      "last_side": "sell",
+      "last_at": "2026-10-06T02:23:51.29Z",
+      "bid": 1546560,
+      "ask": 1546570,
+      "candle": {
+        "date": "2026-10-05",
+        "open": 1561940,
+        "high": 1570950,
+        "low": 1537550,
+        "close": 1546560,
+        "volume": 6.43250816,
+        "trade_count": 2070,
+        "seeded": true
+      },
+      "provisional": {
+        "label": "provisional: if today closed now",
+        "price": 1546560,
+        "flip_level": 1370366.7346938776,
+        "sma50": 1373890.6,
+        "signal": "long",
+        "distance_to_flip_pct": 11.392591642491876,
+        "based_on": "2026-10-04"
+      },
+      "updated_at": "2026-10-06T02:23:59.188971362Z"
+    },
+    {
+      "book": "btc_usd",
+      "last": 85654,
+      "last_side": "buy",
+      "last_at": "2026-10-06T02:23:55.293Z",
+      "bid": 85707,
+      "ask": 85719,
+      "candle": {
+        "date": "2026-10-05",
+        "open": 85761,
+        "high": 86665,
+        "low": 84912,
+        "close": 85654,
+        "volume": 9.31033803,
+        "trade_count": 1951,
+        "seeded": true
+      },
+      "provisional": {
+        "label": "provisional: if today closed now",
+        "price": 85654,
+        "flip_level": 79387.10204081633,
+        "sma50": 79512.44,
+        "signal": "long",
+        "distance_to_flip_pct": 7.316526909640728,
+        "based_on": "2026-10-04"
+      },
+      "updated_at": "2026-10-06T02:23:59.614659879Z"
+    }
+  ]
+}

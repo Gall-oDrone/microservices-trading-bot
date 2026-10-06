@@ -29,8 +29,13 @@ test('forward tests: one card per book with signal and ledger', async ({ page })
   for (const book of ['btc_mxn', 'btc_usd']) {
     const card = page.getByTestId(`ft-card-${book}`)
     await expect(card).toBeVisible()
-    await expect(card.getByTestId('signal-pill')).toHaveText(/long|flat/)
+    await expect(card.locator('header').getByTestId('signal-pill')).toHaveText(/long|flat/)
     await expect(card.getByTitle('Ledger: stage')).toBeVisible()
+    // Live strip over SSE: provisional label, price, live badge.
+    const strip = card.getByTestId(`live-${book}`)
+    await expect(strip.getByTestId('live-badge')).toHaveText(/^live$/i)
+    await expect(strip.getByText('provisional: if today closed now')).toBeVisible()
+    await expect(strip.getByTestId('live-price')).toHaveText(/\d/)
   }
   await expectHealthy(page, errors)
 })
@@ -42,6 +47,8 @@ test('forward test detail: chart, fills and ledger', async ({ page }) => {
   await expect(page.locator('canvas').first()).toBeVisible()
   await expect(page.getByRole('columnheader', { name: 'Fill day' })).toBeVisible()
   await expect(page.getByText(/records, newest first/)).toBeVisible()
+  await expect(page.getByTestId('live-btc_mxn').getByText('If today closed now', { exact: true })).toBeVisible()
+  await expect(page.getByText('flip level (provisional)')).toBeVisible()
   await expectHealthy(page, errors)
 })
 

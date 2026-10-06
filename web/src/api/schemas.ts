@@ -361,3 +361,64 @@ export type LedgerInfo = z.infer<typeof ledgerInfoSchema>
 
 export const ledgersResponseSchema = z.object({ ledgers: z.array(ledgerInfoSchema) })
 export type LedgersResponse = z.infer<typeof ledgersResponseSchema>
+
+// --- Live market data (services/ui-api/internal/live): display only. ---
+
+/** live.Candle: today's forming bar (Mexico City day), seeded from REST then built from trades. */
+export const liveCandleSchema = z.object({
+  date: z.string(),
+  open: z.number(),
+  high: z.number(),
+  low: z.number(),
+  close: z.number(),
+  volume: z.number(),
+  trade_count: z.number(),
+  seeded: z.boolean(),
+})
+export type LiveCandle = z.infer<typeof liveCandleSchema>
+
+/** live.Provisional: what the frozen rule would say if today closed at the last trade. Never a decision. */
+export const provisionalSchema = z.object({
+  label: z.string(),
+  price: z.number(),
+  flip_level: z.number(),
+  sma50: z.number(),
+  signal,
+  distance_to_flip_pct: z.number(),
+  based_on: z.string(),
+})
+export type Provisional = z.infer<typeof provisionalSchema>
+
+export const bookSnapshotSchema = z.object({
+  book: z.string(),
+  last: z.number(),
+  last_side: z.string(),
+  last_at: z.string(),
+  bid: z.number(),
+  ask: z.number(),
+  candle: liveCandleSchema.nullable(),
+  provisional: provisionalSchema.nullable(),
+  provisional_note: z.string().optional(),
+  updated_at: z.string(),
+})
+export type BookSnapshot = z.infer<typeof bookSnapshotSchema>
+
+export const liveStatusSchema = z.object({
+  source: z.string(),
+  connected: z.boolean(),
+  since: z.string(),
+  last_message_at: z.string(),
+  reconnects: z.number(),
+  last_error: z.string().optional(),
+})
+export type LiveStatus = z.infer<typeof liveStatusSchema>
+
+/** GET /api/ui/live, and the "snapshot" event of /api/ui/stream. */
+export const liveSnapshotSchema = z.object({
+  generated_at: z.string(),
+  upstream: liveStatusSchema,
+  books: z.array(bookSnapshotSchema),
+})
+export type LiveSnapshot = z.infer<typeof liveSnapshotSchema>
+
+export const heartbeatSchema = z.object({ time: z.string(), upstream: liveStatusSchema })

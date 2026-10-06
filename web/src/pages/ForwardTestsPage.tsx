@@ -1,6 +1,8 @@
 import { Link } from 'react-router'
 import { useForwardTests, useLedgerSearch } from '../api/client'
+import { useLiveStream, type LiveState } from '../api/live'
 import type { ForwardTest } from '../api/schemas'
+import { LiveStrip } from '../components/live'
 import { Badge, Banner, CardSkeleton, Empty, ErrorState, LedgerBadge, SignalPill, Stat } from '../components/ui'
 import { bookLabel, fmtBTC, fmtDate, fmtFrac, fmtMx, fmtPct, fmtPrice, fmtUTC } from '../lib/format'
 import { usePageTitle } from '../lib/usePageTitle'
@@ -45,8 +47,9 @@ function RunBadge({ ft }: { ft: ForwardTest }) {
   )
 }
 
-export function ForwardTestCard({ ft }: { ft: ForwardTest }) {
+export function ForwardTestCard({ ft, live }: { ft: ForwardTest; live?: LiveState }) {
   const search = useLedgerSearch()
+  const strip = live ? <LiveStrip ft={ft} snap={live.books[ft.book]} live={live} /> : null
   if (!ft.recorded_at) {
     return (
       <article className="card" aria-labelledby={`ft-${ft.book}`} data-testid={`ft-card-${ft.book}`}>
@@ -62,6 +65,7 @@ export function ForwardTestCard({ ft }: { ft: ForwardTest }) {
         <Empty title={`No records in the ${ft.ledger} ledger yet`}>
           {ft.run.message || 'The daily executor has not recorded this book in this ledger.'}
         </Empty>
+        {strip}
       </article>
     )
   }
@@ -128,6 +132,8 @@ export function ForwardTestCard({ ft }: { ft: ForwardTest }) {
         Next open ({fmtDate(d.fill_date)}): <b>{p.pending_action.toUpperCase()}</b>.
       </p>
 
+      {strip}
+
       <div className="divider" />
       <WindowProgress ft={ft} />
 
@@ -153,6 +159,7 @@ export function ForwardTestCard({ ft }: { ft: ForwardTest }) {
 export function ForwardTestsPage() {
   usePageTitle('Forward tests')
   const q = useForwardTests()
+  const live = useLiveStream(q.data?.books.map((b) => b.book) ?? [])
   const missed = q.data?.books.filter((b) => b.run.status === 'missed') ?? []
   return (
     <>
@@ -192,7 +199,7 @@ export function ForwardTestsPage() {
       {q.data && (
         <div className="grid grid-2">
           {q.data.books.map((b) => (
-            <ForwardTestCard key={b.book} ft={b} />
+            <ForwardTestCard key={b.book} ft={b} live={live} />
           ))}
         </div>
       )}

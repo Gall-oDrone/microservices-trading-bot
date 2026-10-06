@@ -6,6 +6,7 @@
 import { http, HttpResponse } from 'msw'
 import healthz from './fixtures/healthz.json'
 import ledgers from './fixtures/ledgers.json'
+import live from './fixtures/live.json'
 
 type Json = Record<string, unknown>
 
@@ -29,9 +30,56 @@ function fixture(request: Request, name: string): Response {
   return HttpResponse.json(f)
 }
 
+const TIME_KEYS = new Set(['generated_at', 'since', 'last_message_at', 'last_at', 'updated_at', 'time'])
+
+/** The captured live snapshot for `?books=`, with its timestamps moved to now so it reads as fresh. */
+function liveNow(request: Request) {
+  const want = (new URL(request.url).searchParams.get('books') ?? '').split(',').filter(Boolean)
+  const shift = Date.now() - Date.parse(live.generated_at)
+  const move = (v: unknown): unknown => {
+    if (Array.isArray(v)) return v.map(move)
+    if (v && typeof v === 'object') {
+      return Object.fromEntries(
+        Object.entries(v).map(([k, x]) => [
+          k,
+          TIME_KEYS.has(k) && typeof x === 'string' && x ? new Date(Date.parse(x) + shift).toISOString() : move(x),
+        ]),
+      )
+    }
+    return v
+  }
+  const snap = move(live) as typeof live
+  return { ...snap, books: snap.books.filter((b) => want.length === 0 || want.includes(b.book)) }
+}
+
+/** Replays the snapshot as Server-Sent Events, then a heartbeat every 10 s, like ui-api's /stream. */
+function liveStream(request: Request): Response {
+  const enc = new TextEncoder()
+  let timer: ReturnType<typeof setInterval> | undefined
+  const body = new ReadableStream<Uint8Array>({
+    start(ctl) {
+      const send = (name: string, data: unknown) =>
+        ctl.enqueue(enc.encode(`event: ${name}\ndata: ${JSON.stringify(data)}\n\n`))
+      ctl.enqueue(enc.encode('retry: 3000\n\n'))
+      send('snapshot', liveNow(request))
+      timer = setInterval(() => {
+        const s = liveNow(request)
+        send('heartbeat', { time: s.generated_at, upstream: s.upstream })
+      }, 10_000)
+      request.signal.addEventListener('abort', () => clearInterval(timer))
+    },
+    cancel() {
+      clearInterval(timer)
+    },
+  })
+  return new HttpResponse(body, { headers: { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-store' } })
+}
+
 export const handlers = [
   http.get('/api/ui/healthz', () => HttpResponse.json(healthz)),
   http.get('/api/ui/ledgers', () => HttpResponse.json(ledgers)),
+  http.get('/api/ui/live', ({ request }) => HttpResponse.json(liveNow(request))),
+  http.get('/api/ui/stream', ({ request }) => liveStream(request)),
   http.get('/api/ui/forward-tests', ({ request }) => fixture(request, 'forward-tests')),
   http.get('/api/ui/risk', ({ request }) => fixture(request, 'risk')),
   http.get('/api/ui/forward-tests/:book/ledger', ({ params, request }) =>
