@@ -1,0 +1,93 @@
+# CI for the operator UI stack: the shared risk and ledger packages, the
+# daily-executor (which enforces the risk policy), the read-only ui-api, and
+# the web app. Test-only: it builds no images and deploys nothing.
+# Plan: docs/frontend/FRONTEND-UI-PLAN-2026-10-03.md (Phase 1b).
+name: operator-ui
+
+on:
+  # Runs on every branch push that touches these paths. For a pull request
+  # from a branch in this repo, the result shows on the PR as a check.
+  push:
+    paths:
+      - '.github/workflows/operator-ui.yml'
+      - 'shared/go.mod'
+      - 'shared/go.sum'
+      - 'shared/pkg/risk/**'
+      - 'shared/pkg/dailyledger/**'
+      - 'services/strategy-executor/go.mod'
+      - 'services/strategy-executor/go.sum'
+      - 'services/strategy-executor/cmd/daily-executor/**'
+      - 'services/strategy-executor/internal/dailyexec/**'
+      - 'services/strategy-executor/internal/dailyrule/**'
+      - 'services/strategy-executor/internal/bitsodaily/**'
+      - 'services/strategy-executor/internal/bitsostage/**'
+      - 'services/ui-api/**'
+      - 'web/**'
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: operator-ui-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  go:
+    name: Go (shared, daily-executor, ui-api)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      # ui-api's go.mod needs 1.22; shared and strategy-executor are 1.21
+      # modules and build unchanged on it. (build.yml still pins 1.21.)
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.22.x'
+          cache-dependency-path: |
+            shared/go.sum
+            services/strategy-executor/go.sum
+
+      - name: gofmt (new packages)
+        run: |
+          out=$(gofmt -l shared/pkg/risk shared/pkg/dailyledger \
+            services/strategy-executor/cmd/daily-executor services/ui-api)
+          if [ -n "$out" ]; then echo "gofmt needed:"; echo "$out"; exit 1; fi
+
+      - name: shared
+        working-directory: shared
+        run: |
+          go vet ./pkg/risk ./pkg/dailyledger
+          go test -race -count=1 ./pkg/risk ./pkg/dailyledger
+
+      - name: daily-executor
+        working-directory: services/strategy-executor
+        run: |
+          go vet ./cmd/daily-executor ./internal/dailyexec
+          go test -race -count=1 ./cmd/daily-executor ./internal/dailyexec
+
+      - name: ui-api
+        working-directory: services/ui-api
+        run: |
+          go vet ./...
+          go test -race -count=1 ./...
+
+  web:
+    name: Web (typecheck, lint, format, test, build)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - run: npm ci
+      - run: npm run ci

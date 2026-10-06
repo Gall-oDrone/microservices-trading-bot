@@ -16,8 +16,11 @@ every stage order (step R1, §6.4):
 | Risk enforcement | [`cmd/daily-executor/risk.go`](../../services/strategy-executor/cmd/daily-executor/risk.go) | `risk.Check` before every stage order; blocked orders are skipped and recorded; tests with a fake exchange |
 | Ledger contract | [`shared/pkg/dailyledger`](../../shared/pkg/dailyledger/) | Importable mirror of the executor's JSONL; contract test in `cmd/daily-executor` |
 
-What is **not** done yet: there is no halt switch the UI can flip (R2/R4), no alerting (R3), no CI
-workflow, and nothing is deployed beyond localhost.
+CI runs in [`.github/workflows/operator-ui.yml`](../../.github/workflows/operator-ui.yml) (Go 1.22 vet + `-race`
+tests for shared, daily-executor and ui-api; `npm ci && npm run ci` on Node 22).
+
+What is **not** done yet: there is no halt switch the UI can flip (R2/R4), no alerting (R3), and
+nothing is deployed beyond localhost.
 
 ---
 
@@ -260,9 +263,9 @@ returns the executor's last recorded check. The Risk page shows all of it.
 
 | Phase | Scope | Done when | Status |
 |---|---|---|---|
-| **0. Foundations** | `web/` scaffold (Vite, TS strict, router, Query, tokens, dark theme, layout), `npm run ci`, MSW mocks from real data | `npm run build` passes; Forward tests page renders from mocks | **Done** (CI workflow file still to add, below) |
+| **0. Foundations** | `web/` scaffold (Vite, TS strict, router, Query, tokens, dark theme, layout), `npm run ci`, MSW mocks from real data | `npm run build` passes; Forward tests page renders from mocks | **Done** |
 | **1. Forward tests + risk, local** | Forward-tests pages and Risk page against a local `ui-api` reading the local ledger; localhost only | Today's signal, paper vs hold, fills and fees for both books, matching the CLI output | **Done** |
-| **1b. Close-out** | GitHub Actions job (`go test` for shared, ui-api, daily-executor; `npm run ci`), Playwright smoke test, multi-ledger support in `ui-api` (stage + dry-run + future volume variant), risk step **R1** | CI runs on every PR; a blocked order is enforced and visible | **R1 done** (2026-10-05); CI, Playwright and multi-ledger next |
+| **1b. Close-out** | GitHub Actions job (`go test` for shared, ui-api, daily-executor; `npm run ci`), Playwright smoke test, multi-ledger support in `ui-api` (stage + dry-run + future volume variant), risk step **R1** | CI runs on every PR; a blocked order is enforced and visible | **R1 done** (2026-10-05); **CI done** (`operator-ui.yml`, 2026-10-06); Playwright and multi-ledger next |
 | **2. Research + data health** | Study index, strategy comparison (needs `-json`), data-health page, ledger read from S3, risk **R2** + **R3** | Holdout vs development tables match the evidence files; a missed run alerts | |
 | **3. Market data** | Market page via BFF proxy and SSE; candles with volume ratio | Live ticker updates within 2 s; no direct browser calls to internal services | |
 | **4. Hardening + controls** | OIDC, TLS, CORS, audit log, role-gated controls (halt, kill switch, start/stop), risk **R4** | Security review passes; every control action is audited | |
