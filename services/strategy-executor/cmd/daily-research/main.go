@@ -77,6 +77,7 @@ func main() {
 	newsThr := flag.Float64("news-threshold", 0, "news rule: long while trailing score > threshold")
 	sims := flag.Int("sims", 2000, "random same-trade-count strategies per rule")
 	seed := flag.Int64("seed", 1, "RNG seed for the random baseline")
+	jsonOut := flag.String("json", "", "also write the results as JSON (schema "+ReportSchema+") to this file; the text output is unchanged")
 	flag.Parse()
 
 	if *pricesDir == "" {
@@ -108,6 +109,25 @@ func main() {
 		*smaN, *newsK, *newsThr)
 	fmt.Printf("TIMING : decide at day t close, fill at day t+1 open; long-only\n")
 
+	rep := Report{
+		Commit: buildCommit(),
+		Flags:  setFlags("prices", "news"),
+		Data: ReportData{
+			Prices: filepath.Base(*pricesDir), Bars: len(bars),
+			First: bars[0].Date.Format("2006-01-02"), Last: bars[len(bars)-1].Date.Format("2006-01-02"),
+			NewsDays: len(news),
+		},
+		Costs:  ReportCosts{BuyBPS: *buyBPS, SellBPS: *sellBPS, SlippageBPS: *slipBPS, RoundTripBPS: *buyBPS + *sellBPS + 2**slipBPS},
+		Params: ReportParams{SMA: *smaN, NewsWindow: *newsK, NewsThreshold: *newsThr, Sims: *sims, Seed: *seed},
+	}
+	if strings.HasSuffix(*pricesDir, ".parquet") {
+		rep.Data.Book = *book
+	}
+	if *newsDir != "" {
+		rep.Data.News = filepath.Base(*newsDir)
+	}
+	delete(rep.Flags, "json") // where the report went, not how it was produced
+
 	for wi, w := range strings.Split(*windows, ",") {
 		from, to, err := parseWindow(w)
 		if err != nil {
@@ -121,7 +141,12 @@ func main() {
 		if wi > 0 {
 			label = "OUT-OF-SAMPLE"
 		}
-		runWindow(label, bars, news, from, to, costs, *smaN, *newsK, *newsThr, *sims, *seed)
+		rep.Windows = append(rep.Windows, runWindow(os.Stdout, label, bars, news, from, to, costs, *smaN, *newsK, *newsThr, *sims, *seed))
+	}
+	if *jsonOut != "" {
+		if err := writeReport(*jsonOut, rep); err != nil {
+			fail(err)
+		}
 	}
 }
 
@@ -277,18 +302,22 @@ func randomWant(r *rand.Rand, n, lo, hi, trips int) []bool {
 	return w
 }
 
-func runWindow(label string, bars []bar, news map[string]newsDay, from, to time.Time, c costModel, smaN, newsK int, newsThr float64, sims int, seed int64) {
+// runWindow prints one window's table to w and returns the same numbers, unrounded.
+func runWindow(w io.Writer, label string, bars []bar, news map[string]newsDay, from, to time.Time, c costModel, smaN, newsK int, newsThr float64, sims int, seed int64) WindowReport {
 	lo := sort.Search(len(bars), func(i int) bool { return !bars[i].Date.Before(from) })
 	hi := sort.Search(len(bars), func(i int) bool { return bars[i].Date.After(to) }) - 1
-	fmt.Printf("\n%s\n%s  %s .. %s  (%d bars)\n", strings.Repeat("=", 104), label, from.Format("2006-01-02"), to.Format("2006-01-02"), hi-lo+1)
+	wr := WindowReport{Label: label, From: from.Format("2006-01-02"), To: to.Format("2006-01-02"), Bars: max(hi-lo+1, 0), Results: []RuleResult{}}
+	fmt.Fprintf(w, "\n%s\n%s  %s .. %s  (%d bars)\n", strings.Repeat("=", 104), label, from.Format("2006-01-02"), to.Format("2006-01-02"), hi-lo+1)
 	if hi-lo+1 < 2 {
-		fmt.Println("  not enough bars in window")
-		return
+		fmt.Fprintln(w, "  not enough bars in window")
+		wr.Note = "not enough bars in window"
+		return wr
 	}
 	if gaps := calendarGaps(bars[lo : hi+1]); gaps != "" {
-		fmt.Printf("  WARNING: missing days inside window: %s\n", gaps)
+		fmt.Fprintf(w, "  WARNING: missing days inside window: %s\n", gaps)
+		wr.Gaps = gaps
 	}
-	fmt.Println(strings.Repeat("=", 104))
+	fmt.Fprintln(w, strings.Repeat("=", 104))
 
 	trend := signalTrend(bars, smaN)
 	newsSig := signalNews(bars, news, newsK, newsThr)
@@ -304,14 +333,18 @@ func runWindow(label string, bars []bar, news map[string]newsDay, from, to time.
 
 	// buy_and_hold enters on the window's first open, so seed the decision
 	// the day before.
-	fmt.Printf("%-18s %10s %8s %10s %10s %10s %12s   %s\n", "RULE", "RETURN%", "TRIPS", "EXPOSURE%", "MAX DD%", "COSTS%", "vs B&H (pp)", "RANDOM, SAME TRIPS")
-	fmt.Println(strings.Repeat("-", 104))
+	fmt.Fprintf(w, "%-18s %10s %8s %10s %10s %10s %12s   %s\n", "RULE", "RETURN%", "TRIPS", "EXPOSURE%", "MAX DD%", "COSTS%", "vs B&H (pp)", "RANDOM, SAME TRIPS")
+	fmt.Fprintln(w, strings.Repeat("-", 104))
 	var bh result
 	r := newRand(seed)
 	for i, rule := range rules {
 		res := simulate(bars, rule.want, lo, hi, c)
 		if i == 0 {
 			bh = res
+		}
+		row := RuleResult{
+			Rule: rule.name, ReturnPct: res.ReturnPct, RoundTrips: res.RoundTrips, ExposurePct: res.ExposurePct,
+			MaxDDPct: res.MaxDDPct, CostPct: res.CostPct, VsHoldPP: res.ReturnPct - bh.ReturnPct,
 		}
 		rnd := ""
 		if i > 0 && sims > 0 && res.RoundTrips > 0 {
@@ -322,11 +355,14 @@ func runWindow(label string, bars []bar, news map[string]newsDay, from, to time.
 					beat++
 				}
 			}
-			rnd = fmt.Sprintf("beats %5.1f%% of %d", 100*float64(beat)/float64(sims), sims)
+			row.Random = &RandomBaseline{Sims: sims, BeatPct: 100 * float64(beat) / float64(sims)}
+			rnd = fmt.Sprintf("beats %5.1f%% of %d", row.Random.BeatPct, sims)
 		}
-		fmt.Printf("%-18s %10.2f %8d %10.1f %10.2f %10.2f %12.2f   %s\n",
-			rule.name, res.ReturnPct, res.RoundTrips, res.ExposurePct, res.MaxDDPct, res.CostPct, res.ReturnPct-bh.ReturnPct, rnd)
+		fmt.Fprintf(w, "%-18s %10.2f %8d %10.1f %10.2f %10.2f %12.2f   %s\n",
+			rule.name, res.ReturnPct, res.RoundTrips, res.ExposurePct, res.MaxDDPct, res.CostPct, row.VsHoldPP, rnd)
+		wr.Results = append(wr.Results, row)
 	}
+	return wr
 }
 
 func calendarGaps(bs []bar) string {
