@@ -207,7 +207,7 @@ returns the executor's last recorded check. The Risk page shows all of it.
 |---|---|---|
 | **R0 (done)** | `shared/pkg/risk`, `shared/pkg/dailyledger`, `/api/ui/risk`, Risk page | Risk page shows limits, exposure, realized cost and the next-order check from the real ledger |
 | **R1 (done 2026-10-05)** Enforce in the daily-executor | See §6.4.1 | A blocked order leaves a ledger line with `risk.allowed=false` and no exchange order (tested with a fake exchange); `/risk` reports `enforcement: "enforced"` |
-| **R2** Halt file | `risk-state.json` next to the ledger (`{halted, reason, by, at}`), read by the executor alongside `DAILY_EXECUTOR_DISABLED`; `ui-api` shows it read-only | Setting the file halts the next run and the UI shows who set it, when and why |
+| **R2** Halt file (next, §8.1) | `risk-state.json` next to the ledger (`{halted, reason, by, at}`), read by the executor alongside `DAILY_EXECUTOR_DISABLED`; `ui-api` shows it read-only | Setting the file halts the next run and the UI shows who set it, when and why |
 | **R3** Alerts | Alert on a missed or failed run (exit code ≠ 0), a block, or a warning. Use the existing Grafana/Alertmanager stack, or a sidecar that polls `/api/ui/risk` | A missed day pages within an hour of 06:00 Mexico City |
 | **R4** Halt from the UI | `POST /api/ui/risk/halt` and `/resume` with a required reason, an audit log (append-only JSONL), a confirmation dialog | Needs Phase 4 auth (OIDC) first; every action is audited |
 | **R5** Platform-wide | Load trading-engine `MaxDailyLoss`/`MaxDrawdownPct` from env (non-zero defaults); stop trading-engine from placing orders OM rejected; expose OM `GetCurrentExposure`; move OM and trading-engine checks onto `shared/pkg/risk`; delete the dead strategy-executor risk package | One policy format across services; the session check actually blocks |
@@ -265,11 +265,75 @@ returns the executor's last recorded check. The Risk page shows all of it.
 |---|---|---|---|
 | **0. Foundations** | `web/` scaffold (Vite, TS strict, router, Query, tokens, dark theme, layout), `npm run ci`, MSW mocks from real data | `npm run build` passes; Forward tests page renders from mocks | **Done** |
 | **1. Forward tests + risk, local** | Forward-tests pages and Risk page against a local `ui-api` reading the local ledger; localhost only | Today's signal, paper vs hold, fills and fees for both books, matching the CLI output | **Done** |
-| **1b. Close-out** | GitHub Actions job (`go test` for shared, ui-api, daily-executor; `npm run ci`), Playwright smoke test, multi-ledger support in `ui-api` (stage + dry-run + future volume variant), risk step **R1** | CI runs on every PR; a blocked order is enforced and visible | **R1 done** (2026-10-05); **CI done** (`operator-ui.yml`, 2026-10-06); Playwright and multi-ledger next |
+| **1b. Close-out** | GitHub Actions job (`go test` for shared, ui-api, daily-executor; `npm run ci`), Playwright smoke test, multi-ledger support in `ui-api` (stage + dry-run + future volume variant), risk step **R1** | CI runs on every PR; a blocked order is enforced and visible | **R1 done** (2026-10-05); **CI done** (`operator-ui.yml`, 2026-10-06); Playwright and multi-ledger in progress (§8.1) |
 | **2. Research + data health** | Study index, strategy comparison (needs `-json`), data-health page, ledger read from S3, risk **R2** + **R3** | Holdout vs development tables match the evidence files; a missed run alerts | |
-| **3. Market data** | Market page via BFF proxy and SSE; candles with volume ratio | Live ticker updates within 2 s; no direct browser calls to internal services | |
+| **3. Market data** | Market page via BFF proxy and SSE; candles with volume ratio | Live ticker updates within 2 s; no direct browser calls to internal services | A slim **live-data slice** is pulled forward (§8.1, step 3) |
 | **4. Hardening + controls** | OIDC, TLS, CORS, audit log, role-gated controls (halt, kill switch, start/stop), risk **R4** | Security review passes; every control action is audited | |
 | **5. Deploy** | Static build behind CloudFront or served by `ui-api`; k8s/compose entries; risk **R5** | Reachable only through auth over HTTPS | |
+
+### 8.1 Next phase plan (decided 2026-10-06)
+
+Order: close out Phase 1b, then R2, then a slim live-data slice, then research views. Data health
+and R3 alerts follow.
+
+| Step | Scope | Done when |
+|---|---|---|
+| **1a. Multi-ledger** | `ui-api -ledgers stage=<path>,dry-run=<path>[,…]` (`-ledger` stays as the `stage` default). Each ledger has its own store, candles dir and halt file. `GET /api/ui/ledgers` lists them; every other endpoint takes `?ledger=<name>` (default: the first). The UI has a ledger picker (URL search param `ledger`) and every card shows its ledger. | Switching the picker shows the dry-run ledger; an unknown name is a 400; fixtures and schema tests cover `/ledgers` |
+| **1b. Playwright smoke** | `@playwright/test` against `vite preview` in mock mode (captured fixtures). The 3 pages, a desktop and a phone viewport. Fails on any console error or on a schema mismatch banner. 3rd job in `operator-ui.yml`. | `npm run e2e` passes locally and in CI |
+| **2. R2 halt file** | See §8.2. | Setting the file halts the next run (recorded as a block) and `/risk` shows who, when, why |
+| **3. Live-data slice** | See §8.3. | Cards and the detail chart update about once a second; a stale feed is visible; nothing live reaches the executor |
+| **4. Research views** | Study index from `docs/backtest-readiness/*.md`, then `-json` on the research tools and the comparison view | As in Phase 2 |
+
+### 8.2 R2 halt file (design)
+
+- **File.** `risk-state.json` in the ledger's directory:
+  `{"halted": true, "reason": "…", "by": "diego", "at": "2026-10-06T01:00:00Z"}`. Parsed by
+  `shared/pkg/risk.LoadHaltState` (unknown fields rejected; `halted=true` requires `reason`, `by` and
+  `at`). A missing file means not halted.
+- **Executor.** Read at start of every run, after `DAILY_EXECUTOR_DISABLED`. An unreadable or invalid
+  file exits 2 (fail closed: nothing runs). A halt is merged into the policy's halt
+  (`risk.ApplyHalt`), so a planned stage order is **blocked and recorded** like any other block
+  (§6.4.1); days with no order are recorded as usual, so the forward test keeps its paper record.
+  Recorded `stage.risk` gets an additive `halt` object (`{reason, by, at}`).
+- **ui-api.** `/api/ui/risk` adds `halt_source` (`none`, `policy`, `file`, `both`) and `halt_file`
+  (`{path, found, halted, reason, by, at, error}`). Read-only; the file is edited by hand until R4.
+- **UI.** The halt banner names the source and shows who, when and why. An invalid file is shown as an
+  error (the executor would refuse to run).
+
+### 8.3 Live-data slice (design)
+
+Standard practice for trading UIs: one server-side market-data connection fans out to browsers;
+updates are throttled for display; staleness is always visible; and anything computed from an
+unfinished bar is labelled provisional. The decision path never reads live data.
+
+- **Upstream.** `ui-api/internal/live` holds **one** connection to Bitso's production public
+  WebSocket `wss://ws.bitso.com` (no keys), subscribed to `trades` and `orders` for the forward-test
+  books. Keep-alives (`{"type":"ka"}`) and a read deadline detect a dead socket; reconnect with
+  exponential backoff and jitter (1 s → 30 s cap). Off by default in tests; `-live=false` disables it.
+- **Forming daily candle.** Seeded from REST `GET /api/v3/ohlc?book=&time_bucket=86400` for the
+  current Mexico City day (buckets start 00:00 Mexico City = 06:00 UTC), then updated from trades
+  (`r` rate, `a` amount, `x` ms). On reconnect it is re-seeded from REST, so trades missed during
+  the gap are not lost. A new day starts a new candle.
+- **Provisional SMA50 flip level.** With the last 49 *closed* closes `S49` (from the executor's
+  candle CSV), the SMA50 including a provisional close `c` is `(S49 + c) / 50`, and
+  `c > (S49 + c)/50  ⇔  c > S49 / 49`. So the **flip level is the mean of the last 49 closed closes**,
+  shown as "provisional: if today closed now". It is withheld (null) when the CSV's last bar is not
+  yesterday's Mexico City day, because the level would then be wrong.
+- **Browser API.** `GET /api/ui/stream?books=btc_mxn,btc_usd` (Server-Sent Events, GET-only, same
+  origin). Events: `snapshot` (on connect), `ticker` (last trade, best bid/ask), `candle` (forming
+  bar + flip level), `status` (upstream connected/reconnecting, last message age) and `heartbeat`
+  every 15 s. At most 1 `ticker` and 1 `candle` per book per second (latest value wins). `GET
+  /api/ui/live/{book}` returns the same snapshot as JSON (REST fallback). The SSE handler clears the
+  server's 30 s write deadline per stream (`http.ResponseController`).
+- **UI.** `useLiveStream` (EventSource; the browser reconnects; the hook tracks the last event time).
+  Forward-test cards: live price, live distance to the flip level, live stage-position value. Detail
+  chart: today's candle updates in place (`series.update`) and a dashed flip line, both labelled
+  provisional. A badge shows "live · N s ago"; after 10 s with no event the badge turns amber and
+  the live overlay greys out.
+- **Tests.** Go: a fake WebSocket server (subscribe ack, trades, keep-alives, a dropped connection,
+  a reconnect), the candle aggregator across a day boundary, the throttle, SSE framing. Web: a mocked
+  EventSource (live values render; staleness after 10 s with fake timers).
+- **Not in this slice.** Order-book depth, recent-trades tape, intraday candles; Market page (Phase 3).
 
 ---
 
