@@ -1,0 +1,93 @@
+{
+  "schema": "research-run/v1",
+  "tool": "daily-research",
+  "generated_at": "2026-10-06T19:33:27Z",
+  "commit": "d54c2edd48a0cfc27f76e68caa94cd649c47c3e6",
+  "flags": {
+    "news": "news_crypto_agentic.parquet",
+    "prices": "yahoo_crypto_daily.parquet",
+    "windows": "2024-11-20:2026-09-26"
+  },
+  "data": {
+    "prices": "yahoo_crypto_daily.parquet",
+    "book": "btc-usd",
+    "bars": 3072,
+    "first": "2018-01-01",
+    "last": "2026-09-27",
+    "news": "news_crypto_agentic.parquet",
+    "news_days": 470
+  },
+  "costs": {
+    "buy_bps": 78,
+    "sell_bps": 78,
+    "slippage_bps": 10,
+    "round_trip_bps": 176
+  },
+  "params": {
+    "sma": 50,
+    "news_window": 3,
+    "news_threshold": 0,
+    "sims": 2000,
+    "seed": 1
+  },
+  "windows": [
+    {
+      "label": "IN-SAMPLE",
+      "from": "2024-11-20",
+      "to": "2026-09-26",
+      "bars": 661,
+      "gaps": "08-09..08-09 (1 days), 06-15..06-27 (13 days), 08-29..08-29 (1 days)",
+      "results": [
+        {
+          "rule": "buy_and_hold",
+          "return_pct": -10.195218101461856,
+          "round_trips": 1,
+          "exposure_pct": 100,
+          "max_dd_pct": 53.05998203002377,
+          "cost_pct": 1.6772983057981596,
+          "vs_hold_pp": 0,
+          "random": null
+        },
+        {
+          "rule": "trend_sma50",
+          "return_pct": -8.29418807413207,
+          "round_trips": 23,
+          "exposure_pct": 48.56278366111952,
+          "max_dd_pct": 38.87876479107704,
+          "cost_pct": 35.24412447313288,
+          "vs_hold_pp": 1.9010300273297869,
+          "random": {
+            "sims": 2000,
+            "beat_pct": 91.6
+          }
+        },
+        {
+          "rule": "news_sentiment",
+          "return_pct": -71.32610594734797,
+          "round_trips": 35,
+          "exposure_pct": 59.75794251134644,
+          "max_dd_pct": 75.32568800573259,
+          "cost_pct": 32.20187867238797,
+          "vs_hold_pp": -61.130887845886114,
+          "random": {
+            "sims": 2000,
+            "beat_pct": 1.6
+          }
+        },
+        {
+          "rule": "trend_and_news",
+          "return_pct": -39.312053295036065,
+          "round_trips": 27,
+          "exposure_pct": 33.73676248108926,
+          "max_dd_pct": 47.77711989379219,
+          "cost_pct": 35.31036009346045,
+          "vs_hold_pp": -29.11683519357421,
+          "random": {
+            "sims": 2000,
+            "beat_pct": 58.8
+          }
+        }
+      ]
+    }
+  ]
+}

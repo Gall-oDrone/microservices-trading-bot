@@ -1,0 +1,571 @@
+{
+  "schema": "research-run/v1",
+  "tool": "daily-research",
+  "generated_at": "2026-10-06T19:33:24Z",
+  "commit": "d54c2edd48a0cfc27f76e68caa94cd649c47c3e6",
+  "flags": {
+    "buy-bps": "0",
+    "news": "news_crypto_agentic.parquet",
+    "prices": "bitso",
+    "sell-bps": "0",
+    "slippage-bps": "0",
+    "windows": "2025-01-01:2025-12-31,2026-01-01:2026-09-26,2018-01-01:2018-12-31,2019-01-01:2019-12-31,2020-01-01:2020-12-31,2021-01-01:2021-12-31,2022-01-01:2022-12-31,2023-01-01:2023-12-31,2024-01-01:2024-12-31,2018-01-01:2026-09-26"
+  },
+  "data": {
+    "prices": "bitso",
+    "bars": 3406,
+    "first": "2017-05-31",
+    "last": "2026-09-26",
+    "news": "news_crypto_agentic.parquet",
+    "news_days": 470
+  },
+  "costs": {
+    "buy_bps": 0,
+    "sell_bps": 0,
+    "slippage_bps": 0,
+    "round_trip_bps": 0
+  },
+  "params": {
+    "sma": 50,
+    "news_window": 3,
+    "news_threshold": 0,
+    "sims": 2000,
+    "seed": 1
+  },
+  "windows": [
+    {
+      "label": "IN-SAMPLE",
+      "from": "2025-01-01",
+      "to": "2025-12-31",
+      "bars": 365,
+      "results": [
+        {
+          "rule": "buy_and_hold",
+          "return_pct": -19.266486663393877,
+          "round_trips": 1,
+          "exposure_pct": 100,
+          "max_dd_pct": 32.28253275109171,
+          "cost_pct": 0,
+          "vs_hold_pp": 0,
+          "random": null
+        },
+        {
+          "rule": "trend_sma50",
+          "return_pct": 1.474680682766305,
+          "round_trips": 16,
+          "exposure_pct": 40.273972602739725,
+          "max_dd_pct": 16.074418763512625,
+          "cost_pct": 0,
+          "vs_hold_pp": 20.741167346160182,
+          "random": {
+            "sims": 2000,
+            "beat_pct": 77.75
+          }
+        },
+        {
+          "rule": "news_sentiment",
+          "return_pct": -21.89842983159752,
+          "round_trips": 17,
+          "exposure_pct": 73.15068493150685,
+          "max_dd_pct": 35.39051067578327,
+          "cost_pct": 0,
+          "vs_hold_pp": -2.6319431682036445,
+          "random": {
+            "sims": 2000,
+            "beat_pct": 21.7
+          }
+        },
+        {
+          "rule": "trend_and_news",
+          "return_pct": 2.309833838894071,
+          "round_trips": 19,
+          "exposure_pct": 34.794520547945204,
+          "max_dd_pct": 13.935035707072272,
+          "cost_pct": 0,
+          "vs_hold_pp": 21.57632050228795,
+          "random": {
+            "sims": 2000,
+            "beat_pct": 78.8
+          }
+        }
+      ]
+    },
+    {
+      "label": "OUT-OF-SAMPLE",
+      "from": "2026-01-01",
+      "to": "2026-09-26",
+      "bars": 269,
+      "results": [
+        {
+          "rule": "buy_and_hold",
+          "return_pct": -5.363933678125942,
+          "round_trips": 1,
+          "exposure_pct": 100,
+          "max_dd_pct": 39.71708442042489,
+          "cost_pct": 0,
+          "vs_hold_pp": 0,
+          "random": null
+        },
+        {
+          "rule": "trend_sma50",
+          "return_pct": 14.155088333861276,
+          "round_trips": 9,
+          "exposure_pct": 53.531598513011154,
+          "max_dd_pct": 14.112872830725228,
+          "cost_pct": 0,
+          "vs_hold_pp": 19.519022011987218,
+          "random": {
+            "sims": 2000,
+            "beat_pct": 82.5
+          }
+        },
+        {
+          "rule": "news_sentiment",
+          "return_pct": -7.271107798943799,
+          "round_trips": 14,
+          "exposure_pct": 36.059479553903344,
+          "max_dd_pct": 21.88289328068096,
+          "cost_pct": 0,
+          "vs_hold_pp": -1.9071741208178565,
+          "random": {
+            "sims": 2000,
+            "beat_pct": 47.65
+          }
+        },
+        {
+          "rule": "trend_and_news",
+          "return_pct": 8.356800567357215,
+          "round_trips": 10,
+          "exposure_pct": 22.676579925650557,
+          "max_dd_pct": 11.822310463871641,
+          "cost_pct": 0,
+          "vs_hold_pp": 13.720734245483158,
+          "random": {
+            "sims": 2000,
+            "beat_pct": 75.7
+          }
+        }
+      ]
+    },
+    {
+      "label": "OUT-OF-SAMPLE",
+      "from": "2018-01-01",
+      "to": "2018-12-31",
+      "bars": 365,
+      "results": [
+        {
+          "rule": "buy_and_hold",
+          "return_pct": -76.7030662358643,
+          "round_trips": 1,
+          "exposure_pct": 100,
+          "max_dd_pct": 81.77047374868451,
+          "cost_pct": 0,
+          "vs_hold_pp": 0,
+          "random": null
+        },
+        {
+          "rule": "trend_sma50",
+          "return_pct": -36.414087409236004,
+          "round_trips": 11,
+          "exposure_pct": 27.945205479452056,
+          "max_dd_pct": 44.545074874080775,
+          "cost_pct": 0,
+          "vs_hold_pp": 40.288978826628295,
+          "random": {
+            "sims": 2000,
+            "beat_pct": 68.65
+          }
+        },
+        {
+          "rule": "news_sentiment",
+          "return_pct": 0,
+          "round_trips": 0,
+          "exposure_pct": 0,
+          "max_dd_pct": 0,
+          "cost_pct": 0,
+          "vs_hold_pp": 76.7030662358643,
+          "random": null
+        },
+        {
+          "rule": "trend_and_news",
+          "return_pct": 0,
+          "round_trips": 0,
+          "exposure_pct": 0,
+          "max_dd_pct": 0,
+          "cost_pct": 0,
+          "vs_hold_pp": 76.7030662358643,
+          "random": null
+        }
+      ]
+    },
+    {
+      "label": "OUT-OF-SAMPLE",
+      "from": "2019-01-01",
+      "to": "2019-12-31",
+      "bars": 365,
+      "results": [
+        {
+          "rule": "buy_and_hold",
+          "return_pct": 91.98352716918001,
+          "round_trips": 1,
+          "exposure_pct": 100,
+          "max_dd_pct": 49.71681671259424,
+          "cost_pct": 0,
+          "vs_hold_pp": 0,
+          "random": null
+        },
+        {
+          "rule": "trend_sma50",
+          "return_pct": 67.04542093814354,
+          "round_trips": 9,
+          "exposure_pct": 53.42465753424658,
+          "max_dd_pct": 48.15664788620354,
+          "cost_pct": 0,
+          "vs_hold_pp": -24.93810623103647,
+          "random": {
+            "sims": 2000,
+            "beat_pct": 71.95
+          }
+        },
+        {
+          "rule": "news_sentiment",
+          "return_pct": 0,
+          "round_trips": 0,
+          "exposure_pct": 0,
+          "max_dd_pct": 0,
+          "cost_pct": 0,
+          "vs_hold_pp": -91.98352716918001,
+          "random": null
+        },
+        {
+          "rule": "trend_and_news",
+          "return_pct": 0,
+          "round_trips": 0,
+          "exposure_pct": 0,
+          "max_dd_pct": 0,
+          "cost_pct": 0,
+          "vs_hold_pp": -91.98352716918001,
+          "random": null
+        }
+      ]
+    },
+    {
+      "label": "OUT-OF-SAMPLE",
+      "from": "2020-01-01",
+      "to": "2020-12-31",
+      "bars": 366,
+      "results": [
+        {
+          "rule": "buy_and_hold",
+          "return_pct": 323.91048111193885,
+          "round_trips": 1,
+          "exposure_pct": 100,
+          "max_dd_pct": 42.46558165807877,
+          "cost_pct": 0,
+          "vs_hold_pp": 0,
+          "random": null
+        },
+        {
+          "rule": "trend_sma50",
+          "return_pct": 227.98007235239197,
+          "round_trips": 11,
+          "exposure_pct": 69.39890710382514,
+          "max_dd_pct": 20.091759608979913,
+          "cost_pct": 0,
+          "vs_hold_pp": -95.93040875954688,
+          "random": {
+            "sims": 2000,
+            "beat_pct": 95
+          }
+        },
+        {
+          "rule": "news_sentiment",
+          "return_pct": 0,
+          "round_trips": 0,
+          "exposure_pct": 0,
+          "max_dd_pct": 0,
+          "cost_pct": 0,
+          "vs_hold_pp": -323.91048111193885,
+          "random": null
+        },
+        {
+          "rule": "trend_and_news",
+          "return_pct": 0,
+          "round_trips": 0,
+          "exposure_pct": 0,
+          "max_dd_pct": 0,
+          "cost_pct": 0,
+          "vs_hold_pp": -323.91048111193885,
+          "random": null
+        }
+      ]
+    },
+    {
+      "label": "OUT-OF-SAMPLE",
+      "from": "2021-01-01",
+      "to": "2021-12-31",
+      "bars": 365,
+      "results": [
+        {
+          "rule": "buy_and_hold",
+          "return_pct": 67.8504893278332,
+          "round_trips": 1,
+          "exposure_pct": 100,
+          "max_dd_pct": 53.69811832216412,
+          "cost_pct": 0,
+          "vs_hold_pp": 0,
+          "random": null
+        },
+        {
+          "rule": "trend_sma50",
+          "return_pct": 98.7832845637165,
+          "round_trips": 11,
+          "exposure_pct": 60,
+          "max_dd_pct": 32.54960791782097,
+          "cost_pct": 0,
+          "vs_hold_pp": 30.932795235883304,
+          "random": {
+            "sims": 2000,
+            "beat_pct": 88.8
+          }
+        },
+        {
+          "rule": "news_sentiment",
+          "return_pct": 0,
+          "round_trips": 0,
+          "exposure_pct": 0,
+          "max_dd_pct": 0,
+          "cost_pct": 0,
+          "vs_hold_pp": -67.8504893278332,
+          "random": null
+        },
+        {
+          "rule": "trend_and_news",
+          "return_pct": 0,
+          "round_trips": 0,
+          "exposure_pct": 0,
+          "max_dd_pct": 0,
+          "cost_pct": 0,
+          "vs_hold_pp": -67.8504893278332,
+          "random": null
+        }
+      ]
+    },
+    {
+      "label": "OUT-OF-SAMPLE",
+      "from": "2022-01-01",
+      "to": "2022-12-31",
+      "bars": 365,
+      "results": [
+        {
+          "rule": "buy_and_hold",
+          "return_pct": -65.4782899899144,
+          "round_trips": 1,
+          "exposure_pct": 100,
+          "max_dd_pct": 68.5833307355686,
+          "cost_pct": 0,
+          "vs_hold_pp": 0,
+          "random": null
+        },
+        {
+          "rule": "trend_sma50",
+          "return_pct": -40.42372764518358,
+          "round_trips": 14,
+          "exposure_pct": 22.73972602739726,
+          "max_dd_pct": 43.60428738242731,
+          "cost_pct": 0,
+          "vs_hold_pp": 25.05456234473082,
+          "random": {
+            "sims": 2000,
+            "beat_pct": 48.25
+          }
+        },
+        {
+          "rule": "news_sentiment",
+          "return_pct": 0,
+          "round_trips": 0,
+          "exposure_pct": 0,
+          "max_dd_pct": 0,
+          "cost_pct": 0,
+          "vs_hold_pp": 65.4782899899144,
+          "random": null
+        },
+        {
+          "rule": "trend_and_news",
+          "return_pct": 0,
+          "round_trips": 0,
+          "exposure_pct": 0,
+          "max_dd_pct": 0,
+          "cost_pct": 0,
+          "vs_hold_pp": 65.4782899899144,
+          "random": null
+        }
+      ]
+    },
+    {
+      "label": "OUT-OF-SAMPLE",
+      "from": "2023-01-01",
+      "to": "2023-12-31",
+      "bars": 365,
+      "results": [
+        {
+          "rule": "buy_and_hold",
+          "return_pct": 113.9839333531687,
+          "round_trips": 1,
+          "exposure_pct": 100,
+          "max_dd_pct": 22.96189791516894,
+          "cost_pct": 0,
+          "vs_hold_pp": 0,
+          "random": null
+        },
+        {
+          "rule": "trend_sma50",
+          "return_pct": 82.60309791808127,
+          "round_trips": 9,
+          "exposure_pct": 64.65753424657534,
+          "max_dd_pct": 18.85916352827392,
+          "cost_pct": 0,
+          "vs_hold_pp": -31.38083543508742,
+          "random": {
+            "sims": 2000,
+            "beat_pct": 81.15
+          }
+        },
+        {
+          "rule": "news_sentiment",
+          "return_pct": 0,
+          "round_trips": 0,
+          "exposure_pct": 0,
+          "max_dd_pct": 0,
+          "cost_pct": 0,
+          "vs_hold_pp": -113.9839333531687,
+          "random": null
+        },
+        {
+          "rule": "trend_and_news",
+          "return_pct": 0,
+          "round_trips": 0,
+          "exposure_pct": 0,
+          "max_dd_pct": 0,
+          "cost_pct": 0,
+          "vs_hold_pp": -113.9839333531687,
+          "random": null
+        }
+      ]
+    },
+    {
+      "label": "OUT-OF-SAMPLE",
+      "from": "2024-01-01",
+      "to": "2024-12-31",
+      "bars": 366,
+      "results": [
+        {
+          "rule": "buy_and_hold",
+          "return_pct": 172.20079907563374,
+          "round_trips": 1,
+          "exposure_pct": 100,
+          "max_dd_pct": 22.28247647598942,
+          "cost_pct": 0,
+          "vs_hold_pp": 0,
+          "random": null
+        },
+        {
+          "rule": "trend_sma50",
+          "return_pct": 66.4148181416081,
+          "round_trips": 17,
+          "exposure_pct": 72.40437158469945,
+          "max_dd_pct": 35.52856472756318,
+          "cost_pct": 0,
+          "vs_hold_pp": -105.78598093402564,
+          "random": {
+            "sims": 2000,
+            "beat_pct": 55
+          }
+        },
+        {
+          "rule": "news_sentiment",
+          "return_pct": -6.5976124392011615,
+          "round_trips": 5,
+          "exposure_pct": 9.836065573770492,
+          "max_dd_pct": 13.444867950702521,
+          "cost_pct": 0,
+          "vs_hold_pp": -178.7984115148349,
+          "random": {
+            "sims": 2000,
+            "beat_pct": 1.65
+          }
+        },
+        {
+          "rule": "trend_and_news",
+          "return_pct": -6.84979634587134,
+          "round_trips": 4,
+          "exposure_pct": 9.01639344262295,
+          "max_dd_pct": 12.036710599869817,
+          "cost_pct": 0,
+          "vs_hold_pp": -179.05059542150508,
+          "random": {
+            "sims": 2000,
+            "beat_pct": 2.65
+          }
+        }
+      ]
+    },
+    {
+      "label": "OUT-OF-SAMPLE",
+      "from": "2018-01-01",
+      "to": "2026-09-26",
+      "bars": 3191,
+      "results": [
+        {
+          "rule": "buy_and_hold",
+          "return_pct": 382.43295638126006,
+          "round_trips": 1,
+          "exposure_pct": 100,
+          "max_dd_pct": 81.98921252041501,
+          "cost_pct": 0,
+          "vs_hold_pp": 0,
+          "random": null
+        },
+        {
+          "rule": "trend_sma50",
+          "return_pct": 1344.8021520580942,
+          "round_trips": 104,
+          "exposure_pct": 51.551237856471325,
+          "max_dd_pct": 54.31643893859852,
+          "cost_pct": 0,
+          "vs_hold_pp": 962.3691956768341,
+          "random": {
+            "sims": 2000,
+            "beat_pct": 97.85
+          }
+        },
+        {
+          "rule": "news_sentiment",
+          "return_pct": -32.34783862156145,
+          "round_trips": 36,
+          "exposure_pct": 12.535255405828893,
+          "max_dd_pct": 46.168032837119334,
+          "cost_pct": 0,
+          "vs_hold_pp": -414.7807950028215,
+          "random": {
+            "sims": 2000,
+            "beat_pct": 12
+          }
+        },
+        {
+          "rule": "trend_and_news",
+          "return_pct": 3.266001494852855,
+          "round_trips": 33,
+          "exposure_pct": 6.925728611720464,
+          "max_dd_pct": 21.258549547735324,
+          "cost_pct": 0,
+          "vs_hold_pp": -379.1669548864072,
+          "random": {
+            "sims": 2000,
+            "beat_pct": 22.2
+          }
+        }
+      ]
+    }
+  ]
+}
