@@ -55,3 +55,28 @@ func TestStudyErrors(t *testing.T) {
 		t.Errorf("missing dir: %+v", r)
 	}
 }
+
+func TestRunsListAndDetail(t *testing.T) {
+	ts := newTestServer(t, fixedNow, withStudies("testdata/studies"))
+	resp := get[RunsResponse](t, ts, "/api/ui/research/runs", 200)
+	if !resp.Found || len(resp.Runs) != 1 || len(resp.Skipped) != 0 {
+		t.Fatalf("resp: %+v", resp)
+	}
+	r := resp.Runs[0]
+	if r.ID != "2026-09-20/alpha-run" || r.Tool != "daily-research" || len(r.Windows) != 7 || strings.Join(r.Studies, ",") != "ALPHA-STUDY-2026-09-20" {
+		t.Errorf("run: %+v", r)
+	}
+	d := get[research.RunDoc](t, ts, "/api/ui/research/runs/2026-09-20/alpha-run", 200)
+	if d.Run.ID != r.ID || !strings.Contains(string(d.Report), `"research-run/v1"`) {
+		t.Errorf("doc: %+v", d.Run)
+	}
+	get[errorBody](t, ts, "/api/ui/research/runs/2026-09-20/nope", 404)
+	get[errorBody](t, ts, "/api/ui/research/runs/2026-9-20/alpha-run", 400)
+	get[errorBody](t, ts, "/api/ui/research/runs/2026-09-20/a..b", 400)
+
+	none := newTestServer(t, fixedNow, nil)
+	if r := get[RunsResponse](t, none, "/api/ui/research/runs", 200); r.Found || r.Runs == nil || r.Skipped == nil {
+		t.Errorf("nil index: %+v", r)
+	}
+	get[errorBody](t, none, "/api/ui/research/runs/2026-09-20/alpha-run", 404)
+}

@@ -72,7 +72,8 @@ type Index struct {
 
 	mu       sync.Mutex
 	cache    map[string]*entry
-	namesKey string // the set of names the cached HTML was rendered with
+	namesKey string               // the set of names the cached HTML was rendered with
+	runCache map[string]*runEntry // research-run reports by absolute path
 }
 
 type entry struct {

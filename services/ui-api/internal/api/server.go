@@ -130,6 +130,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/ui/stream", s.stream)
 	mux.HandleFunc("GET /api/ui/research/studies", s.studies)
 	mux.HandleFunc("GET /api/ui/research/studies/{name}", s.study)
+	mux.HandleFunc("GET /api/ui/research/runs", s.runs)
+	mux.HandleFunc("GET /api/ui/research/runs/{date}/{name}", s.run)
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusNotFound, "no such endpoint")
 	})
