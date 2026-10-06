@@ -68,8 +68,10 @@ func TestStream(t *testing.T) {
 		t.Fatalf("first event: %+v", ev)
 	}
 
-	time.Sleep(400 * time.Millisecond) // past WriteTimeout
-	hub.OnTrade(live.Trade{Book: "btc_mxn", Price: 1, Amount: 1, At: time.Now()}) // not subscribed
+	// Sleep past WriteTimeout; the stream must survive it.
+	time.Sleep(400 * time.Millisecond)
+	// btc_mxn is not subscribed, so only the btc_usd trade arrives.
+	hub.OnTrade(live.Trade{Book: "btc_mxn", Price: 1, Amount: 1, At: time.Now()})
 	hub.OnTrade(live.Trade{Book: "btc_usd", Price: 85000, Amount: 0.01, Side: "buy", At: time.Now()})
 	ev = readEvent(t, r)
 	var b live.BookSnapshot
