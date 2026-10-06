@@ -36,18 +36,36 @@ function FillsTable({ fills, quote }: { fills: Fill[]; quote: string }) {
       <table className="data" id="fills-table">
         <thead>
           <tr>
-            <th>Fill day</th>
-            <th>Side</th>
-            <th className="r">Filled</th>
-            <th className="r">Maker / taker</th>
-            <th className="r">Avg price</th>
-            <th className="r">Ref open</th>
-            <th className="r">Fee</th>
-            <th className="r">Slippage</th>
-            <th className="r">Total cost</th>
-            <th className="r">Assumed</th>
-            <th className="r">Net BTC</th>
-            <th>Duration</th>
+            <th scope="col">Fill day</th>
+            <th scope="col">Side</th>
+            <th scope="col" className="r">
+              Filled
+            </th>
+            <th scope="col" className="r">
+              Maker / taker
+            </th>
+            <th scope="col" className="r">
+              Avg price
+            </th>
+            <th scope="col" className="r">
+              Ref open
+            </th>
+            <th scope="col" className="r">
+              Fee
+            </th>
+            <th scope="col" className="r">
+              Slippage
+            </th>
+            <th scope="col" className="r">
+              Total cost
+            </th>
+            <th scope="col" className="r">
+              Assumed
+            </th>
+            <th scope="col" className="r">
+              Net BTC
+            </th>
+            <th scope="col">Duration</th>
           </tr>
         </thead>
         <tbody>
@@ -97,16 +115,24 @@ function LedgerTable({ records, quote }: { records: LedgerRecord[]; quote: strin
         <table className="data" id="ledger-table">
           <thead>
             <tr>
-              <th>Bar</th>
-              <th>Signal</th>
-              <th>Action</th>
-              <th className="r">Close</th>
-              <th className="r">SMA50</th>
-              <th className="r">Equity</th>
-              <th className="r">Hold</th>
-              <th>Stage</th>
-              <th>Candles</th>
-              <th>Recorded</th>
+              <th scope="col">Bar</th>
+              <th scope="col">Signal</th>
+              <th scope="col">Action</th>
+              <th scope="col" className="r">
+                Close
+              </th>
+              <th scope="col" className="r">
+                SMA50
+              </th>
+              <th scope="col" className="r">
+                Equity
+              </th>
+              <th scope="col" className="r">
+                Hold
+              </th>
+              <th scope="col">Stage</th>
+              <th scope="col">Candles</th>
+              <th scope="col">Recorded</th>
             </tr>
           </thead>
           <tbody>

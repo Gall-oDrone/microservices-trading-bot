@@ -9,10 +9,12 @@
     "build": "tsc -b && vite build",
     "typecheck": "tsc -b --noEmit",
     "lint": "eslint .",
-    "format": "prettier --write src",
-    "format:check": "prettier --check src",
+    "format": "prettier --write src e2e",
+    "format:check": "prettier --check src e2e",
     "test": "vitest run",
     "test:watch": "vitest",
+    "e2e": "playwright test",
+    "e2e:install": "playwright install --with-deps chromium",
     "preview": "vite preview",
     "fixtures": "sh scripts/capture-fixtures.sh",
     "ci": "npm run typecheck && npm run lint && npm run format:check && npm run test && npm run build"
@@ -27,6 +29,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.29.0",
+    "@playwright/test": "^1.53.0",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.0",
     "@testing-library/user-event": "^14.6.1",

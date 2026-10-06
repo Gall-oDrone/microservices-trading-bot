@@ -1,0 +1,75 @@
+import { expect, test, type Page } from '@playwright/test'
+
+// Every page must render from the captured ui-api fixtures with no console
+// error, no uncaught exception, no contract (schema) mismatch and no error
+// state, on desktop and on a phone.
+
+function watchConsole(page: Page): string[] {
+  const errors: string[] = []
+  page.on('console', (m) => {
+    if (m.type() === 'error') errors.push(`console: ${m.text()}`)
+  })
+  page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`))
+  return errors
+}
+
+async function expectHealthy(page: Page, errors: string[]) {
+  await expect(page.getByText(/does not match the UI contract/)).toHaveCount(0)
+  await expect(page.getByText('Could not load this view')).toHaveCount(0)
+  const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)
+  expect(overflow, 'page must not scroll horizontally').toBeLessThanOrEqual(1)
+  expect(errors).toEqual([])
+}
+
+test('forward tests: one card per book with signal and ledger', async ({ page }) => {
+  const errors = watchConsole(page)
+  await page.goto('/')
+  await expect(page).toHaveTitle(/Forward tests/)
+  await expect(page.getByRole('heading', { level: 1, name: 'Forward tests' })).toBeVisible()
+  for (const book of ['btc_mxn', 'btc_usd']) {
+    const card = page.getByTestId(`ft-card-${book}`)
+    await expect(card).toBeVisible()
+    await expect(card.getByTestId('signal-pill')).toHaveText(/long|flat/)
+    await expect(card.getByTitle('Ledger: stage')).toBeVisible()
+  }
+  await expectHealthy(page, errors)
+})
+
+test('forward test detail: chart, fills and ledger', async ({ page }) => {
+  const errors = watchConsole(page)
+  await page.goto('/forward-tests/btc_mxn')
+  await expect(page.getByRole('heading', { level: 1, name: 'BTC / MXN' })).toBeVisible()
+  await expect(page.locator('canvas').first()).toBeVisible()
+  await expect(page.getByRole('columnheader', { name: 'Fill day' })).toBeVisible()
+  await expect(page.getByText(/records, newest first/)).toBeVisible()
+  await expectHealthy(page, errors)
+})
+
+test('risk: enforced, per-book exposure and policy', async ({ page }) => {
+  const errors = watchConsole(page)
+  await page.goto('/risk')
+  await expect(page.getByRole('heading', { level: 1, name: 'Risk' })).toBeVisible()
+  await expect(page.getByText('Enforced', { exact: true })).toBeVisible()
+  await expect(page.getByTestId('risk-card-btc_mxn')).toBeVisible()
+  await expect(page.getByTestId('risk-card-btc_usd')).toBeVisible()
+  await expect(page.getByText('Max order size')).toBeVisible()
+  await expectHealthy(page, errors)
+})
+
+test('ledger picker switches to the dry-run ledger and links keep it', async ({ page }) => {
+  const errors = watchConsole(page)
+  await page.goto('/')
+  await expect(page.getByTestId('ft-card-btc_mxn')).toBeVisible()
+  await page.getByRole('combobox', { name: 'Ledger' }).selectOption('dry-run')
+  await expect(page).toHaveURL(/\?ledger=dry-run$/)
+  await expect(page.getByText('No records in the dry-run ledger yet')).toHaveCount(2)
+  await page.locator('#nav-risk').click()
+  await expect(page).toHaveURL(/\/risk\?ledger=dry-run$/)
+  await expect(page.getByTitle('Ledger: dry-run').first()).toBeVisible()
+  await expectHealthy(page, errors)
+})
+
+test('unknown routes show the not-found page', async ({ page }) => {
+  await page.goto('/nope')
+  await expect(page.getByRole('link', { name: 'Back to forward tests' })).toBeVisible()
+})

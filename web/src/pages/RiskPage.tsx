@@ -210,14 +210,16 @@ function PolicyTable({ r }: { r: RiskResponse }) {
       <table className="data" id="policy-table">
         <thead>
           <tr>
-            <th>Limit</th>
-            <th>Type</th>
+            <th scope="col">Limit</th>
+            <th scope="col">Type</th>
             {books.map((b) => (
-              <th key={b} className="r">
+              <th scope="col" key={b} className="r">
                 {bookLabel(b)}
               </th>
             ))}
-            <th className="r">Other books</th>
+            <th scope="col" className="r">
+              Other books
+            </th>
           </tr>
         </thead>
         <tbody>
