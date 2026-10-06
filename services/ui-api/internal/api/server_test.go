@@ -306,6 +306,39 @@ func TestParseLedgers(t *testing.T) {
 	}
 }
 
+func TestRiskShowsHaltFile(t *testing.T) {
+	dir := t.TempDir()
+	src, err := os.ReadFile("testdata/ledger.jsonl")
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, dir+"/ledger.jsonl", string(src))
+	ts := newTestServer(t, fixedNow, func(s *Server) { s.Store = store.New(dir+"/ledger.jsonl", "testdata/candles") })
+
+	r := get[RiskResponse](t, ts, "/api/ui/risk", 200)
+	if r.Halted || r.HaltSource != "none" || r.HaltFile.Found || r.HaltFile.Path != dir+"/risk-state.json" {
+		t.Fatalf("no file: %+v %+v", r.HaltSource, r.HaltFile)
+	}
+
+	writeFile(t, dir+"/risk-state.json", `{"halted":true,"reason":"exchange incident","by":"diego","at":"2026-10-02T02:00:00Z"}`)
+	r = get[RiskResponse](t, ts, "/api/ui/risk", 200)
+	if !r.Halted || r.HaltSource != "file" || !r.HaltFile.Halted || r.HaltFile.By != "diego" || r.HaltFile.Reason != "exchange incident" ||
+		!strings.Contains(r.HaltReason, "halt file, by diego") {
+		t.Fatalf("halted: %+v %q %+v", r.HaltSource, r.HaltReason, r.HaltFile)
+	}
+	for _, b := range r.Books {
+		if b.NextOrder != nil && b.NextOrder.Action != "none" && b.NextOrder.Decision.Allowed {
+			t.Fatalf("%s: a halted next order must preview as blocked: %+v", b.Book, b.NextOrder)
+		}
+	}
+
+	writeFile(t, dir+"/risk-state.json", `{"halted":true}`)
+	r = get[RiskResponse](t, ts, "/api/ui/risk", 200)
+	if r.HaltFile.Error == "" || !r.HaltFile.Found || r.HaltSource != "none" {
+		t.Fatalf("invalid file must be reported: %+v", r.HaltFile)
+	}
+}
+
 func TestReadOnlyAndValidation(t *testing.T) {
 	ts := newTestServer(t, fixedNow, nil)
 	res, err := http.Post(ts.URL+"/api/ui/risk", "application/json", strings.NewReader("{}"))

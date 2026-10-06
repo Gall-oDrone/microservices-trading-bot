@@ -283,10 +283,38 @@ type ForwardTestsResponse struct {
 	Books       []ForwardTest `json:"books"`
 }
 
-func (s *Server) riskFor(l Ledger, book string, recs []dailyledger.Record, now time.Time) (BookRisk, []Fill) {
+// HaltFileInfo is the operator halt file next to a ledger (R2), read-only.
+type HaltFileInfo struct {
+	Path   string `json:"path"`
+	Found  bool   `json:"found"`
+	Halted bool   `json:"halted"`
+	Reason string `json:"reason"`
+	By     string `json:"by"`
+	At     string `json:"at"`
+	// Error is set when the file exists but is invalid: the executor then
+	// refuses to run (exit 2) until it is fixed or removed.
+	Error string `json:"error,omitempty"`
+}
+
+// policyFor is the policy as the executor would apply it to this ledger: the
+// configured policy with the ledger's halt file merged in.
+func (s *Server) policyFor(l Ledger) (risk.Policy, HaltFileInfo) {
+	path := risk.HaltPath(l.Store.LedgerPath)
+	info := HaltFileInfo{Path: path}
+	h, found, err := risk.LoadHaltState(path)
+	info.Found = found
+	if err != nil {
+		info.Error = err.Error()
+		return s.Policy, info
+	}
+	info.Halted, info.Reason, info.By, info.At = h.Halted, h.Reason, h.By, h.At
+	return risk.ApplyHalt(s.Policy, h), info
+}
+
+func (s *Server) riskFor(l Ledger, pol risk.Policy, book string, recs []dailyledger.Record, now time.Time) (BookRisk, []Fill) {
 	rows, _, _ := l.Store.Candles(book) // optional: slippage needs the fill day's open
 	fills := buildFills(book, recs, rows)
-	return buildBookRisk(s.Policy, book, recs, fills, now, s.StageSize), fills
+	return buildBookRisk(pol, book, recs, fills, now, s.StageSize), fills
 }
 
 func (s *Server) forwardTests(w http.ResponseWriter, r *http.Request) {
@@ -300,8 +328,9 @@ func (s *Server) forwardTests(w http.ResponseWriter, r *http.Request) {
 	}
 	now := s.Now()
 	resp := ForwardTestsResponse{Ledger: l.Name, GeneratedAt: now.UTC().Format(time.RFC3339), Books: []ForwardTest{}}
+	pol, _ := s.policyFor(l)
 	for _, b := range s.books(by) {
-		br, _ := s.riskFor(l, b, by[b], now)
+		br, _ := s.riskFor(l, pol, b, by[b], now)
 		ft := buildForwardTest(b, by[b], now, br)
 		ft.Ledger = l.Name
 		resp.Books = append(resp.Books, ft)
@@ -323,7 +352,8 @@ func (s *Server) forwardTest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	now := s.Now()
-	br, _ := s.riskFor(l, b, by[b], now)
+	pol, _ := s.policyFor(l)
+	br, _ := s.riskFor(l, pol, b, by[b], now)
 	ft := buildForwardTest(b, by[b], now, br)
 	ft.Ledger = l.Name
 	writeJSON(w, http.StatusOK, ft)
@@ -424,11 +454,14 @@ type RiskResponse struct {
 	StageSize   float64     `json:"stage_size_btc"`
 	Enforcement string      `json:"enforcement"`
 	Note        string      `json:"note"`
-	Halted      bool        `json:"halted"`
-	HaltReason  string      `json:"halt_reason"`
-	Books       []BookRisk  `json:"books"`
-	Blocks      int         `json:"blocks"`
-	Warnings    int         `json:"warnings"`
+	// Halted and HaltReason are the effective halt (policy or halt file).
+	Halted     bool         `json:"halted"`
+	HaltReason string       `json:"halt_reason"`
+	HaltSource string       `json:"halt_source"` // none | policy | file | both
+	HaltFile   HaltFileInfo `json:"halt_file"`
+	Books      []BookRisk   `json:"books"`
+	Blocks     int          `json:"blocks"`
+	Warnings   int          `json:"warnings"`
 }
 
 func (s *Server) riskStatus(w http.ResponseWriter, r *http.Request) {
@@ -441,6 +474,16 @@ func (s *Server) riskStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	now := s.Now()
+	pol, hf := s.policyFor(l)
+	src := "none"
+	switch {
+	case s.Policy.Halted && hf.Halted:
+		src = "both"
+	case s.Policy.Halted:
+		src = "policy"
+	case hf.Halted:
+		src = "file"
+	}
 	resp := RiskResponse{
 		Ledger:      l.Name,
 		GeneratedAt: now.UTC().Format(time.RFC3339), Policy: s.Policy, PolicySrc: s.PolicySrc, StageSize: s.StageSize,
@@ -448,10 +491,10 @@ func (s *Server) riskStatus(w http.ResponseWriter, r *http.Request) {
 		Note: "The daily-executor runs shared/pkg/risk.Check before every stage order and records the result; " +
 			"a blocked order is skipped and recorded, not retried. Next-order previews here use the last close as the price " +
 			"(the executor uses the live best bid/ask). Run ui-api with the same -risk-policy as the executor.",
-		Halted: s.Policy.Halted, HaltReason: s.Policy.HaltReason, Books: []BookRisk{},
+		Halted: pol.Halted, HaltReason: pol.HaltReason, HaltSource: src, HaltFile: hf, Books: []BookRisk{},
 	}
 	for _, b := range s.books(by) {
-		br, _ := s.riskFor(l, b, by[b], now)
+		br, _ := s.riskFor(l, pol, b, by[b], now)
 		for _, f := range br.Findings {
 			if f.Severity == risk.Block {
 				resp.Blocks++
