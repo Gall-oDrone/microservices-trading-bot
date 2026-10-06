@@ -30,6 +30,7 @@ import (
 
 	"bitso-trading-platform/shared/pkg/risk"
 	"bitso-trading-platform/ui-api/internal/api"
+	"bitso-trading-platform/ui-api/internal/live"
 	"bitso-trading-platform/ui-api/internal/store"
 )
 
@@ -49,6 +50,9 @@ func main() {
 	static := flag.String("static", env("UI_API_STATIC_DIR", ""), "serve the built web app from this dir (e.g. ../../web/dist)")
 	stageSize := flag.Float64("stage-size", envFloat("UI_API_STAGE_SIZE", 0.001), "BTC per stage entry, as passed to daily-executor -size")
 	printPolicy := flag.Bool("print-default-policy", false, "print the built-in risk policy as JSON and exit")
+	liveOn := flag.Bool("live", env("UI_API_LIVE", "1") != "0", "stream display-only market data from Bitso's public WebSocket (UI_API_LIVE=0 disables)")
+	liveURL := flag.String("live-url", env("UI_API_LIVE_URL", live.DefaultURL), "Bitso public WebSocket URL (production; no keys)")
+	liveREST := flag.String("live-rest-url", env("UI_API_LIVE_REST_URL", live.DefaultRESTURL), "Bitso public REST API, for today's bar")
 	flag.Parse()
 
 	if *printPolicy {
@@ -83,10 +87,19 @@ func main() {
 	}
 	srv := &api.Server{Ledgers: ledgers, Policy: pol, PolicySrc: src, StageSize: *stageSize, StaticDir: *static,
 		Version: version(), Log: logger}
+	ctx, stopLive := context.WithCancel(context.Background())
+	defer stopLive()
+	if *liveOn {
+		srv.Live = startLive(ctx, ledgers[0].Store, *liveURL, *liveREST, logger)
+	}
 	hs := &http.Server{
 		Addr: *addr, Handler: srv.Handler(),
 		ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second,
+		// /api/ui/stream clears this per request (http.ResponseController).
 		WriteTimeout: 30 * time.Second, IdleTimeout: 60 * time.Second,
+	}
+	if srv.Live != nil {
+		hs.RegisterOnShutdown(srv.Live.Close) // ends open SSE streams
 	}
 
 	go func() {
@@ -101,11 +114,42 @@ func main() {
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, syscall.SIGINT, syscall.SIGTERM)
 	<-stop
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	stopLive()
+	sctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	if err := hs.Shutdown(ctx); err != nil {
+	if err := hs.Shutdown(sctx); err != nil {
 		logger.Printf("shutdown: %v", err)
 	}
+}
+
+// startLive connects one shared upstream for the forward-test books. Closed
+// daily closes for the provisional flip level come from the default ledger's
+// candle files (the executor's), never from the live feed.
+func startLive(ctx context.Context, st *store.Store, wsURL, restURL string, logger *log.Logger) *live.Hub {
+	books := make([]string, 0, len(api.PreregDates))
+	for b := range api.PreregDates {
+		books = append(books, b)
+	}
+	closes := func(book string) ([]float64, string, error) {
+		rows, _, err := st.Candles(book)
+		if err != nil {
+			return nil, "", err
+		}
+		if len(rows) == 0 {
+			return nil, "", errors.New("empty candle file")
+		}
+		cs := make([]float64, len(rows))
+		for i, r := range rows {
+			cs[i] = r.Close
+		}
+		return cs, rows[len(rows)-1].Date, nil
+	}
+	hub := live.NewHub(books, wsURL, live.RESTSeeder(restURL, nil), closes, logger)
+	feed := &live.Feed{URL: wsURL, Books: hub.Books, Handler: hub, Log: logger}
+	go hub.Run(ctx)
+	go feed.Run(ctx)
+	logger.Printf("live: %s for %v (display only)", wsURL, hub.Books)
+	return hub
 }
 
 func envFloat(key string, def float64) float64 {

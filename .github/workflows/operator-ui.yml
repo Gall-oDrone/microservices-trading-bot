@@ -48,6 +48,7 @@ jobs:
           cache-dependency-path: |
             shared/go.sum
             services/strategy-executor/go.sum
+            services/ui-api/go.sum
 
       - name: gofmt (new packages)
         run: |
