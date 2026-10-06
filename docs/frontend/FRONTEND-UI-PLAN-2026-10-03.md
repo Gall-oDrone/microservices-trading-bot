@@ -138,12 +138,15 @@ Location: `web/` at the repo root, served by Vite in development (proxying `/api
 | `GET /api/ui/forward-tests/{book}` | same, one book | `{book}` validated against `^[a-z]{2,6}_[a-z]{2,6}$` and the known books |
 | `GET /api/ui/forward-tests/{book}/ledger[?mode=stage]` | all records for a book | + equity series and stage fills with fee/slippage bps |
 | `GET /api/ui/forward-tests/{book}/candles?days=180` | latest `<book>_daily_<date>.csv` | + SMA50, `long`, `volume_ratio_20d`; SMA50 matches the ledger to the cent (tested) |
-| `GET /api/ui/risk` | ledger + candles + risk policy | policy, exposure, utilization, next-order check, realized cost, findings |
+| `GET /api/ui/risk` | ledger + candles + risk policy | policy, exposure, utilization, next-order check, realized cost, findings, halt file |
+| `GET /api/ui/ledgers` | configured ledgers (`-ledgers`) | name, path, found, records, default; every endpoint above takes `?ledger=<name>` |
+| `GET /api/ui/live?books=` | live hub (Bitso public WS) | snapshot JSON: upstream status, last trade, bid/ask, forming candle, provisional flip level. Display only; 503 with `-live=false` |
+| `GET /api/ui/stream?books=` | live hub | Server-Sent Events: `snapshot`, `book` (≤1/s per book), `status`, `heartbeat` (15 s) |
 
 Files are cached by mtime; the ledger is re-read only when it changes.
 
 Still to build (Phase 2–3): `/research/studies`, `/research/runs/{id}` (needs `-json` on the research
-tools), `/market/{book}/…` proxy, `/market/stream` SSE, `/health/data`.
+tools), `/market/{book}/…` proxy, `/health/data`.
 
 ### 5.2 Contracts
 - **Go ↔ Go:** `shared/pkg/dailyledger` mirrors the executor's unexported ledger types.
@@ -265,9 +268,9 @@ returns the executor's last recorded check. The Risk page shows all of it.
 |---|---|---|---|
 | **0. Foundations** | `web/` scaffold (Vite, TS strict, router, Query, tokens, dark theme, layout), `npm run ci`, MSW mocks from real data | `npm run build` passes; Forward tests page renders from mocks | **Done** |
 | **1. Forward tests + risk, local** | Forward-tests pages and Risk page against a local `ui-api` reading the local ledger; localhost only | Today's signal, paper vs hold, fills and fees for both books, matching the CLI output | **Done** |
-| **1b. Close-out** | GitHub Actions job (`go test` for shared, ui-api, daily-executor; `npm run ci`), Playwright smoke test, multi-ledger support in `ui-api` (stage + dry-run + future volume variant), risk step **R1** | CI runs on every PR; a blocked order is enforced and visible | **R1 done** (2026-10-05); **CI done** (`operator-ui.yml`, 2026-10-06); **multi-ledger done** (2026-10-06); Playwright in progress (§8.1) |
-| **2. Research + data health** | Study index, strategy comparison (needs `-json`), data-health page, ledger read from S3, risk **R2** + **R3** | Holdout vs development tables match the evidence files; a missed run alerts | |
-| **3. Market data** | Market page via BFF proxy and SSE; candles with volume ratio | Live ticker updates within 2 s; no direct browser calls to internal services | A slim **live-data slice** is pulled forward (§8.1, step 3) |
+| **1b. Close-out** | GitHub Actions job (`go test` for shared, ui-api, daily-executor; `npm run ci`), Playwright smoke test, multi-ledger support in `ui-api` (stage + dry-run + future volume variant), risk step **R1** | CI runs on every PR; a blocked order is enforced and visible | **Done**: R1 (2026-10-05); CI (`operator-ui.yml`), multi-ledger, Playwright (2026-10-06) |
+| **2. Research + data health** | Study index, strategy comparison (needs `-json`), data-health page, ledger read from S3, risk **R2** + **R3** | Holdout vs development tables match the evidence files; a missed run alerts | **R2 done** (2026-10-06) |
+| **3. Market data** | Market page via BFF proxy and SSE; candles with volume ratio | Live ticker updates within 2 s; no direct browser calls to internal services | **Live-data slice done** (2026-10-06, §8.3); Market page still to build |
 | **4. Hardening + controls** | OIDC, TLS, CORS, audit log, role-gated controls (halt, kill switch, start/stop), risk **R4** | Security review passes; every control action is audited | |
 | **5. Deploy** | Static build behind CloudFront or served by `ui-api`; k8s/compose entries; risk **R5** | Reachable only through auth over HTTPS | |
 
@@ -279,9 +282,9 @@ and R3 alerts follow.
 | Step | Scope | Done when |
 |---|---|---|
 | **1a. Multi-ledger (done)** | `ui-api -ledgers stage=<path>,dry-run=<path>[,…]` (`-ledger` stays as the `stage` default). Each ledger has its own store, candles dir and halt file. `GET /api/ui/ledgers` lists them; every other endpoint takes `?ledger=<name>` (default: the first). The UI has a ledger picker (URL search param `ledger`) and every card shows its ledger. | Switching the picker shows the dry-run ledger; an unknown name is a 400; fixtures and schema tests cover `/ledgers` |
-| **1b. Playwright smoke** | `@playwright/test` against `vite preview` in mock mode (captured fixtures). The 3 pages, a desktop and a phone viewport. Fails on any console error or on a schema mismatch banner. 3rd job in `operator-ui.yml`. | `npm run e2e` passes locally and in CI |
+| **1b. Playwright smoke (done)** | `@playwright/test` against `vite preview` in mock mode (captured fixtures). The 3 pages, a desktop and a phone viewport. Fails on any console error or on a schema mismatch banner. 3rd job in `operator-ui.yml`. | `npm run e2e` passes locally and in CI |
 | **2. R2 halt file (done)** | See §8.2. | Setting the file halts the next run (recorded as a block) and `/risk` shows who, when, why |
-| **3. Live-data slice** | See §8.3. | Cards and the detail chart update about once a second; a stale feed is visible; nothing live reaches the executor |
+| **3. Live-data slice (done)** | See §8.3. | Cards and the detail chart update about once a second; a stale feed is visible; nothing live reaches the executor |
 | **4. Research views** | Study index from `docs/backtest-readiness/*.md`, then `-json` on the research tools and the comparison view | As in Phase 2 |
 
 ### 8.2 R2 halt file (design)
@@ -335,13 +338,31 @@ unfinished bar is labelled provisional. The decision path never reads live data.
   EventSource (live values render; staleness after 10 s with fake timers).
 - **Not in this slice.** Order-book depth, recent-trades tape, intraday candles; Market page (Phase 3).
 
+**As built (2026-10-06), where it differs from the design above:**
+
+- One `book` event per book (last trade, bid/ask, forming candle and provisional values together,
+  at most 1/s) instead of separate `ticker` and `candle` events. The JSON fallback is
+  `GET /api/ui/live?books=` (same shape as the `snapshot` event).
+- The stale threshold is **25 s** without any event, not 10 s: the heartbeat is every 15 s and a quiet
+  market can go longer than 10 s without a trade, so 10 s would raise false alarms. The badge shows
+  `Live`, `Stale · N s`, `Reconnecting` (browser or Bitso side), `Live off` (ui-api refused the stream,
+  e.g. `-live=false`; retried every 15 s) or `Live error` (an event failed the zod contract).
+- Cards also show **"would flip"** when the provisional signal differs from the recorded one.
+- The forming candle is drawn translucent, so it never reads as a closed bar.
+- Mock mode (`npm run dev:mock`, Playwright) replays the captured `fixtures/live.json` as a real
+  `text/event-stream` through MSW, timestamps moved to now.
+- Code: `services/ui-api/internal/live`, `internal/api/stream.go`; `web/src/api/live.ts`,
+  `web/src/components/live.tsx`, `PriceChart` in `web/src/components/charts.tsx`.
+
 ---
 
 ## 9. How to run (local)
 
 ```bash
 export PATH=$PWD/.tools/node/bin:$PATH              # portable Node 22
-(cd services/ui-api && go run ./cmd) &              # 127.0.0.1:8090, stage ledger
+(cd services/ui-api && go run ./cmd) &              # 127.0.0.1:8090, stage ledger, live on
+# several ledgers, live data off:
+#   go run ./cmd -ledgers stage=<path>/ledger.jsonl,dry-run=<path>/ledger.jsonl -live=false
 cd web && npm ci && npm run dev                     # http://127.0.0.1:5173
 # or, without the backend:
 npm run dev:mock
@@ -349,7 +370,7 @@ npm run dev:mock
 (cd shared && go test ./pkg/risk ./pkg/dailyledger)
 (cd services/ui-api && go test ./...)
 (cd services/strategy-executor && go test ./cmd/daily-executor)
-(cd web && npm run ci)
+(cd web && npm run ci && npm run e2e)
 ```
 
 ---
