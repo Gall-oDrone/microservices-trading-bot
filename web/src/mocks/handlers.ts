@@ -7,6 +7,13 @@ import { http, HttpResponse } from 'msw'
 import healthz from './fixtures/healthz.json'
 import ledgers from './fixtures/ledgers.json'
 import live from './fixtures/live.json'
+import studies from './research/studies.json'
+
+// research/study-<name>.json, one per study in research/studies.json
+const studyFiles = import.meta.glob<Record<string, unknown>>('./research/study-*.json', {
+  eager: true,
+  import: 'default',
+})
 
 type Json = Record<string, unknown>
 
@@ -80,6 +87,15 @@ export const handlers = [
   http.get('/api/ui/ledgers', () => HttpResponse.json(ledgers)),
   http.get('/api/ui/live', ({ request }) => HttpResponse.json(liveNow(request))),
   http.get('/api/ui/stream', ({ request }) => liveStream(request)),
+  http.get('/api/ui/research/studies', () => HttpResponse.json(studies)),
+  http.get('/api/ui/research/studies/:name', ({ params }) => {
+    const name = String(params.name)
+    if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,150}$/.test(name) || name.includes('..')) {
+      return HttpResponse.json({ error: 'invalid study name' }, { status: 400 })
+    }
+    const doc = studyFiles[`./research/study-${name}.json`]
+    return doc ? HttpResponse.json(doc) : HttpResponse.json({ error: `no study ${name}` }, { status: 404 })
+  }),
   http.get('/api/ui/forward-tests', ({ request }) => fixture(request, 'forward-tests')),
   http.get('/api/ui/risk', ({ request }) => fixture(request, 'risk')),
   http.get('/api/ui/forward-tests/:book/ledger', ({ params, request }) =>

@@ -25,3 +25,18 @@ for l in $LEDGERS; do
   done
 done
 echo "fixtures written to $OUT from $API (ledgers: $LEDGERS)"
+
+# Research fixtures (src/mocks/research): the study list and every study.
+# Capture from committed docs only, so local drafts never land in fixtures:
+#   git archive HEAD docs/backtest-readiness | tar -x -C /tmp/c && touch /tmp/c/.git
+#   go run ./cmd -live=false -addr 127.0.0.1:8091 -studies-dir /tmp/c/docs/backtest-readiness
+#   UI_API_RESEARCH_URL=http://127.0.0.1:8091 npm run fixtures
+RAPI="${UI_API_RESEARCH_URL:-$API}"
+R="$(dirname "$0")/../src/mocks/research"
+rm -rf "$R"
+mkdir -p "$R"
+curl -fsS "$RAPI/api/ui/research/studies" > "$R/studies.json"
+for n in $(node -e 'console.log(JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")).studies.map(s=>s.name).join(" "))' "$R/studies.json"); do
+  curl -fsS "$RAPI/api/ui/research/studies/$n" > "$R/study-$n.json"
+done
+echo "research fixtures written to $R from $RAPI"

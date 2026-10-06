@@ -76,6 +76,23 @@ test('ledger picker switches to the dry-run ledger and links keep it', async ({ 
   await expectHealthy(page, errors)
 })
 
+test('research: study list, filter and a study with its lineage', async ({ page }) => {
+  const errors = watchConsole(page)
+  await page.goto('/')
+  await page.locator('#nav-research').click()
+  await expect(page).toHaveURL(/\/research$/)
+  await expect(page.getByRole('heading', { level: 1, name: 'Research' })).toBeVisible()
+  await page.locator('#kind-preregistration').click()
+  await expect(page.getByTestId(/^study-/)).toHaveCount(2)
+  await page.locator('#open-FORWARD-TEST-PREREGISTRATION-SMA50-2026-09-27').click()
+  await expect(page.getByRole('heading', { level: 1, name: /Pre-Registration/ })).toBeVisible()
+  await expect(page.getByTestId('study-prose').getByRole('heading', { name: '1. Rule (frozen)' })).toBeVisible()
+  await page.getByTestId('study-prose').locator('a[data-study="BTC-MXN-TREND-CHECK-2026-09-27"]').first().click()
+  await expect(page).toHaveURL(/\/research\/BTC-MXN-TREND-CHECK-2026-09-27$/)
+  await expect(page.getByRole('heading', { level: 1, name: /Does the BTC-USD Result Transfer/ })).toBeVisible()
+  await expectHealthy(page, errors)
+})
+
 test('unknown routes show the not-found page', async ({ page }) => {
   await page.goto('/nope')
   await expect(page.getByRole('link', { name: 'Back to forward tests' })).toBeVisible()

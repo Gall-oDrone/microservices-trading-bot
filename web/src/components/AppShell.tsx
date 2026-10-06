@@ -98,11 +98,13 @@ function Nav() {
         )}
       </NavLink>
       <span className="nav-label" style={{ marginTop: 14 }}>
-        Next phases
+        Research
       </span>
-      <span className="nav-link disabled" aria-disabled="true" title="Phase 2">
-        <IconFlask /> Research
-        <span className="count faint">P2</span>
+      <NavLink to={{ pathname: '/research', search }} className="nav-link" id="nav-research">
+        <IconFlask /> Studies
+      </NavLink>
+      <span className="nav-label" style={{ marginTop: 14 }}>
+        Next phases
       </span>
       <span className="nav-link disabled" aria-disabled="true" title="Phase 2">
         <IconPulse /> Data health

@@ -422,3 +422,44 @@ export const liveSnapshotSchema = z.object({
 export type LiveSnapshot = z.infer<typeof liveSnapshotSchema>
 
 export const heartbeatSchema = z.object({ time: z.string(), upstream: liveStatusSchema })
+
+// --- Research (services/ui-api/internal/research): study write-ups, read-only. ---
+
+export const studyKind = z.enum(['preregistration', 'assessment', 'study', 'report'])
+export type StudyKind = z.infer<typeof studyKind>
+
+export const studySchema = z.object({
+  name: z.string(),
+  file: z.string(),
+  title: z.string(),
+  date: z.string(),
+  kind: studyKind,
+  question: z.string().optional(),
+  summary: z.string(),
+  follows: z.array(z.string()),
+  references: z.array(z.string()),
+  evidence: z.object({ dir: z.string(), files: z.array(z.string()) }).nullable(),
+  bytes: z.number(),
+  modified: z.string(),
+})
+export type Study = z.infer<typeof studySchema>
+
+export const studiesResponseSchema = z.object({
+  generated_at: z.string(),
+  dir: z.string(),
+  found: z.boolean(),
+  studies: z.array(studySchema),
+})
+export type StudiesResponse = z.infer<typeof studiesResponseSchema>
+
+export const studyHeadingSchema = z.object({ level: z.number(), id: z.string(), text: z.string() })
+
+/** One study rendered to HTML by ui-api (goldmark; raw HTML in the markdown is dropped). */
+export const studyDocSchema = z.object({
+  study: studySchema,
+  html: z.string(),
+  headings: z.array(studyHeadingSchema),
+  followed_by: z.array(z.string()),
+  referenced_by: z.array(z.string()),
+})
+export type StudyDoc = z.infer<typeof studyDocSchema>

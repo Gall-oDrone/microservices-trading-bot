@@ -8,6 +8,8 @@ import {
   ledgerResponseSchema,
   ledgersResponseSchema,
   riskResponseSchema,
+  studiesResponseSchema,
+  studyDocSchema,
 } from './schemas'
 
 /** Error from the API or from schema validation, with a message fit for the UI. */
@@ -86,6 +88,8 @@ export const queryKeys = {
   risk: (ledger: string) => ['risk', ledger] as const,
   health: ['health'] as const,
   ledgers: ['ledgers'] as const,
+  studies: ['studies'] as const,
+  study: (name: string) => ['study', name] as const,
 }
 
 export function useForwardTests() {
@@ -144,5 +148,23 @@ export function useHealth() {
     queryFn: ({ signal }) => fetchJSON('/healthz', healthSchema, signal),
     refetchInterval: 30_000,
     retry: false,
+  })
+}
+
+/** Study write-ups change rarely; refetch on focus (the default) is enough. */
+export function useStudies() {
+  return useQuery({
+    queryKey: queryKeys.studies,
+    queryFn: ({ signal }) => fetchJSON('/research/studies', studiesResponseSchema, signal),
+    staleTime: 60_000,
+  })
+}
+
+export function useStudy(name: string) {
+  return useQuery({
+    queryKey: queryKeys.study(name),
+    queryFn: ({ signal }) => fetchJSON(`/research/studies/${encodeURIComponent(name)}`, studyDocSchema, signal),
+    staleTime: 60_000,
+    enabled: name !== '',
   })
 }

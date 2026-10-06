@@ -1,0 +1,229 @@
+{
+  "generated_at": "2026-10-06T16:37:15Z",
+  "dir": "docs/backtest-readiness",
+  "found": true,
+  "studies": [
+    {
+      "name": "EXECUTION-RISK-GUARDS-2026-10-05",
+      "file": "docs/backtest-readiness/EXECUTION-RISK-GUARDS-2026-10-05.md",
+      "title": "Execution Risk Guards on the Daily Executor (2026-10-05)",
+      "date": "2026-10-05",
+      "kind": "report",
+      "summary": "What changed. Starting 2026-10-05, services/strategy-executor/cmd/daily-executor runs a pre-trade risk check (shared/pkg/risk.Check) before every stage order. This is step R1 of docs/frontend/FRONTEND-UI-PLAN-2026-10-03.md §6.4.1.",
+      "follows": [],
+      "references": [
+        "FORWARD-TEST-PREREGISTRATION-SMA50-2026-09-27",
+        "FORWARD-TEST-PREREGISTRATION-SMA50-BTCUSD-2026-09-29"
+      ],
+      "evidence": null,
+      "bytes": 3296,
+      "modified": "2026-10-06T04:59:34Z"
+    },
+    {
+      "name": "FORWARD-TEST-PREREGISTRATION-SMA50-BTCUSD-2026-09-29",
+      "file": "docs/backtest-readiness/FORWARD-TEST-PREREGISTRATION-SMA50-BTCUSD-2026-09-29.md",
+      "title": "Forward-Test Pre-Registration — SMA50 Trend Rule on Bitso btc_usd, Judged in Pesos",
+      "date": "2026-09-29",
+      "kind": "preregistration",
+      "summary": "Identical to the btc_mxn test except for the instrument:",
+      "follows": [],
+      "references": ["FORWARD-TEST-PREREGISTRATION-SMA50-2026-09-27"],
+      "evidence": null,
+      "bytes": 6075,
+      "modified": "2026-10-06T04:59:34Z"
+    },
+    {
+      "name": "BTC-MXN-TREND-CHECK-2026-09-27",
+      "file": "docs/backtest-readiness/BTC-MXN-TREND-CHECK-2026-09-27.md",
+      "title": "SMA50 Trend Rule on Bitso btc_mxn — Does the BTC-USD Result Transfer?",
+      "date": "2026-09-27",
+      "kind": "study",
+      "summary": "The full-history study found that SMA50 on Yahoo BTC-USD beat holding over 2018–2026 after Bitso costs. It listed three checks to make before that could matter: 1. Re-run on btc_mxn, the market the bot actually trades. 2. Price the rule at maker fees. 3. Pre-register a forward test.",
+      "follows": ["FULL-HISTORY-DAILY-STUDY-2026-09-27"],
+      "references": ["FORWARD-TEST-PREREGISTRATION-SMA50-2026-09-27"],
+      "evidence": {
+        "dir": "docs/backtest-readiness/evidence-2026-09-27",
+        "files": [
+          "btc-mxn-frictionless.txt",
+          "btc-mxn-maker-plus-slippage.txt",
+          "btc-mxn-maker.txt",
+          "btc-mxn-taker.txt",
+          "btc-usd-maker.txt",
+          "btc_mxn_daily_bitso.csv",
+          "by-year-bitso-costs.txt",
+          "by-year-frictionless.txt",
+          "full-span-bitso-costs.txt",
+          "full-span-frictionless.txt",
+          "news-era-bitso-costs.txt",
+          "yahoo-compact-report.txt"
+        ]
+      },
+      "bytes": 9104,
+      "modified": "2026-10-06T04:59:34Z"
+    },
+    {
+      "name": "FORWARD-TEST-PREREGISTRATION-SMA50-2026-09-27",
+      "file": "docs/backtest-readiness/FORWARD-TEST-PREREGISTRATION-SMA50-2026-09-27.md",
+      "title": "Forward-Test Pre-Registration — SMA50 Trend Rule on Bitso btc_mxn",
+      "date": "2026-09-27",
+      "kind": "preregistration",
+      "summary": "This file fixes, before any forward data exists, exactly what will be tested, how, and what counts as success. It is a paper test: no orders, no capital, no changes to the live bot.",
+      "follows": ["BTC-MXN-TREND-CHECK-2026-09-27"],
+      "references": [],
+      "evidence": {
+        "dir": "docs/backtest-readiness/evidence-2026-09-27",
+        "files": [
+          "btc-mxn-frictionless.txt",
+          "btc-mxn-maker-plus-slippage.txt",
+          "btc-mxn-maker.txt",
+          "btc-mxn-taker.txt",
+          "btc-usd-maker.txt",
+          "btc_mxn_daily_bitso.csv",
+          "by-year-bitso-costs.txt",
+          "by-year-frictionless.txt",
+          "full-span-bitso-costs.txt",
+          "full-span-frictionless.txt",
+          "news-era-bitso-costs.txt",
+          "yahoo-compact-report.txt"
+        ]
+      },
+      "bytes": 5044,
+      "modified": "2026-10-06T04:59:34Z"
+    },
+    {
+      "name": "FULL-HISTORY-DAILY-STUDY-2026-09-27",
+      "file": "docs/backtest-readiness/FULL-HISTORY-DAILY-STUDY-2026-09-27.md",
+      "title": "Full-History Daily Study — BTC-USD 2018–2026 on the Refreshed Compacted Files",
+      "date": "2026-09-27",
+      "kind": "study",
+      "summary": "The 2026-09-26 study ended with three next steps: backfill Jan–Jul 2026, automate the refresh of the compacted files, and hold off on new signal work until unseen data existed. This document covers what happened when those were done.",
+      "follows": ["DAILY-HORIZON-NEWS-STUDY-2026-09-26"],
+      "references": ["BTC-MXN-TREND-CHECK-2026-09-27"],
+      "evidence": {
+        "dir": "docs/backtest-readiness/evidence-2026-09-27",
+        "files": [
+          "btc-mxn-frictionless.txt",
+          "btc-mxn-maker-plus-slippage.txt",
+          "btc-mxn-maker.txt",
+          "btc-mxn-taker.txt",
+          "btc-usd-maker.txt",
+          "btc_mxn_daily_bitso.csv",
+          "by-year-bitso-costs.txt",
+          "by-year-frictionless.txt",
+          "full-span-bitso-costs.txt",
+          "full-span-frictionless.txt",
+          "news-era-bitso-costs.txt",
+          "yahoo-compact-report.txt"
+        ]
+      },
+      "bytes": 12060,
+      "modified": "2026-10-06T04:59:34Z"
+    },
+    {
+      "name": "DAILY-HORIZON-NEWS-STUDY-2026-09-26",
+      "file": "docs/backtest-readiness/DAILY-HORIZON-NEWS-STUDY-2026-09-26.md",
+      "title": "24-Hour Horizon Study — Yahoo BTC-USD Daily Bars and LLM-Scored News",
+      "date": "2026-09-26",
+      "kind": "study",
+      "question": "At a 24-hour horizon, after Bitso's real costs, does a simple rule beat simply holding?",
+      "summary": "The 2026-09-23 analysis showed that at one-minute bars the cost is ~50× the median move, and that a longer horizon is the main strategic lever (R3). The trade archive is too short to test that. This study uses a year of Yahoo Finance BTC-USD daily bars and LLM-scored crypto news to ask:",
+      "follows": ["FEES-ENGINE-SPEEDUP-MOMENTUM-2026-09-25"],
+      "references": ["FULL-HISTORY-DAILY-STUDY-2026-09-27"],
+      "evidence": {
+        "dir": "docs/backtest-readiness/evidence-2026-09-26",
+        "files": [
+          "daily-research-bitso-costs-corrected-2026-09-27.txt",
+          "daily-research-bitso-costs.txt",
+          "daily-research-frictionless-corrected-2026-09-27.txt",
+          "daily-research-frictionless.txt"
+        ]
+      },
+      "bytes": 12219,
+      "modified": "2026-10-06T04:59:34Z"
+    },
+    {
+      "name": "FEES-ENGINE-SPEEDUP-MOMENTUM-2026-09-25",
+      "file": "docs/backtest-readiness/FEES-ENGINE-SPEEDUP-MOMENTUM-2026-09-25.md",
+      "title": "Fee Confirmation, Engine Speed-up, and the momentum Diagnosis",
+      "date": "2026-09-25",
+      "kind": "report",
+      "summary": "This round covers four of the next steps proposed on 2026-09-24. It also surveys the Yahoo Finance price and news data offered for step 6.",
+      "follows": ["HARNESS-FIXES-AND-REMEASURE-2026-09-24"],
+      "references": [],
+      "evidence": {
+        "dir": "docs/backtest-readiness/evidence-2026-09-25",
+        "files": ["backtest-d-incremental-engine.txt", "momentum-entry-diagnostic.txt"]
+      },
+      "bytes": 9893,
+      "modified": "2026-10-06T04:59:34Z"
+    },
+    {
+      "name": "HARNESS-FIXES-AND-REMEASURE-2026-09-24",
+      "file": "docs/backtest-readiness/HARNESS-FIXES-AND-REMEASURE-2026-09-24.md",
+      "title": "Harness Fixes and Re-measure — R1, R2, R4 Implemented",
+      "date": "2026-09-24",
+      "kind": "report",
+      "summary": "The 2026-09-23 report ranked five recommendations. This document records the work done on them and the numbers produced by the corrected harness.",
+      "follows": ["PATH-TO-PROFITABILITY-2026-09-23"],
+      "references": [],
+      "evidence": {
+        "dir": "docs/backtest-readiness/evidence-2026-09-24",
+        "files": [
+          "backtest-a_taker_taker.txt",
+          "backtest-b_maker_taker.txt",
+          "backtest-c_maker_maker.txt",
+          "backtest-d_legacy65.txt",
+          "backtest-e_legacy65_feeblind.txt",
+          "backtest-f_legacy65_ungated.txt"
+        ]
+      },
+      "bytes": 17006,
+      "modified": "2026-10-06T04:59:34Z"
+    },
+    {
+      "name": "PATH-TO-PROFITABILITY-2026-09-23",
+      "file": "docs/backtest-readiness/PATH-TO-PROFITABILITY-2026-09-23.md",
+      "title": "Path to Profitability — What to Fix, in Priority Order",
+      "date": "2026-09-23",
+      "kind": "report",
+      "summary": "The 2026-09-22 assessment established that every strategy loses money after real fees. It did not establish why, and that distinction decides everything that follows:",
+      "follows": ["BACKTEST-READINESS-ASSESSMENT-2026-09-22"],
+      "references": [],
+      "evidence": {
+        "dir": "docs/backtest-readiness/evidence-2026-09-23",
+        "files": [
+          "backtest-mean-reversion-fee-gate-ON.json",
+          "backtest-mean-reversion-fee-gate-ON.txt",
+          "edge-analysis-1m.txt"
+        ]
+      },
+      "bytes": 13035,
+      "modified": "2026-10-06T04:59:34Z"
+    },
+    {
+      "name": "BACKTEST-READINESS-ASSESSMENT-2026-09-22",
+      "file": "docs/backtest-readiness/BACKTEST-READINESS-ASSESSMENT-2026-09-22.md",
+      "title": "Backtest Readiness Assessment — Archive Loader, Fee Gating, Regime Diversity, and First Honest Backtest",
+      "date": "2026-09-22",
+      "kind": "assessment",
+      "summary": "This document reports a five-part investigation run entirely offline against already-archived data. No EKS cluster, Kafka, Redis, or live market-data dependency was used or required. It covers:",
+      "follows": [],
+      "references": [],
+      "evidence": {
+        "dir": "docs/backtest-readiness/evidence-2026-09-22",
+        "files": [
+          "backtest-run-BEFORE-harness-fixes.txt",
+          "backtest-run-fixed-default-throttle.json",
+          "backtest-run-fixed-default-throttle.txt",
+          "backtest-run-fixed-no-throttle.json",
+          "backtest-run-fixed-no-throttle.txt",
+          "daily-coverage-and-atr.json",
+          "regime-distribution.txt",
+          "ws-gaps-audit.txt"
+        ]
+      },
+      "bytes": 29183,
+      "modified": "2026-10-06T04:59:34Z"
+    }
+  ]
+}
