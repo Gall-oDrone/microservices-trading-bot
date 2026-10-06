@@ -1,5 +1,6 @@
 {
-  "generated_at": "2026-10-05T16:35:12Z",
+  "ledger": "stage",
+  "generated_at": "2026-10-06T01:00:40Z",
   "policy": {
     "version": "default-2026-10-03",
     "halted": false,
@@ -54,20 +55,20 @@
         "cost_warn_bps": 140
       },
       "position_btc": 0.00099999,
-      "position_notional": 1570.0742991000002,
-      "last_close": 1570090,
-      "paper_max_drawdown": 0.017748365662844323,
+      "position_notional": 1562.1643782,
+      "last_close": 1562180,
+      "paper_max_drawdown": 0.021750345521594473,
       "utilization": {
         "position": 0.099999,
         "order_size": 0.1,
-        "notional": 0.0628036,
-        "drawdown": 0.07099346265137729
+        "notional": 0.0624872,
+        "drawdown": 0.08700138208637789
       },
       "next_order": {
         "action": "none",
         "qty_btc": 0,
-        "ref_price": 1570090,
-        "fill_date": "2026-10-02",
+        "ref_price": 1562180,
+        "fill_date": "2026-10-05",
         "decision": {
           "allowed": true,
           "findings": []
@@ -83,15 +84,7 @@
       },
       "last_check": null,
       "blocked_days": [],
-      "findings": [
-        {
-          "rule": "run_missed",
-          "severity": "warn",
-          "limit": 0,
-          "value": 3,
-          "message": "missing ledger days: 2026-10-02, 2026-10-03, 2026-10-04"
-        }
-      ]
+      "findings": []
     },
     {
       "book": "btc_usd",
@@ -107,20 +100,20 @@
         "cost_warn_bps": 80
       },
       "position_btc": 0.0009975,
-      "position_notional": 85.72913999999999,
-      "last_close": 85944,
-      "paper_max_drawdown": 0.005003285765679322,
+      "position_notional": 85.5456,
+      "last_close": 85760,
+      "paper_max_drawdown": 0.01563808991901694,
       "utilization": {
         "position": 0.09974999999999999,
         "order_size": 0.1,
-        "notional": 0.057296,
-        "drawdown": 0.020013143062717287
+        "notional": 0.05717333333333334,
+        "drawdown": 0.06255235967606776
       },
       "next_order": {
         "action": "none",
         "qty_btc": 0,
-        "ref_price": 85944,
-        "fill_date": "2026-10-02",
+        "ref_price": 85760,
+        "fill_date": "2026-10-05",
         "decision": {
           "allowed": true,
           "findings": []
@@ -136,17 +129,9 @@
       },
       "last_check": null,
       "blocked_days": [],
-      "findings": [
-        {
-          "rule": "run_missed",
-          "severity": "warn",
-          "limit": 0,
-          "value": 3,
-          "message": "missing ledger days: 2026-10-02, 2026-10-03, 2026-10-04"
-        }
-      ]
+      "findings": []
     }
   ],
   "blocks": 0,
-  "warnings": 2
+  "warnings": 0
 }

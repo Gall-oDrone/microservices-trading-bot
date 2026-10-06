@@ -1,43 +1,8 @@
 {
+  "ledger": "dry-run",
   "book": "btc_usd",
-  "file": "btc_usd_daily_2026-10-01.csv",
+  "file": "btc_usd_daily_2026-10-04.csv",
   "candles": [
-    {
-      "date": "2025-10-02",
-      "open": 118464,
-      "high": 121024,
-      "low": 118449,
-      "close": 120008,
-      "volume": 23.73147747,
-      "trade_count": 3799,
-      "sma50": 113517.58000000007,
-      "volume_ratio_20d": 2.4242367238379336,
-      "long": true
-    },
-    {
-      "date": "2025-10-03",
-      "open": 119968,
-      "high": 123899,
-      "low": 119500,
-      "close": 122660,
-      "volume": 41.5499961,
-      "trade_count": 4479,
-      "sma50": 113593.04000000008,
-      "volume_ratio_20d": 3.938830373579605,
-      "long": true
-    },
-    {
-      "date": "2025-10-04",
-      "open": 122645,
-      "high": 125500,
-      "low": 121500,
-      "close": 125120,
-      "volume": 27.3355123,
-      "trade_count": 3301,
-      "sma50": 113741.16000000008,
-      "volume_ratio_20d": 2.2041324616149627,
-      "long": true
-    },
     {
       "date": "2025-10-05",
       "open": 125120,
@@ -4380,6 +4345,42 @@
       "trade_count": 3058,
       "sma50": 77750.86000000007,
       "volume_ratio_20d": 1.2078641162908836,
+      "long": true
+    },
+    {
+      "date": "2026-10-02",
+      "open": 85954,
+      "high": 87100,
+      "low": 83883,
+      "close": 84600,
+      "volume": 19.36560066,
+      "trade_count": 2879,
+      "sma50": 78176.10000000008,
+      "volume_ratio_20d": 1.3461874069466933,
+      "long": true
+    },
+    {
+      "date": "2026-10-03",
+      "open": 84662,
+      "high": 85029,
+      "low": 84527,
+      "close": 84888,
+      "volume": 4.17012135,
+      "trade_count": 1215,
+      "sma50": 78613.52000000008,
+      "volume_ratio_20d": 0.27392803501582075,
+      "long": true
+    },
+    {
+      "date": "2026-10-04",
+      "open": 84895,
+      "high": 86949,
+      "low": 84888,
+      "close": 85760,
+      "volume": 9.56746161,
+      "trade_count": 1797,
+      "sma50": 79068.84000000007,
+      "volume_ratio_20d": 0.6291712347891584,
       "long": true
     }
   ]

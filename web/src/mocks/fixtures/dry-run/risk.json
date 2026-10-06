@@ -1,0 +1,119 @@
+{
+  "ledger": "dry-run",
+  "generated_at": "2026-10-06T01:00:40Z",
+  "policy": {
+    "version": "default-2026-10-03",
+    "halted": false,
+    "books": {
+      "btc_mxn": {
+        "max_order_btc": 0.01,
+        "max_position_btc": 0.01,
+        "max_order_notional": 25000,
+        "max_orders_per_day": 1,
+        "max_price_deviation_bps": 1500,
+        "drawdown_warn": 0.25,
+        "cost_warn_bps": 140
+      },
+      "btc_usd": {
+        "max_order_btc": 0.01,
+        "max_position_btc": 0.01,
+        "max_order_notional": 1500,
+        "max_orders_per_day": 1,
+        "max_price_deviation_bps": 1500,
+        "drawdown_warn": 0.25,
+        "cost_warn_bps": 80
+      }
+    },
+    "default": {
+      "max_order_btc": 0.001,
+      "max_position_btc": 0.001,
+      "max_order_notional": 0,
+      "max_orders_per_day": 1,
+      "max_price_deviation_bps": 1000,
+      "drawdown_warn": 0.2,
+      "cost_warn_bps": 0
+    }
+  },
+  "policy_source": "built-in default (default-2026-10-03)",
+  "stage_size_btc": 0.001,
+  "enforcement": "enforced",
+  "note": "The daily-executor runs shared/pkg/risk.Check before every stage order and records the result; a blocked order is skipped and recorded, not retried. Next-order previews here use the last close as the price (the executor uses the live best bid/ask). Run ui-api with the same -risk-policy as the executor.",
+  "halted": false,
+  "halt_reason": "",
+  "books": [
+    {
+      "book": "btc_mxn",
+      "quote": "mxn",
+      "mode": "",
+      "limits": {
+        "max_order_btc": 0.01,
+        "max_position_btc": 0.01,
+        "max_order_notional": 25000,
+        "max_orders_per_day": 1,
+        "max_price_deviation_bps": 1500,
+        "drawdown_warn": 0.25,
+        "cost_warn_bps": 140
+      },
+      "position_btc": 0,
+      "position_notional": 0,
+      "last_close": 0,
+      "paper_max_drawdown": 0,
+      "utilization": {
+        "position": 0,
+        "order_size": 0,
+        "notional": 0,
+        "drawdown": 0
+      },
+      "next_order": null,
+      "realized_cost": {
+        "legs": 0,
+        "avg_fee_bps": 0,
+        "avg_slippage_bps": 0,
+        "avg_total_bps": 0,
+        "assumed_leg_bps": 0,
+        "fallback_legs": 0
+      },
+      "last_check": null,
+      "blocked_days": [],
+      "findings": []
+    },
+    {
+      "book": "btc_usd",
+      "quote": "usd",
+      "mode": "",
+      "limits": {
+        "max_order_btc": 0.01,
+        "max_position_btc": 0.01,
+        "max_order_notional": 1500,
+        "max_orders_per_day": 1,
+        "max_price_deviation_bps": 1500,
+        "drawdown_warn": 0.25,
+        "cost_warn_bps": 80
+      },
+      "position_btc": 0,
+      "position_notional": 0,
+      "last_close": 0,
+      "paper_max_drawdown": 0,
+      "utilization": {
+        "position": 0,
+        "order_size": 0,
+        "notional": 0,
+        "drawdown": 0
+      },
+      "next_order": null,
+      "realized_cost": {
+        "legs": 0,
+        "avg_fee_bps": 0,
+        "avg_slippage_bps": 0,
+        "avg_total_bps": 0,
+        "assumed_leg_bps": 0,
+        "fallback_legs": 0
+      },
+      "last_check": null,
+      "blocked_days": [],
+      "findings": []
+    }
+  ],
+  "blocks": 0,
+  "warnings": 0
+}

@@ -1,7 +1,7 @@
 import { Link } from 'react-router'
-import { useForwardTests } from '../api/client'
+import { useForwardTests, useLedgerSearch } from '../api/client'
 import type { ForwardTest } from '../api/schemas'
-import { Badge, Banner, CardSkeleton, ErrorState, SignalPill, Stat } from '../components/ui'
+import { Badge, Banner, CardSkeleton, Empty, ErrorState, LedgerBadge, SignalPill, Stat } from '../components/ui'
 import { bookLabel, fmtBTC, fmtDate, fmtFrac, fmtMx, fmtPct, fmtPrice, fmtUTC } from '../lib/format'
 import { usePageTitle } from '../lib/usePageTitle'
 
@@ -46,6 +46,25 @@ function RunBadge({ ft }: { ft: ForwardTest }) {
 }
 
 export function ForwardTestCard({ ft }: { ft: ForwardTest }) {
+  const search = useLedgerSearch()
+  if (!ft.recorded_at) {
+    return (
+      <article className="card" aria-labelledby={`ft-${ft.book}`} data-testid={`ft-card-${ft.book}`}>
+        <header className="ft-head">
+          <div>
+            <h2 className="ft-book" id={`ft-${ft.book}`}>
+              {bookLabel(ft.book)}
+            </h2>
+            <div className="ft-meta">{ft.prereg ? `Pre-registration ${ft.prereg}` : 'Frozen SMA50 rule'}</div>
+          </div>
+          <LedgerBadge name={ft.ledger} />
+        </header>
+        <Empty title={`No records in the ${ft.ledger} ledger yet`}>
+          {ft.run.message || 'The daily executor has not recorded this book in this ledger.'}
+        </Empty>
+      </article>
+    )
+  }
   const d = ft.decision
   const p = ft.paper
   const excess = ft.excess_vs_hold_pct
@@ -62,7 +81,10 @@ export function ForwardTestCard({ ft }: { ft: ForwardTest }) {
             <span title={fmtUTC(ft.recorded_at)}>recorded {fmtMx(ft.recorded_at)}</span>
           </div>
         </div>
-        <SignalPill signal={d.signal} />
+        <div className="row" style={{ gap: 8 }}>
+          <LedgerBadge name={ft.ledger} />
+          <SignalPill signal={d.signal} />
+        </div>
       </header>
 
       <div className="grid grid-4" style={{ gap: 14 }}>
@@ -120,7 +142,7 @@ export function ForwardTestCard({ ft }: { ft: ForwardTest }) {
         {ft.risk_warnings > 0 && <Badge tone="warn">{ft.risk_warnings} risk warning</Badge>}
         {ft.candles.recent_gaps && <Badge tone="warn">candle gaps</Badge>}
         <span className="spacer" />
-        <Link to={`/forward-tests/${ft.book}`} className="btn" id={`open-${ft.book}`}>
+        <Link to={{ pathname: `/forward-tests/${ft.book}`, search }} className="btn" id={`open-${ft.book}`}>
           Details
         </Link>
       </footer>

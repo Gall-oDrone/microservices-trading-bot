@@ -1,7 +1,7 @@
 import { useRisk } from '../api/client'
 import type { BookLimits, BookRisk, RiskResponse } from '../api/schemas'
 import { IconCheck, IconShield } from '../components/icons'
-import { Badge, Banner, CardSkeleton, ErrorState, FindingRow, Meter, Stat } from '../components/ui'
+import { Badge, Banner, CardSkeleton, ErrorState, FindingRow, LedgerBadge, Meter, Stat } from '../components/ui'
 import { bookLabel, fmtBps, fmtBTC, fmtDate, fmtFrac, fmtMoney, fmtMx, fmtUTC } from '../lib/format'
 import { usePageTitle } from '../lib/usePageTitle'
 
@@ -254,7 +254,10 @@ export function RiskPage() {
     <>
       <div className="page-head">
         <div>
-          <h1>Risk</h1>
+          <div className="row" style={{ gap: 12 }}>
+            <h1>Risk</h1>
+            {r && <LedgerBadge name={r.ledger} />}
+          </div>
           <p>
             Execution limits for the forward tests. They check orders, never signals: the SMA50 rule is frozen by its
             pre-registration, and drawdown levels only flag a review.

@@ -210,6 +210,48 @@ h3 {
   flex-direction: column;
   gap: 2px;
 }
+
+.ledger-picker {
+  display: flex;
+  flex-direction: column;
+}
+.select {
+  appearance: none;
+  width: 100%;
+  padding: 8px 30px 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-s);
+  background:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%238b95a7' stroke-width='1.5' stroke-linecap='round'/%3E%3C/svg%3E")
+      no-repeat right 11px center,
+    var(--surface);
+  color: var(--text);
+  font: 500 13px var(--font-mono);
+  cursor: pointer;
+  transition:
+    border-color var(--t-fast) var(--ease),
+    background-color var(--t-fast) var(--ease);
+}
+.select:hover {
+  border-color: var(--surface-3);
+  background-color: var(--surface-2);
+}
+.select option {
+  background: var(--surface);
+  color: var(--text);
+}
+.ledger-single {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 10px;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-s);
+  background: var(--surface);
+}
+.ledger-name {
+  font: 500 13px var(--font-mono);
+}
 .nav-label {
   padding: 0 10px 6px;
   font-size: 10.5px;
@@ -942,6 +984,15 @@ pre.json {
   }
   .nav-link {
     white-space: nowrap;
+  }
+  .ledger-picker {
+    order: 3;
+    margin-left: auto;
+    min-width: 120px;
+  }
+  .ledger-picker .select {
+    padding-top: 6px;
+    padding-bottom: 6px;
   }
   .main {
     padding-top: 18px;

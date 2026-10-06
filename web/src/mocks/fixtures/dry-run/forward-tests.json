@@ -1,0 +1,124 @@
+{
+  "ledger": "dry-run",
+  "generated_at": "2026-10-06T01:00:40Z",
+  "books": [
+    {
+      "ledger": "dry-run",
+      "book": "btc_mxn",
+      "base": "btc",
+      "quote": "mxn",
+      "prereg": "",
+      "mode": "",
+      "code_version": "",
+      "recorded_at": "",
+      "decision": {
+        "bar_date": "",
+        "fill_date": "",
+        "close": 0,
+        "sma50": 0,
+        "signal": "",
+        "prev_signal": "",
+        "action": ""
+      },
+      "paper": {
+        "forward_start": "",
+        "days": 0,
+        "position": "",
+        "fills": 0,
+        "leg_cost_bps": 0,
+        "equity": 0,
+        "equity_if_closed": 0,
+        "hold_equity": 0,
+        "max_drawdown": 0,
+        "pending_action": ""
+      },
+      "candles": {
+        "source": "",
+        "first": "",
+        "last": "",
+        "bars": 0,
+        "sha256_prefix": ""
+      },
+      "stage_position": null,
+      "distance_to_sma_pct": 0,
+      "excess_vs_hold_pct": 0,
+      "milestones": {
+        "forward_start": "",
+        "interim": "2027-03-26",
+        "evaluation": "2027-09-26",
+        "days_elapsed": 0,
+        "days_to_interim": 0,
+        "days_to_evaluation": 0,
+        "window_progress": 0
+      },
+      "run": {
+        "status": "no_data",
+        "expected_bar_date": "2026-10-04",
+        "last_bar_date": "",
+        "missing_days": [],
+        "message": "no ledger records for this book yet"
+      },
+      "risk_warnings": 0,
+      "risk_blocks": 0
+    },
+    {
+      "ledger": "dry-run",
+      "book": "btc_usd",
+      "base": "btc",
+      "quote": "usd",
+      "prereg": "",
+      "mode": "",
+      "code_version": "",
+      "recorded_at": "",
+      "decision": {
+        "bar_date": "",
+        "fill_date": "",
+        "close": 0,
+        "sma50": 0,
+        "signal": "",
+        "prev_signal": "",
+        "action": ""
+      },
+      "paper": {
+        "forward_start": "",
+        "days": 0,
+        "position": "",
+        "fills": 0,
+        "leg_cost_bps": 0,
+        "equity": 0,
+        "equity_if_closed": 0,
+        "hold_equity": 0,
+        "max_drawdown": 0,
+        "pending_action": ""
+      },
+      "candles": {
+        "source": "",
+        "first": "",
+        "last": "",
+        "bars": 0,
+        "sha256_prefix": ""
+      },
+      "stage_position": null,
+      "distance_to_sma_pct": 0,
+      "excess_vs_hold_pct": 0,
+      "milestones": {
+        "forward_start": "",
+        "interim": "2027-03-26",
+        "evaluation": "2027-09-26",
+        "days_elapsed": 0,
+        "days_to_interim": 0,
+        "days_to_evaluation": 0,
+        "window_progress": 0
+      },
+      "run": {
+        "status": "no_data",
+        "expected_bar_date": "2026-10-04",
+        "last_bar_date": "",
+        "missing_days": [],
+        "message": "no ledger records for this book yet"
+      },
+      "risk_warnings": 0,
+      "risk_blocks": 0
+    }
+  ]
+}

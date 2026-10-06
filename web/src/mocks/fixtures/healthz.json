@@ -3,7 +3,8 @@
   "version": "dev",
   "ledger": "../strategy-executor/daily-executor-data/stage/ledger.jsonl",
   "ledger_found": true,
-  "records": 6,
+  "records": 8,
+  "ledgers": 2,
   "policy": "built-in default (default-2026-10-03)",
-  "time": "2026-10-05T16:35:12Z"
+  "time": "2026-10-06T01:00:39Z"
 }

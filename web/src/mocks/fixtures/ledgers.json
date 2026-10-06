@@ -1,0 +1,24 @@
+{
+  "ledgers": [
+    {
+      "name": "stage",
+      "path": "../strategy-executor/daily-executor-data/stage/ledger.jsonl",
+      "default": true,
+      "found": true,
+      "records": 8,
+      "modes": [
+        "stage"
+      ],
+      "last_bar_date": "2026-10-04"
+    },
+    {
+      "name": "dry-run",
+      "path": "../strategy-executor/daily-executor-data/ledger.jsonl",
+      "default": false,
+      "found": false,
+      "records": 0,
+      "modes": [],
+      "last_bar_date": ""
+    }
+  ]
+}

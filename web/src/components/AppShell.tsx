@@ -1,5 +1,5 @@
-import { NavLink, Outlet } from 'react-router'
-import { useForwardTests, useHealth, useRisk } from '../api/client'
+import { NavLink, Outlet, useSearchParams } from 'react-router'
+import { useForwardTests, useHealth, useLedgerName, useLedgerSearch, useLedgers, useRisk } from '../api/client'
 import { ago } from '../lib/format'
 import { IconCandles, IconFlask, IconLogo, IconPulse, IconShield, IconTrend } from './icons'
 import { Badge } from './ui'
@@ -23,7 +23,56 @@ function HealthFoot() {
   )
 }
 
+/**
+ * Picks which ledger every page reads (stage, dry-run, …). The choice lives in
+ * the URL (`?ledger=`), so it is shareable and survives reloads.
+ */
+function LedgerPicker() {
+  const q = useLedgers()
+  const selected = useLedgerName()
+  const [params, setParams] = useSearchParams()
+  const ledgers = q.data?.ledgers ?? []
+  if (ledgers.length === 0) return null
+  const current = ledgers.find((l) => l.name === selected) ?? ledgers.find((l) => l.default) ?? ledgers[0]
+  const unknown = selected !== '' && !ledgers.some((l) => l.name === selected)
+  return (
+    <div className="ledger-picker">
+      <label className="nav-label" htmlFor="ledger-picker">
+        Ledger
+      </label>
+      {ledgers.length === 1 ? (
+        <div className="ledger-single" id="ledger-picker" title={current.path}>
+          <span className="ledger-name">{current.name}</span>
+          <span className="faint num">{current.records} rec</span>
+        </div>
+      ) : (
+        <select
+          id="ledger-picker"
+          className="select"
+          aria-label="Ledger"
+          value={unknown ? '' : current.name}
+          onChange={(e) => {
+            const next = new URLSearchParams(params)
+            const l = ledgers.find((x) => x.name === e.target.value)
+            if (!l || l.default) next.delete('ledger')
+            else next.set('ledger', l.name)
+            setParams(next)
+          }}
+        >
+          {unknown && <option value="">unknown: {selected}</option>}
+          {ledgers.map((l) => (
+            <option key={l.name} value={l.name}>
+              {l.name} {l.found ? `· ${l.records} rec` : '· no file yet'}
+            </option>
+          ))}
+        </select>
+      )}
+    </div>
+  )
+}
+
 function Nav() {
+  const search = useLedgerSearch()
   const ft = useForwardTests()
   const risk = useRisk()
   const missed = ft.data?.books.filter((b) => b.run.status === 'missed').length ?? 0
@@ -32,7 +81,7 @@ function Nav() {
   return (
     <nav className="nav" aria-label="Main">
       <span className="nav-label">Trading</span>
-      <NavLink to="/" end className="nav-link" id="nav-forward-tests">
+      <NavLink to={{ pathname: '/', search }} end className="nav-link" id="nav-forward-tests">
         <IconTrend /> Forward tests
         {missed > 0 && (
           <span className="count">
@@ -40,7 +89,7 @@ function Nav() {
           </span>
         )}
       </NavLink>
-      <NavLink to="/risk" className="nav-link" id="nav-risk">
+      <NavLink to={{ pathname: '/risk', search }} className="nav-link" id="nav-risk">
         <IconShield /> Risk
         {(blocks > 0 || warns > 0) && (
           <span className="count">
@@ -80,6 +129,7 @@ export function AppShell() {
             <div className="brand-sub">Operator console</div>
           </div>
         </div>
+        <LedgerPicker />
         <Nav />
         <HealthFoot />
       </aside>

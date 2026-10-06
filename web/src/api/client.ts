@@ -1,10 +1,12 @@
 import { useQuery } from '@tanstack/react-query'
+import { useSearchParams } from 'react-router'
 import type { z } from 'zod'
 import {
   candlesResponseSchema,
   forwardTestsResponseSchema,
   healthSchema,
   ledgerResponseSchema,
+  ledgersResponseSchema,
   riskResponseSchema,
 } from './schemas'
 
@@ -57,44 +59,81 @@ export async function fetchJSON<S extends z.ZodTypeAny>(
 /** Dashboards refresh every minute; the ledger changes once a day. */
 const REFRESH_MS = 60_000
 
+/**
+ * The selected ledger, from the `ledger` URL search param. Empty means the
+ * ui-api default (the first configured ledger), so plain URLs keep working.
+ */
+export function useLedgerName(): string {
+  const [params] = useSearchParams()
+  return params.get('ledger') ?? ''
+}
+
+/** `?ledger=<name>` (or '') to append to in-app links, so the selection survives navigation. */
+export function useLedgerSearch(): string {
+  const name = useLedgerName()
+  return name ? `?ledger=${encodeURIComponent(name)}` : ''
+}
+
+function withLedger(path: string, ledger: string): string {
+  if (!ledger) return path
+  return `${path}${path.includes('?') ? '&' : '?'}ledger=${encodeURIComponent(ledger)}`
+}
+
 export const queryKeys = {
-  forwardTests: ['forward-tests'] as const,
-  ledger: (book: string) => ['ledger', book] as const,
-  candles: (book: string, days: number) => ['candles', book, days] as const,
-  risk: ['risk'] as const,
+  forwardTests: (ledger: string) => ['forward-tests', ledger] as const,
+  ledger: (ledger: string, book: string) => ['ledger', ledger, book] as const,
+  candles: (ledger: string, book: string, days: number) => ['candles', ledger, book, days] as const,
+  risk: (ledger: string) => ['risk', ledger] as const,
   health: ['health'] as const,
+  ledgers: ['ledgers'] as const,
 }
 
 export function useForwardTests() {
+  const ledger = useLedgerName()
   return useQuery({
-    queryKey: queryKeys.forwardTests,
-    queryFn: ({ signal }) => fetchJSON('/forward-tests', forwardTestsResponseSchema, signal),
+    queryKey: queryKeys.forwardTests(ledger),
+    queryFn: ({ signal }) => fetchJSON(withLedger('/forward-tests', ledger), forwardTestsResponseSchema, signal),
     refetchInterval: REFRESH_MS,
   })
 }
 
 export function useLedger(book: string) {
+  const ledger = useLedgerName()
   return useQuery({
-    queryKey: queryKeys.ledger(book),
+    queryKey: queryKeys.ledger(ledger, book),
     queryFn: ({ signal }) =>
-      fetchJSON(`/forward-tests/${encodeURIComponent(book)}/ledger`, ledgerResponseSchema, signal),
+      fetchJSON(withLedger(`/forward-tests/${encodeURIComponent(book)}/ledger`, ledger), ledgerResponseSchema, signal),
     refetchInterval: REFRESH_MS,
   })
 }
 
 export function useCandles(book: string, days: number) {
+  const ledger = useLedgerName()
   return useQuery({
-    queryKey: queryKeys.candles(book, days),
+    queryKey: queryKeys.candles(ledger, book, days),
     queryFn: ({ signal }) =>
-      fetchJSON(`/forward-tests/${encodeURIComponent(book)}/candles?days=${days}`, candlesResponseSchema, signal),
+      fetchJSON(
+        withLedger(`/forward-tests/${encodeURIComponent(book)}/candles?days=${days}`, ledger),
+        candlesResponseSchema,
+        signal,
+      ),
     staleTime: 5 * 60_000,
   })
 }
 
 export function useRisk() {
+  const ledger = useLedgerName()
   return useQuery({
-    queryKey: queryKeys.risk,
-    queryFn: ({ signal }) => fetchJSON('/risk', riskResponseSchema, signal),
+    queryKey: queryKeys.risk(ledger),
+    queryFn: ({ signal }) => fetchJSON(withLedger('/risk', ledger), riskResponseSchema, signal),
+    refetchInterval: REFRESH_MS,
+  })
+}
+
+export function useLedgers() {
+  return useQuery({
+    queryKey: queryKeys.ledgers,
+    queryFn: ({ signal }) => fetchJSON('/ledgers', ledgersResponseSchema, signal),
     refetchInterval: REFRESH_MS,
   })
 }

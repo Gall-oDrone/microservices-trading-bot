@@ -130,7 +130,20 @@ export const milestonesSchema = z.object({
   window_progress: z.number(),
 })
 
+/**
+ * A book with no records in the selected ledger comes back with zero values:
+ * empty strings for the enums. Only the forward-test summary allows that; the
+ * ledger records themselves stay strict.
+ */
+const orEmpty = <T extends z.ZodTypeAny>(s: T) => s.or(z.literal(''))
+const summaryDecisionSchema = decisionSchema.extend({
+  signal: orEmpty(signal),
+  prev_signal: orEmpty(signal),
+  action: orEmpty(z.enum(['buy', 'sell', 'hold'])),
+})
+
 export const forwardTestSchema = z.object({
+  ledger: z.string(),
   book: z.string(),
   base: z.string(),
   quote: z.string(),
@@ -138,8 +151,8 @@ export const forwardTestSchema = z.object({
   mode: z.string(),
   code_version: z.string(),
   recorded_at: z.string(),
-  decision: decisionSchema,
-  paper: paperSchema,
+  decision: summaryDecisionSchema,
+  paper: paperSchema.extend({ position: orEmpty(signal) }),
   candles: candleInfoSchema,
   stage_position: positionSchema.nullable(),
   distance_to_sma_pct: z.number(),
@@ -152,6 +165,7 @@ export const forwardTestSchema = z.object({
 export type ForwardTest = z.infer<typeof forwardTestSchema>
 
 export const forwardTestsResponseSchema = z.object({
+  ledger: z.string(),
   generated_at: z.string(),
   books: z.array(forwardTestSchema),
 })
@@ -193,6 +207,7 @@ export const equityPointSchema = z.object({
 export type EquityPoint = z.infer<typeof equityPointSchema>
 
 export const ledgerResponseSchema = z.object({
+  ledger: z.string(),
   book: z.string(),
   mode: z.string(),
   records: z.array(ledgerRecordSchema),
@@ -216,6 +231,7 @@ export const candlePointSchema = z.object({
 export type CandlePoint = z.infer<typeof candlePointSchema>
 
 export const candlesResponseSchema = z.object({
+  ledger: z.string(),
   book: z.string(),
   file: z.string(),
   candles: z.array(candlePointSchema),
@@ -277,6 +293,7 @@ export const bookRiskSchema = z.object({
 export type BookRisk = z.infer<typeof bookRiskSchema>
 
 export const riskResponseSchema = z.object({
+  ledger: z.string(),
   generated_at: z.string(),
   policy: z.object({
     version: z.string(),
@@ -303,7 +320,24 @@ export const healthSchema = z.object({
   ledger: z.string(),
   ledger_found: z.boolean(),
   records: z.number(),
+  ledgers: z.number(),
   policy: z.string(),
   time: z.string(),
 })
 export type Health = z.infer<typeof healthSchema>
+
+/** One configured ledger (ui-api -ledgers). The first is the default. */
+export const ledgerInfoSchema = z.object({
+  name: z.string(),
+  path: z.string(),
+  default: z.boolean(),
+  found: z.boolean(),
+  records: z.number(),
+  modes: z.array(z.string()),
+  last_bar_date: z.string(),
+  error: z.string().optional(),
+})
+export type LedgerInfo = z.infer<typeof ledgerInfoSchema>
+
+export const ledgersResponseSchema = z.object({ ledgers: z.array(ledgerInfoSchema) })
+export type LedgersResponse = z.infer<typeof ledgersResponseSchema>

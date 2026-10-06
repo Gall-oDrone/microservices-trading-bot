@@ -1,5 +1,6 @@
 import { QueryClientProvider } from '@tanstack/react-query'
 import { render, screen, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
 import { createMemoryRouter, RouterProvider } from 'react-router'
 import { describe, expect, it } from 'vitest'
@@ -9,14 +10,18 @@ import {
   forwardTestsResponseSchema,
   healthSchema,
   ledgerResponseSchema,
+  ledgersResponseSchema,
   riskResponseSchema,
 } from '../api/schemas'
-import candlesMxn from '../mocks/fixtures/candles-btc_mxn.json'
-import forwardTests from '../mocks/fixtures/forward-tests.json'
+import dryForwardTests from '../mocks/fixtures/dry-run/forward-tests.json'
+import dryRisk from '../mocks/fixtures/dry-run/risk.json'
 import healthz from '../mocks/fixtures/healthz.json'
-import ledgerMxn from '../mocks/fixtures/ledger-btc_mxn.json'
-import ledgerUsd from '../mocks/fixtures/ledger-btc_usd.json'
-import risk from '../mocks/fixtures/risk.json'
+import ledgers from '../mocks/fixtures/ledgers.json'
+import candlesMxn from '../mocks/fixtures/stage/candles-btc_mxn.json'
+import forwardTests from '../mocks/fixtures/stage/forward-tests.json'
+import ledgerMxn from '../mocks/fixtures/stage/ledger-btc_mxn.json'
+import ledgerUsd from '../mocks/fixtures/stage/ledger-btc_usd.json'
+import risk from '../mocks/fixtures/stage/risk.json'
 import { server } from './setup'
 
 function renderAt(path: string) {
@@ -38,6 +43,9 @@ describe('contract: Go ui-api responses parse with the UI schemas', () => {
     ['ledger btc_usd', ledgerResponseSchema, ledgerUsd],
     ['candles btc_mxn', candlesResponseSchema, candlesMxn],
     ['healthz', healthSchema, healthz],
+    ['ledgers', ledgersResponseSchema, ledgers],
+    ['dry-run forward-tests', forwardTestsResponseSchema, dryForwardTests],
+    ['dry-run risk', riskResponseSchema, dryRisk],
   ])('%s', (_name, schema, data) => {
     const r = schema.safeParse(data)
     expect(r.success, r.success ? '' : JSON.stringify(r.error.issues[0])).toBe(true)
@@ -53,9 +61,24 @@ describe('Forward tests page', () => {
     expect(within(mxn).getByText('vs buy-and-hold')).toBeInTheDocument()
     expect(within(mxn).getByText('after 70 bps/leg')).toBeInTheDocument()
     expect(within(mxn).getByText(/stage 0\.00099999 BTC/)).toBeInTheDocument()
+    expect(within(mxn).getByText('stage')).toBeInTheDocument() // ledger badge
     expect(screen.getByTestId('ft-card-btc_usd')).toBeInTheDocument()
-    // The captured fixture was taken before the 2026-10-02 run.
-    expect(screen.getByRole('alert')).toHaveTextContent(/missed a day/i)
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  })
+
+  it('warns when the executor missed a day', async () => {
+    const ft = forwardTestsResponseSchema.parse(structuredClone(forwardTests))
+    ft.books[0].run = {
+      status: 'missed',
+      expected_bar_date: '2026-10-05',
+      last_bar_date: '2026-10-03',
+      missing_days: ['2026-10-04', '2026-10-05'],
+      message: '2 closed days not recorded',
+    }
+    server.use(http.get('/api/ui/forward-tests', () => HttpResponse.json(ft)))
+    renderAt('/')
+    expect(await screen.findByRole('alert')).toHaveTextContent(/missed a day/i)
+    expect(screen.getByRole('alert')).toHaveTextContent('2026-10-04, 2026-10-05')
   })
 
   it('shows a readable error when the response breaks the contract', async () => {
@@ -75,6 +98,36 @@ describe('Forward tests page', () => {
   })
 })
 
+describe('Ledger picker', () => {
+  it('lists the ledgers and switches every view to the chosen one', async () => {
+    const { container } = renderAt('/')
+    const picker = (await screen.findByRole('combobox', { name: /ledger/i })) as HTMLSelectElement
+    expect(
+      within(picker)
+        .getAllByRole('option')
+        .map((o) => o.textContent),
+    ).toEqual([expect.stringMatching(/^stage/), expect.stringMatching(/^dry-run · no file yet/)])
+    await screen.findByTestId('ft-card-btc_mxn')
+    await userEvent.selectOptions(picker, 'dry-run')
+    expect(await screen.findAllByText('No records in the dry-run ledger yet')).toHaveLength(2)
+    expect(screen.getAllByText('dry-run').length).toBeGreaterThan(0)
+    // In-app links keep the selection.
+    const risk = container.querySelector('#nav-risk') as HTMLAnchorElement
+    expect(risk.getAttribute('href')).toBe('/risk?ledger=dry-run')
+  })
+
+  it('reads the ledger from the URL', async () => {
+    renderAt('/risk?ledger=dry-run')
+    expect(await screen.findByText('Enforced')).toBeInTheDocument()
+    expect(screen.getAllByTitle('Ledger: dry-run').length).toBeGreaterThan(0)
+  })
+
+  it('shows the API error for an unknown ledger', async () => {
+    renderAt('/?ledger=nope')
+    expect(await screen.findByText('unknown ledger nope')).toBeInTheDocument()
+  })
+})
+
 describe('Forward test detail page', () => {
   it('renders stage fills with realized cost vs assumption, and the ledger', async () => {
     renderAt('/forward-tests/btc_mxn')
@@ -84,7 +137,7 @@ describe('Forward test detail page', () => {
     expect(within(t).getByText('78 bps')).toBeInTheDocument() // fee
     expect(within(t).getByText('+40 bps')).toBeInTheDocument() // slippage vs open
     expect(within(t).getByText('118 bps')).toHaveClass('neg') // above the 70 bps assumption
-    expect(await screen.findByText('3 records, newest first')).toBeInTheDocument()
+    expect(await screen.findByText('4 records, newest first')).toBeInTheDocument()
   })
 })
 

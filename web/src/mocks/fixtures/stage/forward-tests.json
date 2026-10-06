@@ -1,47 +1,49 @@
 {
-  "generated_at": "2026-10-05T16:35:12Z",
+  "ledger": "stage",
+  "generated_at": "2026-10-06T01:00:40Z",
   "books": [
     {
+      "ledger": "stage",
       "book": "btc_mxn",
       "base": "btc",
       "quote": "mxn",
       "prereg": "FORWARD-TEST-PREREGISTRATION-SMA50-2026-09-27.md",
       "mode": "stage",
-      "code_version": "2e1030017900",
-      "recorded_at": "2026-10-02T20:06:30Z",
+      "code_version": "2e1030017900+dirty",
+      "recorded_at": "2026-10-05T22:39:48Z",
       "decision": {
-        "bar_date": "2026-10-01",
-        "fill_date": "2026-10-02",
-        "close": 1570090,
-        "sma50": 1336351.0000000002,
+        "bar_date": "2026-10-04",
+        "fill_date": "2026-10-05",
+        "close": 1562180,
+        "sma50": 1364552.2000000002,
         "signal": "long",
         "prev_signal": "long",
         "action": "hold"
       },
       "paper": {
         "forward_start": "2026-09-27",
-        "days": 5,
+        "days": 8,
         "position": "long",
         "fills": 1,
         "leg_cost_bps": 70,
-        "equity": 1.0443008319044047,
-        "equity_if_closed": 1.0369907260810738,
-        "hold_equity": 1.0443008319044047,
-        "max_drawdown": 0.017748365662844323,
+        "equity": 1.0390397197513663,
+        "equity_if_closed": 1.0317664417131067,
+        "hold_equity": 1.0390397197513663,
+        "max_drawdown": 0.021750345521594473,
         "pending_action": "hold"
       },
       "candles": {
         "source": "https://api.bitso.com/api/v3/ohlc",
         "first": "2017-05-31",
-        "last": "2026-10-01",
-        "bars": 3411,
-        "sha256_prefix": "3b03cc427277bf66"
+        "last": "2026-10-04",
+        "bars": 3414,
+        "sha256_prefix": "e6b7848af23e1b5e"
       },
       "stage_position": {
         "state": "long",
         "btc": 0.00099999
       },
-      "distance_to_sma_pct": 14.886981001089094,
+      "distance_to_sma_pct": 12.650770077711904,
       "excess_vs_hold_pct": 0,
       "milestones": {
         "forward_start": "2026-09-27",
@@ -53,60 +55,57 @@
         "window_progress": 0.02197802197802198
       },
       "run": {
-        "status": "missed",
+        "status": "ok",
         "expected_bar_date": "2026-10-04",
-        "last_bar_date": "2026-10-01",
-        "missing_days": [
-          "2026-10-02",
-          "2026-10-03",
-          "2026-10-04"
-        ],
-        "message": "the executor has not recorded every closed day: check the run logs"
+        "last_bar_date": "2026-10-04",
+        "missing_days": [],
+        "message": "up to date"
       },
-      "risk_warnings": 1,
+      "risk_warnings": 0,
       "risk_blocks": 0
     },
     {
+      "ledger": "stage",
       "book": "btc_usd",
       "base": "btc",
       "quote": "usd",
       "prereg": "FORWARD-TEST-PREREGISTRATION-SMA50-BTCUSD-2026-09-29.md",
       "mode": "stage",
-      "code_version": "2e1030017900",
-      "recorded_at": "2026-10-02T20:06:30Z",
+      "code_version": "2e1030017900+dirty",
+      "recorded_at": "2026-10-05T22:39:48Z",
       "decision": {
-        "bar_date": "2026-10-01",
-        "fill_date": "2026-10-02",
-        "close": 85944,
-        "sma50": 77750.86000000007,
+        "bar_date": "2026-10-04",
+        "fill_date": "2026-10-05",
+        "close": 85760,
+        "sma50": 79068.84000000007,
         "signal": "long",
         "prev_signal": "long",
         "action": "hold"
       },
       "paper": {
         "forward_start": "2026-09-29",
-        "days": 3,
+        "days": 6,
         "position": "long",
         "fills": 1,
         "leg_cost_bps": 40,
-        "equity": 1.026504664827917,
-        "equity_if_closed": 1.0223986461686054,
-        "hold_equity": 1.026504664827917,
-        "max_drawdown": 0.005003285765679322,
+        "equity": 1.0243069912459528,
+        "equity_if_closed": 1.020209763280969,
+        "hold_equity": 1.0243069912459528,
+        "max_drawdown": 0.01563808991901694,
         "pending_action": "hold"
       },
       "candles": {
         "source": "https://api.bitso.com/api/v3/ohlc",
         "first": "2020-04-24",
-        "last": "2026-10-01",
-        "bars": 2352,
-        "sha256_prefix": "7feabbe591c75858"
+        "last": "2026-10-04",
+        "bars": 2355,
+        "sha256_prefix": "620ba5f658f12d72"
       },
       "stage_position": {
         "state": "long",
         "btc": 0.0009975
       },
-      "distance_to_sma_pct": 9.533114586242117,
+      "distance_to_sma_pct": 7.802192164179024,
       "excess_vs_hold_pct": 0,
       "milestones": {
         "forward_start": "2026-09-29",
@@ -118,17 +117,13 @@
         "window_progress": 0.016574585635359115
       },
       "run": {
-        "status": "missed",
+        "status": "ok",
         "expected_bar_date": "2026-10-04",
-        "last_bar_date": "2026-10-01",
-        "missing_days": [
-          "2026-10-02",
-          "2026-10-03",
-          "2026-10-04"
-        ],
-        "message": "the executor has not recorded every closed day: check the run logs"
+        "last_bar_date": "2026-10-04",
+        "missing_days": [],
+        "message": "up to date"
       },
-      "risk_warnings": 1,
+      "risk_warnings": 0,
       "risk_blocks": 0
     }
   ]

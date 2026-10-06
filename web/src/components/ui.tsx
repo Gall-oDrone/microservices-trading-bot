@@ -32,11 +32,11 @@ export function Stat({
   )
 }
 
-export function SignalPill({ signal }: { signal: Signal }) {
+export function SignalPill({ signal }: { signal: Signal | '' }) {
   return (
-    <span className={`signal-pill ${signal}`} data-testid="signal-pill">
+    <span className={`signal-pill ${signal || 'flat'}`} data-testid="signal-pill">
       {signal === 'long' ? <IconArrowUp /> : <IconMinus />}
-      {signal}
+      {signal || 'no data'}
     </span>
   )
 }
@@ -59,6 +59,15 @@ export function Badge({
       {dot && <span className="dot" />}
       {children}
     </span>
+  )
+}
+
+/** Short label for a ledger, shown on every card so stage and dry-run are never confused. */
+export function LedgerBadge({ name }: { name: string }) {
+  return (
+    <Badge tone={name === 'stage' ? 'info' : 'flat'} mono title={`Ledger: ${name}`}>
+      {name}
+    </Badge>
   )
 }
 

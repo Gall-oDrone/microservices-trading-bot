@@ -1,0 +1,8 @@
+{
+  "ledger": "dry-run",
+  "book": "btc_mxn",
+  "mode": "",
+  "records": [],
+  "equity": [],
+  "fills": []
+}

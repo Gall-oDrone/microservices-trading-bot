@@ -1,9 +1,9 @@
 import { useState } from 'react'
 import { Link, useParams } from 'react-router'
-import { useCandles, useForwardTests, useLedger } from '../api/client'
+import { useCandles, useForwardTests, useLedger, useLedgerSearch } from '../api/client'
 import type { Fill, LedgerRecord } from '../api/schemas'
 import { EquityChart, PriceChart } from '../components/charts'
-import { Badge, Banner, CardSkeleton, Empty, ErrorState, SignalPill, Stat } from '../components/ui'
+import { Badge, Banner, CardSkeleton, Empty, ErrorState, LedgerBadge, SignalPill, Stat } from '../components/ui'
 import {
   bookLabel,
   fmtBps,
@@ -150,16 +150,18 @@ export function ForwardTestDetailPage() {
   const ledger = useLedger(book)
   const candles = useCandles(book, days)
   const ft = summary.data?.books.find((b) => b.book === book)
+  const search = useLedgerSearch()
 
   return (
     <>
       <div className="page-head">
         <div>
           <div className="crumbs">
-            <Link to="/">Forward tests</Link> <span>/</span> <span>{bookLabel(book)}</span>
+            <Link to={{ pathname: '/', search }}>Forward tests</Link> <span>/</span> <span>{bookLabel(book)}</span>
           </div>
           <div className="row" style={{ gap: 14 }}>
             <h1>{bookLabel(book)}</h1>
+            {ft && <LedgerBadge name={ft.ledger} />}
             {ft && <SignalPill signal={ft.decision.signal} />}
           </div>
           {ft && (

@@ -1,4 +1,5 @@
 {
+  "ledger": "stage",
   "book": "btc_usd",
   "mode": "stage",
   "records": [
@@ -172,6 +173,54 @@
           "btc": 0.0009975
         }
       }
+    },
+    {
+      "recorded_at": "2026-10-05T22:39:48Z",
+      "code_version": "2e1030017900+dirty",
+      "mode": "stage",
+      "book": "btc_usd",
+      "prereg": "FORWARD-TEST-PREREGISTRATION-SMA50-BTCUSD-2026-09-29.md",
+      "decision": {
+        "bar_date": "2026-10-04",
+        "fill_date": "2026-10-05",
+        "close": 85760,
+        "sma50": 79068.84000000007,
+        "signal": "long",
+        "prev_signal": "long",
+        "action": "hold"
+      },
+      "paper": {
+        "forward_start": "2026-09-29",
+        "days": 6,
+        "position": "long",
+        "fills": 1,
+        "leg_cost_bps": 40,
+        "equity": 1.0243069912459528,
+        "equity_if_closed": 1.020209763280969,
+        "hold_equity": 1.0243069912459528,
+        "max_drawdown": 0.01563808991901694,
+        "pending_action": "hold"
+      },
+      "candles": {
+        "source": "https://api.bitso.com/api/v3/ohlc",
+        "first": "2020-04-24",
+        "last": "2026-10-04",
+        "bars": 2355,
+        "sha256_prefix": "620ba5f658f12d72"
+      },
+      "stage": {
+        "env": "https://stage.bitso.com/api",
+        "target": "long",
+        "action": "none",
+        "position_before": {
+          "state": "long",
+          "btc": 0.0009975
+        },
+        "position_after": {
+          "state": "long",
+          "btc": 0.0009975
+        }
+      }
     }
   ],
   "equity": [
@@ -201,6 +250,15 @@
       "signal": "long",
       "close": 85944,
       "sma50": 77750.86000000007
+    },
+    {
+      "date": "2026-10-04",
+      "equity": 1.0243069912459528,
+      "hold_equity": 1.0243069912459528,
+      "max_drawdown": 0.01563808991901694,
+      "signal": "long",
+      "close": 85760,
+      "sma50": 79068.84000000007
     }
   ],
   "fills": [

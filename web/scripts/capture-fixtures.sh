@@ -1,15 +1,25 @@
 #!/bin/sh
 # Re-capture the MSW fixtures in src/mocks/fixtures from a running ui-api.
-#   (cd services/ui-api && go run ./cmd) &   then:   npm run fixtures
+#   (cd services/ui-api && go run ./cmd -ledgers stage=...,dry-run=...) &   then:   npm run fixtures
+# Layout: healthz.json and ledgers.json at the top, then one directory per
+# ledger with forward-tests.json, risk.json, ledger-<book>.json, candles-<book>.json.
 set -eu
 API="${UI_API_URL:-http://127.0.0.1:8090}"
 OUT="$(dirname "$0")/../src/mocks/fixtures"
 mkdir -p "$OUT"
 curl -fsS "$API/api/ui/healthz" > "$OUT/healthz.json"
-curl -fsS "$API/api/ui/forward-tests" > "$OUT/forward-tests.json"
-curl -fsS "$API/api/ui/risk" > "$OUT/risk.json"
-for b in btc_mxn btc_usd; do
-  curl -fsS "$API/api/ui/forward-tests/$b/ledger" > "$OUT/ledger-$b.json"
-  curl -fsS "$API/api/ui/forward-tests/$b/candles?days=365" > "$OUT/candles-$b.json"
+curl -fsS "$API/api/ui/ledgers" > "$OUT/ledgers.json"
+LEDGERS=$(node -e 'const l=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")).ledgers;console.log(l.map(x=>x.name).join(" "))' "$OUT/ledgers.json")
+for l in $LEDGERS; do
+  D="$OUT/$l"
+  rm -rf "$D"
+  mkdir -p "$D"
+  curl -fsS "$API/api/ui/forward-tests?ledger=$l" > "$D/forward-tests.json"
+  curl -fsS "$API/api/ui/risk?ledger=$l" > "$D/risk.json"
+  for b in btc_mxn btc_usd; do
+    curl -fsS "$API/api/ui/forward-tests/$b/ledger?ledger=$l" > "$D/ledger-$b.json"
+    # A ledger without a candles dir yet has no candle file (404): skip it.
+    curl -fsS "$API/api/ui/forward-tests/$b/candles?days=365&ledger=$l" > "$D/candles-$b.json" || rm -f "$D/candles-$b.json"
+  done
 done
-echo "fixtures written to $OUT from $API"
+echo "fixtures written to $OUT from $API (ledgers: $LEDGERS)"
