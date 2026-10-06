@@ -31,7 +31,8 @@ func TestLedgerContractMatchesShared(t *testing.T) {
 				Shortfall: 0.1, Notes: []string{"n"}, Started: ts, Finished: ts.Add(time.Minute)},
 			Risk: &riskInfo{PolicyVersion: "v", Order: risk.Order{Book: "btc_mxn", Side: "buy", QtyBTC: 0.001, Price: 3, RefPrice: 1},
 				State: risk.State{PositionBTC: 0, OrdersToday: 0}, Allowed: true,
-				Findings: []risk.Finding{{Rule: risk.RuleCostWarn, Severity: risk.Warn, Limit: 1, Value: 2, Message: "m"}}}},
+				Findings: []risk.Finding{{Rule: risk.RuleCostWarn, Severity: risk.Warn, Limit: 1, Value: 2, Message: "m"}},
+				Halt:     &risk.HaltState{Halted: true, Reason: "r", By: "b", At: "2026-10-06T01:00:00Z"}}},
 	}
 	b, err := json.Marshal(full)
 	if err != nil {

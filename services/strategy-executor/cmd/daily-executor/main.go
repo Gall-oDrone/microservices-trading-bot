@@ -46,6 +46,12 @@
 // the day is recorded with stage action "blocked" and the findings, and the
 // run exits 1. See risk.go. The check never changes a signal or the paper
 // account.
+//
+// Halt file (R2): <ledger dir>/risk-state.json, written by an operator as
+// {"halted": true, "reason": "...", "by": "...", "at": "<RFC 3339>"}, halts
+// stage orders like the policy's halted flag: a planned order is blocked and
+// recorded with the halt. Days without an order are recorded as usual. An
+// unreadable or invalid file exits 2 before anything runs.
 package main
 
 import (
@@ -73,6 +79,7 @@ type options struct {
 	size                            float64
 	exec                            dailyexec.Config
 	riskPolicy                      risk.Policy
+	halt                            *risk.HaltState // operator halt file in force, if any
 }
 
 func main() {
@@ -121,6 +128,9 @@ func main() {
 		usage(err.Error())
 	}
 	o.riskPolicy = policy
+	if o.riskPolicy, o.halt, err = loadHalt(o.ledgerPath, o.riskPolicy); err != nil {
+		usage(err.Error() + " (fix or remove it; nothing ran)")
+	}
 	var specs []bookSpec
 	for _, b := range strings.Split(*books, ",") {
 		b = strings.ToLower(strings.TrimSpace(b))
@@ -174,6 +184,10 @@ func main() {
 	version := codeVersion()
 	fmt.Printf("daily-executor %s | as of %s (Mexico City %s) | mode %s | ledger %s | risk policy %s\n",
 		version, now.Format(time.RFC3339), now.In(bitsodaily.Mexico).Format("2006-01-02 15:04"), mode, o.ledgerPath, o.riskPolicy.Version)
+	if o.halt != nil {
+		fmt.Printf("HALTED by %s: %s (by %s at %s); stage orders will be blocked and recorded\n",
+			risk.HaltPath(o.ledgerPath), o.halt.Reason, o.halt.By, o.halt.At)
+	}
 
 	// Step 1, sequential: candles, decision, paper account, integrity checks.
 	client := &http.Client{Timeout: 30 * time.Second}
@@ -313,6 +327,7 @@ func finishBook(o options, ex dailyexec.Exchange, led *ledger, rec *record) erro
 			return fmt.Errorf("stage %s: %w (nothing recorded; re-run today to retry)", action, err)
 		}
 		st.Risk = ri
+		ri.Halt = o.halt
 		for _, f := range ri.Findings {
 			logf("risk: %s %s: %s", f.Severity, f.Rule, f.Message)
 		}

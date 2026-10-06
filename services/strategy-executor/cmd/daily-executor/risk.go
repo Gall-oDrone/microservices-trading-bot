@@ -32,6 +32,23 @@ type riskInfo struct {
 	State         risk.State     `json:"state"`
 	Allowed       bool           `json:"allowed"`
 	Findings      []risk.Finding `json:"findings,omitempty"`
+	// Halt is the operator halt file in force for this run, if any (R2).
+	Halt *risk.HaltState `json:"halt,omitempty"`
+}
+
+// loadHalt reads the operator halt file next to the ledger (R2) and merges
+// a halt into the policy, so a planned stage order is blocked and recorded
+// like any other block. No file means not halted. A file that cannot be read
+// or is invalid is an error: the caller must not run at all (fail closed).
+func loadHalt(ledgerPath string, p risk.Policy) (risk.Policy, *risk.HaltState, error) {
+	h, _, err := risk.LoadHaltState(risk.HaltPath(ledgerPath))
+	if err != nil {
+		return p, nil, err
+	}
+	if !h.Halted {
+		return p, nil, nil
+	}
+	return risk.ApplyHalt(p, h), &h, nil
 }
 
 // checkRisk prices the planned order at the touch it would trade against

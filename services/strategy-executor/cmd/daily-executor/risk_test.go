@@ -2,6 +2,7 @@ package main
 
 import (
 	"errors"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -106,6 +107,61 @@ func TestRiskBlockSkipsAndRecords(t *testing.T) {
 				t.Fatal("the next day must plan from the unchanged position")
 			}
 		})
+	}
+}
+
+// R2: the operator halt file blocks a planned stage order, which is recorded
+// with the halt; a day with no order is recorded normally; a bad file fails.
+func TestHaltFileBlocksAndIsRecorded(t *testing.T) {
+	dir := t.TempDir()
+	ledPath := filepath.Join(dir, "ledger.jsonl")
+	if p, h, err := loadHalt(ledPath, risk.DefaultPolicy()); err != nil || h != nil || p.Halted {
+		t.Fatalf("no file: %+v %+v %v", p, h, err)
+	}
+	write := func(body string) {
+		if err := os.WriteFile(risk.HaltPath(ledPath), []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write(`{"halted":true,"reason":"exchange incident"}`)
+	if _, _, err := loadHalt(ledPath, risk.DefaultPolicy()); err == nil {
+		t.Fatal("a halt without by/at must be rejected (exit 2)")
+	}
+	write(`{"halted":false}`)
+	if _, h, err := loadHalt(ledPath, risk.DefaultPolicy()); err != nil || h != nil {
+		t.Fatalf("halted=false: %+v %v", h, err)
+	}
+	write(`{"halted":true,"reason":"exchange incident","by":"diego","at":"2026-10-06T01:00:00Z"}`)
+	p, h, err := loadHalt(ledPath, risk.DefaultPolicy())
+	if err != nil || h == nil || !p.Halted {
+		t.Fatalf("halted: %+v %+v %v", p, h, err)
+	}
+	o := stageOpts(p)
+	o.halt = h
+
+	led, _ := openLedger(ledPath)
+	ex := &riskExchange{t: t, quote: bitsostage.Quote{Bid: 84990, Ask: 85010}}
+	err = finishBook(o, ex, led, usdRecord("long"))
+	if err == nil || !strings.Contains(err.Error(), "blocked") {
+		t.Fatalf("want blocked, got %v", err)
+	}
+	r, ok := led.get("btc_usd", "2026-10-04")
+	if !ok || r.Stage == nil || r.Stage.Action != actionBlocked || r.Stage.Risk == nil {
+		t.Fatalf("record: %+v", r.Stage)
+	}
+	if r.Stage.Risk.Halt == nil || r.Stage.Risk.Halt.By != "diego" || r.Stage.Risk.Findings[0].Rule != risk.RuleHalted ||
+		!strings.Contains(r.Stage.Risk.Findings[0].Message, "exchange incident") {
+		t.Fatalf("risk: %+v", r.Stage.Risk)
+	}
+
+	// Flat signal with a flat position: no order, so nothing to block.
+	rec := usdRecord("flat")
+	rec.Decision.BarDate, rec.Decision.FillDate = "2026-10-05", "2026-10-06"
+	if err := finishBook(o, ex, led, rec); err != nil {
+		t.Fatalf("a day without an order must record normally: %v", err)
+	}
+	if r, _ := led.get("btc_usd", "2026-10-05"); r.Stage == nil || r.Stage.Action != "none" || r.Stage.Risk != nil {
+		t.Fatalf("no-order day: %+v", r.Stage)
 	}
 }
 
