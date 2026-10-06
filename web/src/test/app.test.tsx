@@ -185,6 +185,7 @@ describe('Risk page', () => {
   it('surfaces a halt and a blocked next order', async () => {
     const halted = riskResponseSchema.parse(structuredClone(risk))
     halted.halted = true
+    halted.halt_source = 'policy'
     halted.halt_reason = 'exchange incident'
     halted.blocks = 1
     const b = halted.books[1]
@@ -209,5 +210,36 @@ describe('Risk page', () => {
     const usd = screen.getByTestId('risk-card-btc_usd')
     expect(within(usd).getByText('would be blocked')).toBeInTheDocument()
     expect(within(usd).getAllByText('trading is halted: exchange incident').length).toBeGreaterThan(0)
+  })
+
+  it('shows who halted trading through the halt file, when and why', async () => {
+    const r = riskResponseSchema.parse(structuredClone(risk))
+    r.halted = true
+    r.halt_source = 'file'
+    r.halt_reason = 'exchange incident (halt file, by diego at 2026-10-06T01:00:00Z)'
+    r.halt_file = {
+      ...r.halt_file,
+      found: true,
+      halted: true,
+      reason: 'exchange incident',
+      by: 'diego',
+      at: '2026-10-06T01:00:00Z',
+    }
+    server.use(http.get('/api/ui/risk', () => HttpResponse.json(r)))
+    renderAt('/risk')
+    expect(await screen.findByText('Trading halted by operator')).toBeInTheDocument()
+    const who = screen.getByTestId('halt-file')
+    expect(who).toHaveTextContent('exchange incident')
+    expect(who).toHaveTextContent('by diego')
+    expect(who).toHaveTextContent('risk-state.json')
+    expect(screen.getByText('source: halt file')).toBeInTheDocument()
+  })
+
+  it('warns that an invalid halt file stops the executor', async () => {
+    const r = riskResponseSchema.parse(structuredClone(risk))
+    r.halt_file = { ...r.halt_file, found: true, error: 'halt file x: halted needs reason, by, at' }
+    server.use(http.get('/api/ui/risk', () => HttpResponse.json(r)))
+    renderAt('/risk')
+    expect(await screen.findByText('Halt file is invalid: the executor will not run')).toBeInTheDocument()
   })
 })

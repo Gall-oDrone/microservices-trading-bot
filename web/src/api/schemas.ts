@@ -72,6 +72,14 @@ export const findingSchema = z.object({
 })
 export type Finding = z.infer<typeof findingSchema>
 
+/** shared/pkg/risk.HaltState: the operator halt file (risk-state.json next to a ledger). */
+export const haltStateSchema = z.object({
+  halted: z.boolean(),
+  reason: z.string().optional(),
+  by: z.string().optional(),
+  at: z.string().optional(),
+})
+
 /** The daily-executor's pre-trade check (shared/pkg/risk), recorded per planned order. */
 export const riskCheckSchema = z.object({
   policy_version: z.string(),
@@ -85,6 +93,8 @@ export const riskCheckSchema = z.object({
   state: z.object({ position_btc: z.number(), orders_today: z.number() }),
   allowed: z.boolean(),
   findings: z.array(findingSchema).optional(),
+  /** The operator halt file in force for that run (R2). */
+  halt: haltStateSchema.optional(),
 })
 export type RiskCheck = z.infer<typeof riskCheckSchema>
 
@@ -308,6 +318,16 @@ export const riskResponseSchema = z.object({
   note: z.string(),
   halted: z.boolean(),
   halt_reason: z.string(),
+  halt_source: z.enum(['none', 'policy', 'file', 'both']),
+  halt_file: z.object({
+    path: z.string(),
+    found: z.boolean(),
+    halted: z.boolean(),
+    reason: z.string(),
+    by: z.string(),
+    at: z.string(),
+    error: z.string().optional(),
+  }),
   books: z.array(bookRiskSchema),
   blocks: z.number(),
   warnings: z.number(),

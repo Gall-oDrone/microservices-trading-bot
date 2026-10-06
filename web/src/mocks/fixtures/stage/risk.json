@@ -1,6 +1,6 @@
 {
   "ledger": "stage",
-  "generated_at": "2026-10-06T01:00:40Z",
+  "generated_at": "2026-10-06T01:26:52Z",
   "policy": {
     "version": "default-2026-10-03",
     "halted": false,
@@ -40,6 +40,15 @@
   "note": "The daily-executor runs shared/pkg/risk.Check before every stage order and records the result; a blocked order is skipped and recorded, not retried. Next-order previews here use the last close as the price (the executor uses the live best bid/ask). Run ui-api with the same -risk-policy as the executor.",
   "halted": false,
   "halt_reason": "",
+  "halt_source": "none",
+  "halt_file": {
+    "path": "../strategy-executor/daily-executor-data/stage/risk-state.json",
+    "found": false,
+    "halted": false,
+    "reason": "",
+    "by": "",
+    "at": ""
+  },
   "books": [
     {
       "book": "btc_mxn",

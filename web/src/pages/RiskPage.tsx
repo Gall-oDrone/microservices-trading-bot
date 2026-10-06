@@ -246,6 +246,29 @@ function PolicyTable({ r }: { r: RiskResponse }) {
   )
 }
 
+/** Who halted trading, when and why: from the policy, the ledger's halt file (R2), or both. */
+function HaltBanner({ r }: { r: RiskResponse }) {
+  const f = r.halt_file
+  const fromFile = r.halt_source === 'file' || r.halt_source === 'both'
+  const fromPolicy = r.halt_source === 'policy' || r.halt_source === 'both'
+  const title = fromFile && !fromPolicy ? 'Trading halted by operator' : 'Trading halted by policy'
+  return (
+    <Banner tone="block" title={title} id="banner-halt">
+      {fromFile ? (
+        <span data-testid="halt-file">
+          <b>{f.reason}</b> · by <b>{f.by}</b> · <span title={fmtUTC(f.at)}>{fmtMx(f.at)} Mexico City</span> ·{' '}
+          <span className="num faint">{f.path}</span>
+          {fromPolicy && <> · policy: {r.policy.halt_reason || 'no reason given'}</>}
+        </span>
+      ) : (
+        <>{r.halt_reason || 'No reason given.'}</>
+      )}{' '}
+      Every new stage order is blocked and recorded. Remove the file (or set <code>&quot;halted&quot;: false</code>) to
+      resume.
+    </Banner>
+  )
+}
+
 export function RiskPage() {
   usePageTitle('Risk', 'Execution risk limits, exposure and realized costs for the forward tests.')
   const q = useRisk()
@@ -284,11 +307,12 @@ export function RiskPage() {
 
       {r && (
         <>
-          {r.halted ? (
-            <Banner tone="block" title="Trading halted by policy" id="banner-halt">
-              {r.halt_reason || 'No reason given.'} Every new order would be blocked.
+          {r.halt_file.error ? (
+            <Banner tone="block" title="Halt file is invalid: the executor will not run" id="banner-halt-file-error">
+              {r.halt_file.error}. Fix or remove <span className="num">{r.halt_file.path}</span>.
             </Banner>
           ) : null}
+          {r.halted ? <HaltBanner r={r} /> : null}
           {r.enforcement === 'enforced' ? (
             <Banner tone="info" title="Enforced" id="banner-enforcement">
               {r.note}
@@ -309,7 +333,11 @@ export function RiskPage() {
                 }
                 value={r.halted ? 'HALTED' : 'off'}
                 tone={r.halted ? 'neg' : 'pos'}
-                hint="policy file flag"
+                hint={
+                  r.halted
+                    ? `source: ${r.halt_source === 'both' ? 'policy + halt file' : r.halt_source === 'file' ? 'halt file' : 'policy'}`
+                    : 'policy flag or halt file'
+                }
               />
             </div>
             <div className="card">
