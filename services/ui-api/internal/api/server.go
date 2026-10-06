@@ -4,6 +4,7 @@ package api
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io/fs"
 	"log"
 	"net/http"
@@ -20,8 +21,17 @@ import (
 	"bitso-trading-platform/ui-api/internal/store"
 )
 
+// Ledger is one named daily-executor ledger (with its own candles dir).
+type Ledger struct {
+	Name  string
+	Store *store.Store
+}
+
 // Server holds the API's dependencies.
 type Server struct {
+	// Ledgers are served by name; the first is the default. When empty, Store
+	// is served as the single ledger "stage".
+	Ledgers   []Ledger
 	Store     *store.Store
 	Policy    risk.Policy
 	PolicySrc string // file path or "built-in default"
@@ -32,7 +42,67 @@ type Server struct {
 	Log       *log.Logger
 }
 
-var bookRe = regexp.MustCompile(`^[a-z]{2,6}_[a-z]{2,6}$`)
+var (
+	bookRe       = regexp.MustCompile(`^[a-z]{2,6}_[a-z]{2,6}$`)
+	ledgerNameRe = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{0,31}$`)
+)
+
+// ParseLedgers parses "name=path,name=path". Names must be unique and match
+// ledgerNameRe; each ledger's candles are read from <ledger dir>/candles.
+func ParseLedgers(spec string) ([]Ledger, error) {
+	var out []Ledger
+	seen := map[string]bool{}
+	for _, part := range strings.Split(spec, ",") {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		name, path, ok := strings.Cut(part, "=")
+		name, path = strings.TrimSpace(name), strings.TrimSpace(path)
+		if !ok || path == "" {
+			return nil, fmt.Errorf("ledger %q: want name=path", part)
+		}
+		if !ledgerNameRe.MatchString(name) {
+			return nil, fmt.Errorf("ledger name %q: use lowercase letters, digits, '-' or '_' (max 32)", name)
+		}
+		if seen[name] {
+			return nil, fmt.Errorf("ledger name %q given twice", name)
+		}
+		seen[name] = true
+		out = append(out, Ledger{Name: name, Store: store.New(path, "")})
+	}
+	if len(out) == 0 {
+		return nil, errors.New("no ledgers")
+	}
+	return out, nil
+}
+
+func (s *Server) ledgers() []Ledger {
+	if len(s.Ledgers) > 0 {
+		return s.Ledgers
+	}
+	return []Ledger{{Name: "stage", Store: s.Store}}
+}
+
+// pick returns the ledger named by ?ledger= (default: the first).
+func (s *Server) pick(w http.ResponseWriter, r *http.Request) (Ledger, bool) {
+	ls := s.ledgers()
+	name := r.URL.Query().Get("ledger")
+	if name == "" {
+		return ls[0], true
+	}
+	if !ledgerNameRe.MatchString(name) {
+		writeErr(w, http.StatusBadRequest, "invalid ledger name")
+		return Ledger{}, false
+	}
+	for _, l := range ls {
+		if l.Name == name {
+			return l, true
+		}
+	}
+	writeErr(w, http.StatusBadRequest, "unknown ledger "+name)
+	return Ledger{}, false
+}
 
 // Handler returns the HTTP handler with every route.
 func (s *Server) Handler() http.Handler {
@@ -44,6 +114,7 @@ func (s *Server) Handler() http.Handler {
 	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/ui/healthz", s.healthz)
+	mux.HandleFunc("GET /api/ui/ledgers", s.listLedgers)
 	mux.HandleFunc("GET /api/ui/forward-tests", s.forwardTests)
 	mux.HandleFunc("GET /api/ui/forward-tests/{book}", s.forwardTest)
 	mux.HandleFunc("GET /api/ui/forward-tests/{book}/ledger", s.ledger)
@@ -111,11 +182,11 @@ func (s *Server) books(by map[string][]dailyledger.Record) []string {
 	return out
 }
 
-func (s *Server) load(w http.ResponseWriter) (map[string][]dailyledger.Record, bool) {
-	recs, err := s.Store.Records()
+func (s *Server) load(w http.ResponseWriter, l Ledger) (map[string][]dailyledger.Record, bool) {
+	recs, err := l.Store.Records()
 	if err != nil {
-		s.Log.Printf("ledger: %v", err)
-		writeErr(w, http.StatusInternalServerError, "cannot read the ledger: "+err.Error())
+		s.Log.Printf("ledger %s: %v", l.Name, err)
+		writeErr(w, http.StatusInternalServerError, "cannot read the "+l.Name+" ledger: "+err.Error())
 		return nil, false
 	}
 	return dailyledger.ByBook(recs), true
@@ -136,56 +207,114 @@ func (s *Server) bookParam(w http.ResponseWriter, r *http.Request, by map[string
 	return "", false
 }
 
-// Health is the /healthz body.
+// Health is the /healthz body (about the default ledger).
 type Health struct {
 	Status      string `json:"status"`
 	Version     string `json:"version"`
 	Ledger      string `json:"ledger"`
 	LedgerFound bool   `json:"ledger_found"`
 	Records     int    `json:"records"`
+	Ledgers     int    `json:"ledgers"`
 	Policy      string `json:"policy"`
 	Time        string `json:"time"`
 }
 
 func (s *Server) healthz(w http.ResponseWriter, r *http.Request) {
-	recs, err := s.Store.Records()
-	_, statErr := os.Stat(s.Store.LedgerPath)
-	h := Health{Status: "ok", Version: s.Version, Ledger: s.Store.LedgerPath, LedgerFound: statErr == nil,
-		Records: len(recs), Policy: s.PolicySrc, Time: s.Now().UTC().Format(time.RFC3339)}
+	ls := s.ledgers()
+	st := ls[0].Store
+	recs, err := st.Records()
+	_, statErr := os.Stat(st.LedgerPath)
+	h := Health{Status: "ok", Version: s.Version, Ledger: st.LedgerPath, LedgerFound: statErr == nil,
+		Records: len(recs), Ledgers: len(ls), Policy: s.PolicySrc, Time: s.Now().UTC().Format(time.RFC3339)}
 	if err != nil {
 		h.Status = "degraded"
 	}
 	writeJSON(w, http.StatusOK, h)
 }
 
+// LedgerInfo describes one configured ledger.
+type LedgerInfo struct {
+	Name        string   `json:"name"`
+	Path        string   `json:"path"`
+	Default     bool     `json:"default"`
+	Found       bool     `json:"found"`
+	Records     int      `json:"records"`
+	Modes       []string `json:"modes"`
+	LastBarDate string   `json:"last_bar_date"`
+	Error       string   `json:"error,omitempty"`
+}
+
+// LedgersResponse is GET /api/ui/ledgers.
+type LedgersResponse struct {
+	Ledgers []LedgerInfo `json:"ledgers"`
+}
+
+func (s *Server) listLedgers(w http.ResponseWriter, r *http.Request) {
+	resp := LedgersResponse{Ledgers: []LedgerInfo{}}
+	for i, l := range s.ledgers() {
+		info := LedgerInfo{Name: l.Name, Path: l.Store.LedgerPath, Default: i == 0, Modes: []string{}}
+		_, statErr := os.Stat(l.Store.LedgerPath)
+		info.Found = statErr == nil
+		recs, err := l.Store.Records()
+		if err != nil {
+			info.Error = err.Error()
+		}
+		info.Records = len(recs)
+		modes := map[string]bool{}
+		for _, rec := range recs {
+			if rec.Mode != "" && !modes[rec.Mode] {
+				modes[rec.Mode] = true
+				info.Modes = append(info.Modes, rec.Mode)
+			}
+			if rec.Decision.BarDate > info.LastBarDate {
+				info.LastBarDate = rec.Decision.BarDate
+			}
+		}
+		sort.Strings(info.Modes)
+		resp.Ledgers = append(resp.Ledgers, info)
+	}
+	writeJSON(w, http.StatusOK, resp)
+}
+
 // ForwardTestsResponse is GET /api/ui/forward-tests.
 type ForwardTestsResponse struct {
+	Ledger      string        `json:"ledger"`
 	GeneratedAt string        `json:"generated_at"`
 	Books       []ForwardTest `json:"books"`
 }
 
-func (s *Server) riskFor(book string, recs []dailyledger.Record, now time.Time) (BookRisk, []Fill) {
-	rows, _, _ := s.Store.Candles(book) // optional: slippage needs the fill day's open
+func (s *Server) riskFor(l Ledger, book string, recs []dailyledger.Record, now time.Time) (BookRisk, []Fill) {
+	rows, _, _ := l.Store.Candles(book) // optional: slippage needs the fill day's open
 	fills := buildFills(book, recs, rows)
 	return buildBookRisk(s.Policy, book, recs, fills, now, s.StageSize), fills
 }
 
 func (s *Server) forwardTests(w http.ResponseWriter, r *http.Request) {
-	by, ok := s.load(w)
+	l, ok := s.pick(w, r)
+	if !ok {
+		return
+	}
+	by, ok := s.load(w, l)
 	if !ok {
 		return
 	}
 	now := s.Now()
-	resp := ForwardTestsResponse{GeneratedAt: now.UTC().Format(time.RFC3339), Books: []ForwardTest{}}
+	resp := ForwardTestsResponse{Ledger: l.Name, GeneratedAt: now.UTC().Format(time.RFC3339), Books: []ForwardTest{}}
 	for _, b := range s.books(by) {
-		br, _ := s.riskFor(b, by[b], now)
-		resp.Books = append(resp.Books, buildForwardTest(b, by[b], now, br))
+		br, _ := s.riskFor(l, b, by[b], now)
+		ft := buildForwardTest(b, by[b], now, br)
+		ft.Ledger = l.Name
+		resp.Books = append(resp.Books, ft)
 	}
 	writeJSON(w, http.StatusOK, resp)
 }
 
 func (s *Server) forwardTest(w http.ResponseWriter, r *http.Request) {
-	by, ok := s.load(w)
+	l, ok := s.pick(w, r)
+	if !ok {
+		return
+	}
+	by, ok := s.load(w, l)
 	if !ok {
 		return
 	}
@@ -194,12 +323,15 @@ func (s *Server) forwardTest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	now := s.Now()
-	br, _ := s.riskFor(b, by[b], now)
-	writeJSON(w, http.StatusOK, buildForwardTest(b, by[b], now, br))
+	br, _ := s.riskFor(l, b, by[b], now)
+	ft := buildForwardTest(b, by[b], now, br)
+	ft.Ledger = l.Name
+	writeJSON(w, http.StatusOK, ft)
 }
 
 // LedgerResponse is GET /api/ui/forward-tests/{book}/ledger.
 type LedgerResponse struct {
+	Ledger  string               `json:"ledger"`
 	Book    string               `json:"book"`
 	Mode    string               `json:"mode"`
 	Records []dailyledger.Record `json:"records"`
@@ -208,7 +340,11 @@ type LedgerResponse struct {
 }
 
 func (s *Server) ledger(w http.ResponseWriter, r *http.Request) {
-	by, ok := s.load(w)
+	l, ok := s.pick(w, r)
+	if !ok {
+		return
+	}
+	by, ok := s.load(w, l)
 	if !ok {
 		return
 	}
@@ -229,8 +365,8 @@ func (s *Server) ledger(w http.ResponseWriter, r *http.Request) {
 	if recs == nil {
 		recs = []dailyledger.Record{}
 	}
-	rows, _, _ := s.Store.Candles(b)
-	resp := LedgerResponse{Book: b, Records: recs, Equity: buildEquity(recs), Fills: buildFills(b, recs, rows)}
+	rows, _, _ := l.Store.Candles(b)
+	resp := LedgerResponse{Ledger: l.Name, Book: b, Records: recs, Equity: buildEquity(recs), Fills: buildFills(b, recs, rows)}
 	if len(recs) > 0 {
 		resp.Mode = recs[len(recs)-1].Mode
 	}
@@ -239,13 +375,18 @@ func (s *Server) ledger(w http.ResponseWriter, r *http.Request) {
 
 // CandlesResponse is GET /api/ui/forward-tests/{book}/candles.
 type CandlesResponse struct {
+	Ledger  string        `json:"ledger"`
 	Book    string        `json:"book"`
 	File    string        `json:"file"`
 	Candles []CandlePoint `json:"candles"`
 }
 
 func (s *Server) candles(w http.ResponseWriter, r *http.Request) {
-	by, ok := s.load(w)
+	l, ok := s.pick(w, r)
+	if !ok {
+		return
+	}
+	by, ok := s.load(w, l)
 	if !ok {
 		return
 	}
@@ -262,20 +403,21 @@ func (s *Server) candles(w http.ResponseWriter, r *http.Request) {
 		}
 		days = n
 	}
-	rows, path, err := s.Store.Candles(b)
+	rows, path, err := l.Store.Candles(b)
 	if errors.Is(err, os.ErrNotExist) {
-		writeErr(w, http.StatusNotFound, "no candle file for "+b+" in "+s.Store.CandlesDir)
+		writeErr(w, http.StatusNotFound, "no candle file for "+b+" in "+l.Store.CandlesDir)
 		return
 	}
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, CandlesResponse{Book: b, File: filepath.Base(path), Candles: buildCandles(rows, days)})
+	writeJSON(w, http.StatusOK, CandlesResponse{Ledger: l.Name, Book: b, File: filepath.Base(path), Candles: buildCandles(rows, days)})
 }
 
 // RiskResponse is GET /api/ui/risk.
 type RiskResponse struct {
+	Ledger      string      `json:"ledger"`
 	GeneratedAt string      `json:"generated_at"`
 	Policy      risk.Policy `json:"policy"`
 	PolicySrc   string      `json:"policy_source"`
@@ -290,12 +432,17 @@ type RiskResponse struct {
 }
 
 func (s *Server) riskStatus(w http.ResponseWriter, r *http.Request) {
-	by, ok := s.load(w)
+	l, ok := s.pick(w, r)
+	if !ok {
+		return
+	}
+	by, ok := s.load(w, l)
 	if !ok {
 		return
 	}
 	now := s.Now()
 	resp := RiskResponse{
+		Ledger:      l.Name,
 		GeneratedAt: now.UTC().Format(time.RFC3339), Policy: s.Policy, PolicySrc: s.PolicySrc, StageSize: s.StageSize,
 		Enforcement: "enforced",
 		Note: "The daily-executor runs shared/pkg/risk.Check before every stage order and records the result; " +
@@ -304,7 +451,7 @@ func (s *Server) riskStatus(w http.ResponseWriter, r *http.Request) {
 		Halted: s.Policy.Halted, HaltReason: s.Policy.HaltReason, Books: []BookRisk{},
 	}
 	for _, b := range s.books(by) {
-		br, _ := s.riskFor(b, by[b], now)
+		br, _ := s.riskFor(l, b, by[b], now)
 		for _, f := range br.Findings {
 			if f.Severity == risk.Block {
 				resp.Blocks++

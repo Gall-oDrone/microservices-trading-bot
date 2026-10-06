@@ -38,6 +38,7 @@ type RunStatus struct {
 
 // ForwardTest is one book's card on the Forward tests page.
 type ForwardTest struct {
+	Ledger           string                 `json:"ledger"`
 	Book             string                 `json:"book"`
 	Base             string                 `json:"base"`
 	Quote            string                 `json:"quote"`

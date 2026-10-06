@@ -8,6 +8,7 @@
 // (docs/frontend/FRONTEND-UI-PLAN-2026-10-03.md §6).
 //
 //	go run ./cmd -ledger ../strategy-executor/daily-executor-data/stage/ledger.jsonl
+//	go run ./cmd -ledgers stage=../strategy-executor/daily-executor-data/stage/ledger.jsonl,dry-run=../strategy-executor/daily-executor-data/ledger.jsonl
 //	go run ./cmd -static ../../web/dist   # also serve the built UI
 package main
 
@@ -43,6 +44,7 @@ func main() {
 	addr := flag.String("addr", env("UI_API_ADDR", "127.0.0.1:8090"), "listen address (loopback only unless UI_API_ALLOW_REMOTE=1)")
 	ledger := flag.String("ledger", env("UI_API_LEDGER", "../strategy-executor/daily-executor-data/stage/ledger.jsonl"), "daily-executor ledger (JSONL)")
 	candles := flag.String("candles-dir", env("UI_API_CANDLES_DIR", ""), "daily-executor candles dir (default: <ledger dir>/candles)")
+	ledgerSpec := flag.String("ledgers", env("UI_API_LEDGERS", ""), "named ledgers name=path,name=path (first is the default; overrides -ledger and -candles-dir)")
 	policyPath := flag.String("risk-policy", env("UI_API_RISK_POLICY", ""), "risk policy JSON (default: built-in shared/pkg/risk.DefaultPolicy)")
 	static := flag.String("static", env("UI_API_STATIC_DIR", ""), "serve the built web app from this dir (e.g. ../../web/dist)")
 	stageSize := flag.Float64("stage-size", envFloat("UI_API_STAGE_SIZE", 0.001), "BTC per stage entry, as passed to daily-executor -size")
@@ -73,8 +75,13 @@ func main() {
 		}
 	}
 
-	st := store.New(*ledger, *candles)
-	srv := &api.Server{Store: st, Policy: pol, PolicySrc: src, StageSize: *stageSize, StaticDir: *static,
+	ledgers := []api.Ledger{{Name: "stage", Store: store.New(*ledger, *candles)}}
+	if *ledgerSpec != "" {
+		if ledgers, err = api.ParseLedgers(*ledgerSpec); err != nil {
+			logger.Fatal("-ledgers: ", err)
+		}
+	}
+	srv := &api.Server{Ledgers: ledgers, Policy: pol, PolicySrc: src, StageSize: *stageSize, StaticDir: *static,
 		Version: version(), Log: logger}
 	hs := &http.Server{
 		Addr: *addr, Handler: srv.Handler(),
@@ -83,7 +90,10 @@ func main() {
 	}
 
 	go func() {
-		logger.Printf("listening on http://%s | ledger %s | candles %s | policy %s", *addr, st.LedgerPath, st.CandlesDir, src)
+		for _, l := range ledgers {
+			logger.Printf("ledger %s: %s | candles %s", l.Name, l.Store.LedgerPath, l.Store.CandlesDir)
+		}
+		logger.Printf("listening on http://%s | policy %s", *addr, src)
 		if err := hs.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			logger.Fatal(err)
 		}

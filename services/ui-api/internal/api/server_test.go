@@ -235,6 +235,77 @@ func TestRiskBlocksWhenHalted(t *testing.T) {
 	}
 }
 
+func TestMultiLedger(t *testing.T) {
+	dir := t.TempDir()
+	src, err := os.ReadFile("testdata/ledger.jsonl")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The dry-run ledger: the btc_usd lines only, re-labelled.
+	var keep []string
+	for _, l := range strings.Split(strings.TrimSpace(string(src)), "\n") {
+		if strings.Contains(l, `"book":"btc_usd"`) {
+			keep = append(keep, strings.Replace(l, `"mode":"stage"`, `"mode":"dry-run"`, 1))
+		}
+	}
+	writeFile(t, dir+"/ledger.jsonl", strings.Join(keep, "\n")+"\n")
+	ts := newTestServer(t, fixedNow, func(s *Server) {
+		s.Ledgers = []Ledger{{Name: "stage", Store: s.Store}, {Name: "dry-run", Store: store.New(dir+"/ledger.jsonl", "")},
+			{Name: "volume", Store: store.New(dir+"/missing/ledger.jsonl", "")}}
+	})
+
+	ls := get[LedgersResponse](t, ts, "/api/ui/ledgers", 200)
+	if len(ls.Ledgers) != 3 || !ls.Ledgers[0].Default || ls.Ledgers[1].Default || ls.Ledgers[0].Records != 6 {
+		t.Fatalf("ledgers %+v", ls.Ledgers)
+	}
+	if dr := ls.Ledgers[1]; !dr.Found || dr.Records != len(keep) || len(dr.Modes) != 1 || dr.Modes[0] != "dry-run" || dr.LastBarDate == "" {
+		t.Fatalf("dry-run info %+v", dr)
+	}
+	if v := ls.Ledgers[2]; v.Found || v.Records != 0 || v.Error != "" {
+		t.Fatalf("missing ledger must be reported as not found, not as an error: %+v", v)
+	}
+
+	def := get[ForwardTestsResponse](t, ts, "/api/ui/forward-tests", 200)
+	if def.Ledger != "stage" || def.Books[0].Ledger != "stage" {
+		t.Fatalf("default ledger: %+v", def.Ledger)
+	}
+	dr := get[ForwardTestsResponse](t, ts, "/api/ui/forward-tests?ledger=dry-run", 200)
+	if dr.Ledger != "dry-run" {
+		t.Fatalf("ledger %q", dr.Ledger)
+	}
+	for _, b := range dr.Books {
+		if b.Ledger != "dry-run" {
+			t.Fatalf("card ledger %q", b.Ledger)
+		}
+		if b.Book == "btc_usd" && b.Mode != "dry-run" {
+			t.Fatalf("btc_usd mode %q", b.Mode)
+		}
+		if b.Book == "btc_mxn" && b.RecordedAt != "" {
+			t.Fatalf("btc_mxn has no dry-run records: %+v", b)
+		}
+	}
+	if r := get[RiskResponse](t, ts, "/api/ui/risk?ledger=dry-run", 200); r.Ledger != "dry-run" {
+		t.Fatalf("risk ledger %q", r.Ledger)
+	}
+	if l := get[LedgerResponse](t, ts, "/api/ui/forward-tests/btc_usd/ledger?ledger=dry-run", 200); l.Ledger != "dry-run" || len(l.Records) != len(keep) {
+		t.Fatalf("ledger view %q %d", l.Ledger, len(l.Records))
+	}
+	get[errorBody](t, ts, "/api/ui/forward-tests?ledger=nope", 400)
+	get[errorBody](t, ts, "/api/ui/risk?ledger=../etc", 400)
+}
+
+func TestParseLedgers(t *testing.T) {
+	ls, err := ParseLedgers(" stage=/a/ledger.jsonl , dry-run=/b/ledger.jsonl,")
+	if err != nil || len(ls) != 2 || ls[0].Name != "stage" || ls[1].Store.LedgerPath != "/b/ledger.jsonl" || ls[1].Store.CandlesDir != "/b/candles" {
+		t.Fatalf("%+v %v", ls, err)
+	}
+	for _, bad := range []string{"", "stage", "stage=", "Stage=/a", "a=/x,a=/y", "../x=/y"} {
+		if _, err := ParseLedgers(bad); err == nil {
+			t.Fatalf("%q must fail", bad)
+		}
+	}
+}
+
 func TestReadOnlyAndValidation(t *testing.T) {
 	ts := newTestServer(t, fixedNow, nil)
 	res, err := http.Post(ts.URL+"/api/ui/risk", "application/json", strings.NewReader("{}"))
