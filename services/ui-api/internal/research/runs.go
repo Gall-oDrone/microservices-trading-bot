@@ -13,9 +13,9 @@ import (
 	"time"
 )
 
-// RunSchemaPrefix marks the research tools' JSON reports (daily-research
-// -json writes "research-run/v1"). Other JSON files in an evidence directory
-// are ignored.
+// RunSchemaPrefix marks the research tools' JSON reports (daily-research and
+// weekly-research -json write "research-run/v1"). Other JSON files in an
+// evidence directory are ignored.
 const RunSchemaPrefix = "research-run/"
 
 var dateRe = regexp.MustCompile(`^\d{4}-\d{2}-\d{2}$`)
@@ -62,12 +62,15 @@ type RunData struct {
 	NewsDays int    `json:"news_days"`
 }
 
-// RunCosts is the report's "costs" object, in basis points.
+// RunCosts is the report's "costs" object, in basis points. Level and Note
+// are additive (weekly-research: "base"/"stress", and how to read the bps).
 type RunCosts struct {
 	BuyBPS       float64 `json:"buy_bps"`
 	SellBPS      float64 `json:"sell_bps"`
 	SlippageBPS  float64 `json:"slippage_bps"`
 	RoundTripBPS float64 `json:"round_trip_bps"`
+	Level        string  `json:"level,omitempty"`
+	Note         string  `json:"note,omitempty"`
 }
 
 // RunWindow is a window's header (no results) for the list.

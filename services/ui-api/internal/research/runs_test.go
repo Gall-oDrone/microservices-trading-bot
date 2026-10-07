@@ -57,7 +57,9 @@ func writeRunsFixture(t *testing.T) string {
 	write("CITER-2026-09-22.md", citer)
 	write("evidence-2026-09-20/run-a.json", runJSON)
 	write("evidence-2026-09-20/run-a.txt", "DATA ...\n")
-	write("evidence-2026-09-20/run-b.json", strings.Replace(runJSON, `"commit": "abc123"`, `"commit": "def456"`, 1))
+	runB := strings.Replace(runJSON, `"commit": "abc123"`, `"commit": "def456"`, 1)
+	runB = strings.Replace(runB, `"round_trip_bps": 176}`, `"round_trip_bps": 176, "level": "stress", "note": "per leg"}`, 1)
+	write("evidence-2026-09-20/run-b.json", runB)
 	write("evidence-2026-09-20/notes.json", `{"hello": "not a report"}`)
 	write("evidence-2026-09-20/broken.json", `{"schema": "research-run/v1", "windows": "nope"}`)
 	write("evidence-2026-09-20/empty.json", `{"schema": "research-run/v1", "windows": []}`)
@@ -94,6 +96,9 @@ func TestRuns_ListSummariesCitationsAndSkips(t *testing.T) {
 	}
 	if b := runs[2]; b.Text != "" || strings.Join(b.Studies, ",") != "CITER-2026-09-22" {
 		t.Errorf("run-b: no twin and not cited; CITER cites its folder: %+v", b)
+	}
+	if b := runs[2]; b.Costs.Level != "stress" || b.Costs.Note != "per leg" || a.Costs.Level != "" {
+		t.Errorf("additive cost level/note pass through: a %+v b %+v", a.Costs, b.Costs)
 	}
 	if c := runs[0]; strings.Join(c.Studies, ",") != "SECOND-STUDY-2026-09-21" {
 		t.Errorf("run-c: folder not cited at all, falls back to the study with its date: %v", c.Studies)
