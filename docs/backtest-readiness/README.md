@@ -46,7 +46,7 @@ next to the document that cites it:
 - [`evidence-2026-09-25/`](evidence-2026-09-25/) — `momentum` entry-condition diagnostic, scenario (d) re-run on the incremental engine (identical numbers, with timing)
 - [`evidence-2026-09-26/`](evidence-2026-09-26/) — 24h-horizon study on Yahoo BTC-USD daily + news (Bitso costs and frictionless reference; `*-corrected-2026-09-27.txt` supersede the originals)
 - [`evidence-2026-09-27/`](evidence-2026-09-27/) — `yahoo-compact` refresh report; 2018–2026 full-span, by-year and news-era runs (Bitso costs and frictionless); `btc_mxn` Bitso daily snapshot and runs at taker / maker / maker + slippage / frictionless; BTC-USD at maker
-- [`evidence-2026-10-03/`](evidence-2026-10-03/) — `weekly-research` output for `btc_mxn` and `btc_usd` (development + holdout, base and stress costs, post-hoc volume-threshold sensitivity); daily candle snapshots with SHA-256
+- [`evidence-2026-10-03/`](evidence-2026-10-03/) — `weekly-research` output for `btc_mxn` and `btc_usd` (development + holdout, base and stress costs, post-hoc volume-threshold sensitivity); daily candle snapshots with SHA-256; `research-run/v1` JSON twins (`*.json` base costs, `*-stress-<bps>bps.json` stress costs), regenerated 2026-10-07 with byte-identical text output
 
 Evidence files are committed verbatim (only ANSI colour codes and per-tick log spam are stripped) so
 the numbers in the reports can be checked without re-running a 6-minute backtest.
