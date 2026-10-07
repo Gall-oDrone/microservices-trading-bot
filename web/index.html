@@ -16,6 +16,16 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <title>Trading Bot Console</title>
+    <script>
+      // Apply the saved theme before first paint (dark is the default). Kept in sync with src/lib/theme.ts.
+      try {
+        if (localStorage.getItem('theme') === 'light') {
+          document.documentElement.dataset.theme = 'light'
+          document.documentElement.style.colorScheme = 'light'
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', '#f5f7fa')
+        }
+      } catch (e) {}
+    </script>
   </head>
   <body>
     <div id="root"></div>

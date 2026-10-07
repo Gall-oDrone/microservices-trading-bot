@@ -39,4 +39,9 @@ curl -fsS "$RAPI/api/ui/research/studies" > "$R/studies.json"
 for n in $(node -e 'console.log(JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")).studies.map(s=>s.name).join(" "))' "$R/studies.json"); do
   curl -fsS "$RAPI/api/ui/research/studies/$n" > "$R/study-$n.json"
 done
+# Research runs (daily-research -json reports): the list and every report.
+curl -fsS "$RAPI/api/ui/research/runs" > "$R/runs.json"
+for id in $(node -e 'console.log(JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")).runs.map(r=>r.id).join(" "))' "$R/runs.json"); do
+  curl -fsS "$RAPI/api/ui/research/runs/$id" > "$R/run-$(printf %s "$id" | sed 's#/#--#').json"
+done
 echo "research fixtures written to $R from $RAPI"

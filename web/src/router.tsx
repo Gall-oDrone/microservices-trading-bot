@@ -6,6 +6,8 @@ import { ForwardTestsPage } from './pages/ForwardTestsPage'
 import { NotFoundPage } from './pages/NotFoundPage'
 import { ResearchPage } from './pages/ResearchPage'
 import { RiskPage } from './pages/RiskPage'
+import { RunPage } from './pages/RunPage'
+import { RunsPage } from './pages/RunsPage'
 import { StudyPage } from './pages/StudyPage'
 
 export const routes: RouteObject[] = [
@@ -17,6 +19,8 @@ export const routes: RouteObject[] = [
       { path: 'forward-tests/:book', element: <ForwardTestDetailPage /> },
       { path: 'risk', element: <RiskPage /> },
       { path: 'research', element: <ResearchPage /> },
+      { path: 'research/runs', element: <RunsPage /> },
+      { path: 'research/runs/:date/:name', element: <RunPage /> },
       { path: 'research/:name', element: <StudyPage /> },
       { path: '*', element: <NotFoundPage /> },
     ],

@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-10-06T16:37:15Z",
+  "generated_at": "2026-10-06T21:03:23Z",
   "dir": "docs/backtest-readiness",
   "found": true,
   "studies": [
@@ -17,7 +17,7 @@
       ],
       "evidence": null,
       "bytes": 3296,
-      "modified": "2026-10-06T04:59:34Z"
+      "modified": "2026-10-06T19:54:17Z"
     },
     {
       "name": "FORWARD-TEST-PREREGISTRATION-SMA50-BTCUSD-2026-09-29",
@@ -30,7 +30,7 @@
       "references": ["FORWARD-TEST-PREREGISTRATION-SMA50-2026-09-27"],
       "evidence": null,
       "bytes": 6075,
-      "modified": "2026-10-06T04:59:34Z"
+      "modified": "2026-10-06T19:54:17Z"
     },
     {
       "name": "BTC-MXN-TREND-CHECK-2026-09-27",
@@ -44,22 +44,32 @@
       "evidence": {
         "dir": "docs/backtest-readiness/evidence-2026-09-27",
         "files": [
+          "btc-mxn-frictionless.json",
           "btc-mxn-frictionless.txt",
+          "btc-mxn-maker-plus-slippage.json",
           "btc-mxn-maker-plus-slippage.txt",
+          "btc-mxn-maker.json",
           "btc-mxn-maker.txt",
+          "btc-mxn-taker.json",
           "btc-mxn-taker.txt",
+          "btc-usd-maker.json",
           "btc-usd-maker.txt",
           "btc_mxn_daily_bitso.csv",
+          "by-year-bitso-costs.json",
           "by-year-bitso-costs.txt",
+          "by-year-frictionless.json",
           "by-year-frictionless.txt",
+          "full-span-bitso-costs.json",
           "full-span-bitso-costs.txt",
+          "full-span-frictionless.json",
           "full-span-frictionless.txt",
+          "news-era-bitso-costs.json",
           "news-era-bitso-costs.txt",
           "yahoo-compact-report.txt"
         ]
       },
       "bytes": 9104,
-      "modified": "2026-10-06T04:59:34Z"
+      "modified": "2026-10-06T19:54:17Z"
     },
     {
       "name": "FORWARD-TEST-PREREGISTRATION-SMA50-2026-09-27",
@@ -73,22 +83,32 @@
       "evidence": {
         "dir": "docs/backtest-readiness/evidence-2026-09-27",
         "files": [
+          "btc-mxn-frictionless.json",
           "btc-mxn-frictionless.txt",
+          "btc-mxn-maker-plus-slippage.json",
           "btc-mxn-maker-plus-slippage.txt",
+          "btc-mxn-maker.json",
           "btc-mxn-maker.txt",
+          "btc-mxn-taker.json",
           "btc-mxn-taker.txt",
+          "btc-usd-maker.json",
           "btc-usd-maker.txt",
           "btc_mxn_daily_bitso.csv",
+          "by-year-bitso-costs.json",
           "by-year-bitso-costs.txt",
+          "by-year-frictionless.json",
           "by-year-frictionless.txt",
+          "full-span-bitso-costs.json",
           "full-span-bitso-costs.txt",
+          "full-span-frictionless.json",
           "full-span-frictionless.txt",
+          "news-era-bitso-costs.json",
           "news-era-bitso-costs.txt",
           "yahoo-compact-report.txt"
         ]
       },
       "bytes": 5044,
-      "modified": "2026-10-06T04:59:34Z"
+      "modified": "2026-10-06T19:54:17Z"
     },
     {
       "name": "FULL-HISTORY-DAILY-STUDY-2026-09-27",
@@ -102,22 +122,32 @@
       "evidence": {
         "dir": "docs/backtest-readiness/evidence-2026-09-27",
         "files": [
+          "btc-mxn-frictionless.json",
           "btc-mxn-frictionless.txt",
+          "btc-mxn-maker-plus-slippage.json",
           "btc-mxn-maker-plus-slippage.txt",
+          "btc-mxn-maker.json",
           "btc-mxn-maker.txt",
+          "btc-mxn-taker.json",
           "btc-mxn-taker.txt",
+          "btc-usd-maker.json",
           "btc-usd-maker.txt",
           "btc_mxn_daily_bitso.csv",
+          "by-year-bitso-costs.json",
           "by-year-bitso-costs.txt",
+          "by-year-frictionless.json",
           "by-year-frictionless.txt",
+          "full-span-bitso-costs.json",
           "full-span-bitso-costs.txt",
+          "full-span-frictionless.json",
           "full-span-frictionless.txt",
+          "news-era-bitso-costs.json",
           "news-era-bitso-costs.txt",
           "yahoo-compact-report.txt"
         ]
       },
       "bytes": 12060,
-      "modified": "2026-10-06T04:59:34Z"
+      "modified": "2026-10-06T19:54:17Z"
     },
     {
       "name": "DAILY-HORIZON-NEWS-STUDY-2026-09-26",
@@ -139,7 +169,7 @@
         ]
       },
       "bytes": 12219,
-      "modified": "2026-10-06T04:59:34Z"
+      "modified": "2026-10-06T19:54:17Z"
     },
     {
       "name": "FEES-ENGINE-SPEEDUP-MOMENTUM-2026-09-25",
@@ -155,7 +185,7 @@
         "files": ["backtest-d-incremental-engine.txt", "momentum-entry-diagnostic.txt"]
       },
       "bytes": 9893,
-      "modified": "2026-10-06T04:59:34Z"
+      "modified": "2026-10-06T19:54:17Z"
     },
     {
       "name": "HARNESS-FIXES-AND-REMEASURE-2026-09-24",
@@ -178,7 +208,7 @@
         ]
       },
       "bytes": 17006,
-      "modified": "2026-10-06T04:59:34Z"
+      "modified": "2026-10-06T19:54:17Z"
     },
     {
       "name": "PATH-TO-PROFITABILITY-2026-09-23",
@@ -198,7 +228,7 @@
         ]
       },
       "bytes": 13035,
-      "modified": "2026-10-06T04:59:34Z"
+      "modified": "2026-10-06T19:54:17Z"
     },
     {
       "name": "BACKTEST-READINESS-ASSESSMENT-2026-09-22",
@@ -223,7 +253,7 @@
         ]
       },
       "bytes": 29183,
-      "modified": "2026-10-06T04:59:34Z"
+      "modified": "2026-10-06T19:54:17Z"
     }
   ]
 }

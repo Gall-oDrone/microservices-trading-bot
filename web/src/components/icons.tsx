@@ -30,6 +30,23 @@ export const IconFlask = (p: P) => (
     <path d="M7 15h10" />
   </svg>
 )
+export const IconSun = (p: P) => (
+  <svg {...base} {...p}>
+    <circle cx="12" cy="12" r="4" />
+    <path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" />
+  </svg>
+)
+export const IconMoon = (p: P) => (
+  <svg {...base} {...p}>
+    <path d="M20 14.5A8 8 0 019.5 4a8 8 0 1010.5 10.5z" />
+  </svg>
+)
+export const IconGrid = (p: P) => (
+  <svg {...base} {...p}>
+    <rect x="3" y="3" width="18" height="18" rx="2" />
+    <path d="M3 9h18M3 15h18M9 3v18M15 3v18" />
+  </svg>
+)
 export const IconPulse = (p: P) => (
   <svg {...base} {...p}>
     <path d="M3 12h4l3-8 4 16 3-8h4" />

@@ -18,6 +18,7 @@ import {
 } from 'lightweight-charts'
 import { useEffect, useRef } from 'react'
 import type { CandlePoint, EquityPoint, Fill, LiveCandle } from '../api/schemas'
+import { useTheme } from '../lib/theme'
 
 function token(name: string, fallback: string): string {
   if (typeof window === 'undefined') return fallback
@@ -25,7 +26,26 @@ function token(name: string, fallback: string): string {
   return v || fallback
 }
 
+/**
+ * A token colour at the given opacity, as plain `rgba()`. Lightweight Charts
+ * only parses rgb()/rgba() computed values, so color-mix() (which serializes
+ * as `color(srgb …)`) cannot be used here.
+ */
+function alpha(name: string, fallback: string, a: number): string {
+  const probe = document.createElement('span')
+  probe.style.display = 'none'
+  probe.style.color = token(name, fallback)
+  document.body.appendChild(probe)
+  const rgb = getComputedStyle(probe).color
+  probe.remove()
+  const m = rgb.match(/^rgba?\((\d+),\s*(\d+),\s*(\d+)(?:,\s*([\d.]+))?\)$/)
+  if (!m) return fallback
+  const base = m[4] ? parseFloat(m[4]) : 1
+  return `rgba(${m[1]}, ${m[2]}, ${m[3]}, ${+(base * a).toFixed(3)})`
+}
+
 function baseOptions() {
+  const cross = token('--chart-cross', 'hsla(216, 30%, 80%, 0.25)')
   return {
     autoSize: true,
     layout: {
@@ -37,20 +57,25 @@ function baseOptions() {
     },
     grid: {
       vertLines: { visible: false },
-      horzLines: { color: 'hsla(222, 18%, 20%, 0.55)' },
+      horzLines: { color: token('--chart-grid', 'hsla(222, 18%, 20%, 0.55)') },
     },
     rightPriceScale: { borderVisible: false },
     timeScale: { borderVisible: false, fixLeftEdge: true, fixRightEdge: true },
     crosshair: {
-      vertLine: { color: 'hsla(216, 30%, 80%, 0.25)', labelBackgroundColor: token('--surface-3', '#252b38') },
-      horzLine: { color: 'hsla(216, 30%, 80%, 0.25)', labelBackgroundColor: token('--surface-3', '#252b38') },
+      vertLine: { color: cross, labelBackgroundColor: token('--surface-3', '#252b38') },
+      horzLine: { color: cross, labelBackgroundColor: token('--surface-3', '#252b38') },
     },
   } as const
 }
 
-/** Builds the chart when `deps` change; `build` may return a cleanup run before the chart is removed. */
+/**
+ * Builds the chart when `deps` or the theme change (colours are read from the
+ * CSS tokens at build time); `build` may return a cleanup run before the chart
+ * is removed.
+ */
 function useChart(build: (chart: IChartApi) => void | (() => void), deps: unknown[]) {
   const ref = useRef<HTMLDivElement>(null)
+  const [theme] = useTheme()
   useEffect(() => {
     if (!ref.current) return
     const chart = createChart(ref.current, baseOptions())
@@ -61,7 +86,7 @@ function useChart(build: (chart: IChartApi) => void | (() => void), deps: unknow
       chart.remove()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, deps)
+  }, [...deps, theme])
   return ref
 }
 
@@ -123,11 +148,13 @@ export function PriceChart({
       })
       chart.priceScale('vol').applyOptions({ scaleMargins: { top: 0.82, bottom: 0 } })
       price.priceScale().applyOptions({ scaleMargins: { top: 0.06, bottom: 0.22 } })
+      const volHi = token('--chart-vol-hi', 'hsla(205, 80%, 64%, 0.55)')
+      const volLo = token('--chart-vol', 'hsla(220, 12%, 50%, 0.28)')
       vol.setData(
         candles.map((c) => ({
           time: t(c.date),
           value: c.volume,
-          color: (c.volume_ratio_20d ?? 0) >= 1.5 ? 'hsla(205, 80%, 64%, 0.55)' : 'hsla(220, 12%, 50%, 0.28)',
+          color: (c.volume_ratio_20d ?? 0) >= 1.5 ? volHi : volLo,
         })),
       )
 
@@ -167,6 +194,7 @@ export function PriceChart({
     },
     [candles, fills, quote],
   )
+  const [theme] = useTheme()
 
   // Live overlay, applied without rebuilding the chart. Re-runs after a
   // rebuild (candles in deps) because effects run in declaration order.
@@ -181,7 +209,7 @@ export function PriceChart({
       // Translucent: a forming bar, not a closed one.
       const up = c.close >= c.open
       const a = fresh ? 0.5 : 0.25
-      const color = up ? `hsla(170, 62%, 48%, ${a})` : `hsla(9, 82%, 64%, ${a})`
+      const color = up ? alpha('--long', '#2ec4a7', a) : alpha('--loss', '#f0715c', a)
       price.update({
         time: t(c.date),
         open: c.open,
@@ -191,7 +219,7 @@ export function PriceChart({
         color,
         wickColor: color,
       })
-      volRef.current?.update({ time: t(c.date), value: c.volume, color: 'hsla(205, 80%, 64%, 0.25)' })
+      volRef.current?.update({ time: t(c.date), value: c.volume, color: alpha('--info', '#5bb4f0', 0.25) })
     }
     if (flip != null && flip > 0) {
       const opts = {
@@ -208,7 +236,7 @@ export function PriceChart({
       price.removePriceLine(flipRef.current)
       flipRef.current = null
     }
-  }, [candles, c, flip, fresh])
+  }, [candles, c, flip, fresh, theme])
   return <div ref={ref} className="chart" role="img" aria-label={label} />
 }
 
@@ -236,7 +264,7 @@ export function EquityChart({ points, label }: { points: EquityPoint[]; label: s
       eq.setData(points.map((p) => ({ time: t(p.date), value: p.equity })))
       eq.createPriceLine({
         price: 1,
-        color: 'hsla(220, 12%, 50%, 0.5)',
+        color: alpha('--text-3', '#7a8394', 0.6),
         lineWidth: 1,
         lineStyle: LineStyle.Dotted,
         axisLabelVisible: false,

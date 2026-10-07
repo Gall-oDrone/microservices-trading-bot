@@ -1,8 +1,39 @@
-import { NavLink, Outlet, useSearchParams } from 'react-router'
+import { NavLink, Outlet, useLocation, useSearchParams } from 'react-router'
 import { useForwardTests, useHealth, useLedgerName, useLedgerSearch, useLedgers, useRisk } from '../api/client'
 import { ago } from '../lib/format'
-import { IconCandles, IconFlask, IconLogo, IconPulse, IconShield, IconTrend } from './icons'
+import { useTheme } from '../lib/theme'
+import {
+  IconCandles,
+  IconFlask,
+  IconGrid,
+  IconLogo,
+  IconMoon,
+  IconPulse,
+  IconShield,
+  IconSun,
+  IconTrend,
+} from './icons'
 import { Badge } from './ui'
+
+/** Light / dark switch. Dark is the default; the choice persists in localStorage. */
+function ThemeToggle() {
+  const [theme, setTheme] = useTheme()
+  const light = theme === 'light'
+  const next = light ? 'dark' : 'light'
+  return (
+    <button
+      type="button"
+      id="theme-toggle"
+      className="icon-btn theme-toggle"
+      aria-label={`Switch to ${next} theme`}
+      aria-pressed={light}
+      title={`Switch to ${next} theme`}
+      onClick={() => setTheme(next)}
+    >
+      {light ? <IconMoon /> : <IconSun />}
+    </button>
+  )
+}
 
 function HealthFoot() {
   const h = useHealth()
@@ -78,6 +109,7 @@ function Nav() {
   const missed = ft.data?.books.filter((b) => b.run.status === 'missed').length ?? 0
   const blocks = risk.data?.blocks ?? 0
   const warns = risk.data?.warnings ?? 0
+  const inRuns = useLocation().pathname.startsWith('/research/runs')
   return (
     <nav className="nav" aria-label="Main">
       <span className="nav-label">Trading</span>
@@ -100,8 +132,15 @@ function Nav() {
       <span className="nav-label" style={{ marginTop: 14 }}>
         Research
       </span>
-      <NavLink to={{ pathname: '/research', search }} className="nav-link" id="nav-research">
+      <NavLink
+        to={{ pathname: '/research', search }}
+        className={({ isActive }) => `nav-link${isActive && !inRuns ? ' active' : ''}`}
+        id="nav-research"
+      >
         <IconFlask /> Studies
+      </NavLink>
+      <NavLink to={{ pathname: '/research/runs', search }} className="nav-link" id="nav-runs">
+        <IconGrid /> Backtest runs
       </NavLink>
       <span className="nav-label" style={{ marginTop: 14 }}>
         Next phases
@@ -130,6 +169,7 @@ export function AppShell() {
             <div className="brand-name">Trading Bot</div>
             <div className="brand-sub">Operator console</div>
           </div>
+          <ThemeToggle />
         </div>
         <LedgerPicker />
         <Nav />

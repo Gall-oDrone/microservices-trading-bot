@@ -463,3 +463,91 @@ export const studyDocSchema = z.object({
   referenced_by: z.array(z.string()),
 })
 export type StudyDoc = z.infer<typeof studyDocSchema>
+
+// --- Research runs: research-run/v1 JSON reports from the research tools (daily-research -json). ---
+
+const runDataSchema = z.object({
+  prices: z.string(),
+  book: z.string().optional(),
+  bars: z.number(),
+  first: z.string(),
+  last: z.string(),
+  news: z.string().optional(),
+  news_days: z.number(),
+})
+const runCostsSchema = z.object({
+  buy_bps: z.number(),
+  sell_bps: z.number(),
+  slippage_bps: z.number(),
+  round_trip_bps: z.number(),
+})
+const runWindowHeadSchema = z.object({ label: z.string(), from: z.string(), to: z.string(), bars: z.number() })
+
+export const runSummarySchema = z.object({
+  id: z.string(),
+  date: z.string(),
+  name: z.string(),
+  file: z.string(),
+  text: z.string().optional(),
+  schema: z.string(),
+  tool: z.string(),
+  generated_at: z.string(),
+  commit: z.string().optional(),
+  data: runDataSchema,
+  costs: runCostsSchema,
+  windows: z.array(runWindowHeadSchema),
+  scores: z.array(z.object({ rule: z.string(), windows: z.number(), beats_hold: z.number() })),
+  studies: z.array(z.string()),
+})
+export type RunSummary = z.infer<typeof runSummarySchema>
+
+export const runsResponseSchema = z.object({
+  generated_at: z.string(),
+  dir: z.string(),
+  found: z.boolean(),
+  runs: z.array(runSummarySchema),
+  skipped: z.array(z.object({ file: z.string(), error: z.string() })),
+})
+export type RunsResponse = z.infer<typeof runsResponseSchema>
+
+export const ruleResultSchema = z.object({
+  rule: z.string(),
+  return_pct: z.number(),
+  round_trips: z.number(),
+  exposure_pct: z.number(),
+  max_dd_pct: z.number(),
+  cost_pct: z.number(),
+  vs_hold_pp: z.number(),
+  random: z.object({ sims: z.number(), beat_pct: z.number() }).nullable(),
+})
+export type RuleResult = z.infer<typeof ruleResultSchema>
+
+export const runWindowSchema = runWindowHeadSchema.extend({
+  gaps: z.string().optional(),
+  note: z.string().optional(),
+  results: z.array(ruleResultSchema),
+})
+export type RunWindow = z.infer<typeof runWindowSchema>
+
+/** The report as the tool wrote it (schema research-run/v1; fields are only ever added). */
+export const runReportSchema = z.object({
+  schema: z.string().startsWith('research-run/'),
+  tool: z.string(),
+  generated_at: z.string(),
+  commit: z.string().optional(),
+  flags: z.record(z.string(), z.string()),
+  data: runDataSchema,
+  costs: runCostsSchema,
+  params: z.object({
+    sma: z.number(),
+    news_window: z.number(),
+    news_threshold: z.number(),
+    sims: z.number(),
+    seed: z.number(),
+  }),
+  windows: z.array(runWindowSchema),
+})
+export type RunReport = z.infer<typeof runReportSchema>
+
+export const runDocSchema = z.object({ run: runSummarySchema, report: runReportSchema })
+export type RunDoc = z.infer<typeof runDocSchema>

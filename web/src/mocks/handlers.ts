@@ -7,10 +7,16 @@ import { http, HttpResponse } from 'msw'
 import healthz from './fixtures/healthz.json'
 import ledgers from './fixtures/ledgers.json'
 import live from './fixtures/live.json'
+import runs from './research/runs.json'
 import studies from './research/studies.json'
 
 // research/study-<name>.json, one per study in research/studies.json
 const studyFiles = import.meta.glob<Record<string, unknown>>('./research/study-*.json', {
+  eager: true,
+  import: 'default',
+})
+// research/run-<date>--<name>.json, one per run in research/runs.json
+const runFiles = import.meta.glob<Record<string, unknown>>('./research/run-*.json', {
   eager: true,
   import: 'default',
 })
@@ -95,6 +101,16 @@ export const handlers = [
     }
     const doc = studyFiles[`./research/study-${name}.json`]
     return doc ? HttpResponse.json(doc) : HttpResponse.json({ error: `no study ${name}` }, { status: 404 })
+  }),
+  http.get('/api/ui/research/runs', () => HttpResponse.json(runs)),
+  http.get('/api/ui/research/runs/:date/:name', ({ params }) => {
+    const date = String(params.date)
+    const name = String(params.name)
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !/^[A-Za-z0-9][A-Za-z0-9._-]{0,150}$/.test(name) || name.includes('..')) {
+      return HttpResponse.json({ error: 'invalid run id' }, { status: 400 })
+    }
+    const doc = runFiles[`./research/run-${date}--${name}.json`]
+    return doc ? HttpResponse.json(doc) : HttpResponse.json({ error: `no run ${date}/${name}` }, { status: 404 })
   }),
   http.get('/api/ui/forward-tests', ({ request }) => fixture(request, 'forward-tests')),
   http.get('/api/ui/risk', ({ request }) => fixture(request, 'risk')),

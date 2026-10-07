@@ -8,6 +8,8 @@ import {
   ledgerResponseSchema,
   ledgersResponseSchema,
   riskResponseSchema,
+  runDocSchema,
+  runsResponseSchema,
   studiesResponseSchema,
   studyDocSchema,
 } from './schemas'
@@ -90,6 +92,8 @@ export const queryKeys = {
   ledgers: ['ledgers'] as const,
   studies: ['studies'] as const,
   study: (name: string) => ['study', name] as const,
+  runs: ['runs'] as const,
+  run: (id: string) => ['run', id] as const,
 }
 
 export function useForwardTests() {
@@ -166,5 +170,26 @@ export function useStudy(name: string) {
     queryFn: ({ signal }) => fetchJSON(`/research/studies/${encodeURIComponent(name)}`, studyDocSchema, signal),
     staleTime: 60_000,
     enabled: name !== '',
+  })
+}
+
+/** research-run reports (daily-research -json) found in the evidence folders. */
+export function useRuns() {
+  return useQuery({
+    queryKey: queryKeys.runs,
+    queryFn: ({ signal }) => fetchJSON('/research/runs', runsResponseSchema, signal),
+    staleTime: 60_000,
+  })
+}
+
+/** One report; `id` is `<evidence date>/<name>`. */
+export function useRun(date: string, name: string) {
+  const id = `${date}/${name}`
+  return useQuery({
+    queryKey: queryKeys.run(id),
+    queryFn: ({ signal }) =>
+      fetchJSON(`/research/runs/${encodeURIComponent(date)}/${encodeURIComponent(name)}`, runDocSchema, signal),
+    staleTime: 60_000,
+    enabled: date !== '' && name !== '',
   })
 }

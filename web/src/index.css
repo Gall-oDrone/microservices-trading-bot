@@ -48,6 +48,72 @@
   --t: 220ms;
 
   --sidebar-w: 232px;
+
+  /* Theme-dependent surfaces and effects (overridden by the light theme). */
+  --glow-a: hsl(200 70% 30% / 0.1);
+  --glow-b: hsl(170 60% 30% / 0.07);
+  --grain: 0.035;
+  --sidebar-bg: linear-gradient(180deg, hsl(222 30% 8% / 0.92), hsl(222 30% 7% / 0.92));
+  --card-end: hsl(222 24% 10.5%);
+  --shadow-hover: 0 1px 0 hsl(0 0% 100% / 0.06) inset, 0 18px 40px -16px hsl(222 60% 2% / 0.85);
+  --row-hover: hsl(222 24% 13%);
+  --sheen: hsl(0 0% 100% / 0.05);
+  --info-line: hsl(205 80% 64% / 0.28);
+  --info-focus: hsl(205 80% 64% / 0.6);
+  --dotted: hsl(220 12% 50% / 0.7);
+  /* Charts (read by components/charts.tsx). */
+  --chart-grid: hsl(222 18% 20% / 0.55);
+  --chart-cross: hsl(216 30% 80% / 0.25);
+  --chart-vol: hsl(220 12% 50% / 0.28);
+  --chart-vol-hi: hsl(205 80% 64% / 0.55);
+}
+
+/* Light theme: paper surfaces, ink text, deeper accents for contrast on white. */
+:root[data-theme='light'] {
+  color-scheme: light;
+
+  --bg: hsl(220 30% 97%);
+  --bg-raised: hsl(220 28% 95%);
+  --surface: hsl(0 0% 100%);
+  --surface-2: hsl(220 30% 96%);
+  --surface-3: hsl(220 24% 91%);
+  --line: hsl(220 18% 84%);
+  --line-soft: hsl(220 22% 90%);
+
+  --text: hsl(222 32% 12%);
+  --text-2: hsl(220 16% 32%);
+  --text-3: hsl(220 10% 46%);
+
+  --long: hsl(170 72% 31%);
+  --long-soft: hsl(170 72% 31% / 0.11);
+  --flat: hsl(215 14% 44%);
+  --flat-soft: hsl(215 14% 44% / 0.11);
+  --loss: hsl(6 72% 47%);
+  --loss-soft: hsl(6 72% 47% / 0.1);
+  --warn: hsl(33 92% 38%);
+  --warn-soft: hsl(38 92% 50% / 0.14);
+  --info: hsl(208 78% 40%);
+  --info-soft: hsl(208 78% 45% / 0.11);
+  --bench: hsl(220 8% 50%);
+
+  --shadow-1: 0 1px 0 hsl(0 0% 100% / 0.8) inset, 0 1px 2px hsl(222 30% 20% / 0.08);
+  --shadow-2: 0 1px 2px hsl(222 30% 20% / 0.05), 0 10px 28px -14px hsl(222 40% 20% / 0.18);
+
+  --glow-a: hsl(200 80% 60% / 0.12);
+  --glow-b: hsl(170 60% 50% / 0.08);
+  --grain: 0.02;
+  --sidebar-bg: linear-gradient(180deg, hsl(0 0% 100% / 0.86), hsl(220 30% 98% / 0.86));
+  --card-end: hsl(220 33% 99%);
+  --shadow-hover: 0 1px 0 hsl(0 0% 100%) inset, 0 16px 36px -16px hsl(222 40% 25% / 0.28);
+  --row-hover: hsl(220 30% 96%);
+  --sheen: hsl(220 30% 80% / 0.35);
+  --info-line: hsl(208 78% 40% / 0.3);
+  --info-focus: hsl(208 78% 40% / 0.55);
+  --dotted: hsl(220 10% 46% / 0.7);
+  --chart-grid: hsl(220 18% 86% / 0.8);
+  --chart-cross: hsl(222 30% 30% / 0.3);
+  --chart-vol: hsl(220 12% 50% / 0.22);
+  --chart-vol-hi: hsl(208 78% 45% / 0.45);
 }
 
 *,
@@ -65,8 +131,8 @@ body,
 body {
   margin: 0;
   background:
-    radial-gradient(1200px 600px at 85% -10%, hsl(200 70% 30% / 0.1), transparent 60%),
-    radial-gradient(900px 500px at -10% 110%, hsl(170 60% 30% / 0.07), transparent 60%), var(--bg);
+    radial-gradient(1200px 600px at 85% -10%, var(--glow-a), transparent 60%),
+    radial-gradient(900px 500px at -10% 110%, var(--glow-b), transparent 60%), var(--bg);
   color: var(--text);
   font-family: var(--font-sans);
   font-size: 14px;
@@ -82,7 +148,7 @@ body::before {
   position: fixed;
   inset: 0;
   pointer-events: none;
-  opacity: 0.035;
+  opacity: var(--grain);
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
   z-index: 0;
 }
@@ -171,7 +237,7 @@ h3 {
   flex-direction: column;
   gap: 24px;
   padding: 20px 14px;
-  background: linear-gradient(180deg, hsl(222 30% 8% / 0.92), hsl(222 30% 7% / 0.92));
+  background: var(--sidebar-bg);
   border-right: 1px solid var(--line-soft);
   backdrop-filter: blur(10px);
 }
@@ -338,7 +404,7 @@ h3 {
    ============================================================ */
 .card {
   position: relative;
-  background: linear-gradient(180deg, var(--surface), hsl(222 24% 10.5%));
+  background: linear-gradient(180deg, var(--surface), var(--card-end));
   border: 1px solid var(--line-soft);
   border-radius: var(--radius-l);
   box-shadow: var(--shadow-2);
@@ -365,9 +431,7 @@ h3 {
 .card.interactive:hover {
   transform: translateY(-2px);
   border-color: var(--line);
-  box-shadow:
-    0 1px 0 hsl(0 0% 100% / 0.06) inset,
-    0 18px 40px -16px hsl(222 60% 2% / 0.85);
+  box-shadow: var(--shadow-hover);
 }
 
 .panel {
@@ -691,7 +755,7 @@ table.data tbody tr {
   transition: background var(--t-fast) var(--ease);
 }
 table.data tbody tr:hover {
-  background: hsl(222 24% 13%);
+  background: var(--row-hover);
 }
 table.data td.r,
 table.data th.r {
@@ -850,7 +914,7 @@ pre.json {
   position: absolute;
   inset: 0;
   transform: translateX(-100%);
-  background: linear-gradient(90deg, transparent, hsl(0 0% 100% / 0.05), transparent);
+  background: linear-gradient(90deg, transparent, var(--sheen), transparent);
   animation: shimmer 1.4s infinite;
 }
 @keyframes shimmer {
@@ -961,8 +1025,8 @@ pre.json {
   margin-top: 14px;
   padding: 12px 14px;
   border-radius: var(--radius);
-  border: 1px dashed hsl(205 80% 64% / 0.28);
-  background: radial-gradient(120% 140% at 0% 0%, hsl(205 80% 64% / 0.06), transparent 60%), var(--bg-raised);
+  border: 1px dashed var(--info-line);
+  background: radial-gradient(120% 140% at 0% 0%, var(--info-soft), transparent 60%), var(--bg-raised);
 }
 .live-strip.lg {
   margin: 0 0 16px;
@@ -1112,7 +1176,7 @@ pre.json {
 }
 .input:focus {
   outline: none;
-  border-color: hsl(205 80% 64% / 0.6);
+  border-color: var(--info-focus);
   box-shadow: 0 0 0 3px var(--info-soft);
 }
 .toolbar .seg {
@@ -1198,7 +1262,7 @@ pre.json {
   white-space: nowrap;
 }
 a.chip:hover {
-  border-color: hsl(205 80% 64% / 0.5);
+  border-color: var(--info-focus);
   color: var(--info);
   text-decoration: none;
 }
@@ -1299,7 +1363,7 @@ a.chip:hover {
 }
 .prose a[data-local] {
   color: var(--text-2);
-  text-decoration: underline dotted hsl(220 12% 50% / 0.7);
+  text-decoration: underline dotted var(--dotted);
   text-underline-offset: 3px;
   cursor: help;
 }
@@ -1422,6 +1486,345 @@ a.chip:hover {
   }
   .study-doc {
     padding: 18px 16px;
+  }
+}
+
+/* ============================================================
+   Theme toggle
+   ============================================================ */
+.theme-toggle {
+  margin-left: auto;
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 1px solid var(--line-soft);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text-2);
+  cursor: pointer;
+  transition:
+    color var(--t-fast) var(--ease),
+    border-color var(--t-fast) var(--ease),
+    background var(--t-fast) var(--ease),
+    transform var(--t) var(--ease);
+}
+.theme-toggle svg {
+  width: 16px;
+  height: 16px;
+  transition: transform var(--t) var(--ease);
+}
+.theme-toggle:hover {
+  color: var(--warn);
+  border-color: var(--line);
+  background: var(--surface-2);
+}
+.theme-toggle:hover svg {
+  transform: rotate(-20deg);
+}
+.theme-toggle:active {
+  transform: scale(0.94);
+}
+/* Smooth the switch itself; skipped for reduced motion below. */
+html.theme-switching *,
+html.theme-switching *::before,
+html.theme-switching *::after {
+  transition:
+    background-color var(--t) var(--ease),
+    border-color var(--t) var(--ease),
+    color var(--t) var(--ease),
+    fill var(--t) var(--ease) !important;
+}
+
+/* ============================================================
+   Backtest runs
+   ============================================================ */
+.run-group {
+  margin-bottom: 26px;
+}
+.run-group-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 16px;
+  margin-bottom: 10px;
+}
+.run-group-head h2 {
+  font-size: 14px;
+}
+.run-group-head .study-meta {
+  margin-top: 0;
+}
+.run-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+  gap: 12px;
+}
+.run-row {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 16px 18px;
+}
+.run-main {
+  min-width: 0;
+}
+.run-main .study-meta {
+  margin-top: 8px;
+}
+.run-name {
+  margin: 0;
+  font: 600 14px var(--font-mono);
+  letter-spacing: -0.02em;
+  overflow-wrap: anywhere;
+}
+.run-name a {
+  color: var(--text);
+}
+.run-name a:hover {
+  color: var(--info);
+  text-decoration: none;
+}
+/* Whole card is clickable via the heading link. */
+.run-row {
+  position: relative;
+}
+.run-name a::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+}
+.run-row a.chip {
+  position: relative;
+  z-index: 1;
+}
+.run-scores {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: auto;
+}
+.run-score {
+  display: grid;
+  grid-template-columns: 112px minmax(0, 1fr) 40px;
+  align-items: center;
+  gap: 10px;
+  font-size: 12px;
+}
+.run-score-name {
+  color: var(--text-2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.run-score .num {
+  text-align: right;
+}
+.run-score-bar,
+.beat-bar {
+  position: relative;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--surface-3);
+  overflow: hidden;
+}
+.run-score-bar > span,
+.beat-bar > span {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: inherit;
+  transition: width var(--t) var(--ease);
+}
+.run-score-bar .up,
+.beat-bar .up {
+  background: linear-gradient(90deg, var(--long-soft), var(--long));
+}
+.run-score-bar .down,
+.beat-bar .down {
+  background: linear-gradient(90deg, var(--loss-soft), var(--loss));
+}
+.chip-warn {
+  border-color: transparent;
+  background: var(--warn-soft);
+  color: var(--warn);
+}
+.chip-flat {
+  border-color: transparent;
+  background: var(--flat-soft);
+  color: var(--text-2);
+}
+.mono-title {
+  font-family: var(--font-mono);
+  letter-spacing: -0.03em;
+  overflow-wrap: anywhere;
+}
+.head-meta {
+  margin-left: 6px;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+/* Heat-map matrix: rules × windows, cells coloured by return vs holding. */
+table.matrix {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 12.5px;
+}
+table.matrix th,
+table.matrix td {
+  padding: 9px 12px;
+  border-bottom: 1px solid var(--line-soft);
+  white-space: nowrap;
+  text-align: right;
+}
+table.matrix tbody tr:last-child > * {
+  border-bottom: 0;
+}
+table.matrix thead th {
+  background: var(--bg-raised);
+  color: var(--text-3);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  vertical-align: bottom;
+}
+table.matrix th:first-child {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  text-align: left;
+  background: var(--surface);
+}
+table.matrix thead th:first-child {
+  background: var(--bg-raised);
+}
+table.matrix tbody th {
+  color: var(--text);
+  font-weight: 500;
+}
+table.matrix tr.hold th,
+table.matrix tr.hold td {
+  color: var(--text-2);
+  background: var(--bg-raised);
+}
+table.matrix tr.current > * {
+  box-shadow: inset 0 0 0 9999px var(--info-soft);
+}
+table.matrix tr.current th:first-child {
+  box-shadow:
+    inset 3px 0 0 var(--info),
+    inset 0 0 0 9999px var(--info-soft);
+}
+.matrix-col {
+  appearance: none;
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+  padding: 4px 6px;
+  margin: -4px -6px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  cursor: pointer;
+  transition:
+    background var(--t-fast) var(--ease),
+    color var(--t-fast) var(--ease);
+}
+.matrix-col:hover {
+  background: var(--surface-3);
+  color: var(--text);
+}
+.matrix-col[aria-pressed='true'] {
+  color: var(--info);
+}
+.matrix-tag {
+  font-size: 9.5px;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  color: var(--warn);
+}
+table.matrix td.heat {
+  --heat: 0;
+  font-weight: 600;
+  transition: background var(--t) var(--ease);
+}
+table.matrix td.heat.up {
+  color: var(--long);
+  background: color-mix(in srgb, var(--long) calc(var(--heat) * 34%), transparent);
+}
+table.matrix td.heat.down {
+  color: var(--loss);
+  background: color-mix(in srgb, var(--loss) calc(var(--heat) * 30%), transparent);
+}
+table.matrix th.sel,
+table.matrix td.sel {
+  box-shadow:
+    inset 1px 0 0 var(--info-line),
+    inset -1px 0 0 var(--info-line);
+}
+table.matrix thead th.sel {
+  box-shadow:
+    inset 1px 0 0 var(--info-line),
+    inset -1px 0 0 var(--info-line),
+    inset 0 2px 0 var(--info);
+}
+
+table.run-table td.pos {
+  color: var(--long);
+}
+table.run-table td.neg {
+  color: var(--loss);
+}
+table.run-table tbody th {
+  text-align: left;
+  font-size: 12.5px;
+  font-weight: 500;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--text);
+  background: transparent;
+  position: static;
+}
+table.run-table tr.hold > * {
+  color: var(--text-2);
+  background: var(--bg-raised);
+}
+table.run-table tr.best th {
+  box-shadow: inset 3px 0 0 var(--long);
+}
+.beat {
+  display: inline-grid;
+  grid-template-columns: 80px auto;
+  align-items: center;
+  gap: 8px;
+}
+
+.run-facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 18px 24px;
+}
+.run-facts .lineage {
+  min-width: 0;
+}
+
+@media (max-width: 640px) {
+  .run-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .run-score {
+    grid-template-columns: 96px minmax(0, 1fr) 36px;
   }
 }
 

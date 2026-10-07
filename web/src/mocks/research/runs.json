@@ -1,0 +1,1502 @@
+{
+  "generated_at": "2026-10-06T21:03:23Z",
+  "dir": "docs/backtest-readiness",
+  "found": true,
+  "runs": [
+    {
+      "id": "2026-09-28/btc-mxn-maker-plus-slippage-same-windows",
+      "date": "2026-09-28",
+      "name": "btc-mxn-maker-plus-slippage-same-windows",
+      "file": "docs/backtest-readiness/evidence-2026-09-28/btc-mxn-maker-plus-slippage-same-windows.json",
+      "text": "docs/backtest-readiness/evidence-2026-09-28/btc-mxn-maker-plus-slippage-same-windows.txt",
+      "schema": "research-run/v1",
+      "tool": "daily-research",
+      "generated_at": "2026-10-06T19:33:28Z",
+      "commit": "d54c2edd48a0cfc27f76e68caa94cd649c47c3e6",
+      "data": {
+        "prices": "bitso",
+        "bars": 3406,
+        "first": "2017-05-31",
+        "last": "2026-09-26",
+        "news_days": 0
+      },
+      "costs": {
+        "buy_bps": 60,
+        "sell_bps": 60,
+        "slippage_bps": 10,
+        "round_trip_bps": 140
+      },
+      "windows": [
+        {
+          "label": "IN-SAMPLE",
+          "from": "2020-06-01",
+          "to": "2026-09-26",
+          "bars": 2309
+        },
+        {
+          "label": "OUT-OF-SAMPLE",
+          "from": "2025-01-01",
+          "to": "2025-12-31",
+          "bars": 365
+        },
+        {
+          "label": "OUT-OF-SAMPLE",
+          "from": "2026-01-01",
+          "to": "2026-09-26",
+          "bars": 269
+        },
+        {
+          "label": "OUT-OF-SAMPLE",
+          "from": "2021-01-01",
+          "to": "2021-12-31",
+          "bars": 365
+        },
+        {
+          "label": "OUT-OF-SAMPLE",
+          "from": "2022-01-01",
+          "to": "2022-12-31",
+          "bars": 365
+        },
+        {
+          "label": "OUT-OF-SAMPLE",
+          "from": "2023-01-01",
+          "to": "2023-12-31",
+          "bars": 365
+        },
+        {
+          "label": "OUT-OF-SAMPLE",
+          "from": "2024-01-01",
+          "to": "2024-12-31",
+          "bars": 366
+        }
+      ],
+      "scores": [
+        {
+          "rule": "buy_and_hold",
+          "windows": 7,
+          "beats_hold": 0
+        },
+        {
+          "rule": "trend_sma50",
+          "windows": 7,
+          "beats_hold": 4
+        },
+        {
+          "rule": "news_sentiment",
+          "windows": 7,
+          "beats_hold": 3
+        },
+        {
+          "rule": "trend_and_news",
+          "windows": 7,
+          "beats_hold": 3
+        }
+      ],
+      "studies": ["FORWARD-TEST-PREREGISTRATION-SMA50-BTCUSD-2026-09-29"]
+    },
+    {
+      "id": "2026-09-28/btc-mxn-taker-same-windows",
+      "date": "2026-09-28",
+      "name": "btc-mxn-taker-same-windows",
+      "file": "docs/backtest-readiness/evidence-2026-09-28/btc-mxn-taker-same-windows.json",
+      "text": "docs/backtest-readiness/evidence-2026-09-28/btc-mxn-taker-same-windows.txt",
+      "schema": "research-run/v1",
+      "tool": "daily-research",
+      "generated_at": "2026-10-06T19:33:27Z",
+      "commit": "d54c2edd48a0cfc27f76e68caa94cd649c47c3e6",
+      "data": {
+        "prices": "bitso",
+        "bars": 3406,
+        "first": "2017-05-31",
+        "last": "2026-09-26",
+        "news_days": 0
+      },
+      "costs": {
+        "buy_bps": 78,
+        "sell_bps": 78,
+        "slippage_bps": 10,
+        "round_trip_bps": 176
+      },
+      "windows": [
+        {
+          "label": "IN-SAMPLE",
+          "from": "2020-06-01",
+          "to": "2026-09-26",
+          "bars": 2309
+        },
+        {
+          "label": "OUT-OF-SAMPLE",
+          "from": "2025-01-01",
+          "to": "2025-12-31",
+          "bars": 365
+        },
+        {
+          "label": "OUT-OF-SAMPLE",
+          "from": "2026-01-01",
+          "to": "2026-09-26",
+          "bars": 269
+        },
+        {
+          "label": "OUT-OF-SAMPLE",
+          "from": "2021-01-01",
+          "to": "2021-12-31",
+          "bars": 365
+        },
+        {
+          "label": "OUT-OF-SAMPLE",
+          "from": "2022-01-01",
+          "to": "2022-12-31",
+          "bars": 365
+        },
+        {
+          "label": "OUT-OF-SAMPLE",
+          "from": "2023-01-01",
+          "to": "2023-12-31",
+          "bars": 365
+        },
+        {
+          "label": "OUT-OF-SAMPLE",
+          "from": "2024-01-01",
+          "to": "2024-12-31",
+          "bars": 366
+        }
+      ],
+      "scores": [
+        {
+          "rule": "buy_and_hold",
+          "windows": 7,
+          "beats_hold": 0
+        },
+        {
+          "rule": "trend_sma50",
+          "windows": 7,
+          "beats_hold": 2
+        },
+        {
+          "rule": "news_sentiment",
+          "windows": 7,
+          "beats_hold": 3
+        },
+        {
+          "rule": "trend_and_news",
+          "windows": 7,
+          "beats_hold": 3
+        }
+      ],
+      "studies": ["FORWARD-TEST-PREREGISTRATION-SMA50-BTCUSD-2026-09-29"]
+    },
+    {
+      "id": "2026-09-28/btc-usd-frictionless",
+      "date": "2026-09-28",
+      "name": "btc-usd-frictionless",
+      "file": "docs/backtest-readiness/evidence-2026-09-28/btc-usd-frictionless.json",
+      "text": "docs/backtest-readiness/evidence-2026-09-28/btc-usd-frictionless.txt",
+      "schema": "research-run/v1",
+      "tool": "daily-research",
+      "generated_at": "2026-10-06T19:33:28Z",
+      "commit": "d54c2edd48a0cfc27f76e68caa94cd649c47c3e6",
+      "data": {
+        "prices": "bitso-usd",
+        "bars": 2348,
+        "first": "2020-04-24",
+        "last": "2026-09-27",
+        "news_days": 0
+      },
+      "costs": {
+        "buy_bps": 0,
+        "sell_bps": 0,
+        "slippage_bps": 0,
+        "round_trip_bps": 0
+      },
+      "windows": [
+        {
+          "label": "IN-SAMPLE",
+          "from": "2020-06-01",
+          "to": "2026-09-26",
+          "bars": 2309
+        },
+        {
+          "label": "OUT-OF-SAMPLE",
+          "from": "2025-01-01",
+          "to": "2025-12-31",
+          "bars": 365
+        },
+        {
+          "label": "OUT-OF-SAMPLE",
+          "from": "2026-01-01",
+          "to": "2026-09-26",
+          "bars": 269
+        },
+        {
+          "label": "OUT-OF-SAMPLE",
+          "from": "2021-01-01",
+          "to": "2021-12-31",
+          "bars": 365
+        },
+        {
+          "label": "OUT-OF-SAMPLE",
+          "from": "2022-01-01",
+          "to": "2022-12-31",
+          "bars": 365
+        },
+        {
+          "label": "OUT-OF-SAMPLE",
+          "from": "2023-01-01",
+          "to": "2023-12-31",
+          "bars": 365
+        },
+        {
+          "label": "OUT-OF-SAMPLE",
+          "from": "2024-01-01",
+          "to": "2024-12-31",
+          "bars": 366
+        }
+      ],
+      "scores": [
+        {
+          "rule": "buy_and_hold",
+          "windows": 7,
+          "beats_hold": 0
+        },
+        {
+          "rule": "trend_sma50",
+          "windows": 7,
+          "beats_hold": 5
+        },
+        {
+          "rule": "news_sentiment",
+          "windows": 7,
+          "beats_hold": 3
+        },
+        {
+          "rule": "trend_and_news",
+          "windows": 7,
+          "beats_hold": 3
+        }
+      ],
+      "studies": ["FORWARD-TEST-PREREGISTRATION-SMA50-BTCUSD-2026-09-29"]
+    },
+    {
+      "id": "2026-09-28/btc-usd-maker",
+      "date": "2026-09-28",
+      "name": "btc-usd-maker",
+      "file": "docs/backtest-readiness/evidence-2026-09-28/btc-usd-maker.json",
+      "text": "docs/backtest-readiness/evidence-2026-09-28/btc-usd-maker.txt",
+      "schema": "research-run/v1",
+      "tool": "daily-research",
+      "generated_at": "2026-10-06T19:33:28Z",
+      "commit": "d54c2edd48a0cfc27f76e68caa94cd649c47c3e6",
+      "data": {
+        "prices": "bitso-usd",
+        "bars": 2348,
+        "first": "2020-04-24",
+        "last": "2026-09-27",
+        "news_days": 0
+      },
+      "costs": {
+        "buy_bps": 30,
+        "sell_bps": 30,
+        "slippage_bps": 0,
+        "round_trip_bps": 60
+      },
+      "windows": [
+        {
+          "label": "IN-SAMPLE",
+          "from": "2020-06-01",
+          "to": "2026-09-26",
+          "bars": 2309
+        },
+        {
+          "label": "OUT-OF-SAMPLE",
+          "from": "2025-01-01",
+          "to": "2025-12-31",
+          "bars": 365
+        },
+        {
+          "label": "OUT-OF-SAMPLE",
+          "from": "2026-01-01",
+          "to": "2026-09-26",
+          "bars": 269
+        },
+        {
+          "label": "OUT-OF-SAMPLE",
+          "from": "2021-01-01",
+          "to": "2021-12-31",
+          "bars": 365
+        },
+        {
+          "label": "OUT-OF-SAMPLE",
+          "from": "2022-01-01",
+          "to": "2022-12-31",
+          "bars": 365
+        },
+        {
+          "label": "OUT-OF-SAMPLE",
+          "from": "2023-01-01",
+          "to": "2023-12-31",
+          "bars": 365
+        },
+        {
+          "label": "OUT-OF-SAMPLE",
+          "from": "2024-01-01",
+          "to": "2024-12-31",
+          "bars": 366
+        }
+      ],
+      "scores": [
+        {
+          "rule": "buy_and_hold",
+          "windows": 7,
+          "beats_hold": 0
+        },
+        {
+          "rule": "trend_sma50",
+          "windows": 7,
+          "beats_hold": 5
+        },
+        {
+          "rule": "news_sentiment",
+          "windows": 7,
+          "beats_hold": 3
+        },
+        {
+          "rule": "trend_and_news",
+          "windows": 7,
+          "beats_hold": 3
+        }
+      ],
+      "studies": ["FORWARD-TEST-PREREGISTRATION-SMA50-BTCUSD-2026-09-29"]
+    },
+    {
+      "id": "2026-09-28/btc-usd-maker-plus-slippage",
+      "date": "2026-09-28",
+      "name": "btc-usd-maker-plus-slippage",
+      "file": "docs/backtest-readiness/evidence-2026-09-28/btc-usd-maker-plus-slippage.json",
+      "text": "docs/backtest-readiness/evidence-2026-09-28/btc-usd-maker-plus-slippage.txt",
+      "schema": "research-run/v1",
+      "tool": "daily-research",
+      "generated_at": "2026-10-06T19:33:28Z",
+      "commit": "d54c2edd48a0cfc27f76e68caa94cd649c47c3e6",
+      "data": {
+        "prices": "bitso-usd",
+        "bars": 2348,
+        "first": "2020-04-24",
+        "last": "2026-09-27",
+        "news_days": 0
+      },
+      "costs": {
+        "buy_bps": 30,
+        "sell_bps": 30,
+        "slippage_bps": 10,
+        "round_trip_bps": 80
+      },
+      "windows": [
+        {
+          "label": "IN-SAMPLE",
+          "from": "2020-06-01",
+          "to": "2026-09-26",
+          "bars": 2309
+        },
+        {
+          "label": "OUT-OF-SAMPLE",
+          "from": "2025-01-01",
+          "to": "2025-12-31",
+          "bars": 365
+        },
+        {
+          "label": "OUT-OF-SAMPLE",
+          "from": "2026-01-01",
+          "to": "2026-09-26",
+          "bars": 269
+        },
+        {
+          "label": "OUT-OF-SAMPLE",
+          "from": "2021-01-01",
+          "to": "2021-12-31",
+          "bars": 365
+        },
+        {
+          "label": "OUT-OF-SAMPLE",
+          "from": "2022-01-01",
+          "to": "2022-12-31",
+          "bars": 365
+        },
+        {
+          "label": "OUT-OF-SAMPLE",
+          "from": "2023-01-01",
+          "to": "2023-12-31",
+          "bars": 365
+        },
+        {
+          "label": "OUT-OF-SAMPLE",
+          "from": "2024-01-01",
+          "to": "2024-12-31",
+          "bars": 366
+        }
+      ],
+      "scores": [
+        {
+          "rule": "buy_and_hold",
+          "windows": 7,
+          "beats_hold": 0
+        },
+        {
+          "rule": "trend_sma50",
+          "windows": 7,
+          "beats_hold": 5
+        },
+        {
+          "rule": "news_sentiment",
+          "windows": 7,
+          "beats_hold": 3
+        },
+        {
+          "rule": "trend_and_news",
+          "windows": 7,
+          "beats_hold": 3
+        }
+      ],
+      "studies": ["FORWARD-TEST-PREREGISTRATION-SMA50-BTCUSD-2026-09-29"]
+    },
+    {
+      "id": "2026-09-28/btc-usd-taker",
+      "date": "2026-09-28",
+      "name": "btc-usd-taker",
+      "file": "docs/backtest-readiness/evidence-2026-09-28/btc-usd-taker.json",
+      "text": "docs/backtest-readiness/evidence-2026-09-28/btc-usd-taker.txt",
+      "schema": "research-run/v1",
+      "tool": "daily-research",
+      "generated_at": "2026-10-06T19:33:28Z",
+      "commit": "d54c2edd48a0cfc27f76e68caa94cd649c47c3e6",
+      "data": {
+        "prices": "bitso-usd",
+        "bars": 2348,
+        "first": "2020-04-24",
+        "last": "2026-09-27",
+        "news_days": 0
+      },
+      "costs": {
+        "buy_bps": 36,
+        "sell_bps": 36,
+        "slippage_bps": 10,
+        "round_trip_bps": 92
+      },
+      "windows": [
+        {
+          "label": "IN-SAMPLE",
+          "from": "2020-06-01",
+          "to": "2026-09-26",
+          "bars": 2309
+        },
+        {
+          "label": "OUT-OF-SAMPLE",
+          "from": "2025-01-01",
+          "to": "2025-12-31",
+          "bars": 365
+        },
+        {
+          "label": "OUT-OF-SAMPLE",
+          "from": "2026-01-01",
+          "to": "2026-09-26",
+          "bars": 269
+        },
+        {
+          "label": "OUT-OF-SAMPLE",
+          "from": "2021-01-01",
+          "to": "2021-12-31",
+          "bars": 365
+        },
+        {
+          "label": "OUT-OF-SAMPLE",
+          "from": "2022-01-01",
+          "to": "2022-12-31",
+          "bars": 365
+        },
+        {
+          "label": "OUT-OF-SAMPLE",
+          "from": "2023-01-01",
+          "to": "2023-12-31",
+          "bars": 365
+        },
+        {
+          "label": "OUT-OF-SAMPLE",
+          "from": "2024-01-01",
+          "to": "2024-12-31",
+          "bars": 366
+        }
+      ],
+      "scores": [
+        {
+          "rule": "buy_and_hold",
+          "windows": 7,
+          "beats_hold": 0
+        },
+        {
+          "rule": "trend_sma50",
+          "windows": 7,
+          "beats_hold": 5
+        },
+        {
+          "rule": "news_sentiment",
+          "windows": 7,
+          "beats_hold": 3
+        },
+        {
+          "rule": "trend_and_news",
+          "windows": 7,
+          "beats_hold": 3
+        }
+      ],
+      "studies": ["FORWARD-TEST-PREREGISTRATION-SMA50-BTCUSD-2026-09-29"]
+    },
+    {
+      "id": "2026-09-27/btc-mxn-frictionless",
+      "date": "2026-09-27",
+      "name": "btc-mxn-frictionless",
+      "file": "docs/backtest-readiness/evidence-2026-09-27/btc-mxn-frictionless.json",
+      "text": "docs/backtest-readiness/evidence-2026-09-27/btc-mxn-frictionless.txt",
+      "schema": "research-run/v1",
+      "tool": "daily-research",
+      "generated_at": "2026-10-06T19:33:24Z",
+      "commit": "d54c2edd48a0cfc27f76e68caa94cd649c47c3e6",
+      "data": {
+        "prices": "bitso",
+        "bars": 3406,
+        "first": "2017-05-31",
+        "last": "2026-09-26",
+        "news": "news_crypto_agentic.parquet",
+        "news_days": 470
+      },
+      "costs": {
+        "buy_bps": 0,
+        "sell_bps": 0,
+        "slippage_bps": 0,
+        "round_trip_bps": 0
+      },
+      "windows": [
+        {
+          "label": "IN-SAMPLE",
+          "from": "2025-01-01",
+          "to": "2025-12-31",
+          "bars": 365
+        },
+        {
+          "label": "OUT-OF-SAMPLE",
+          "from": "2026-01-01",
+          "to": "2026-09-26",
+          "bars": 269
+        },
+        {
+          "label": "OUT-OF-SAMPLE",
+          "from": "2018-01-01",
+          "to": "2018-12-31",
+          "bars": 365
+        },
+        {
+          "label": "OUT-OF-SAMPLE",
+          "from": "2019-01-01",
+          "to": "2019-12-31",
+          "bars": 365
+        },
+        {
+          "label": "OUT-OF-SAMPLE",
+          "from": "2020-01-01",
+          "to": "2020-12-31",
+          "bars": 366
+        },
+        {
+          "label": "OUT-OF-SAMPLE",
+          "from": "2021-01-01",
+          "to": "2021-12-31",
+          "bars": 365
+        },
+        {
+          "label": "OUT-OF-SAMPLE",
+          "from": "2022-01-01",
+          "to": "2022-12-31",
+          "bars": 365
+        },
+        {
+          "label": "OUT-OF-SAMPLE",
+          "from": "2023-01-01",
+          "to": "2023-12-31",
+          "bars": 365
+        },
+        {
+          "label": "OUT-OF-SAMPLE",
+          "from": "2024-01-01",
+          "to": "2024-12-31",
+          "bars": 366
+        },
+        {
+          "label": "OUT-OF-SAMPLE",
+          "from": "2018-01-01",
+          "to": "2026-09-26",
+          "bars": 3191
+        }
+      ],
+      "scores": [
+        {
+          "rule": "buy_and_hold",
+          "windows": 10,
+          "beats_hold": 0
+        },
+        {
+          "rule": "trend_sma50",
+          "windows": 10,
+          "beats_hold": 6
+        },
+        {
+          "rule": "news_sentiment",
+          "windows": 10,
+          "beats_hold": 2
+        },
+        {
+          "rule": "trend_and_news",
+          "windows": 10,
+          "beats_hold": 4
+        }
+      ],
+      "studies": [
+        "BTC-MXN-TREND-CHECK-2026-09-27",
+        "FORWARD-TEST-PREREGISTRATION-SMA50-2026-09-27",
+        "FULL-HISTORY-DAILY-STUDY-2026-09-27"
+      ]
+    },
+    {
+      "id": "2026-09-27/btc-mxn-maker",
+      "date": "2026-09-27",
+      "name": "btc-mxn-maker",
+      "file": "docs/backtest-readiness/evidence-2026-09-27/btc-mxn-maker.json",
+      "text": "docs/backtest-readiness/evidence-2026-09-27/btc-mxn-maker.txt",
+      "schema": "research-run/v1",
+      "tool": "daily-research",
+      "generated_at": "2026-10-06T19:33:22Z",
+      "commit": "d54c2edd48a0cfc27f76e68caa94cd649c47c3e6",
+      "data": {
+        "prices": "bitso",
+        "bars": 3406,
+        "first": "2017-05-31",
+        "last": "2026-09-26",
+        "news": "news_crypto_agentic.parquet",
+        "news_days": 470
+      },
+      "costs": {
+        "buy_bps": 60,
+        "sell_bps": 60,
+        "slippage_bps": 0,
+        "round_trip_bps": 120
+      },
+      "windows": [
+        {
+          "label": "IN-SAMPLE",
+          "from": "2025-01-01",
+          "to": "2025-12-31",
+          "bars": 365
+        },
+        {
+          "label": "OUT-OF-SAMPLE",
+          "from": "2026-01-01",
+          "to": "2026-09-26",
+          "bars": 269
+        },
+        {
+          "label": "OUT-OF-SAMPLE",
+          "from": "2018-01-01",
+          "to": "2018-12-31",
+          "bars": 365
+        },
+        {
+          "label": "OUT-OF-SAMPLE",
+          "from": "2019-01-01",
+          "to": "2019-12-31",
+          "bars": 365
+        },
+        {
+          "label": "OUT-OF-SAMPLE",
+          "from": "2020-01-01",
+          "to": "2020-12-31",
+          "bars": 366
+        },
+        {
+          "label": "OUT-OF-SAMPLE",
+          "from": "2021-01-01",
+          "to": "2021-12-31",
+          "bars": 365
+        },
+        {
+          "label": "OUT-OF-SAMPLE",
+          "from": "2022-01-01",
+          "to": "2022-12-31",
+          "bars": 365
+        },
+        {
+          "label": "OUT-OF-SAMPLE",
+          "from": "2023-01-01",
+          "to": "2023-12-31",
+          "bars": 365
+        },
+        {
+          "label": "OUT-OF-SAMPLE",
+          "from": "2024-01-01",
+          "to": "2024-12-31",
+          "bars": 366
+        },
+        {
+          "label": "OUT-OF-SAMPLE",
+          "from": "2018-01-01",
+          "to": "2026-09-26",
+          "bars": 3191
+        }
+      ],
+      "scores": [
+        {
+          "rule": "buy_and_hold",
+          "windows": 10,
+          "beats_hold": 0
+        },
+        {
+          "rule": "trend_sma50",
+          "windows": 10,
+          "beats_hold": 5
+        },
+        {
+          "rule": "news_sentiment",
+          "windows": 10,
+          "beats_hold": 2
+        },
+        {
+          "rule": "trend_and_news",
+          "windows": 10,
+          "beats_hold": 4
+        }
+      ],
+      "studies": [
+        "BTC-MXN-TREND-CHECK-2026-09-27",
+        "FORWARD-TEST-PREREGISTRATION-SMA50-2026-09-27",
+        "FULL-HISTORY-DAILY-STUDY-2026-09-27"
+      ]
+    },
+    {
+      "id": "2026-09-27/btc-mxn-maker-plus-slippage",
+      "date": "2026-09-27",
+      "name": "btc-mxn-maker-plus-slippage",
+      "file": "docs/backtest-readiness/evidence-2026-09-27/btc-mxn-maker-plus-slippage.json",
+      "text": "docs/backtest-readiness/evidence-2026-09-27/btc-mxn-maker-plus-slippage.txt",
+      "schema": "research-run/v1",
+      "tool": "daily-research",
+      "generated_at": "2026-10-06T19:33:23Z",
+      "commit": "d54c2edd48a0cfc27f76e68caa94cd649c47c3e6",
+      "data": {
+        "prices": "bitso",
+        "bars": 3406,
+        "first": "2017-05-31",
+        "last": "2026-09-26",
+        "news": "news_crypto_agentic.parquet",
+        "news_days": 470
+      },
+      "costs": {
+        "buy_bps": 60,
+        "sell_bps": 60,
+        "slippage_bps": 10,
+        "round_trip_bps": 140
+      },
+      "windows": [
+        {
+          "label": "IN-SAMPLE",
+          "from": "2025-01-01",
+          "to": "2025-12-31",
+          "bars": 365
+        },
+        {
+          "label": "OUT-OF-SAMPLE",
+          "from": "2026-01-01",
+          "to": "2026-09-26",
+          "bars": 269
+        },
+        {
+          "label": "OUT-OF-SAMPLE",
+          "from": "2018-01-01",
+          "to": "2018-12-31",
+          "bars": 365
+        },
+        {
+          "label": "OUT-OF-SAMPLE",
+          "from": "2019-01-01",
+          "to": "2019-12-31",
+          "bars": 365
+        },
+        {
+          "label": "OUT-OF-SAMPLE",
+          "from": "2020-01-01",
+          "to": "2020-12-31",
+          "bars": 366
+        },
+        {
+          "label": "OUT-OF-SAMPLE",
+          "from": "2021-01-01",
+          "to": "2021-12-31",
+          "bars": 365
+        },
+        {
+          "label": "OUT-OF-SAMPLE",
+          "from": "2022-01-01",
+          "to": "2022-12-31",
+          "bars": 365
+        },
+        {
+          "label": "OUT-OF-SAMPLE",
+          "from": "2023-01-01",
+          "to": "2023-12-31",
+          "bars": 365
+        },
+        {
+          "label": "OUT-OF-SAMPLE",
+          "from": "2024-01-01",
+          "to": "2024-12-31",
+          "bars": 366
+        },
+        {
+          "label": "OUT-OF-SAMPLE",
+          "from": "2018-01-01",
+          "to": "2026-09-26",
+          "bars": 3191
+        }
+      ],
+      "scores": [
+        {
+          "rule": "buy_and_hold",
+          "windows": 10,
+          "beats_hold": 0
+        },
+        {
+          "rule": "trend_sma50",
+          "windows": 10,
+          "beats_hold": 5
+        },
+        {
+          "rule": "news_sentiment",
+          "windows": 10,
+          "beats_hold": 2
+        },
+        {
+          "rule": "trend_and_news",
+          "windows": 10,
+          "beats_hold": 3
+        }
+      ],
+      "studies": ["FORWARD-TEST-PREREGISTRATION-SMA50-2026-09-27"]
+    },
+    {
+      "id": "2026-09-27/btc-mxn-taker",
+      "date": "2026-09-27",
+      "name": "btc-mxn-taker",
+      "file": "docs/backtest-readiness/evidence-2026-09-27/btc-mxn-taker.json",
+      "text": "docs/backtest-readiness/evidence-2026-09-27/btc-mxn-taker.txt",
+      "schema": "research-run/v1",
+      "tool": "daily-research",
+      "generated_at": "2026-10-06T19:33:21Z",
+      "commit": "d54c2edd48a0cfc27f76e68caa94cd649c47c3e6",
+      "data": {
+        "prices": "bitso",
+        "bars": 3406,
+        "first": "2017-05-31",
+        "last": "2026-09-26",
+        "news": "news_crypto_agentic.parquet",
+        "news_days": 470
+      },
+      "costs": {
+        "buy_bps": 78,
+        "sell_bps": 78,
+        "slippage_bps": 10,
+        "round_trip_bps": 176
+      },
+      "windows": [
+        {
+          "label": "IN-SAMPLE",
+          "from": "2025-01-01",
+          "to": "2025-12-31",
+          "bars": 365
+        },
+        {
+          "label": "OUT-OF-SAMPLE",
+          "from": "2026-01-01",
+          "to": "2026-09-26",
+          "bars": 269
+        },
+        {
+          "label": "OUT-OF-SAMPLE",
+          "from": "2018-01-01",
+          "to": "2018-12-31",
+          "bars": 365
+        },
+        {
+          "label": "OUT-OF-SAMPLE",
+          "from": "2019-01-01",
+          "to": "2019-12-31",
+          "bars": 365
+        },
+        {
+          "label": "OUT-OF-SAMPLE",
+          "from": "2020-01-01",
+          "to": "2020-12-31",
+          "bars": 366
+        },
+        {
+          "label": "OUT-OF-SAMPLE",
+          "from": "2021-01-01",
+          "to": "2021-12-31",
+          "bars": 365
+        },
+        {
+          "label": "OUT-OF-SAMPLE",
+          "from": "2022-01-01",
+          "to": "2022-12-31",
+          "bars": 365
+        },
+        {
+          "label": "OUT-OF-SAMPLE",
+          "from": "2023-01-01",
+          "to": "2023-12-31",
+          "bars": 365
+        },
+        {
+          "label": "OUT-OF-SAMPLE",
+          "from": "2024-01-01",
+          "to": "2024-12-31",
+          "bars": 366
+        },
+        {
+          "label": "OUT-OF-SAMPLE",
+          "from": "2018-01-01",
+          "to": "2026-09-26",
+          "bars": 3191
+        }
+      ],
+      "scores": [
+        {
+          "rule": "buy_and_hold",
+          "windows": 10,
+          "beats_hold": 0
+        },
+        {
+          "rule": "trend_sma50",
+          "windows": 10,
+          "beats_hold": 3
+        },
+        {
+          "rule": "news_sentiment",
+          "windows": 10,
+          "beats_hold": 2
+        },
+        {
+          "rule": "trend_and_news",
+          "windows": 10,
+          "beats_hold": 2
+        }
+      ],
+      "studies": [
+        "BTC-MXN-TREND-CHECK-2026-09-27",
+        "FORWARD-TEST-PREREGISTRATION-SMA50-2026-09-27",
+        "FULL-HISTORY-DAILY-STUDY-2026-09-27"
+      ]
+    },
+    {
+      "id": "2026-09-27/btc-usd-maker",
+      "date": "2026-09-27",
+      "name": "btc-usd-maker",
+      "file": "docs/backtest-readiness/evidence-2026-09-27/btc-usd-maker.json",
+      "text": "docs/backtest-readiness/evidence-2026-09-27/btc-usd-maker.txt",
+      "schema": "research-run/v1",
+      "tool": "daily-research",
+      "generated_at": "2026-10-06T19:33:24Z",
+      "commit": "d54c2edd48a0cfc27f76e68caa94cd649c47c3e6",
+      "data": {
+        "prices": "yahoo_crypto_daily.parquet",
+        "book": "btc-usd",
+        "bars": 3072,
+        "first": "2018-01-01",
+        "last": "2026-09-27",
+        "news": "news_crypto_agentic.parquet",
+        "news_days": 470
+      },
+      "costs": {
+        "buy_bps": 60,
+        "sell_bps": 60,
+        "slippage_bps": 0,
+        "round_trip_bps": 120
+      },
+      "windows": [
+        {
+          "label": "IN-SAMPLE",
+          "from": "2025-01-01",
+          "to": "2025-12-31",
+          "bars": 364
+        },
+        {
+          "label": "OUT-OF-SAMPLE",
+          "from": "2026-01-01",
+          "to": "2026-09-26",
+          "bars": 255
+        },
+        {
+          "label": "OUT-OF-SAMPLE",
+          "from": "2018-01-01",
+          "to": "2018-12-31",
+          "bars": 365
+        },
+        {
+          "label": "OUT-OF-SAMPLE",
+          "from": "2019-01-01",
+          "to": "2019-12-31",
+          "bars": 365
+        },
+        {
+          "label": "OUT-OF-SAMPLE",
+          "from": "2020-01-01",
+          "to": "2020-12-31",
+          "bars": 366
+        },
+        {
+          "label": "OUT-OF-SAMPLE",
+          "from": "2021-01-01",
+          "to": "2021-12-31",
+          "bars": 365
+        },
+        {
+          "label": "OUT-OF-SAMPLE",
+          "from": "2022-01-01",
+          "to": "2022-12-31",
+          "bars": 365
+        },
+        {
+          "label": "OUT-OF-SAMPLE",
+          "from": "2023-01-01",
+          "to": "2023-12-31",
+          "bars": 358
+        },
+        {
+          "label": "OUT-OF-SAMPLE",
+          "from": "2024-01-01",
+          "to": "2024-12-31",
+          "bars": 268
+        },
+        {
+          "label": "OUT-OF-SAMPLE",
+          "from": "2018-01-01",
+          "to": "2026-09-26",
+          "bars": 3071
+        }
+      ],
+      "scores": [
+        {
+          "rule": "buy_and_hold",
+          "windows": 10,
+          "beats_hold": 0
+        },
+        {
+          "rule": "trend_sma50",
+          "windows": 10,
+          "beats_hold": 5
+        },
+        {
+          "rule": "news_sentiment",
+          "windows": 10,
+          "beats_hold": 2
+        },
+        {
+          "rule": "trend_and_news",
+          "windows": 10,
+          "beats_hold": 3
+        }
+      ],
+      "studies": [
+        "BTC-MXN-TREND-CHECK-2026-09-27",
+        "FORWARD-TEST-PREREGISTRATION-SMA50-2026-09-27",
+        "FULL-HISTORY-DAILY-STUDY-2026-09-27"
+      ]
+    },
+    {
+      "id": "2026-09-27/by-year-bitso-costs",
+      "date": "2026-09-27",
+      "name": "by-year-bitso-costs",
+      "file": "docs/backtest-readiness/evidence-2026-09-27/by-year-bitso-costs.json",
+      "text": "docs/backtest-readiness/evidence-2026-09-27/by-year-bitso-costs.txt",
+      "schema": "research-run/v1",
+      "tool": "daily-research",
+      "generated_at": "2026-10-06T19:33:26Z",
+      "commit": "d54c2edd48a0cfc27f76e68caa94cd649c47c3e6",
+      "data": {
+        "prices": "yahoo_crypto_daily.parquet",
+        "book": "btc-usd",
+        "bars": 3072,
+        "first": "2018-01-01",
+        "last": "2026-09-27",
+        "news": "news_crypto_agentic.parquet",
+        "news_days": 470
+      },
+      "costs": {
+        "buy_bps": 78,
+        "sell_bps": 78,
+        "slippage_bps": 10,
+        "round_trip_bps": 176
+      },
+      "windows": [
+        {
+          "label": "IN-SAMPLE",
+          "from": "2025-01-01",
+          "to": "2025-12-31",
+          "bars": 364
+        },
+        {
+          "label": "OUT-OF-SAMPLE",
+          "from": "2026-01-01",
+          "to": "2026-09-26",
+          "bars": 255
+        },
+        {
+          "label": "OUT-OF-SAMPLE",
+          "from": "2018-01-01",
+          "to": "2018-12-31",
+          "bars": 365
+        },
+        {
+          "label": "OUT-OF-SAMPLE",
+          "from": "2019-01-01",
+          "to": "2019-12-31",
+          "bars": 365
+        },
+        {
+          "label": "OUT-OF-SAMPLE",
+          "from": "2020-01-01",
+          "to": "2020-12-31",
+          "bars": 366
+        },
+        {
+          "label": "OUT-OF-SAMPLE",
+          "from": "2021-01-01",
+          "to": "2021-12-31",
+          "bars": 365
+        },
+        {
+          "label": "OUT-OF-SAMPLE",
+          "from": "2022-01-01",
+          "to": "2022-12-31",
+          "bars": 365
+        },
+        {
+          "label": "OUT-OF-SAMPLE",
+          "from": "2023-01-01",
+          "to": "2023-12-31",
+          "bars": 358
+        },
+        {
+          "label": "OUT-OF-SAMPLE",
+          "from": "2024-01-01",
+          "to": "2024-12-31",
+          "bars": 268
+        }
+      ],
+      "scores": [
+        {
+          "rule": "buy_and_hold",
+          "windows": 9,
+          "beats_hold": 0
+        },
+        {
+          "rule": "trend_sma50",
+          "windows": 9,
+          "beats_hold": 4
+        },
+        {
+          "rule": "news_sentiment",
+          "windows": 9,
+          "beats_hold": 2
+        },
+        {
+          "rule": "trend_and_news",
+          "windows": 9,
+          "beats_hold": 2
+        }
+      ],
+      "studies": ["FULL-HISTORY-DAILY-STUDY-2026-09-27"]
+    },
+    {
+      "id": "2026-09-27/by-year-frictionless",
+      "date": "2026-09-27",
+      "name": "by-year-frictionless",
+      "file": "docs/backtest-readiness/evidence-2026-09-27/by-year-frictionless.json",
+      "text": "docs/backtest-readiness/evidence-2026-09-27/by-year-frictionless.txt",
+      "schema": "research-run/v1",
+      "tool": "daily-research",
+      "generated_at": "2026-10-06T19:33:27Z",
+      "commit": "d54c2edd48a0cfc27f76e68caa94cd649c47c3e6",
+      "data": {
+        "prices": "yahoo_crypto_daily.parquet",
+        "book": "btc-usd",
+        "bars": 3072,
+        "first": "2018-01-01",
+        "last": "2026-09-27",
+        "news": "news_crypto_agentic.parquet",
+        "news_days": 470
+      },
+      "costs": {
+        "buy_bps": 0,
+        "sell_bps": 0,
+        "slippage_bps": 0,
+        "round_trip_bps": 0
+      },
+      "windows": [
+        {
+          "label": "IN-SAMPLE",
+          "from": "2025-01-01",
+          "to": "2025-12-31",
+          "bars": 364
+        },
+        {
+          "label": "OUT-OF-SAMPLE",
+          "from": "2026-01-01",
+          "to": "2026-09-26",
+          "bars": 255
+        },
+        {
+          "label": "OUT-OF-SAMPLE",
+          "from": "2018-01-01",
+          "to": "2018-12-31",
+          "bars": 365
+        },
+        {
+          "label": "OUT-OF-SAMPLE",
+          "from": "2019-01-01",
+          "to": "2019-12-31",
+          "bars": 365
+        },
+        {
+          "label": "OUT-OF-SAMPLE",
+          "from": "2020-01-01",
+          "to": "2020-12-31",
+          "bars": 366
+        },
+        {
+          "label": "OUT-OF-SAMPLE",
+          "from": "2021-01-01",
+          "to": "2021-12-31",
+          "bars": 365
+        },
+        {
+          "label": "OUT-OF-SAMPLE",
+          "from": "2022-01-01",
+          "to": "2022-12-31",
+          "bars": 365
+        },
+        {
+          "label": "OUT-OF-SAMPLE",
+          "from": "2023-01-01",
+          "to": "2023-12-31",
+          "bars": 358
+        },
+        {
+          "label": "OUT-OF-SAMPLE",
+          "from": "2024-01-01",
+          "to": "2024-12-31",
+          "bars": 268
+        }
+      ],
+      "scores": [
+        {
+          "rule": "buy_and_hold",
+          "windows": 9,
+          "beats_hold": 0
+        },
+        {
+          "rule": "trend_sma50",
+          "windows": 9,
+          "beats_hold": 6
+        },
+        {
+          "rule": "news_sentiment",
+          "windows": 9,
+          "beats_hold": 2
+        },
+        {
+          "rule": "trend_and_news",
+          "windows": 9,
+          "beats_hold": 4
+        }
+      ],
+      "studies": ["FULL-HISTORY-DAILY-STUDY-2026-09-27"]
+    },
+    {
+      "id": "2026-09-27/full-span-bitso-costs",
+      "date": "2026-09-27",
+      "name": "full-span-bitso-costs",
+      "file": "docs/backtest-readiness/evidence-2026-09-27/full-span-bitso-costs.json",
+      "text": "docs/backtest-readiness/evidence-2026-09-27/full-span-bitso-costs.txt",
+      "schema": "research-run/v1",
+      "tool": "daily-research",
+      "generated_at": "2026-10-06T19:33:25Z",
+      "commit": "d54c2edd48a0cfc27f76e68caa94cd649c47c3e6",
+      "data": {
+        "prices": "yahoo_crypto_daily.parquet",
+        "book": "btc-usd",
+        "bars": 3072,
+        "first": "2018-01-01",
+        "last": "2026-09-27",
+        "news": "news_crypto_agentic.parquet",
+        "news_days": 470
+      },
+      "costs": {
+        "buy_bps": 78,
+        "sell_bps": 78,
+        "slippage_bps": 10,
+        "round_trip_bps": 176
+      },
+      "windows": [
+        {
+          "label": "IN-SAMPLE",
+          "from": "2018-01-01",
+          "to": "2026-09-26",
+          "bars": 3071
+        }
+      ],
+      "scores": [
+        {
+          "rule": "buy_and_hold",
+          "windows": 1,
+          "beats_hold": 0
+        },
+        {
+          "rule": "trend_sma50",
+          "windows": 1,
+          "beats_hold": 1
+        },
+        {
+          "rule": "news_sentiment",
+          "windows": 1,
+          "beats_hold": 0
+        },
+        {
+          "rule": "trend_and_news",
+          "windows": 1,
+          "beats_hold": 0
+        }
+      ],
+      "studies": ["FULL-HISTORY-DAILY-STUDY-2026-09-27"]
+    },
+    {
+      "id": "2026-09-27/full-span-frictionless",
+      "date": "2026-09-27",
+      "name": "full-span-frictionless",
+      "file": "docs/backtest-readiness/evidence-2026-09-27/full-span-frictionless.json",
+      "text": "docs/backtest-readiness/evidence-2026-09-27/full-span-frictionless.txt",
+      "schema": "research-run/v1",
+      "tool": "daily-research",
+      "generated_at": "2026-10-06T19:33:26Z",
+      "commit": "d54c2edd48a0cfc27f76e68caa94cd649c47c3e6",
+      "data": {
+        "prices": "yahoo_crypto_daily.parquet",
+        "book": "btc-usd",
+        "bars": 3072,
+        "first": "2018-01-01",
+        "last": "2026-09-27",
+        "news": "news_crypto_agentic.parquet",
+        "news_days": 470
+      },
+      "costs": {
+        "buy_bps": 0,
+        "sell_bps": 0,
+        "slippage_bps": 0,
+        "round_trip_bps": 0
+      },
+      "windows": [
+        {
+          "label": "IN-SAMPLE",
+          "from": "2018-01-01",
+          "to": "2026-09-26",
+          "bars": 3071
+        }
+      ],
+      "scores": [
+        {
+          "rule": "buy_and_hold",
+          "windows": 1,
+          "beats_hold": 0
+        },
+        {
+          "rule": "trend_sma50",
+          "windows": 1,
+          "beats_hold": 1
+        },
+        {
+          "rule": "news_sentiment",
+          "windows": 1,
+          "beats_hold": 0
+        },
+        {
+          "rule": "trend_and_news",
+          "windows": 1,
+          "beats_hold": 0
+        }
+      ],
+      "studies": ["FULL-HISTORY-DAILY-STUDY-2026-09-27"]
+    },
+    {
+      "id": "2026-09-27/news-era-bitso-costs",
+      "date": "2026-09-27",
+      "name": "news-era-bitso-costs",
+      "file": "docs/backtest-readiness/evidence-2026-09-27/news-era-bitso-costs.json",
+      "text": "docs/backtest-readiness/evidence-2026-09-27/news-era-bitso-costs.txt",
+      "schema": "research-run/v1",
+      "tool": "daily-research",
+      "generated_at": "2026-10-06T19:33:27Z",
+      "commit": "d54c2edd48a0cfc27f76e68caa94cd649c47c3e6",
+      "data": {
+        "prices": "yahoo_crypto_daily.parquet",
+        "book": "btc-usd",
+        "bars": 3072,
+        "first": "2018-01-01",
+        "last": "2026-09-27",
+        "news": "news_crypto_agentic.parquet",
+        "news_days": 470
+      },
+      "costs": {
+        "buy_bps": 78,
+        "sell_bps": 78,
+        "slippage_bps": 10,
+        "round_trip_bps": 176
+      },
+      "windows": [
+        {
+          "label": "IN-SAMPLE",
+          "from": "2024-11-20",
+          "to": "2026-09-26",
+          "bars": 661
+        }
+      ],
+      "scores": [
+        {
+          "rule": "buy_and_hold",
+          "windows": 1,
+          "beats_hold": 0
+        },
+        {
+          "rule": "trend_sma50",
+          "windows": 1,
+          "beats_hold": 1
+        },
+        {
+          "rule": "news_sentiment",
+          "windows": 1,
+          "beats_hold": 0
+        },
+        {
+          "rule": "trend_and_news",
+          "windows": 1,
+          "beats_hold": 0
+        }
+      ],
+      "studies": ["FULL-HISTORY-DAILY-STUDY-2026-09-27"]
+    }
+  ],
+  "skipped": []
+}
