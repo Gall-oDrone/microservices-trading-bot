@@ -90,7 +90,7 @@ Location: `web/` at the repo root, served by Vite in development (proxying `/api
 ## 4. Pages
 
 ### 4.1 Forward tests (built)
-`/`: one card per book (`btc_mxn`, `btc_usd`), from the latest ledger record:
+`/forward-tests` (was `/` until the landing page, §8.6): one card per book (`btc_mxn`, `btc_usd`), from the latest ledger record:
 - Signal pill, close vs SMA50, paper equity vs buy-and-hold **after the pre-registered leg cost**, max drawdown, days and fills.
 - A plain-language line: "the close is 14.9% above its 50-day average; it flips to flat if the price falls about that much", plus the next open's action.
 - Forward-window progress, with a tick at the interim look (2027-03-26) and the evaluation date (2027-09-26).
@@ -415,6 +415,29 @@ unfinished bar is labelled provisional. The decision path never reads live data.
 - **Tests.** Go: report mapping, v1 field contract, stress file naming, round-trip counting; ui-api
   level/note pass-through. Web: zod contract per captured fixture, helpers, comparison and sort in the
   URL, holdout default, base/stress links; Playwright: list → weekly run → sort → detail.
+
+### 8.6 Landing page (as built, 2026-10-07)
+
+- **Route.** `/` is a full-screen landing page outside the console shell; the console starts at
+  `/forward-tests` (a pathless layout route holds the sidebar). The sidebar brand links back to `/`.
+  Every link keeps `?ledger=`.
+- **Sections**, all from existing ui-api endpoints (no new backend):
+  - **Hero:** what the rule is, the console call to action, and a card with the live Bitso price
+    (SSE, display only), the recorded signal, how long the rule has held it, and a one-year chart:
+    daily closes, SMA50 (dashed amber) and the days the rule was long (teal bands). Plain SVG
+    (`components/TrendChart.tsx`, geometry in `lib/trend.ts`); hover, touch or arrow keys read a day.
+    Below it: price change, share of days long, paper vs buy-and-hold since the forward start.
+  - **Today:** one tile per book (distance to SMA50, close/SMA, paper vs hold equity, max drawdown,
+    next open's action), linking to the book's detail page.
+  - **How it works:** four steps (freeze, decide daily, trade small behind the check, judge against
+    holding) and the forward-window timeline per book with the interim tick; links the pre-registration.
+  - **Research:** study, pre-registration and run counts and the three latest write-ups.
+  - **Guardrails:** enforcement, halt state, stage size, position cap, price guard and realized cost
+    per leg vs the pre-registered assumption (amber when above).
+- **Offline.** If ui-api is down the copy still renders, with a note in place of the numbers.
+- **Tests.** Unit: geometry (bands, SMA gaps, summary), current run, landing render, book switch,
+  keyboard read-out, ledger-aware links, offline state, brand link. Playwright (desktop and phone):
+  hero with live price, chart hover, book switch, sections, CTA into the console and back.
 
 ---
 

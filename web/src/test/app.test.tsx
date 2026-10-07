@@ -54,7 +54,7 @@ describe('contract: Go ui-api responses parse with the UI schemas', () => {
 
 describe('Forward tests page', () => {
   it('renders one card per book with signal, paper vs hold and run status', async () => {
-    renderAt('/')
+    renderAt('/forward-tests')
     const mxn = await screen.findByTestId('ft-card-btc_mxn')
     expect(within(mxn).getByRole('heading', { name: 'BTC / MXN' })).toBeInTheDocument()
     expect(within(mxn).getByTestId('signal-pill')).toHaveTextContent(/long/i)
@@ -76,14 +76,14 @@ describe('Forward tests page', () => {
       message: '2 closed days not recorded',
     }
     server.use(http.get('/api/ui/forward-tests', () => HttpResponse.json(ft)))
-    renderAt('/')
+    renderAt('/forward-tests')
     expect(await screen.findByRole('alert')).toHaveTextContent(/missed a day/i)
     expect(screen.getByRole('alert')).toHaveTextContent('2026-10-04, 2026-10-05')
   })
 
   it('shows a readable error when the response breaks the contract', async () => {
     server.use(http.get('/api/ui/forward-tests', () => HttpResponse.json({ generated_at: 'x', books: [{}] })))
-    renderAt('/')
+    renderAt('/forward-tests')
     expect(await screen.findByText(/does not match the UI contract/)).toBeInTheDocument()
   })
 
@@ -93,14 +93,14 @@ describe('Forward tests page', () => {
         HttpResponse.json({ error: 'cannot read the ledger: boom' }, { status: 500 }),
       ),
     )
-    renderAt('/')
+    renderAt('/forward-tests')
     expect(await screen.findByText('cannot read the ledger: boom')).toBeInTheDocument()
   })
 })
 
 describe('Ledger picker', () => {
   it('lists the ledgers and switches every view to the chosen one', async () => {
-    const { container } = renderAt('/')
+    const { container } = renderAt('/forward-tests')
     const picker = (await screen.findByRole('combobox', { name: /ledger/i })) as HTMLSelectElement
     expect(
       within(picker)
@@ -123,7 +123,7 @@ describe('Ledger picker', () => {
   })
 
   it('shows the API error for an unknown ledger', async () => {
-    renderAt('/?ledger=nope')
+    renderAt('/forward-tests?ledger=nope')
     expect(await screen.findByText('unknown ledger nope')).toBeInTheDocument()
   })
 })

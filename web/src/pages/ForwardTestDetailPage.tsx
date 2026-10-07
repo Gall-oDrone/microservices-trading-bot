@@ -187,7 +187,8 @@ export function ForwardTestDetailPage() {
       <div className="page-head">
         <div>
           <div className="crumbs">
-            <Link to={{ pathname: '/', search }}>Forward tests</Link> <span>/</span> <span>{bookLabel(book)}</span>
+            <Link to={{ pathname: '/forward-tests', search }}>Forward tests</Link> <span>/</span>{' '}
+            <span>{bookLabel(book)}</span>
           </div>
           <div className="row" style={{ gap: 14 }}>
             <h1>{bookLabel(book)}</h1>

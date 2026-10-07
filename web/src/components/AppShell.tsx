@@ -1,4 +1,4 @@
-import { NavLink, Outlet, useLocation, useSearchParams } from 'react-router'
+import { Link, NavLink, Outlet, useLocation, useSearchParams } from 'react-router'
 import { useForwardTests, useHealth, useLedgerName, useLedgerSearch, useLedgers, useRisk } from '../api/client'
 import { ago } from '../lib/format'
 import { useTheme } from '../lib/theme'
@@ -16,7 +16,7 @@ import {
 import { Badge } from './ui'
 
 /** Light / dark switch. Dark is the default; the choice persists in localStorage. */
-function ThemeToggle() {
+export function ThemeToggle() {
   const [theme, setTheme] = useTheme()
   const light = theme === 'light'
   const next = light ? 'dark' : 'light'
@@ -113,7 +113,7 @@ function Nav() {
   return (
     <nav className="nav" aria-label="Main">
       <span className="nav-label">Trading</span>
-      <NavLink to={{ pathname: '/', search }} end className="nav-link" id="nav-forward-tests">
+      <NavLink to={{ pathname: '/forward-tests', search }} className="nav-link" id="nav-forward-tests">
         <IconTrend /> Forward tests
         {missed > 0 && (
           <span className="count">
@@ -158,17 +158,20 @@ function Nav() {
 }
 
 export function AppShell() {
+  const search = useLedgerSearch()
   return (
     <div className="shell">
       <aside className="sidebar">
         <div className="brand">
-          <div className="brand-mark">
-            <IconLogo />
-          </div>
-          <div>
-            <div className="brand-name">Trading Bot</div>
-            <div className="brand-sub">Operator console</div>
-          </div>
+          <Link to={{ pathname: '/', search }} className="brand-link" id="brand-home" title="Back to the landing page">
+            <div className="brand-mark">
+              <IconLogo />
+            </div>
+            <div>
+              <div className="brand-name">Trading Bot</div>
+              <div className="brand-sub">Operator console</div>
+            </div>
+          </Link>
           <ThemeToggle />
         </div>
         <LedgerPicker />

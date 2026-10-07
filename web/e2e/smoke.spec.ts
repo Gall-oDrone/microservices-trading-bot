@@ -21,9 +21,37 @@ async function expectHealthy(page: Page, errors: string[]) {
   expect(errors).toEqual([])
 }
 
-test('forward tests: one card per book with signal and ledger', async ({ page }) => {
+test('landing: hero with live price and chart, sections, and the way into the console', async ({ page }) => {
   const errors = watchConsole(page)
   await page.goto('/')
+  await expect(page).toHaveTitle(/SMA50 forward tests on Bitso/)
+  await expect(page.getByRole('heading', { level: 1, name: /One frozen trend rule/ })).toBeVisible()
+  const hero = page.getByTestId('hero-card')
+  await expect(hero.getByTestId('live-badge')).toHaveText(/^live$/i)
+  await expect(hero.getByTestId('live-price')).toHaveText(/\d/)
+  await expect(hero.getByTestId('signal-pill')).toHaveText(/long|flat/)
+  // Hovering the chart reads a day.
+  const plot = hero.getByTestId('trend-chart').getByRole('img')
+  await plot.hover({ position: { x: 40, y: 60 } })
+  await expect(hero.getByTestId('trend-tip')).toContainText('SMA50')
+  await page.locator('#hero-book-btc_usd').click()
+  await expect(hero.getByTestId('trend-chart')).toContainText('Daily close (USD)')
+  // Sections render from the fixtures.
+  await expect(page.getByTestId('lp-book-btc_mxn')).toBeAttached()
+  await expect(page.getByTestId('lp-timeline')).toBeAttached()
+  await expect(page.getByTestId('lp-studies').getByRole('link')).toHaveCount(3)
+  await expect(page.getByTestId('lp-guards')).toContainText('enforced')
+  await expectHealthy(page, errors)
+  await page.locator('#cta-open-console').click()
+  await expect(page).toHaveURL(/\/forward-tests$/)
+  await expect(page.getByRole('heading', { level: 1, name: 'Forward tests' })).toBeVisible()
+  await page.locator('#brand-home').click()
+  await expect(page).toHaveURL(/\/$/)
+})
+
+test('forward tests: one card per book with signal and ledger', async ({ page }) => {
+  const errors = watchConsole(page)
+  await page.goto('/forward-tests')
   await expect(page).toHaveTitle(/Forward tests/)
   await expect(page.getByRole('heading', { level: 1, name: 'Forward tests' })).toBeVisible()
   for (const book of ['btc_mxn', 'btc_usd']) {
@@ -65,7 +93,7 @@ test('risk: enforced, per-book exposure and policy', async ({ page }) => {
 
 test('ledger picker switches to the dry-run ledger and links keep it', async ({ page }) => {
   const errors = watchConsole(page)
-  await page.goto('/')
+  await page.goto('/forward-tests')
   await expect(page.getByTestId('ft-card-btc_mxn')).toBeVisible()
   await page.getByRole('combobox', { name: 'Ledger' }).selectOption('dry-run')
   await expect(page).toHaveURL(/\?ledger=dry-run$/)
@@ -78,7 +106,7 @@ test('ledger picker switches to the dry-run ledger and links keep it', async ({ 
 
 test('research: study list, filter and a study with its lineage', async ({ page }) => {
   const errors = watchConsole(page)
-  await page.goto('/')
+  await page.goto('/forward-tests')
   await page.locator('#nav-research').click()
   await expect(page).toHaveURL(/\/research$/)
   await expect(page.getByRole('heading', { level: 1, name: 'Research' })).toBeVisible()

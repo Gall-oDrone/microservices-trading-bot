@@ -3,6 +3,7 @@ import type { RouteObject } from 'react-router'
 import { AppShell } from './components/AppShell'
 import { ForwardTestDetailPage } from './pages/ForwardTestDetailPage'
 import { ForwardTestsPage } from './pages/ForwardTestsPage'
+import { LandingPage } from './pages/LandingPage'
 import { NotFoundPage } from './pages/NotFoundPage'
 import { ResearchPage } from './pages/ResearchPage'
 import { RiskPage } from './pages/RiskPage'
@@ -11,11 +12,12 @@ import { RunsPage } from './pages/RunsPage'
 import { StudyPage } from './pages/StudyPage'
 
 export const routes: RouteObject[] = [
+  // Full-screen landing page, outside the console shell.
+  { path: '/', element: <LandingPage /> },
   {
-    path: '/',
     element: <AppShell />,
     children: [
-      { index: true, element: <ForwardTestsPage /> },
+      { path: 'forward-tests', element: <ForwardTestsPage /> },
       { path: 'forward-tests/:book', element: <ForwardTestDetailPage /> },
       { path: 'risk', element: <RiskPage /> },
       { path: 'research', element: <ResearchPage /> },

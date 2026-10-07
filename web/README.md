@@ -36,7 +36,7 @@ npm run fixtures  # re-capture src/mocks/fixtures from a running ui-api
 |---|---|
 | `src/api/schemas.ts` | zod schemas mirroring the Go view models; every response is validated |
 | `src/api/client.ts` | fetch wrapper and TanStack Query hooks (60 s refresh) |
-| `src/pages/` | Forward tests, forward-test detail, Risk |
+| `src/pages/` | Landing (`/`), Forward tests (`/forward-tests`), forward-test detail, Risk, Research studies and runs |
 | `src/components/` | shell, charts (Lightweight Charts), UI primitives, icons |
 | `src/index.css` | design tokens: long = teal, flat = slate, loss = coral, warn = amber, benchmark = grey dashed |
 | `src/mocks/` | MSW handlers and fixtures captured from the real ui-api |

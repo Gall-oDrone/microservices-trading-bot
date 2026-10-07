@@ -7,7 +7,7 @@ export function NotFoundPage() {
   return (
     <div className="card">
       <Empty title="Page not found">
-        <Link to="/">Back to forward tests</Link>
+        <Link to="/forward-tests">Back to forward tests</Link>
       </Empty>
     </div>
   )

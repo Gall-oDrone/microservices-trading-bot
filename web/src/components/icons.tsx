@@ -93,6 +93,11 @@ export const IconMinus = (p: P) => (
     <path d="M5 12h14" />
   </svg>
 )
+export const IconArrowRight = (p: P) => (
+  <svg {...base} {...p}>
+    <path d="M5 12h14M13 6l6 6-6 6" />
+  </svg>
+)
 export const IconRefresh = (p: P) => (
   <svg {...base} {...p}>
     <path d="M20 11a8 8 0 10-2.3 5.7" />

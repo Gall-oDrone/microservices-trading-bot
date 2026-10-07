@@ -103,7 +103,7 @@ describe('livePhase', () => {
 
 describe('live strip', () => {
   it('opens one stream for all books and shows provisional live values on each card', async () => {
-    renderAt('/')
+    renderAt('/forward-tests')
     const es = await stream()
     expect(es.url).toBe('/api/ui/stream?books=btc_mxn%2Cbtc_usd')
     const snap = snapshot()
@@ -120,7 +120,7 @@ describe('live strip', () => {
   })
 
   it('warns when the rule would flip if today closed now', async () => {
-    renderAt('/')
+    renderAt('/forward-tests')
     const es = await stream()
     const snap = snapshot()
     es.emit('snapshot', snap)
@@ -134,7 +134,7 @@ describe('live strip', () => {
   })
 
   it('shows reconnecting when Bitso drops, and an error on a contract mismatch', async () => {
-    renderAt('/')
+    renderAt('/forward-tests')
     const es = await stream()
     es.emit('snapshot', snapshot())
     es.emit('status', { ...snapshot().upstream, connected: false, last_error: 'read: timeout' })
@@ -147,7 +147,7 @@ describe('live strip', () => {
   it('turns off and retries when the server refuses the stream (ui-api -live=false)', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true })
     try {
-      renderAt('/')
+      renderAt('/forward-tests')
       const es = await stream()
       es.fail(true)
       expect((await screen.findAllByTestId('live-badge'))[0]).toHaveTextContent(/live off/i)
