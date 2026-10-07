@@ -21,6 +21,9 @@
 // weight changes.
 //
 //	go run ./cmd/weekly-research -book btc_mxn -csv btc_mxn_daily.csv -leg-bps 70
+//
+// With -json x.json the same numbers are also written as research-run/v1 JSON
+// (see report.go), plus x-stress-<bps>bps.json when -stress-leg-bps is set.
 package main
 
 import (
@@ -28,6 +31,7 @@ import (
 	"fmt"
 	"math"
 	"os"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -50,6 +54,7 @@ func main() {
 	stressBPS := flag.Float64("stress-leg-bps", 0, "optional second cost level, e.g. taker fees (0 = skip)")
 	holdout := flag.String("holdout-start", "2024-10-01", "first day of the holdout window")
 	end := flag.String("end", "2026-09-30", "last day included")
+	jsonOut := flag.String("json", "", "also write the results as JSON (schema "+ReportSchema+") to this file, plus <name>-stress-<bps>bps.json with -stress-leg-bps; the text output is unchanged")
 	flag.Parse()
 	if *csvPath == "" {
 		fail(fmt.Errorf("-csv is required"))
@@ -85,47 +90,121 @@ func main() {
 		*book, len(d), d[0].date.Format("2006-01-02"), d[len(d)-1].date.Format("2006-01-02"), *legBPS, 2**legBPS)
 	fmt.Println("All variants were fixed before the holdout was examined; every one is printed for both windows.")
 
+	flags := setFlags("csv")
+	delete(flags, "json") // where the report went, not how it was produced
+	base := newReport(d, *book, *csvPath, *holdout, *end, flags, *legBPS, "base")
+	stress := newReport(d, *book, *csvPath, *holdout, *end, flags, *stressBPS, "stress")
+
 	strats := strategies(d)
 	for _, w := range windows {
 		fmt.Printf("\n================ %s %s .. %s (%d days) ================\n", w.name,
 			d[w.lo].date.Format("2006-01-02"), d[w.hi].date.Format("2006-01-02"), w.hi-w.lo+1)
-		eventStudy(d, w.lo, w.hi, *legBPS/1e4)
-		printTable(d, strats, w.lo, w.hi, *legBPS/1e4, "base costs")
+		ev := eventStudy(d, w.lo, w.hi, *legBPS/1e4)
+		printEvents(ev, *legBPS/1e4)
+		rows := table(d, strats, w.lo, w.hi, *legBPS/1e4)
+		printTable(rows, *legBPS/1e4, "base costs")
+		bw := windowReport(w.name, d, w.lo, w.hi, rows)
 		if *stressBPS > 0 {
-			printTable(d, strats, w.lo, w.hi, *stressBPS/1e4, fmt.Sprintf("stress costs %.0f bps/leg", *stressBPS))
+			srows := table(d, strats, w.lo, w.hi, *stressBPS/1e4)
+			printTable(srows, *stressBPS/1e4, fmt.Sprintf("stress costs %.0f bps/leg", *stressBPS))
+			stress.Windows = append(stress.Windows, windowReport(w.name, d, w.lo, w.hi, srows))
 		}
-		sensitivity(d, w.lo, w.hi, *legBPS/1e4)
+		sens := sensitivity(d, w.lo, w.hi, *legBPS/1e4)
+		printSensitivity(sens)
+		bw.Events = ev
+		bw.Sensitivity = &SensitivityRows{PostHoc: true, Chosen: 1.5, Rows: sens}
+		base.Windows = append(base.Windows, bw)
 	}
+
+	if *jsonOut != "" {
+		if err := writeReport(*jsonOut, base); err != nil {
+			fail(err)
+		}
+		if *stressBPS > 0 {
+			if err := writeReport(stressPath(*jsonOut, *stressBPS), stress); err != nil {
+				fail(err)
+			}
+		}
+	}
+}
+
+// newReport fills a report's header for one cost level (windows are added by main).
+func newReport(d []day, book, csvPath, holdout, end string, flags map[string]string, legBPS float64, level string) Report {
+	return Report{
+		Commit: buildCommit(),
+		Flags:  flags,
+		Data: ReportData{
+			Prices: filepath.Base(csvPath), Book: book, Bars: len(d),
+			First: d[0].date.Format("2006-01-02"), Last: d[len(d)-1].date.Format("2006-01-02"),
+		},
+		Costs: ReportCosts{
+			BuyBPS: legBPS, SellBPS: legBPS, RoundTripBPS: 2 * legBPS, Level: level,
+			Note: "one cost per leg that includes commission and slippage",
+		},
+		Params: ReportParams{
+			SMA: 50, HoldoutStart: holdout, End: end, VolumeRatioDays: 20, VolTarget: 0.50,
+		},
+		Windows: []WindowReport{},
+	}
+}
+
+// windowReport converts a window's table rows; vs_hold_pp is against buy-and-hold at the same costs.
+func windowReport(label string, d []day, lo, hi int, rows []row) WindowReport {
+	hold := 0.0
+	for _, x := range rows {
+		if x.s.id == holdID {
+			hold = x.r.ret
+		}
+	}
+	w := WindowReport{
+		Label: label, From: d[lo].date.Format("2006-01-02"), To: d[hi].date.Format("2006-01-02"),
+		Bars: hi - lo + 1, Results: []RuleResult{},
+	}
+	for _, x := range rows {
+		w.Results = append(w.Results, ruleResult(x.s, x.r, x.r0, hold))
+	}
+	return w
 }
 
 // sensitivity varies the volume threshold of the volume-confirmed SMA50 entry.
 // It was added AFTER the main tables had been seen, so it is a robustness
 // check only: k=1.5 stays the pre-declared value whatever this shows.
-func sensitivity(d []day, lo, hi int, c float64) {
+func sensitivity(d []day, lo, hi int, c float64) []SensitivityRow {
 	bars := make([]dailyrule.Bar, len(d))
 	for i, x := range d {
 		bars[i] = dailyrule.Bar{Date: x.date, Close: x.close}
 	}
 	trend := dailyrule.Trend(bars, 50)
 	vr := volumeRatio(d, 20)
-	fmt.Printf("\nPOST-HOC SENSITIVITY (added after seeing the tables above; not used to choose k): sma50 entry needs volume >= k x 20-day mean\n")
-	fmt.Printf("%-10s %8s %7s %6s %6s\n", "k", "ret %", "maxDD%", "Sharpe", "trades")
+	var out []SensitivityRow
 	for _, k := range []float64{0, 1.0, 1.25, 1.5, 1.75, 2.0, 2.5} {
 		r := simulate(d, volConfirmed(trend, vr, k), lo, hi, c)
-		label := fmt.Sprintf("%.2f", k)
-		if k == 0 {
+		out = append(out, SensitivityRow{K: k, ReturnPct: 100 * r.ret, MaxDDPct: 100 * r.maxDD, Sharpe: r.sharpe, Trades: r.trades})
+	}
+	return out
+}
+
+func printSensitivity(rows []SensitivityRow) {
+	fmt.Printf("\nPOST-HOC SENSITIVITY (added after seeing the tables above; not used to choose k): sma50 entry needs volume >= k x 20-day mean\n")
+	fmt.Printf("%-10s %8s %7s %6s %6s\n", "k", "ret %", "maxDD%", "Sharpe", "trades")
+	for _, r := range rows {
+		label := fmt.Sprintf("%.2f", r.K)
+		if r.K == 0 {
 			label = "none"
 		}
-		fmt.Printf("%-10s %8.1f %7.1f %6.2f %6d\n", label, 100*r.ret, 100*r.maxDD, r.sharpe, r.trades)
+		fmt.Printf("%-10s %8.1f %7.1f %6.2f %6d\n", label, r.ReturnPct, r.MaxDDPct, r.Sharpe, r.Trades)
 	}
 }
 
 // ---------------------------------------------------------------- signals
 
 type strategy struct {
-	name string
+	id   string    // stable rule id for the JSON report
+	name string    // as printed
 	w    []float64 // target weight after each day's close, 0..1
 }
+
+const holdID = "buy_and_hold"
 
 func strategies(d []day) []strategy {
 	bars := make([]dailyrule.Bar, len(d))
@@ -169,20 +248,20 @@ func strategies(d []day) []strategy {
 	}
 
 	out := []strategy{
-		{"buy-and-hold", ones},
-		{"sma50 (frozen rule)", sma50},
-		{"sma50, entry needs volume >= 1.5x", volConfirmed(trend[50], vr, 1.5)},
-		{"trend ensemble 20/50/100/200, daily", ens},
-		{"trend ensemble, weekly (Sun close)", weekly(d, alwaysOn, ens, 0)},
-		{"vol-target 50% of buy-and-hold, weekly", weekly(d, alwaysOn, volTgt, 0.10)},
-		{"sma50 x vol-target 50%, weekly size", weekly(d, trend[50], volTgt, 0.10)},
-		{"ensemble x vol-target 50%, weekly", weekly(d, alwaysOn, ensVol, 0.10)},
+		{holdID, "buy-and-hold", ones},
+		{"sma50", "sma50 (frozen rule)", sma50},
+		{"sma50_volume_1.5x", "sma50, entry needs volume >= 1.5x", volConfirmed(trend[50], vr, 1.5)},
+		{"trend_ensemble_daily", "trend ensemble 20/50/100/200, daily", ens},
+		{"trend_ensemble_weekly", "trend ensemble, weekly (Sun close)", weekly(d, alwaysOn, ens, 0)},
+		{"vol_target_50_weekly", "vol-target 50% of buy-and-hold, weekly", weekly(d, alwaysOn, volTgt, 0.10)},
+		{"sma50_x_vol_target_50_weekly", "sma50 x vol-target 50%, weekly size", weekly(d, trend[50], volTgt, 0.10)},
+		{"ensemble_x_vol_target_50_weekly", "ensemble x vol-target 50%, weekly", weekly(d, alwaysOn, ensVol, 0.10)},
 	}
 	for _, k := range []float64{2, 3} {
 		for _, h := range []int{1, 5} {
 			out = append(out,
-				strategy{fmt.Sprintf("volume spike %.0fx on UP day, hold %dd", k, h), spikeRule(d, vr, k, h, true)},
-				strategy{fmt.Sprintf("volume spike %.0fx on DOWN day, hold %dd", k, h), spikeRule(d, vr, k, h, false)})
+				strategy{fmt.Sprintf("volume_spike_%.0fx_up_hold_%dd", k, h), fmt.Sprintf("volume spike %.0fx on UP day, hold %dd", k, h), spikeRule(d, vr, k, h, true)},
+				strategy{fmt.Sprintf("volume_spike_%.0fx_down_hold_%dd", k, h), fmt.Sprintf("volume spike %.0fx on DOWN day, hold %dd", k, h), spikeRule(d, vr, k, h, false)})
 		}
 	}
 	return out
@@ -289,6 +368,7 @@ func spikeRule(d []day, vr []float64, k float64, h int, up bool) []float64 {
 type result struct {
 	ret, ret0, cagr, maxDD, sharpe, exposure, cost, turnover float64
 	trades                                                   int
+	entries                                                  int // buys from a flat position (round trips)
 	weeksUp, weeksDown, weeksFlat                            int
 	worstWeek, medianWeek                                    float64
 }
@@ -329,6 +409,9 @@ func simulate(d []day, w []float64, lo, hi int, c float64) result {
 			if math.Abs(delta*o) > 1e-12 {
 				r.trades++
 				r.turnover += math.Abs(delta*o) / eq
+				if delta > 0 && units*o <= 1e-12 {
+					r.entries++
+				}
 			}
 			units += delta
 			lastTarget = target
@@ -408,13 +491,26 @@ func sharpe(rets []float64) float64 {
 	return m / math.Sqrt(v) * math.Sqrt(365)
 }
 
-func printTable(d []day, strats []strategy, lo, hi int, c float64, label string) {
+// row is one strategy's result at a cost level, with the same trades at zero cost.
+type row struct {
+	s     strategy
+	r, r0 result
+}
+
+func table(d []day, strats []strategy, lo, hi int, c float64) []row {
+	out := make([]row, 0, len(strats))
+	for _, s := range strats {
+		out = append(out, row{s, simulate(d, s.w, lo, hi, c), simulate(d, s.w, lo, hi, 0)})
+	}
+	return out
+}
+
+func printTable(rows []row, c float64, label string) {
 	fmt.Printf("\nSTRATEGIES (%s, %.0f bps/leg; 'ret 0' = same trades with zero costs)\n", label, c*1e4)
 	fmt.Printf("%-42s %8s %8s %7s %7s %6s %5s %6s %7s %6s %14s %7s %7s\n",
 		"strategy", "ret %", "ret 0 %", "CAGR %", "maxDD%", "Sharpe", "expo", "trades", "turn x", "cost%", "weeks +/-/0", "med wk", "worst")
-	for _, s := range strats {
-		r := simulate(d, s.w, lo, hi, c)
-		r0 := simulate(d, s.w, lo, hi, 0)
+	for _, x := range rows {
+		s, r, r0 := x.s, x.r, x.r0
 		fmt.Printf("%-42s %8.1f %8.1f %7.1f %7.1f %6.2f %4.0f%% %6d %7.1f %6.1f %14s %6.2f%% %6.1f%%\n",
 			s.name, 100*r.ret, 100*r0.ret, 100*r.cagr, 100*r.maxDD, r.sharpe, 100*r.exposure, r.trades, r.turnover,
 			100*r.cost, fmt.Sprintf("%d/%d/%d", r.weeksUp, r.weeksDown, r.weeksFlat), 100*r.medianWeek, 100*r.worstWeek)
@@ -423,13 +519,12 @@ func printTable(d []day, strats []strategy, lo, hi int, c float64, label string)
 
 // ---------------------------------------------------------------- event study
 
-// eventStudy reports forward returns after volume-spike days, entering at the
+// eventStudy measures forward returns after volume-spike days, entering at the
 // next open and exiting at the close h days after the event, against the
 // same measurement taken after every day in the window.
-func eventStudy(d []day, lo, hi int, c float64) {
+func eventStudy(d []day, lo, hi int, c float64) []EventRow {
 	vr := volumeRatio(d, 20)
-	fmt.Printf("\nVOLUME-SPIKE EVENT STUDY (enter next open, exit close h days after the event; round-trip cost %.2f%%)\n", 200*c)
-	fmt.Printf("%-28s %3s %6s %8s %8s %6s %7s %10s\n", "condition", "h", "n", "mean %", "median%", "hit %", "t*", "mean-cost%")
+	var out []EventRow
 	for _, h := range []int{1, 3, 5} {
 		type grp struct {
 			name string
@@ -455,8 +550,20 @@ func eventStudy(d []day, lo, hi int, c float64) {
 				xs = append(xs, d[i+h].close/d[i+1].open-1)
 			}
 			m, med, hit, t := stats(xs)
-			fmt.Printf("%-28s %3d %6d %8.2f %8.2f %6.1f %7.2f %10.2f\n", g.name, h, len(xs), 100*m, 100*med, 100*hit, t, 100*(m-2*c))
+			out = append(out, EventRow{
+				Condition: g.name, H: h, N: len(xs), MeanPct: 100 * m, MedianPct: 100 * med,
+				HitPct: 100 * hit, T: t, MeanAfterCostsPct: 100 * (m - 2*c),
+			})
 		}
+	}
+	return out
+}
+
+func printEvents(rows []EventRow, c float64) {
+	fmt.Printf("\nVOLUME-SPIKE EVENT STUDY (enter next open, exit close h days after the event; round-trip cost %.2f%%)\n", 200*c)
+	fmt.Printf("%-28s %3s %6s %8s %8s %6s %7s %10s\n", "condition", "h", "n", "mean %", "median%", "hit %", "t*", "mean-cost%")
+	for _, e := range rows {
+		fmt.Printf("%-28s %3d %6d %8.2f %8.2f %6.1f %7.2f %10.2f\n", e.Condition, e.H, e.N, e.MeanPct, e.MedianPct, e.HitPct, e.T, e.MeanAfterCostsPct)
 	}
 	fmt.Println("t* = mean / (sd / sqrt(n)); overlapping windows for h > 1 make it optimistic.")
 }
