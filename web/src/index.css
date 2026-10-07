@@ -1624,6 +1624,9 @@ html.theme-switching *::after {
 .run-score .num {
   text-align: right;
 }
+.run-score-more {
+  font-size: 12px;
+}
 .run-score-bar,
 .beat-bar {
   position: relative;
@@ -1817,6 +1820,115 @@ table.run-table tr.best th {
 }
 .run-facts .lineage {
   min-width: 0;
+}
+
+/* Strategy comparison: windows side by side, one column group each. */
+table.compare th,
+table.compare td {
+  padding-left: 9px;
+  padding-right: 9px;
+}
+table.run-table.compare tbody th,
+table.compare thead tr.grp th:first-child {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  min-width: 170px;
+  max-width: 250px;
+  white-space: normal;
+  background: var(--surface);
+  box-shadow: inset -1px 0 0 var(--line-soft);
+}
+table.run-table.compare tr.hold th {
+  background: var(--bg-raised);
+}
+table.compare thead tr.grp th:first-child {
+  background: var(--bg-raised);
+}
+table.compare th.grp-start,
+table.compare td.grp-start {
+  border-left: 1px solid var(--line-soft);
+}
+table.compare tr.grp th {
+  text-align: left;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-2);
+}
+table.compare tr.grp th.holdout {
+  color: var(--info);
+  box-shadow: inset 0 2px 0 var(--info);
+}
+table.compare tr.grp th .faint {
+  margin-left: 4px;
+  text-transform: none;
+  letter-spacing: 0;
+  font-weight: 500;
+}
+table.compare thead th[rowspan] {
+  vertical-align: bottom;
+}
+table.compare td.pos {
+  color: var(--long);
+}
+table.compare td.neg {
+  color: var(--loss);
+}
+.compare-note {
+  margin: -4px 0 12px;
+  font-size: 12.5px;
+}
+.score-pill {
+  display: inline-block;
+  min-width: 38px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11.5px;
+  font-weight: 600;
+  text-align: center;
+  background: var(--surface-3);
+  color: var(--text-2);
+}
+.score-pill.pos {
+  background: var(--long-soft);
+  color: var(--long);
+}
+.score-pill.neg {
+  background: var(--loss-soft);
+  color: var(--loss);
+}
+.score-pill.warn {
+  background: var(--warn-soft);
+  color: var(--warn);
+}
+.matrix-tag.holdout {
+  color: var(--info);
+}
+.matrix-tag.development {
+  color: var(--text-3);
+}
+.matrix-tag.cost-level {
+  margin-left: 8px;
+  text-transform: uppercase;
+}
+.run-extras {
+  display: grid;
+  grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+  gap: 16px;
+  align-items: start;
+}
+.sens-bar {
+  display: inline-grid;
+  grid-template-columns: 90px auto;
+  align-items: center;
+  gap: 8px;
+}
+
+@media (max-width: 1100px) {
+  .run-extras {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 @media (max-width: 640px) {

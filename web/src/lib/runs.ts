@@ -44,7 +44,68 @@ export function costLabel(c: RunSummary['costs']): string {
 
 /** Commission and slippage per leg, as the text evidence prints them. */
 export function costDetail(c: RunSummary['costs']): string {
+  if (c.note && c.slippage_bps === 0 && c.buy_bps === c.sell_bps) return `${c.buy_bps} bps per leg (${c.note})`
   return `buy ${c.buy_bps} + sell ${c.sell_bps} bps commission, ${c.slippage_bps} bps slippage per leg`
+}
+
+/** The rule's display name: the tool's own label when the report has one ("SMA50, entry needs volume ≥ 1.5x"). */
+export function ruleNames(ws: RunWindow[]): (rule: string) => string {
+  const m = new Map<string, string>()
+  for (const w of ws) for (const r of w.results) if (r.label && !m.has(r.rule)) m.set(r.rule, r.label)
+  return (rule) => {
+    const l = m.get(rule)
+    if (!l) return ruleLabel(rule)
+    const s = l.replace(/\bsma(\d+)/gi, 'SMA$1').replace(/>=/g, '≥')
+    return s.charAt(0).toUpperCase() + s.slice(1)
+  }
+}
+
+/** Index of the pre-declared holdout window (weekly-research), or -1. */
+export function holdoutIndex(ws: { label: string }[]): number {
+  return ws.findIndex((w) => w.label === 'HOLDOUT')
+}
+
+/** The window's role as a short tag, or '' when the tool's label says nothing useful. */
+export function windowTag(ws: { label: string }[], i: number): string {
+  if (holdoutIndex(ws) >= 0)
+    return ws[i].label === 'HOLDOUT' ? 'holdout' : ws[i].label === 'DEVELOPMENT' ? 'development' : ''
+  return i === 0 && ws.length > 1 ? 'in-sample' : ''
+}
+
+export type Verdict = { windows: number; beatsHold: number; lowerDD: number }
+
+/** In how many windows a rule returned more than holding, and had a smaller max drawdown. */
+export function verdict(rule: string, ws: RunWindow[]): Verdict {
+  const v: Verdict = { windows: 0, beatsHold: 0, lowerDD: 0 }
+  for (const w of ws) {
+    const r = w.results.find((x) => x.rule === rule)
+    const h = w.results.find((x) => x.rule === HOLD)
+    if (!r) continue
+    v.windows++
+    if (r.vs_hold_pp > 0) v.beatsHold++
+    if (h && r.max_dd_pct < h.max_dd_pct) v.lowerDD++
+  }
+  return v
+}
+
+export type CompareSort = 'table' | 'vs_hold' | 'sharpe' | 'max_dd'
+
+/**
+ * Rules in display order for the comparison table, buy-and-hold first. A sort
+ * other than 'table' ranks on the last window (the holdout, when there is one).
+ */
+export function compareOrder(ws: RunWindow[], rules: string[], sort: CompareSort): string[] {
+  const last = ws[holdoutIndex(ws) >= 0 ? holdoutIndex(ws) : ws.length - 1]
+  const key = (rule: string): number => {
+    const r = last?.results.find((x) => x.rule === rule)
+    if (!r) return -Infinity
+    if (sort === 'vs_hold') return r.vs_hold_pp
+    if (sort === 'sharpe') return r.sharpe ?? -Infinity
+    return -r.max_dd_pct
+  }
+  const rest = rules.filter((r) => r !== HOLD)
+  const ordered = sort === 'table' ? rest : [...rest].sort((a, b) => key(b) - key(a) || 0)
+  return rules.includes(HOLD) ? [HOLD, ...ordered] : ordered
 }
 
 /** Percentage points, signed, one decimal: "+10.6 pp". */

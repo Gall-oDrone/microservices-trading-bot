@@ -464,7 +464,8 @@ export const studyDocSchema = z.object({
 })
 export type StudyDoc = z.infer<typeof studyDocSchema>
 
-// --- Research runs: research-run/v1 JSON reports from the research tools (daily-research -json). ---
+// --- Research runs: research-run/v1 JSON reports from the research tools (daily-research and weekly-research -json). ---
+// Fields marked optional are additive (weekly-research only); daily-research reports omit them.
 
 const runDataSchema = z.object({
   prices: z.string(),
@@ -480,6 +481,10 @@ const runCostsSchema = z.object({
   sell_bps: z.number(),
   slippage_bps: z.number(),
   round_trip_bps: z.number(),
+  /** "base" or "stress" (weekly-research). */
+  level: z.string().optional(),
+  /** How to read the bps, e.g. one per-leg cost that already includes slippage. */
+  note: z.string().optional(),
 })
 const runWindowHeadSchema = z.object({ label: z.string(), from: z.string(), to: z.string(), bars: z.number() })
 
@@ -519,13 +524,47 @@ export const ruleResultSchema = z.object({
   cost_pct: z.number(),
   vs_hold_pp: z.number(),
   random: z.object({ sims: z.number(), beat_pct: z.number() }).nullable(),
+  label: z.string().optional(),
+  trades: z.number().optional(),
+  turnover_x: z.number().optional(),
+  return_zero_cost_pct: z.number().optional(),
+  cagr_pct: z.number().optional(),
+  sharpe: z.number().optional(),
+  weeks_up: z.number().optional(),
+  weeks_down: z.number().optional(),
+  weeks_flat: z.number().optional(),
+  median_week_pct: z.number().optional(),
+  worst_week_pct: z.number().optional(),
 })
 export type RuleResult = z.infer<typeof ruleResultSchema>
+
+export const eventRowSchema = z.object({
+  condition: z.string(),
+  h: z.number(),
+  n: z.number(),
+  mean_pct: z.number(),
+  median_pct: z.number(),
+  hit_pct: z.number(),
+  t: z.number(),
+  mean_after_costs_pct: z.number(),
+})
+export type EventRow = z.infer<typeof eventRowSchema>
+
+export const sensitivitySchema = z.object({
+  post_hoc: z.boolean(),
+  chosen: z.number(),
+  rows: z.array(
+    z.object({ k: z.number(), return_pct: z.number(), max_dd_pct: z.number(), sharpe: z.number(), trades: z.number() }),
+  ),
+})
+export type Sensitivity = z.infer<typeof sensitivitySchema>
 
 export const runWindowSchema = runWindowHeadSchema.extend({
   gaps: z.string().optional(),
   note: z.string().optional(),
   results: z.array(ruleResultSchema),
+  events: z.array(eventRowSchema).optional(),
+  sensitivity: sensitivitySchema.optional(),
 })
 export type RunWindow = z.infer<typeof runWindowSchema>
 
@@ -544,6 +583,10 @@ export const runReportSchema = z.object({
     news_threshold: z.number(),
     sims: z.number(),
     seed: z.number(),
+    holdout_start: z.string().optional(),
+    end: z.string().optional(),
+    volume_ratio_days: z.number().optional(),
+    vol_target: z.number().optional(),
   }),
   windows: z.array(runWindowSchema),
 })

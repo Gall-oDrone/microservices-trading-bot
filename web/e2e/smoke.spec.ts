@@ -113,6 +113,24 @@ test('backtest runs: list, matrix, window detail and cost sensitivity', async ({
   await expectHealthy(page, errors)
 })
 
+test('backtest runs: development vs holdout comparison (weekly-research)', async ({ page }) => {
+  const errors = watchConsole(page)
+  await page.goto('/research/runs')
+  await page.locator('#open-run-weekly-research-btc-mxn-2026-10-03').click()
+  await expect(page).toHaveURL(/\/research\/runs\/2026-10-03\/weekly-research-btc-mxn$/)
+  const cmp = page.getByTestId('run-compare')
+  await expect(cmp.getByRole('heading', { level: 2, name: 'Development vs holdout' })).toBeVisible()
+  await expect(cmp.getByTestId('cmp-sma50_volume_1.5x').getByText('2/2')).toHaveCount(2)
+  await page.locator('#sort-vs_hold').click()
+  await expect(page).toHaveURL(/\?sort=vs_hold$/)
+  await expect(cmp.getByTestId(/^cmp-/).nth(1)).toHaveAttribute('data-testid', 'cmp-sma50_volume_1.5x')
+  await expect(page.getByTestId('window-detail').getByRole('heading', { level: 2 })).toContainText('2024-10-01')
+  await expect(page.getByTestId('event-study')).toBeVisible()
+  await expect(page.getByTestId('sensitivity').getByText('post hoc')).toBeVisible()
+  await expect(page.getByTestId('cost-sensitivity').getByRole('row')).toHaveCount(3)
+  await expectHealthy(page, errors)
+})
+
 test('theme: dark by default, switches to light and persists', async ({ page }) => {
   const errors = watchConsole(page)
   await page.goto('/forward-tests/btc_mxn')

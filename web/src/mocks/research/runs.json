@@ -1,8 +1,502 @@
 {
-  "generated_at": "2026-10-06T21:03:23Z",
+  "generated_at": "2026-10-07T20:13:39Z",
   "dir": "docs/backtest-readiness",
   "found": true,
   "runs": [
+    {
+      "id": "2026-10-03/weekly-research-btc-mxn",
+      "date": "2026-10-03",
+      "name": "weekly-research-btc-mxn",
+      "file": "docs/backtest-readiness/evidence-2026-10-03/weekly-research-btc-mxn.json",
+      "text": "docs/backtest-readiness/evidence-2026-10-03/weekly-research-btc-mxn.txt",
+      "schema": "research-run/v1",
+      "tool": "weekly-research",
+      "generated_at": "2026-10-07T20:08:18Z",
+      "commit": "0e2b76df370345258405d70ed68e5dba246bd6f2",
+      "data": {
+        "prices": "btc_mxn_daily_2026-10-01.csv",
+        "book": "btc_mxn",
+        "bars": 3411,
+        "first": "2017-05-31",
+        "last": "2026-10-01",
+        "news_days": 0
+      },
+      "costs": {
+        "buy_bps": 70,
+        "sell_bps": 70,
+        "slippage_bps": 0,
+        "round_trip_bps": 140,
+        "level": "base",
+        "note": "one cost per leg that includes commission and slippage"
+      },
+      "windows": [
+        {
+          "label": "DEVELOPMENT",
+          "from": "2017-12-17",
+          "to": "2024-09-30",
+          "bars": 2480
+        },
+        {
+          "label": "HOLDOUT",
+          "from": "2024-10-01",
+          "to": "2026-09-30",
+          "bars": 730
+        }
+      ],
+      "scores": [
+        {
+          "rule": "buy_and_hold",
+          "windows": 2,
+          "beats_hold": 0
+        },
+        {
+          "rule": "sma50",
+          "windows": 2,
+          "beats_hold": 1
+        },
+        {
+          "rule": "sma50_volume_1.5x",
+          "windows": 2,
+          "beats_hold": 2
+        },
+        {
+          "rule": "trend_ensemble_daily",
+          "windows": 2,
+          "beats_hold": 1
+        },
+        {
+          "rule": "trend_ensemble_weekly",
+          "windows": 2,
+          "beats_hold": 1
+        },
+        {
+          "rule": "vol_target_50_weekly",
+          "windows": 2,
+          "beats_hold": 1
+        },
+        {
+          "rule": "sma50_x_vol_target_50_weekly",
+          "windows": 2,
+          "beats_hold": 0
+        },
+        {
+          "rule": "ensemble_x_vol_target_50_weekly",
+          "windows": 2,
+          "beats_hold": 2
+        },
+        {
+          "rule": "volume_spike_2x_up_hold_1d",
+          "windows": 2,
+          "beats_hold": 0
+        },
+        {
+          "rule": "volume_spike_2x_down_hold_1d",
+          "windows": 2,
+          "beats_hold": 0
+        },
+        {
+          "rule": "volume_spike_2x_up_hold_5d",
+          "windows": 2,
+          "beats_hold": 0
+        },
+        {
+          "rule": "volume_spike_2x_down_hold_5d",
+          "windows": 2,
+          "beats_hold": 0
+        },
+        {
+          "rule": "volume_spike_3x_up_hold_1d",
+          "windows": 2,
+          "beats_hold": 0
+        },
+        {
+          "rule": "volume_spike_3x_down_hold_1d",
+          "windows": 2,
+          "beats_hold": 0
+        },
+        {
+          "rule": "volume_spike_3x_up_hold_5d",
+          "windows": 2,
+          "beats_hold": 0
+        },
+        {
+          "rule": "volume_spike_3x_down_hold_5d",
+          "windows": 2,
+          "beats_hold": 0
+        }
+      ],
+      "studies": ["VOLUME-AND-ACTIVE-STRATEGIES-STUDY-2026-10-03"]
+    },
+    {
+      "id": "2026-10-03/weekly-research-btc-mxn-stress-88bps",
+      "date": "2026-10-03",
+      "name": "weekly-research-btc-mxn-stress-88bps",
+      "file": "docs/backtest-readiness/evidence-2026-10-03/weekly-research-btc-mxn-stress-88bps.json",
+      "schema": "research-run/v1",
+      "tool": "weekly-research",
+      "generated_at": "2026-10-07T20:08:18Z",
+      "commit": "0e2b76df370345258405d70ed68e5dba246bd6f2",
+      "data": {
+        "prices": "btc_mxn_daily_2026-10-01.csv",
+        "book": "btc_mxn",
+        "bars": 3411,
+        "first": "2017-05-31",
+        "last": "2026-10-01",
+        "news_days": 0
+      },
+      "costs": {
+        "buy_bps": 88,
+        "sell_bps": 88,
+        "slippage_bps": 0,
+        "round_trip_bps": 176,
+        "level": "stress",
+        "note": "one cost per leg that includes commission and slippage"
+      },
+      "windows": [
+        {
+          "label": "DEVELOPMENT",
+          "from": "2017-12-17",
+          "to": "2024-09-30",
+          "bars": 2480
+        },
+        {
+          "label": "HOLDOUT",
+          "from": "2024-10-01",
+          "to": "2026-09-30",
+          "bars": 730
+        }
+      ],
+      "scores": [
+        {
+          "rule": "buy_and_hold",
+          "windows": 2,
+          "beats_hold": 0
+        },
+        {
+          "rule": "sma50",
+          "windows": 2,
+          "beats_hold": 0
+        },
+        {
+          "rule": "sma50_volume_1.5x",
+          "windows": 2,
+          "beats_hold": 2
+        },
+        {
+          "rule": "trend_ensemble_daily",
+          "windows": 2,
+          "beats_hold": 1
+        },
+        {
+          "rule": "trend_ensemble_weekly",
+          "windows": 2,
+          "beats_hold": 1
+        },
+        {
+          "rule": "vol_target_50_weekly",
+          "windows": 2,
+          "beats_hold": 1
+        },
+        {
+          "rule": "sma50_x_vol_target_50_weekly",
+          "windows": 2,
+          "beats_hold": 0
+        },
+        {
+          "rule": "ensemble_x_vol_target_50_weekly",
+          "windows": 2,
+          "beats_hold": 2
+        },
+        {
+          "rule": "volume_spike_2x_up_hold_1d",
+          "windows": 2,
+          "beats_hold": 0
+        },
+        {
+          "rule": "volume_spike_2x_down_hold_1d",
+          "windows": 2,
+          "beats_hold": 0
+        },
+        {
+          "rule": "volume_spike_2x_up_hold_5d",
+          "windows": 2,
+          "beats_hold": 0
+        },
+        {
+          "rule": "volume_spike_2x_down_hold_5d",
+          "windows": 2,
+          "beats_hold": 0
+        },
+        {
+          "rule": "volume_spike_3x_up_hold_1d",
+          "windows": 2,
+          "beats_hold": 0
+        },
+        {
+          "rule": "volume_spike_3x_down_hold_1d",
+          "windows": 2,
+          "beats_hold": 0
+        },
+        {
+          "rule": "volume_spike_3x_up_hold_5d",
+          "windows": 2,
+          "beats_hold": 0
+        },
+        {
+          "rule": "volume_spike_3x_down_hold_5d",
+          "windows": 2,
+          "beats_hold": 0
+        }
+      ],
+      "studies": ["VOLUME-AND-ACTIVE-STRATEGIES-STUDY-2026-10-03"]
+    },
+    {
+      "id": "2026-10-03/weekly-research-btc-usd",
+      "date": "2026-10-03",
+      "name": "weekly-research-btc-usd",
+      "file": "docs/backtest-readiness/evidence-2026-10-03/weekly-research-btc-usd.json",
+      "text": "docs/backtest-readiness/evidence-2026-10-03/weekly-research-btc-usd.txt",
+      "schema": "research-run/v1",
+      "tool": "weekly-research",
+      "generated_at": "2026-10-07T20:08:18Z",
+      "commit": "0e2b76df370345258405d70ed68e5dba246bd6f2",
+      "data": {
+        "prices": "btc_usd_daily_2026-10-01.csv",
+        "book": "btc_usd",
+        "bars": 2352,
+        "first": "2020-04-24",
+        "last": "2026-10-01",
+        "news_days": 0
+      },
+      "costs": {
+        "buy_bps": 40,
+        "sell_bps": 40,
+        "slippage_bps": 0,
+        "round_trip_bps": 80,
+        "level": "base",
+        "note": "one cost per leg that includes commission and slippage"
+      },
+      "windows": [
+        {
+          "label": "DEVELOPMENT",
+          "from": "2020-11-10",
+          "to": "2024-09-30",
+          "bars": 1421
+        },
+        {
+          "label": "HOLDOUT",
+          "from": "2024-10-01",
+          "to": "2026-09-30",
+          "bars": 730
+        }
+      ],
+      "scores": [
+        {
+          "rule": "buy_and_hold",
+          "windows": 2,
+          "beats_hold": 0
+        },
+        {
+          "rule": "sma50",
+          "windows": 2,
+          "beats_hold": 2
+        },
+        {
+          "rule": "sma50_volume_1.5x",
+          "windows": 2,
+          "beats_hold": 2
+        },
+        {
+          "rule": "trend_ensemble_daily",
+          "windows": 2,
+          "beats_hold": 1
+        },
+        {
+          "rule": "trend_ensemble_weekly",
+          "windows": 2,
+          "beats_hold": 1
+        },
+        {
+          "rule": "vol_target_50_weekly",
+          "windows": 2,
+          "beats_hold": 1
+        },
+        {
+          "rule": "sma50_x_vol_target_50_weekly",
+          "windows": 2,
+          "beats_hold": 1
+        },
+        {
+          "rule": "ensemble_x_vol_target_50_weekly",
+          "windows": 2,
+          "beats_hold": 1
+        },
+        {
+          "rule": "volume_spike_2x_up_hold_1d",
+          "windows": 2,
+          "beats_hold": 0
+        },
+        {
+          "rule": "volume_spike_2x_down_hold_1d",
+          "windows": 2,
+          "beats_hold": 0
+        },
+        {
+          "rule": "volume_spike_2x_up_hold_5d",
+          "windows": 2,
+          "beats_hold": 0
+        },
+        {
+          "rule": "volume_spike_2x_down_hold_5d",
+          "windows": 2,
+          "beats_hold": 0
+        },
+        {
+          "rule": "volume_spike_3x_up_hold_1d",
+          "windows": 2,
+          "beats_hold": 0
+        },
+        {
+          "rule": "volume_spike_3x_down_hold_1d",
+          "windows": 2,
+          "beats_hold": 0
+        },
+        {
+          "rule": "volume_spike_3x_up_hold_5d",
+          "windows": 2,
+          "beats_hold": 1
+        },
+        {
+          "rule": "volume_spike_3x_down_hold_5d",
+          "windows": 2,
+          "beats_hold": 0
+        }
+      ],
+      "studies": ["VOLUME-AND-ACTIVE-STRATEGIES-STUDY-2026-10-03"]
+    },
+    {
+      "id": "2026-10-03/weekly-research-btc-usd-stress-60bps",
+      "date": "2026-10-03",
+      "name": "weekly-research-btc-usd-stress-60bps",
+      "file": "docs/backtest-readiness/evidence-2026-10-03/weekly-research-btc-usd-stress-60bps.json",
+      "schema": "research-run/v1",
+      "tool": "weekly-research",
+      "generated_at": "2026-10-07T20:08:18Z",
+      "commit": "0e2b76df370345258405d70ed68e5dba246bd6f2",
+      "data": {
+        "prices": "btc_usd_daily_2026-10-01.csv",
+        "book": "btc_usd",
+        "bars": 2352,
+        "first": "2020-04-24",
+        "last": "2026-10-01",
+        "news_days": 0
+      },
+      "costs": {
+        "buy_bps": 60,
+        "sell_bps": 60,
+        "slippage_bps": 0,
+        "round_trip_bps": 120,
+        "level": "stress",
+        "note": "one cost per leg that includes commission and slippage"
+      },
+      "windows": [
+        {
+          "label": "DEVELOPMENT",
+          "from": "2020-11-10",
+          "to": "2024-09-30",
+          "bars": 1421
+        },
+        {
+          "label": "HOLDOUT",
+          "from": "2024-10-01",
+          "to": "2026-09-30",
+          "bars": 730
+        }
+      ],
+      "scores": [
+        {
+          "rule": "buy_and_hold",
+          "windows": 2,
+          "beats_hold": 0
+        },
+        {
+          "rule": "sma50",
+          "windows": 2,
+          "beats_hold": 2
+        },
+        {
+          "rule": "sma50_volume_1.5x",
+          "windows": 2,
+          "beats_hold": 2
+        },
+        {
+          "rule": "trend_ensemble_daily",
+          "windows": 2,
+          "beats_hold": 1
+        },
+        {
+          "rule": "trend_ensemble_weekly",
+          "windows": 2,
+          "beats_hold": 0
+        },
+        {
+          "rule": "vol_target_50_weekly",
+          "windows": 2,
+          "beats_hold": 1
+        },
+        {
+          "rule": "sma50_x_vol_target_50_weekly",
+          "windows": 2,
+          "beats_hold": 1
+        },
+        {
+          "rule": "ensemble_x_vol_target_50_weekly",
+          "windows": 2,
+          "beats_hold": 0
+        },
+        {
+          "rule": "volume_spike_2x_up_hold_1d",
+          "windows": 2,
+          "beats_hold": 0
+        },
+        {
+          "rule": "volume_spike_2x_down_hold_1d",
+          "windows": 2,
+          "beats_hold": 0
+        },
+        {
+          "rule": "volume_spike_2x_up_hold_5d",
+          "windows": 2,
+          "beats_hold": 0
+        },
+        {
+          "rule": "volume_spike_2x_down_hold_5d",
+          "windows": 2,
+          "beats_hold": 0
+        },
+        {
+          "rule": "volume_spike_3x_up_hold_1d",
+          "windows": 2,
+          "beats_hold": 0
+        },
+        {
+          "rule": "volume_spike_3x_down_hold_1d",
+          "windows": 2,
+          "beats_hold": 0
+        },
+        {
+          "rule": "volume_spike_3x_up_hold_5d",
+          "windows": 2,
+          "beats_hold": 1
+        },
+        {
+          "rule": "volume_spike_3x_down_hold_5d",
+          "windows": 2,
+          "beats_hold": 0
+        }
+      ],
+      "studies": ["VOLUME-AND-ACTIVE-STRATEGIES-STUDY-2026-10-03"]
+    },
     {
       "id": "2026-09-28/btc-mxn-maker-plus-slippage-same-windows",
       "date": "2026-09-28",

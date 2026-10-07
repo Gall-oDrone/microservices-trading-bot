@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-10-06T21:03:23Z",
+  "generated_at": "2026-10-07T20:08:51Z",
   "dir": "docs/backtest-readiness",
   "found": true,
   "studies": [
@@ -17,7 +17,34 @@
       ],
       "evidence": null,
       "bytes": 3296,
-      "modified": "2026-10-06T19:54:17Z"
+      "modified": "2026-10-07T20:08:32Z"
+    },
+    {
+      "name": "VOLUME-AND-ACTIVE-STRATEGIES-STUDY-2026-10-03",
+      "file": "docs/backtest-readiness/VOLUME-AND-ACTIVE-STRATEGIES-STUDY-2026-10-03.md",
+      "title": "Volume and More-Active Strategies Study (2026-10-03)",
+      "date": "2026-10-03",
+      "kind": "study",
+      "question": "The frozen SMA50 rule sits in \"hold\" most days. Can a strategy that uses trading volume, or that acts every week, beat Bitso's fees, and can anything deliver a small profit every week?",
+      "summary": "1. No strategy we tested makes money every week. Even the best variants lose in about 40–60% of the weeks they are invested. They win through a few large weeks. 2. Trading volume spikes on their own (buy after a high-volume day) loses money after fees on both books. There is a weak and inconsistent tendency for prices to keep rising for a few days after a high-volume *up* day (3 of 4 windows).…",
+      "follows": [],
+      "references": [],
+      "evidence": {
+        "dir": "docs/backtest-readiness/evidence-2026-10-03",
+        "files": [
+          "SHA256SUMS",
+          "btc_mxn_daily_2026-10-01.csv",
+          "btc_usd_daily_2026-10-01.csv",
+          "weekly-research-btc-mxn-stress-88bps.json",
+          "weekly-research-btc-mxn.json",
+          "weekly-research-btc-mxn.txt",
+          "weekly-research-btc-usd-stress-60bps.json",
+          "weekly-research-btc-usd.json",
+          "weekly-research-btc-usd.txt"
+        ]
+      },
+      "bytes": 16950,
+      "modified": "2026-10-07T20:08:32Z"
     },
     {
       "name": "FORWARD-TEST-PREREGISTRATION-SMA50-BTCUSD-2026-09-29",
@@ -30,7 +57,7 @@
       "references": ["FORWARD-TEST-PREREGISTRATION-SMA50-2026-09-27"],
       "evidence": null,
       "bytes": 6075,
-      "modified": "2026-10-06T19:54:17Z"
+      "modified": "2026-10-07T20:08:32Z"
     },
     {
       "name": "BTC-MXN-TREND-CHECK-2026-09-27",
@@ -69,7 +96,7 @@
         ]
       },
       "bytes": 9104,
-      "modified": "2026-10-06T19:54:17Z"
+      "modified": "2026-10-07T20:08:32Z"
     },
     {
       "name": "FORWARD-TEST-PREREGISTRATION-SMA50-2026-09-27",
@@ -108,7 +135,7 @@
         ]
       },
       "bytes": 5044,
-      "modified": "2026-10-06T19:54:17Z"
+      "modified": "2026-10-07T20:08:32Z"
     },
     {
       "name": "FULL-HISTORY-DAILY-STUDY-2026-09-27",
@@ -147,7 +174,7 @@
         ]
       },
       "bytes": 12060,
-      "modified": "2026-10-06T19:54:17Z"
+      "modified": "2026-10-07T20:08:32Z"
     },
     {
       "name": "DAILY-HORIZON-NEWS-STUDY-2026-09-26",
@@ -169,7 +196,7 @@
         ]
       },
       "bytes": 12219,
-      "modified": "2026-10-06T19:54:17Z"
+      "modified": "2026-10-07T20:08:32Z"
     },
     {
       "name": "FEES-ENGINE-SPEEDUP-MOMENTUM-2026-09-25",
@@ -185,7 +212,7 @@
         "files": ["backtest-d-incremental-engine.txt", "momentum-entry-diagnostic.txt"]
       },
       "bytes": 9893,
-      "modified": "2026-10-06T19:54:17Z"
+      "modified": "2026-10-07T20:08:32Z"
     },
     {
       "name": "HARNESS-FIXES-AND-REMEASURE-2026-09-24",
@@ -208,7 +235,7 @@
         ]
       },
       "bytes": 17006,
-      "modified": "2026-10-06T19:54:17Z"
+      "modified": "2026-10-07T20:08:32Z"
     },
     {
       "name": "PATH-TO-PROFITABILITY-2026-09-23",
@@ -228,7 +255,7 @@
         ]
       },
       "bytes": 13035,
-      "modified": "2026-10-06T19:54:17Z"
+      "modified": "2026-10-07T20:08:32Z"
     },
     {
       "name": "BACKTEST-READINESS-ASSESSMENT-2026-09-22",
@@ -253,7 +280,7 @@
         ]
       },
       "bytes": 29183,
-      "modified": "2026-10-06T19:54:17Z"
+      "modified": "2026-10-07T20:08:32Z"
     }
   ]
 }

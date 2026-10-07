@@ -14,30 +14,37 @@ const COST_FILTERS: { k: CostFilter; label: string }[] = [
   { k: 'frictionless', label: 'Frictionless' },
 ]
 
-/** One bar per rule: in how many windows it beat buy-and-hold. */
+const MAX_SCORES = 6
+
+/** One bar per rule: in how many windows it beat buy-and-hold (first six rules in the tool's order). */
 function Scores({ run }: { run: RunSummary }) {
+  const scores = run.scores.filter((s) => s.rule !== HOLD)
+  const more = scores.length - MAX_SCORES
   return (
     <div className="run-scores">
-      {run.scores
-        .filter((s) => s.rule !== HOLD)
-        .map((s) => {
-          const frac = s.windows ? s.beats_hold / s.windows : 0
-          return (
-            <div
-              key={s.rule}
-              className="run-score"
-              title={`${ruleLabel(s.rule)} beat holding in ${s.beats_hold} of ${s.windows} windows`}
-            >
-              <span className="run-score-name">{ruleLabel(s.rule)}</span>
-              <span className="run-score-bar" aria-hidden>
-                <span style={{ width: `${Math.round(frac * 100)}%` }} className={frac >= 0.5 ? 'up' : 'down'} />
-              </span>
-              <span className="num faint">
-                {s.beats_hold}/{s.windows}
-              </span>
-            </div>
-          )
-        })}
+      {scores.slice(0, MAX_SCORES).map((s) => {
+        const frac = s.windows ? s.beats_hold / s.windows : 0
+        return (
+          <div
+            key={s.rule}
+            className="run-score"
+            title={`${ruleLabel(s.rule)} beat holding in ${s.beats_hold} of ${s.windows} windows`}
+          >
+            <span className="run-score-name">{ruleLabel(s.rule)}</span>
+            <span className="run-score-bar" aria-hidden>
+              <span style={{ width: `${Math.round(frac * 100)}%` }} className={frac >= 0.5 ? 'up' : 'down'} />
+            </span>
+            <span className="num faint">
+              {s.beats_hold}/{s.windows}
+            </span>
+          </div>
+        )
+      })}
+      {more > 0 && (
+        <span className="faint run-score-more">
+          +{more} more rule{more === 1 ? '' : 's'}
+        </span>
+      )}
     </div>
   )
 }
@@ -56,14 +63,18 @@ function RunRow({ run }: { run: RunSummary }) {
         <div className="study-meta">
           <span className={`chip ${run.costs.round_trip_bps === 0 ? 'chip-flat' : 'chip-warn'}`}>
             {costLabel(run.costs)}
+            {run.costs.level ? ` · ${run.costs.level}` : ''}
           </span>
           <span className="chip" title={`${d.first} → ${d.last}${d.news ? ` · news: ${d.news_days} days` : ''}`}>
             {d.book ? `${d.book} · ` : ''}
             {d.prices} · {d.bars.toLocaleString('en-US')} bars
           </span>
-          <span className="chip">
-            {run.windows.length} window{run.windows.length === 1 ? '' : 's'}
+          <span className="chip" title={run.windows.map((w) => `${w.label} ${w.from} → ${w.to}`).join('\n')}>
+            {run.windows.some((w) => w.label === 'HOLDOUT')
+              ? 'development + holdout'
+              : `${run.windows.length} window${run.windows.length === 1 ? '' : 's'}`}
           </span>
+          {run.tool !== 'daily-research' && <span className="chip chip-flat">{run.tool}</span>}
         </div>
       </div>
       <Scores run={run} />

@@ -4,7 +4,22 @@ import userEvent from '@testing-library/user-event'
 import { createMemoryRouter, RouterProvider } from 'react-router'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { runDocSchema, runsResponseSchema } from '../api/schemas'
-import { costSiblings, fmtPP, fmtRet, heat, matchesRun, ruleLabel, windowLabel, windowOrder } from '../lib/runs'
+import {
+  compareOrder,
+  costDetail,
+  costSiblings,
+  fmtPP,
+  fmtRet,
+  heat,
+  holdoutIndex,
+  matchesRun,
+  ruleLabel,
+  ruleNames,
+  verdict,
+  windowLabel,
+  windowOrder,
+  windowTag,
+} from '../lib/runs'
 import { resetThemeForTests, THEME_KEY } from '../lib/theme'
 import runs from '../mocks/research/runs.json'
 import { makeQueryClient, routes } from '../router'
@@ -24,7 +39,9 @@ function renderAt(path: string) {
 }
 
 const TAKER = '2026-09-27/btc-mxn-taker'
+const WEEKLY = '2026-10-03/weekly-research-btc-mxn'
 const all = runsResponseSchema.parse(runs).runs
+const docOf = (id: string) => runDocSchema.parse(docs[`../mocks/research/run-${id.replace('/', '--')}.json`])
 
 describe('runs contract', () => {
   it('the captured run list parses and has a fixture per run', () => {
@@ -100,6 +117,47 @@ describe('runs helpers', () => {
   })
 })
 
+describe('weekly-research helpers', () => {
+  const doc = docOf(WEEKLY)
+  const ws = doc.report.windows
+  const rules = doc.run.scores.map((s) => s.rule)
+
+  it('names rules from the report, falling back to the id', () => {
+    const names = ruleNames(ws)
+    expect(names('sma50_volume_1.5x')).toBe('SMA50, entry needs volume ≥ 1.5x')
+    expect(names('buy_and_hold')).toBe('Buy-and-hold')
+    expect(ruleNames(docOf(TAKER).report.windows)('trend_sma50')).toBe('Trend SMA50')
+  })
+
+  it('tags development and holdout, and keeps in-sample for daily-research', () => {
+    expect(holdoutIndex(ws)).toBe(1)
+    expect([windowTag(ws, 0), windowTag(ws, 1)]).toEqual(['development', 'holdout'])
+    const taker = docOf(TAKER).report.windows
+    expect(holdoutIndex(taker)).toBe(-1)
+    expect([windowTag(taker, 0), windowTag(taker, 1)]).toEqual(['in-sample', ''])
+  })
+
+  it('counts windows that beat holding and had a smaller drawdown', () => {
+    expect(verdict('sma50_volume_1.5x', ws)).toEqual({ windows: 2, beatsHold: 2, lowerDD: 2 })
+    expect(verdict('sma50', ws)).toEqual({ windows: 2, beatsHold: 1, lowerDD: 2 })
+  })
+
+  it('ranks on the holdout, holding first', () => {
+    expect(compareOrder(ws, rules, 'table')).toEqual(rules)
+    expect(compareOrder(ws, rules, 'vs_hold').slice(0, 3)).toEqual([
+      'buy_and_hold',
+      'sma50_volume_1.5x',
+      'trend_ensemble_weekly',
+    ])
+    expect(compareOrder(ws, rules, 'sharpe')[1]).toBe('sma50_volume_1.5x')
+  })
+
+  it('describes a per-leg cost that includes slippage', () => {
+    expect(costDetail(doc.run.costs)).toBe('70 bps per leg (one cost per leg that includes commission and slippage)')
+    expect(costDetail(docOf(TAKER).run.costs)).toMatch(/^buy \d+ \+ sell \d+ bps commission/)
+  })
+})
+
 describe('Runs page', () => {
   it('groups runs by evidence folder with score bars', async () => {
     renderAt('/research/runs')
@@ -127,6 +185,17 @@ describe('Runs page', () => {
     ])
     await userEvent.type(screen.getByRole('searchbox', { name: 'Search runs' }), ' nothing-like-this')
     expect(await screen.findByText('No run matches')).toBeInTheDocument()
+  })
+
+  it('labels holdout runs, stress costs and caps long rule lists', async () => {
+    renderAt('/research/runs')
+    const card = await screen.findByTestId(`run-${WEEKLY}`)
+    expect(within(card).getByText('development + holdout')).toBeInTheDocument()
+    expect(within(card).getByText('weekly-research')).toBeInTheDocument()
+    expect(within(card).getByText('+9 more rules')).toBeInTheDocument()
+    expect(within(card).getByText('140 bps round trip · base')).toBeInTheDocument()
+    const stress = screen.getByTestId('run-2026-10-03/weekly-research-btc-mxn-stress-88bps')
+    expect(within(stress).getByText('176 bps round trip · stress')).toBeInTheDocument()
   })
 })
 
@@ -179,6 +248,66 @@ describe('Run page', () => {
   it('an unknown run is an error, not a crash', async () => {
     renderAt('/research/runs/2026-09-27/no-such-run')
     expect(await screen.findByText(/no run 2026-09-27\/no-such-run/)).toBeInTheDocument()
+  })
+
+  it('daily-research runs with many windows have no side-by-side table', async () => {
+    renderAt(`/research/runs/${TAKER}`)
+    await screen.findByTestId('run-matrix')
+    expect(screen.queryByTestId('run-compare')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('event-study')).not.toBeInTheDocument()
+  })
+})
+
+describe('Run page, development vs holdout', () => {
+  it('compares the windows side by side and opens on the holdout', async () => {
+    renderAt(`/research/runs/${WEEKLY}`)
+    expect(await screen.findByRole('heading', { level: 1, name: 'weekly-research-btc-mxn' })).toBeInTheDocument()
+    const cmp = await screen.findByTestId('run-compare')
+    expect(within(cmp).getByRole('heading', { level: 2 })).toHaveTextContent('Development vs holdout')
+    const vol = within(cmp).getByTestId('cmp-sma50_volume_1.5x')
+    expect(within(vol).getByRole('rowheader')).toHaveTextContent('SMA50, entry needs volume ≥ 1.5x')
+    expect(within(vol).getByText('+542.0 pp')).toBeInTheDocument() // development
+    expect(within(vol).getByText('+33.9 pp')).toBeInTheDocument() // holdout
+    expect(within(vol).getByText('0.98')).toBeInTheDocument() // holdout Sharpe
+    expect(within(vol).getAllByText('2/2')).toHaveLength(2) // beat hold, lower DD
+
+    const matrix = screen.getByTestId('run-matrix')
+    expect(within(matrix).getByRole('button', { name: /holdout/ })).toHaveAttribute('aria-pressed', 'true')
+    expect(within(screen.getByTestId('window-detail')).getByRole('heading', { level: 2 })).toHaveTextContent(
+      '2024-10-01 → 2026-09-30',
+    )
+    expect(within(screen.getByTestId('event-study')).getAllByRole('row')).toHaveLength(16)
+    const sens = screen.getByTestId('sensitivity')
+    expect(within(sens).getByText('post hoc')).toBeInTheDocument()
+    expect(within(sens).getByRole('row', { name: /chosen/ })).toHaveTextContent('+53.70%')
+  })
+
+  it('sorts on the holdout through the URL', async () => {
+    const router = renderAt(`/research/runs/${WEEKLY}`)
+    const cmp = await screen.findByTestId('run-compare')
+    await userEvent.click(within(cmp).getByRole('button', { name: 'vs hold' }))
+    await waitFor(() => expect(router.state.location.search).toBe('?sort=vs_hold'))
+    expect(
+      within(cmp)
+        .getAllByTestId(/^cmp-/)
+        .slice(0, 3)
+        .map((r) => r.dataset.testid),
+    ).toEqual(['cmp-buy_and_hold', 'cmp-sma50_volume_1.5x', 'cmp-trend_ensemble_weekly'])
+  })
+
+  it('links the base and stress cost reports', async () => {
+    renderAt(`/research/runs/${WEEKLY}?w=0`)
+    const costs = await screen.findByTestId('cost-sensitivity')
+    await waitFor(() => expect(within(costs).queryByText('…')).not.toBeInTheDocument())
+    expect(within(costs).getAllByRole('row')).toHaveLength(3)
+    expect(within(costs).getByRole('link', { name: '176 bps round trip' })).toHaveAttribute(
+      'href',
+      '/research/runs/2026-10-03/weekly-research-btc-mxn-stress-88bps',
+    )
+    // ?w=0 selects development; the event study follows the selected window.
+    expect(within(screen.getByTestId('window-detail')).getByRole('heading', { level: 2 })).toHaveTextContent(
+      '2017-12-17 → 2024-09-30',
+    )
   })
 })
 
