@@ -68,15 +68,26 @@ func LoadHaltState(path string) (h HaltState, found bool, err error) {
 	if err != nil {
 		return HaltState{}, true, fmt.Errorf("halt file %s: %w", path, err)
 	}
-	dec := json.NewDecoder(strings.NewReader(string(b)))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&h); err != nil {
-		return HaltState{}, true, fmt.Errorf("halt file %s: %w", path, err)
-	}
-	if err := h.Validate(); err != nil {
+	if h, err = ParseHaltState(b); err != nil {
 		return HaltState{}, true, fmt.Errorf("halt file %s: %w", path, err)
 	}
 	return h, true, nil
+}
+
+// ParseHaltState parses and validates halt file content with the same rules
+// as LoadHaltState (unknown fields and an unexplained halt are errors), for
+// readers whose copy is not on local disk (ui-api reading S3).
+func ParseHaltState(b []byte) (HaltState, error) {
+	var h HaltState
+	dec := json.NewDecoder(strings.NewReader(string(b)))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&h); err != nil {
+		return HaltState{}, err
+	}
+	if err := h.Validate(); err != nil {
+		return HaltState{}, err
+	}
+	return h, nil
 }
 
 // ApplyHalt returns p with the halt file merged into its global halt. The

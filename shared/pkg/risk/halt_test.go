@@ -34,6 +34,10 @@ func TestLoadHaltState(t *testing.T) {
 		if !found {
 			t.Fatalf("%s: found=false", c.body)
 		}
+		// ParseHaltState (ui-api's S3 copy) applies exactly the same rules.
+		if ph, perr := ParseHaltState([]byte(c.body)); (perr == nil) != (err == nil) || ph != h {
+			t.Fatalf("%s: ParseHaltState %+v %v, LoadHaltState %+v %v", c.body, ph, perr, h, err)
+		}
 		if c.wantErr != "" {
 			if err == nil || !strings.Contains(err.Error(), c.wantErr) {
 				t.Fatalf("%s: err %v, want %q", c.body, err, c.wantErr)
