@@ -19,8 +19,8 @@ every stage order (step R1, §6.4):
 CI runs in [`.github/workflows/operator-ui.yml`](../../.github/workflows/operator-ui.yml) (Go 1.22 vet + `-race`
 tests for shared, daily-executor and ui-api; `npm ci && npm run ci` on Node 22).
 
-What is **not** done yet: there is no halt switch the UI can flip (R4), no alerting (R3), no data-health
-page, and nothing is deployed beyond localhost.
+What is **not** done yet: there is no halt switch the UI can flip (R4), no alerting (R3), and nothing
+is deployed beyond localhost. (The data-health page was built on 2026-10-07, §8.7.)
 
 **Update 2026-10-07.** Research step 4 is complete: both research tools write `research-run/v1`
 JSON (`-json`), `ui-api` serves the reports, and the web app has `/research/runs` (list) and
@@ -120,10 +120,10 @@ Location: `web/` at the repo root, served by Vite in development (proxying `/api
 - Ticker and spread per book, recent trades, order-book depth (from `market-data` REST, live via SSE).
 - Daily candles with volume and the 20-day volume ratio. The ratio is already computed by `ui-api` (`volume_ratio_20d`).
 
-### 4.5 Data health (Phase 2)
-- Collector: last trade age per book, WebSocket gaps, Postgres row counts.
-- S3: latest raw partition per book, compaction status (`trades_compacted/` up to which day).
-- Daily-executor: last successful run (already shown as run status), ledger uploaded to S3 or not, last exit code.
+### 4.5 Data health (built 2026-10-07, §8.7)
+- Collector: last flush age per book and the 24 h flush cadence (from S3). Its WebSocket gap table and Postgres row counts are inside the VPC, so they stay an SSM audit for now.
+- S3: latest raw partition per book, compaction status (`trades_compacted/` up to which day, from the latest `_manifest.json`).
+- Daily-executor: ledger coverage per book (run status), the last run's exit code and whether it uploaded the ledger to S3 (from `run-*.log`), recent runs.
 
 ### 4.6 Controls (Phase 4, gated)
 - Strategy list with state; start/stop; a global trading halt; the daily-executor halt.
@@ -151,10 +151,11 @@ Location: `web/` at the repo root, served by Vite in development (proxying `/api
 | `GET /api/ui/research/studies/{name}` | one study file | sanitized HTML (goldmark, raw HTML dropped), h2/h3 headings, followed-by / referenced-by; 400 bad name, 404 unknown |
 | `GET /api/ui/research/runs` | `research-run/v1` JSON in `evidence-<date>/` | summary per report: data, costs (incl. additive `level`/`note`), window headers, per-rule beat-hold scores, citing studies; unreadable reports listed as `skipped` |
 | `GET /api/ui/research/runs/{date}/{name}` | one report | the summary plus the report passed through unchanged, so additive fields reach the UI |
+| `GET /api/ui/health/data` | `-archive s3://bucket` (list/get only) + ledger dir | collector flushes, compaction, executor coverage, last `run-*.log`, S3 upload; ok/warn/fail checks; S3 listing cached 60 s; `?ledger=` picks the executor section |
 
 Files are cached by mtime; the ledger is re-read only when it changes.
 
-Still to build (Phase 2–3): `/market/{book}/…` proxy, `/health/data`.
+Still to build (Phase 2–3): `/market/{book}/…` proxy.
 
 ### 5.2 Contracts
 - **Go ↔ Go:** `shared/pkg/dailyledger` mirrors the executor's unexported ledger types.
@@ -277,7 +278,7 @@ returns the executor's last recorded check. The Risk page shows all of it.
 | **0. Foundations** | `web/` scaffold (Vite, TS strict, router, Query, tokens, dark theme, layout), `npm run ci`, MSW mocks from real data | `npm run build` passes; Forward tests page renders from mocks | **Done** |
 | **1. Forward tests + risk, local** | Forward-tests pages and Risk page against a local `ui-api` reading the local ledger; localhost only | Today's signal, paper vs hold, fills and fees for both books, matching the CLI output | **Done** |
 | **1b. Close-out** | GitHub Actions job (`go test` for shared, ui-api, daily-executor; `npm run ci`), Playwright smoke test, multi-ledger support in `ui-api` (stage + dry-run + future volume variant), risk step **R1** | CI runs on every PR; a blocked order is enforced and visible | **Done**: R1 (2026-10-05); CI (`operator-ui.yml`), multi-ledger, Playwright (2026-10-06) |
-| **2. Research + data health** | Study index, strategy comparison (needs `-json`), data-health page, ledger read from S3, risk **R2** + **R3** | Holdout vs development tables match the evidence files; a missed run alerts | **R2 done**, **study index done** (2026-10-06), **runs + comparison done** (2026-10-07); data health, S3 ledger, R3 open |
+| **2. Research + data health** | Study index, strategy comparison (needs `-json`), data-health page, ledger read from S3, risk **R2** + **R3** | Holdout vs development tables match the evidence files; a missed run alerts | **R2 done**, **study index done** (2026-10-06), **runs + comparison done**, **data health done** (2026-10-07); S3 ledger, R3 open |
 | **3. Market data** | Market page via BFF proxy and SSE; candles with volume ratio | Live ticker updates within 2 s; no direct browser calls to internal services | **Live-data slice done** (2026-10-06, §8.3); Market page still to build |
 | **4. Hardening + controls** | OIDC, TLS, CORS, audit log, role-gated controls (halt, kill switch, start/stop), risk **R4** | Security review passes; every control action is audited | |
 | **5. Deploy** | Static build behind CloudFront or served by `ui-api`; k8s/compose entries; risk **R5** | Reachable only through auth over HTTPS | |
@@ -294,7 +295,7 @@ and R3 alerts follow.
 | **2. R2 halt file (done)** | See §8.2. | Setting the file halts the next run (recorded as a block) and `/risk` shows who, when, why |
 | **3. Live-data slice (done)** | See §8.3. | Cards and the detail chart update about once a second; a stale feed is visible; nothing live reaches the executor |
 | **4. Research views (done)** | **4a (done 2026-10-06):** study index from `docs/backtest-readiness/*.md` (§8.4). **4b (done 2026-10-07):** `-json` on the research tools, `/research/runs`, the comparison view (§8.5) | As in Phase 2 |
-| **5. Next** | Data-health page (§4.5) with `GET /api/ui/health/data`; ledger read from S3 (§5.3); **R3** alerts | A stale collector or a missed run is visible in the UI and pages |
+| **5. Next** | **5a (done 2026-10-07):** data-health page (§4.5) with `GET /api/ui/health/data`, §8.7. **5b:** ledger read from S3 (§5.3). **5c:** **R3** alerts | A stale collector or a missed run is visible in the UI and pages |
 
 ### 8.2 R2 halt file (design)
 
@@ -439,6 +440,43 @@ unfinished bar is labelled provisional. The decision path never reads live data.
   keyboard read-out, ledger-aware links, offline state, brand link. Playwright (desktop and phone):
   hero with live price, chart hover, book switch, sections, CTA into the console and back.
 
+### 8.7 Data health (as built, 2026-10-07)
+
+- **Backend.** `ui-api -archive s3://<bucket>` (env `UI_API_ARCHIVE`; off by default) lists the
+  collector's archive with the default AWS credentials, list/get only (`internal/objstore`, with an
+  in-memory store for tests). `internal/datahealth` checks, per book:
+  - **Raw flushes** (`trades/book=…/year=…/month=…/day=…/`, today and yesterday, walking back up to
+    a week if empty): age of the newest object, flushes in the last 24 h, the longest wait and waits
+    over 2 h. The collector flushes about hourly, so **warn after 90 min, fail after 3 h**.
+  - **Compaction** (`trades_compacted/book=…/…/_manifest.json`): the latest compacted day against
+    yesterday (UTC), rows in vs out, duplicates, when it ran. **Warn at 2 days behind, fail at 4.**
+  - **Executor**, per ledger: coverage per book (the forward-test run status: a missed closed day
+    fails, before 06:00 Mexico City a missing run is fine), the newest `run-<UTC>.log` next to the
+    ledger (exit code; no exit line = running for 90 min, then a warning), and the S3 upload line.
+  - The S3 listing is cached for 60 s (15 s after an error); an unreachable bucket shows as unknown.
+- **`scripts/daily-executor-run.sh`** runs the executor once (flags pass through) and writes
+  `run-<UTC>.log` ending in `exit=<code>`. With `DAILY_EXECUTOR_S3_URI` it then uploads the ledger,
+  the halt file (or deletes a stale remote copy), the candle CSVs and the log, and records
+  `upload=ok|failed <dest>`. The upload never changes the exit code.
+- **UI.** `/data-health` (nav: Operations, badge = failing or warning checks): overall status with a
+  tile per area, the checks worst first ("not configured" does not count against the overall
+  status), one card per book with the last flush, a 24 h flush timeline (gaps hatched amber) and the
+  compaction lag, and the executor card with coverage, missing days, the last run's error lines and
+  the recent runs. Ages are measured against the response's `generated_at`, so fixtures read as live.
+- **First findings (2026-10-07 21:20 UTC).**
+  - The collector is healthy: 25 hourly flushes per book in 24 h, longest wait 63 min.
+  - **Compaction stopped**: both books are compacted through 2026-09-30, from a single run on
+    2026-10-01 17:48 UTC, so it is **6 days behind**. It looks like a one-off backfill, not a
+    scheduled job.
+  - **The stage ledger is missing 2026-10-05 and 2026-10-06** for both books: the last run was
+    2026-10-05 16:53 Mexico City. Runs are manual today; R3 alerts and a schedule are the fix.
+  - Run logs before 2026-10-05 22:53 UTC have no `exit=` line (they predate the wrapper).
+- **Tests.** Go: archive thresholds (healthy, stale, compaction lag, gap, missing book, outage),
+  run-log parsing, the handler (archive off, missed days and a failed upload, cache, unreachable
+  bucket). Web: contract per captured fixture, helpers (ordering, minutes, flush timeline), the
+  page, archive off, healthy state, error state; Playwright (desktop and phone): nav → page →
+  sections → dry-run ledger.
+
 ---
 
 ## 9. How to run (local)
@@ -446,8 +484,11 @@ unfinished bar is labelled provisional. The decision path never reads live data.
 ```bash
 export PATH=$PWD/.tools/node/bin:$PATH              # portable Node 22
 (cd services/ui-api && go run ./cmd) &              # 127.0.0.1:8090, stage ledger, live on, studies from docs/backtest-readiness
+#   add -archive s3://mtb-development-data-archive-<account> for the Data health archive section
 # several ledgers, live data off, another studies dir:
 #   go run ./cmd -ledgers stage=<path>/ledger.jsonl,dry-run=<path>/ledger.jsonl -live=false -studies-dir <dir>
+# one executor run with a run log (and an S3 copy when DAILY_EXECUTOR_S3_URI is set):
+#   scripts/daily-executor-run.sh -stage
 cd web && npm ci && npm run dev                     # http://127.0.0.1:5173
 # or, without the backend:
 npm run dev:mock
