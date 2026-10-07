@@ -13,6 +13,7 @@ go run ./cmd -risk-policy risk-policy.json -static ../../web/dist            # a
 go run ./cmd -archive s3://mtb-development-data-archive-<account>          # Data health: list the collector's archive
 go run ./cmd -ledgers stage=s3://<bucket>/daily-executor/stage,local=../strategy-executor/daily-executor-data/stage/ledger.jsonl
                                                # a ledger from the copy scripts/daily-executor-run.sh uploads
+go run ./cmd/ui-alerts -dry-run                # R3 alerts: what would be sent (see cmd/ui-alerts, scripts/install-ops-cron.sh)
 go test ./...
 ```
 
@@ -43,7 +44,8 @@ go test ./...
 
 - **Read-only.** It never writes the ledger, the candles or the policy, and exposes no endpoint that
   can place, cancel or halt anything. With `-archive` or an `s3://` ledger it only lists and reads
-  objects (default AWS credential chain); it never writes to S3.
+  objects (default AWS credential chain); it never writes to S3. `cmd/ui-alerts` is a separate
+  command: it reads the same way, writes only its state file and publishes to the SNS topic.
 - **S3 ledgers** read the layout `scripts/daily-executor-run.sh` uploads (`ledger.jsonl`,
   `risk-state.json`, `candles/*.csv`, `run-*.log`). One listing per 30 s, bodies cached by ETag; a
   new upload shows within 30 s. The halt file is parsed with the executor's rules
