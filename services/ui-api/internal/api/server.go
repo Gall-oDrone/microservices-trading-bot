@@ -19,6 +19,7 @@ import (
 	"bitso-trading-platform/shared/pkg/dailyledger"
 	"bitso-trading-platform/shared/pkg/risk"
 	"bitso-trading-platform/ui-api/internal/live"
+	"bitso-trading-platform/ui-api/internal/objstore"
 	"bitso-trading-platform/ui-api/internal/research"
 	"bitso-trading-platform/ui-api/internal/store"
 )
@@ -46,6 +47,10 @@ type Server struct {
 	Live *live.Hub
 	// Research indexes the study write-ups; nil serves an empty list.
 	Research *research.Index
+	// Archive is the collector's S3 trade archive (read-only) for
+	// /health/data; nil reports it as not configured.
+	Archive      objstore.Store
+	archiveCache archiveCache
 }
 
 var (
@@ -132,6 +137,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/ui/research/studies/{name}", s.study)
 	mux.HandleFunc("GET /api/ui/research/runs", s.runs)
 	mux.HandleFunc("GET /api/ui/research/runs/{date}/{name}", s.run)
+	mux.HandleFunc("GET /api/ui/health/data", s.dataHealth)
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusNotFound, "no such endpoint")
 	})

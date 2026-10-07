@@ -13,6 +13,10 @@
 //
 // The Research page reads the study write-ups from -studies-dir
 // (default ../../docs/backtest-readiness), read-only.
+//
+// The Data health page lists the collector's S3 archive when -archive is set
+// (go run ./cmd -archive s3://mtb-development-data-archive-<account>), with
+// the default AWS credentials; it only lists and reads.
 package main
 
 import (
@@ -59,6 +63,7 @@ func main() {
 	liveURL := flag.String("live-url", env("UI_API_LIVE_URL", live.DefaultURL), "Bitso public WebSocket URL (production; no keys)")
 	liveREST := flag.String("live-rest-url", env("UI_API_LIVE_REST_URL", live.DefaultRESTURL), "Bitso public REST API, for today's bar")
 	studiesDir := flag.String("studies-dir", env("UI_API_STUDIES_DIR", "../../docs/backtest-readiness"), "study write-ups (markdown) for the Research page")
+	archiveURI := flag.String("archive", env("UI_API_ARCHIVE", ""), "collector trade archive s3://bucket for the data-health page, read-only (default: off)")
 	flag.Parse()
 
 	if *printPolicy {
@@ -94,6 +99,9 @@ func main() {
 	srv := &api.Server{Ledgers: ledgers, Policy: pol, PolicySrc: src, StageSize: *stageSize, StaticDir: *static,
 		Version: version(), Log: logger,
 		Research: &research.Index{Dir: *studiesDir, RepoRel: repoRel(*studiesDir)}}
+	if srv.Archive, err = api.NewArchive(context.Background(), *archiveURI); err != nil {
+		logger.Fatal("-archive: ", err)
+	}
 	ctx, stopLive := context.WithCancel(context.Background())
 	defer stopLive()
 	if *liveOn {
@@ -114,6 +122,9 @@ func main() {
 			logger.Printf("ledger %s: %s | candles %s", l.Name, l.Store.LedgerPath, l.Store.CandlesDir)
 		}
 		logger.Printf("studies: %s", *studiesDir)
+		if srv.Archive != nil {
+			logger.Printf("archive: %s (read-only)", srv.Archive.Describe())
+		}
 		logger.Printf("listening on http://%s | policy %s", *addr, src)
 		if err := hs.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			logger.Fatal(err)
