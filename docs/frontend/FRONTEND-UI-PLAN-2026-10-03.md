@@ -526,7 +526,9 @@ unfinished bar is labelled provisional. The decision path never reads live data.
 - **Channel.** SNS topic `mtb-operator-alerts` (us-east-1), email subscription. One message per
   run: an ASCII subject ("[mtb-ops] 2 critical, 1 resolved: Ledger coverage - btc_mxn (stage)") and a
   plain-text body by section (escalated, new, reminder, resolved) with links to the Data health and
-  Risk pages. `-notify stdout` and `-dry-run` print instead; `-test` sends a test message.
+  Risk pages. `-notify stdout` and `-dry-run` print instead; `-test` sends a test message. SNS drops
+  messages to unconfirmed subscriptions, so a topic with no confirmed subscriber is a send error: the
+  state is kept and the alerts go out on the first run after the link is clicked.
 - **Schedule** (`scripts/install-ops-cron.sh`, a marked block in the user's crontab; the machine is
   on UTC):
   - `15 6 * * *` `scripts/ops-run.sh executor`: `scripts/daily-executor-run.sh -stage` at 00:15

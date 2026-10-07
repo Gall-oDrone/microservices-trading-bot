@@ -32,6 +32,7 @@ func (Writer) Describe() string { return "stdout" }
 // snsPublisher is the part of the SNS client used.
 type snsPublisher interface {
 	Publish(ctx context.Context, in *sns.PublishInput, opts ...func(*sns.Options)) (*sns.PublishOutput, error)
+	ListSubscriptionsByTopic(ctx context.Context, in *sns.ListSubscriptionsByTopicInput, opts ...func(*sns.Options)) (*sns.ListSubscriptionsByTopicOutput, error)
 }
 
 // SNS publishes to a topic; email and SMS subscribers get the message.
@@ -53,14 +54,44 @@ func NewSNS(ctx context.Context, topicARN string) (*SNS, error) {
 	return &SNS{TopicARN: topicARN, client: sns.NewFromConfig(cfg)}, nil
 }
 
-// Notify implements Notifier.
+// Notify implements Notifier. SNS drops messages for subscriptions that are
+// not confirmed yet, so a topic without a confirmed one is an error: the
+// caller keeps its state and retries, and nothing is silently lost.
 func (s *SNS) Notify(ctx context.Context, subject, body string) error {
+	if err := s.confirmed(ctx); err != nil {
+		return err
+	}
 	_, err := s.client.Publish(ctx, &sns.PublishInput{TopicArn: aws.String(s.TopicARN),
 		Subject: aws.String(asciiLine(subject)), Message: aws.String(body)})
 	if err != nil {
 		return fmt.Errorf("sns publish %s: %w", s.TopicARN, err)
 	}
 	return nil
+}
+
+func (s *SNS) confirmed(ctx context.Context) error {
+	in := &sns.ListSubscriptionsByTopicInput{TopicArn: aws.String(s.TopicARN)}
+	pending := 0
+	for {
+		out, err := s.client.ListSubscriptionsByTopic(ctx, in)
+		if err != nil {
+			return fmt.Errorf("sns subscriptions %s: %w", s.TopicARN, err)
+		}
+		for _, sub := range out.Subscriptions {
+			switch arn := aws.ToString(sub.SubscriptionArn); arn {
+			case "PendingConfirmation":
+				pending++
+			case "", "Deleted":
+			default:
+				return nil
+			}
+		}
+		if aws.ToString(out.NextToken) == "" {
+			break
+		}
+		in.NextToken = out.NextToken
+	}
+	return fmt.Errorf("sns %s has no confirmed subscription (%d pending: click the link in the confirmation email)", s.TopicARN, pending)
 }
 
 // Describe implements Notifier.

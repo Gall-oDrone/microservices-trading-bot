@@ -3,11 +3,14 @@ package alerts
 import (
 	"context"
 	"errors"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/sns"
+	"github.com/aws/aws-sdk-go-v2/service/sns/types"
 
 	"bitso-trading-platform/shared/pkg/risk"
 	"bitso-trading-platform/ui-api/internal/api"
@@ -168,8 +171,9 @@ func TestRender(t *testing.T) {
 }
 
 type fakeSNS struct {
-	in  *sns.PublishInput
-	err error
+	in   *sns.PublishInput
+	err  error
+	subs [][]string // pages of subscription ARNs
 }
 
 func (f *fakeSNS) Publish(_ context.Context, in *sns.PublishInput, _ ...func(*sns.Options)) (*sns.PublishOutput, error) {
@@ -177,12 +181,35 @@ func (f *fakeSNS) Publish(_ context.Context, in *sns.PublishInput, _ ...func(*sn
 	return &sns.PublishOutput{}, f.err
 }
 
+func (f *fakeSNS) ListSubscriptionsByTopic(_ context.Context, in *sns.ListSubscriptionsByTopicInput, _ ...func(*sns.Options)) (*sns.ListSubscriptionsByTopicOutput, error) {
+	page := 0
+	if in.NextToken != nil {
+		page, _ = strconv.Atoi(*in.NextToken)
+	}
+	out := &sns.ListSubscriptionsByTopicOutput{}
+	if page < len(f.subs) {
+		for _, a := range f.subs[page] {
+			out.Subscriptions = append(out.Subscriptions, types.Subscription{SubscriptionArn: aws.String(a)})
+		}
+	}
+	if page+1 < len(f.subs) {
+		out.NextToken = aws.String(strconv.Itoa(page + 1))
+	}
+	return out, nil
+}
+
 func TestSNS(t *testing.T) {
 	if _, err := NewSNS(context.Background(), "not-an-arn"); err == nil {
 		t.Fatal("bad ARN accepted")
 	}
-	f := &fakeSNS{}
+	f := &fakeSNS{subs: [][]string{{"PendingConfirmation"}}}
 	s := &SNS{TopicARN: "arn:aws:sns:us-east-1:1:t", client: f}
+	// Pending only: refuse, so the caller keeps its state and retries.
+	if err := s.Notify(context.Background(), "s", "b"); err == nil || !strings.Contains(err.Error(), "no confirmed subscription (1 pending") || f.in != nil {
+		t.Fatalf("pending: %v (published %v)", err, f.in)
+	}
+	// A confirmed subscriber on the second page.
+	f.subs = [][]string{{"PendingConfirmation", "Deleted"}, {"arn:aws:sns:us-east-1:1:t:abc"}}
 	if err := s.Notify(context.Background(), "a · b", "body"); err != nil {
 		t.Fatal(err)
 	}
