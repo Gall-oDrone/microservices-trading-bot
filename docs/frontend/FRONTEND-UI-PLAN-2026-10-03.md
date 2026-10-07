@@ -224,7 +224,7 @@ returns the executor's last recorded check. The Risk page shows all of it.
 | **R0 (done)** | `shared/pkg/risk`, `shared/pkg/dailyledger`, `/api/ui/risk`, Risk page | Risk page shows limits, exposure, realized cost and the next-order check from the real ledger |
 | **R1 (done 2026-10-05)** Enforce in the daily-executor | See §6.4.1 | A blocked order leaves a ledger line with `risk.allowed=false` and no exchange order (tested with a fake exchange); `/risk` reports `enforcement: "enforced"` |
 | **R2 (done 2026-10-06)** Halt file, §8.2 | `risk-state.json` next to the ledger (`{halted, reason, by, at}`), read by the executor alongside `DAILY_EXECUTOR_DISABLED`; `ui-api` shows it read-only | Setting the file halts the next run and the UI shows who set it, when and why |
-| **R3** Alerts | Alert on a missed or failed run (exit code ≠ 0), a block, or a warning. Use the existing Grafana/Alertmanager stack, or a sidecar that polls `/api/ui/risk` | A missed day pages within an hour of 06:00 Mexico City |
+| **R3 (done 2026-10-07)** Alerts, §8.9 | Alert on a missed or failed run (exit code ≠ 0), a block, or a warning. `ui-alerts` (cron, every 15 min) evaluates ui-api's own views and publishes to SNS (email) | A missed day pages within an hour of 06:00 Mexico City |
 | **R4** Halt from the UI | `POST /api/ui/risk/halt` and `/resume` with a required reason, an audit log (append-only JSONL), a confirmation dialog | Needs Phase 4 auth (OIDC) first; every action is audited |
 | **R5** Platform-wide | Load trading-engine `MaxDailyLoss`/`MaxDrawdownPct` from env (non-zero defaults); stop trading-engine from placing orders OM rejected; expose OM `GetCurrentExposure`; move OM and trading-engine checks onto `shared/pkg/risk`; delete the dead strategy-executor risk package | One policy format across services; the session check actually blocks |
 
@@ -282,7 +282,7 @@ returns the executor's last recorded check. The Risk page shows all of it.
 | **0. Foundations** | `web/` scaffold (Vite, TS strict, router, Query, tokens, dark theme, layout), `npm run ci`, MSW mocks from real data | `npm run build` passes; Forward tests page renders from mocks | **Done** |
 | **1. Forward tests + risk, local** | Forward-tests pages and Risk page against a local `ui-api` reading the local ledger; localhost only | Today's signal, paper vs hold, fills and fees for both books, matching the CLI output | **Done** |
 | **1b. Close-out** | GitHub Actions job (`go test` for shared, ui-api, daily-executor; `npm run ci`), Playwright smoke test, multi-ledger support in `ui-api` (stage + dry-run + future volume variant), risk step **R1** | CI runs on every PR; a blocked order is enforced and visible | **Done**: R1 (2026-10-05); CI (`operator-ui.yml`), multi-ledger, Playwright (2026-10-06) |
-| **2. Research + data health** | Study index, strategy comparison (needs `-json`), data-health page, ledger read from S3, risk **R2** + **R3** | Holdout vs development tables match the evidence files; a missed run alerts | **R2 done**, **study index done** (2026-10-06), **runs + comparison done**, **data health done**, **S3 ledger done** (2026-10-07); R3 open |
+| **2. Research + data health** | Study index, strategy comparison (needs `-json`), data-health page, ledger read from S3, risk **R2** + **R3** | Holdout vs development tables match the evidence files; a missed run alerts | **R2 done**, **study index done** (2026-10-06), **runs + comparison done**, **data health done**, **S3 ledger done**, **R3 done** (2026-10-07) |
 | **3. Market data** | Market page via BFF proxy and SSE; candles with volume ratio | Live ticker updates within 2 s; no direct browser calls to internal services | **Live-data slice done** (2026-10-06, §8.3); Market page still to build |
 | **4. Hardening + controls** | OIDC, TLS, CORS, audit log, role-gated controls (halt, kill switch, start/stop), risk **R4** | Security review passes; every control action is audited | |
 | **5. Deploy** | Static build behind CloudFront or served by `ui-api`; k8s/compose entries; risk **R5** | Reachable only through auth over HTTPS | |
@@ -299,7 +299,7 @@ and R3 alerts follow.
 | **2. R2 halt file (done)** | See §8.2. | Setting the file halts the next run (recorded as a block) and `/risk` shows who, when, why |
 | **3. Live-data slice (done)** | See §8.3. | Cards and the detail chart update about once a second; a stale feed is visible; nothing live reaches the executor |
 | **4. Research views (done)** | **4a (done 2026-10-06):** study index from `docs/backtest-readiness/*.md` (§8.4). **4b (done 2026-10-07):** `-json` on the research tools, `/research/runs`, the comparison view (§8.5) | As in Phase 2 |
-| **5. Next** | **5a (done 2026-10-07):** data-health page (§4.5) with `GET /api/ui/health/data`, §8.7. **5b (done 2026-10-07):** ledger read from S3 (§5.3, §8.8). **5c:** **R3** alerts | A stale collector or a missed run is visible in the UI and pages |
+| **5. Data health, S3 ledger, R3 (done)** | **5a (done 2026-10-07):** data-health page (§4.5) with `GET /api/ui/health/data`, §8.7. **5b (done 2026-10-07):** ledger read from S3 (§5.3, §8.8). **5c (done 2026-10-07):** **R3** alerts and the daily schedule (§8.9) | A stale collector or a missed run is visible in the UI and pages |
 
 ### 8.2 R2 halt file (design)
 
@@ -506,6 +506,44 @@ unfinished bar is labelled provisional. The decision path never reads live data.
   `/ledgers`, `/healthz`, `/forward-tests`, candles (incl. the 404 path), `/risk` (halt from S3) and
   `/health/data` (run log and upload from S3); one client per bucket; bad URIs.
 
+### 8.9 R3 alerts and the daily schedule (as built, 2026-10-07)
+
+- **`ui-alerts`** (`services/ui-api/cmd/ui-alerts`, logic in `internal/alerts`) builds the same
+  `api.Server` as ui-api and calls `/api/ui/health/data` and `/api/ui/risk` **in process** for every
+  ledger, so alerts do not depend on a running ui-api. Same flags and `UI_API_*` variables.
+- **What alerts.** Every data-health check that fails (critical) or warns (warning): a missed closed
+  day, a run that exited ≠ 0 (incl. a block, exit 1, or a refused run, exit 2), a failed ledger
+  upload, a stale collector, a compaction lag. An unreachable archive is a warning; a run still in
+  progress and "not configured" are not alerts. From `/risk`: block findings (critical), warn
+  findings (`order_blocked`, `data_gap`, `policy_mismatch`, drawdown, cost), and an invalid halt file
+  (critical: the executor refuses to run). `run_missed` is left to the coverage check (same days).
+  The archive checks are de-duplicated across ledgers.
+- **When it sends.** An alert is sent when it first appears or escalates (warning → critical), as a
+  reminder every 12 h (`-repeat`) while open, and once when it resolves. A changed message alone
+  waits for the reminder. Nothing is sent when nothing changed. Open alerts are kept in
+  `~/.local/state/mtb-ui-alerts/state.json`; it is written only after a successful send, so a failed
+  send retries 15 min later.
+- **Channel.** SNS topic `mtb-operator-alerts` (us-east-1), email subscription. One message per
+  run: an ASCII subject ("[mtb-ops] 2 critical, 1 resolved: Ledger coverage - btc_mxn (stage)") and a
+  plain-text body by section (escalated, new, reminder, resolved) with links to the Data health and
+  Risk pages. `-notify stdout` and `-dry-run` print instead; `-test` sends a test message.
+- **Schedule** (`scripts/install-ops-cron.sh`, a marked block in the user's crontab; the machine is
+  on UTC):
+  - `15 6 * * *` `scripts/ops-run.sh executor`: `scripts/daily-executor-run.sh -stage` at 00:15
+    Mexico City, with `DAILY_EXECUTOR_S3_URI=s3://<bucket>/daily-executor/stage`, so every run leaves
+    an exit code and an S3 copy (§8.8).
+  - `*/15 * * * *` `scripts/ops-run.sh alerts`. A day still missing at 06:00 Mexico City is reported
+    by 06:15; a failed run at 00:15 by about 00:30 (or when the maker timeout ends).
+  - Settings in `~/.config/microservices-trading-bot/ops.env` (chmod 600: PATH with the AWS CLI,
+    topic, bucket, ledger); logs in `~/.local/state/mtb-ops/{executor,alerts}.log`.
+- **Known limit.** The executor and the alerts run on the same workstation: if it is off, nothing
+  runs and nothing alerts. A watchdog outside it (e.g. a scheduled Lambda that checks the S3 ledger's
+  age, now that it is uploaded daily) would close that gap.
+- **Tests.** Mapping from health and risk (incl. what does not alert), de-duplication and ordering,
+  the new → quiet → escalated → reminder → resolved lifecycle, `repeat 0`, a downgrade, rendering and
+  the SNS-safe subject, SNS publish and errors (fake client); in-process evaluation against the test
+  ledger and the state round trip.
+
 ---
 
 ## 9. How to run (local)
@@ -520,6 +558,9 @@ export PATH=$PWD/.tools/node/bin:$PATH              # portable Node 22
 #   go run ./cmd -ledgers stage=s3://<bucket>/daily-executor/stage,local=<path>/ledger.jsonl
 # one executor run with a run log (and an S3 copy when DAILY_EXECUTOR_S3_URI is set):
 #   scripts/daily-executor-run.sh -stage
+# R3 alerts: print what would be sent; install the cron jobs (daily run + alerts every 15 min):
+#   (cd services/ui-api && go run ./cmd/ui-alerts -dry-run)
+#   scripts/install-ops-cron.sh --topic-arn <arn> --bucket <bucket>   # --print to preview, --uninstall
 cd web && npm ci && npm run dev                     # http://127.0.0.1:5173
 # or, without the backend:
 npm run dev:mock
