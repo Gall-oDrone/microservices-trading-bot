@@ -91,6 +91,26 @@ test('risk: enforced, per-book exposure and policy', async ({ page }) => {
   await expectHealthy(page, errors)
 })
 
+test('data health: summary, checks, archive, executor runs and the ledger switch', async ({ page }) => {
+  const errors = watchConsole(page)
+  await page.goto('/forward-tests')
+  await page.locator('#nav-data-health').click()
+  await expect(page).toHaveURL(/\/data-health$/)
+  await expect(page.getByRole('heading', { level: 1, name: 'Data health' })).toBeVisible()
+  await expect(page.getByTestId('health-summary')).toBeVisible()
+  await expect(page.locator('#health-checks li')).toHaveCount(8)
+  for (const book of ['btc_mxn', 'btc_usd']) {
+    await expect(page.getByTestId(`archive-${book}`)).toBeVisible()
+    await expect(page.getByTestId(`flush-strip-${book}`)).toBeVisible()
+  }
+  await expect(page.locator('#runs-table')).toBeVisible()
+  await expectHealthy(page, errors)
+  await page.getByRole('combobox', { name: 'Ledger' }).selectOption('dry-run')
+  await expect(page).toHaveURL(/\/data-health\?ledger=dry-run$/)
+  await expect(page.getByTestId('executor')).toContainText('No run logs next to the ledger')
+  await expectHealthy(page, errors)
+})
+
 test('ledger picker switches to the dry-run ledger and links keep it', async ({ page }) => {
   const errors = watchConsole(page)
   await page.goto('/forward-tests')

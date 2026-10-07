@@ -1,0 +1,237 @@
+{
+  "ledger": "dry-run",
+  "generated_at": "2026-10-07T21:20:36Z",
+  "status": "fail",
+  "checks": [
+    {
+      "id": "collector.btc_mxn",
+      "area": "collector",
+      "label": "Collector flushes · btc_mxn",
+      "status": "ok",
+      "message": "last flush 11 min ago"
+    },
+    {
+      "id": "compaction.btc_mxn",
+      "area": "archive",
+      "label": "Compaction · btc_mxn",
+      "status": "fail",
+      "message": "compacted through 2026-09-30, 6 days behind; last compaction ran 6 days ago: is the compaction job scheduled?"
+    },
+    {
+      "id": "collector.btc_usd",
+      "area": "collector",
+      "label": "Collector flushes · btc_usd",
+      "status": "ok",
+      "message": "last flush 11 min ago"
+    },
+    {
+      "id": "compaction.btc_usd",
+      "area": "archive",
+      "label": "Compaction · btc_usd",
+      "status": "fail",
+      "message": "compacted through 2026-09-30, 6 days behind; last compaction ran 6 days ago: is the compaction job scheduled?"
+    },
+    {
+      "id": "executor.last_run",
+      "area": "executor",
+      "label": "Last run",
+      "status": "unknown",
+      "message": "no run-*.log next to the ledger (use scripts/daily-executor-run.sh)"
+    },
+    {
+      "id": "executor.ledger.btc_mxn",
+      "area": "executor",
+      "label": "Ledger coverage · btc_mxn",
+      "status": "warn",
+      "message": "no ledger records for this book yet"
+    },
+    {
+      "id": "executor.ledger.btc_usd",
+      "area": "executor",
+      "label": "Ledger coverage · btc_usd",
+      "status": "warn",
+      "message": "no ledger records for this book yet"
+    },
+    {
+      "id": "executor.upload",
+      "area": "executor",
+      "label": "Ledger copy in S3",
+      "status": "off",
+      "message": "not uploaded: set DAILY_EXECUTOR_S3_URI for scripts/daily-executor-run.sh"
+    }
+  ],
+  "collector": {
+    "status": "ok",
+    "message": "flushing trades to S3 on schedule for every book",
+    "note": "Inferred from the collector's hourly flushes to S3. Its /healthz, the ws_gaps table and Postgres row counts are inside the VPC (audit via SSM, as in docs/backtest-readiness/evidence-2026-09-22)."
+  },
+  "archive": {
+    "status": "fail",
+    "source": "s3://mtb-development-data-archive-326105557351",
+    "checked_at": "2026-10-07T21:20:36Z",
+    "books": [
+      {
+        "book": "btc_mxn",
+        "status": "fail",
+        "raw": {
+          "status": "ok",
+          "message": "last flush 11 min ago",
+          "latest_partition": "2026-10-07",
+          "latest_key": "trades/book=btc_mxn/year=2026/month=10/day=07/trades-20261007T210826.296-202465571.parquet",
+          "latest_at": "2026-10-07T21:08:45Z",
+          "age_minutes": 11.9,
+          "objects_today": 21,
+          "bytes_today": 102581,
+          "flushes_24h": 25,
+          "max_flush_gap_minutes": 62.8,
+          "flush_gaps_24h": 0,
+          "flushes": [
+            "2026-10-06T21:45:40Z",
+            "2026-10-06T22:46:40Z",
+            "2026-10-06T23:47:57Z",
+            "2026-10-07T00:49:01Z",
+            "2026-10-07T00:49:01Z",
+            "2026-10-07T01:49:41Z",
+            "2026-10-07T02:50:27Z",
+            "2026-10-07T03:51:11Z",
+            "2026-10-07T04:51:42Z",
+            "2026-10-07T05:52:10Z",
+            "2026-10-07T06:52:43Z",
+            "2026-10-07T07:53:27Z",
+            "2026-10-07T08:56:17Z",
+            "2026-10-07T09:57:44Z",
+            "2026-10-07T10:59:20Z",
+            "2026-10-07T12:02:09Z",
+            "2026-10-07T13:02:57Z",
+            "2026-10-07T14:03:45Z",
+            "2026-10-07T15:04:27Z",
+            "2026-10-07T16:04:57Z",
+            "2026-10-07T17:06:27Z",
+            "2026-10-07T18:06:57Z",
+            "2026-10-07T19:07:27Z",
+            "2026-10-07T20:07:57Z",
+            "2026-10-07T21:08:45Z"
+          ]
+        },
+        "compacted": {
+          "status": "fail",
+          "message": "compacted through 2026-09-30, 6 days behind; last compaction ran 6 days ago: is the compaction job scheduled?",
+          "latest_partition": "2026-09-30",
+          "expected_through": "2026-10-06",
+          "days_behind": 6,
+          "partitions": 43,
+          "first_partition": "2026-08-19",
+          "created_at": "2026-10-01T17:48:18.70271168Z",
+          "source_rows": 2474,
+          "compacted_rows": 2474,
+          "duplicate_tids": 0,
+          "other_day_rows": 0
+        }
+      },
+      {
+        "book": "btc_usd",
+        "status": "fail",
+        "raw": {
+          "status": "ok",
+          "message": "last flush 11 min ago",
+          "latest_partition": "2026-10-07",
+          "latest_key": "trades/book=btc_usd/year=2026/month=10/day=07/trades-20261007T210826.296-202465487.parquet",
+          "latest_at": "2026-10-07T21:08:45Z",
+          "age_minutes": 11.9,
+          "objects_today": 21,
+          "bytes_today": 92250,
+          "flushes_24h": 25,
+          "max_flush_gap_minutes": 62.9,
+          "flush_gaps_24h": 0,
+          "flushes": [
+            "2026-10-06T21:45:41Z",
+            "2026-10-06T22:46:42Z",
+            "2026-10-06T23:47:57Z",
+            "2026-10-07T00:49:01Z",
+            "2026-10-07T00:49:01Z",
+            "2026-10-07T01:49:41Z",
+            "2026-10-07T02:50:27Z",
+            "2026-10-07T03:51:12Z",
+            "2026-10-07T04:51:44Z",
+            "2026-10-07T05:52:10Z",
+            "2026-10-07T06:52:45Z",
+            "2026-10-07T07:53:27Z",
+            "2026-10-07T08:56:18Z",
+            "2026-10-07T09:57:45Z",
+            "2026-10-07T10:59:21Z",
+            "2026-10-07T12:02:10Z",
+            "2026-10-07T13:02:57Z",
+            "2026-10-07T14:03:45Z",
+            "2026-10-07T15:04:27Z",
+            "2026-10-07T16:04:57Z",
+            "2026-10-07T17:06:27Z",
+            "2026-10-07T18:06:57Z",
+            "2026-10-07T19:07:27Z",
+            "2026-10-07T20:07:57Z",
+            "2026-10-07T21:08:45Z"
+          ]
+        },
+        "compacted": {
+          "status": "fail",
+          "message": "compacted through 2026-09-30, 6 days behind; last compaction ran 6 days ago: is the compaction job scheduled?",
+          "latest_partition": "2026-09-30",
+          "expected_through": "2026-10-06",
+          "days_behind": 6,
+          "partitions": 1,
+          "first_partition": "2026-09-30",
+          "created_at": "2026-10-01T17:48:19.041382207Z",
+          "source_rows": 36,
+          "compacted_rows": 36,
+          "duplicate_tids": 0,
+          "other_day_rows": 0
+        }
+      }
+    ]
+  },
+  "executor": {
+    "status": "warn",
+    "message": "no ledger file yet",
+    "ledger_path": "../strategy-executor/daily-executor-data/ledger.jsonl",
+    "ledger_found": false,
+    "ledger_modified_at": "",
+    "records": 0,
+    "last_recorded_at": "",
+    "books": [
+      {
+        "book": "btc_mxn",
+        "run": {
+          "status": "no_data",
+          "expected_bar_date": "2026-10-06",
+          "last_bar_date": "",
+          "missing_days": [],
+          "message": "no ledger records for this book yet"
+        }
+      },
+      {
+        "book": "btc_usd",
+        "run": {
+          "status": "no_data",
+          "expected_bar_date": "2026-10-06",
+          "last_bar_date": "",
+          "missing_days": [],
+          "message": "no ledger records for this book yet"
+        }
+      }
+    ],
+    "last_run": null,
+    "runs": [],
+    "upload": {
+      "status": "off",
+      "message": "not uploaded: set DAILY_EXECUTOR_S3_URI for scripts/daily-executor-run.sh",
+      "target": "",
+      "at": ""
+    }
+  },
+  "thresholds": {
+    "compaction_fail_days": "4",
+    "compaction_warn_days": "2",
+    "flush_gap_warn": "2h0m0s",
+    "raw_fail_after": "3h0m0s",
+    "raw_warn_after": "1h30m0s"
+  }
+}

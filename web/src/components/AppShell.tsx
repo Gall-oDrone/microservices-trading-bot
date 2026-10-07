@@ -1,5 +1,13 @@
 import { Link, NavLink, Outlet, useLocation, useSearchParams } from 'react-router'
-import { useForwardTests, useHealth, useLedgerName, useLedgerSearch, useLedgers, useRisk } from '../api/client'
+import {
+  useDataHealth,
+  useForwardTests,
+  useHealth,
+  useLedgerName,
+  useLedgerSearch,
+  useLedgers,
+  useRisk,
+} from '../api/client'
 import { ago } from '../lib/format'
 import { useTheme } from '../lib/theme'
 import {
@@ -109,6 +117,9 @@ function Nav() {
   const missed = ft.data?.books.filter((b) => b.run.status === 'missed').length ?? 0
   const blocks = risk.data?.blocks ?? 0
   const warns = risk.data?.warnings ?? 0
+  const health = useDataHealth()
+  const healthFails = health.data?.checks.filter((c) => c.status === 'fail').length ?? 0
+  const healthWarns = health.data?.checks.filter((c) => c.status === 'warn').length ?? 0
   const inRuns = useLocation().pathname.startsWith('/research/runs')
   return (
     <nav className="nav" aria-label="Main">
@@ -143,11 +154,18 @@ function Nav() {
         <IconGrid /> Backtest runs
       </NavLink>
       <span className="nav-label" style={{ marginTop: 14 }}>
-        Next phases
+        Operations
       </span>
-      <span className="nav-link disabled" aria-disabled="true" title="Phase 2">
+      <NavLink to={{ pathname: '/data-health', search }} className="nav-link" id="nav-data-health">
         <IconPulse /> Data health
-        <span className="count faint">P2</span>
+        {(healthFails > 0 || healthWarns > 0) && (
+          <span className="count">
+            <Badge tone={healthFails > 0 ? 'block' : 'warn'}>{healthFails > 0 ? healthFails : healthWarns}</Badge>
+          </span>
+        )}
+      </NavLink>
+      <span className="nav-label" style={{ marginTop: 14 }}>
+        Next phases
       </span>
       <span className="nav-link disabled" aria-disabled="true" title="Phase 3">
         <IconCandles /> Market

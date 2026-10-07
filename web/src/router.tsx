@@ -1,6 +1,7 @@
 import { QueryClient } from '@tanstack/react-query'
 import type { RouteObject } from 'react-router'
 import { AppShell } from './components/AppShell'
+import { DataHealthPage } from './pages/DataHealthPage'
 import { ForwardTestDetailPage } from './pages/ForwardTestDetailPage'
 import { ForwardTestsPage } from './pages/ForwardTestsPage'
 import { LandingPage } from './pages/LandingPage'
@@ -20,6 +21,7 @@ export const routes: RouteObject[] = [
       { path: 'forward-tests', element: <ForwardTestsPage /> },
       { path: 'forward-tests/:book', element: <ForwardTestDetailPage /> },
       { path: 'risk', element: <RiskPage /> },
+      { path: 'data-health', element: <DataHealthPage /> },
       { path: 'research', element: <ResearchPage /> },
       { path: 'research/runs', element: <RunsPage /> },
       { path: 'research/runs/:date/:name', element: <RunPage /> },

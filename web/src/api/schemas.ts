@@ -594,3 +594,103 @@ export type RunReport = z.infer<typeof runReportSchema>
 
 export const runDocSchema = z.object({ run: runSummarySchema, report: runReportSchema })
 export type RunDoc = z.infer<typeof runDocSchema>
+
+// ---- Data health (GET /api/ui/health/data) ----
+
+/** ok < off (not configured) < unknown < warn < fail */
+export const healthStatus = z.enum(['ok', 'off', 'unknown', 'warn', 'fail'])
+export type HealthStatus = z.infer<typeof healthStatus>
+
+export const healthCheckSchema = z.object({
+  id: z.string(),
+  area: z.enum(['collector', 'archive', 'executor']),
+  label: z.string(),
+  status: healthStatus,
+  message: z.string(),
+})
+export type HealthCheck = z.infer<typeof healthCheckSchema>
+
+export const rawHealthSchema = z.object({
+  status: healthStatus,
+  message: z.string(),
+  latest_partition: z.string(),
+  latest_key: z.string(),
+  latest_at: z.string(),
+  age_minutes: z.number(),
+  objects_today: z.number(),
+  bytes_today: z.number(),
+  flushes_24h: z.number(),
+  max_flush_gap_minutes: z.number(),
+  flush_gaps_24h: z.number(),
+  flushes: z.array(z.string()),
+})
+
+export const compactionHealthSchema = z.object({
+  status: healthStatus,
+  message: z.string(),
+  latest_partition: z.string(),
+  expected_through: z.string(),
+  days_behind: z.number(),
+  partitions: z.number(),
+  first_partition: z.string(),
+  created_at: z.string(),
+  source_rows: z.number(),
+  compacted_rows: z.number(),
+  duplicate_tids: z.number(),
+  other_day_rows: z.number(),
+  manifest_error: z.string().optional(),
+})
+
+export const archiveBookSchema = z.object({
+  book: z.string(),
+  status: healthStatus,
+  raw: rawHealthSchema,
+  compacted: compactionHealthSchema,
+})
+export type ArchiveBook = z.infer<typeof archiveBookSchema>
+
+export const runLogSchema = z.object({
+  file: z.string(),
+  started_at: z.string(),
+  modified_at: z.string(),
+  version: z.string(),
+  mode: z.string(),
+  exit_code: z.number().nullable(),
+  status: healthStatus,
+  message: z.string(),
+  upload: z.enum(['ok', 'failed', '']),
+  upload_target: z.string(),
+  books: z.array(z.object({ book: z.string(), stage: z.string(), ledger: z.string() })),
+  errors: z.array(z.string()),
+})
+export type RunLog = z.infer<typeof runLogSchema>
+
+export const dataHealthSchema = z.object({
+  ledger: z.string(),
+  generated_at: z.string(),
+  status: healthStatus,
+  checks: z.array(healthCheckSchema),
+  collector: z.object({ status: healthStatus, message: z.string(), note: z.string() }),
+  archive: z.object({
+    status: healthStatus,
+    source: z.string(),
+    checked_at: z.string(),
+    error: z.string().optional(),
+    books: z.array(archiveBookSchema),
+  }),
+  executor: z.object({
+    status: healthStatus,
+    message: z.string(),
+    ledger_path: z.string(),
+    ledger_found: z.boolean(),
+    ledger_modified_at: z.string(),
+    records: z.number(),
+    last_recorded_at: z.string(),
+    books: z.array(z.object({ book: z.string(), run: runStatusSchema })),
+    last_run: runLogSchema.nullable(),
+    runs: z.array(runLogSchema),
+    upload: z.object({ status: healthStatus, message: z.string(), target: z.string(), at: z.string() }),
+  }),
+  thresholds: z.record(z.string(), z.string()),
+})
+export type DataHealth = z.infer<typeof dataHealthSchema>

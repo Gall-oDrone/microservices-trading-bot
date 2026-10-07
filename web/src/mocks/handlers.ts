@@ -114,6 +114,7 @@ export const handlers = [
   }),
   http.get('/api/ui/forward-tests', ({ request }) => fixture(request, 'forward-tests')),
   http.get('/api/ui/risk', ({ request }) => fixture(request, 'risk')),
+  http.get('/api/ui/health/data', ({ request }) => fixture(request, 'health-data')),
   http.get('/api/ui/forward-tests/:book/ledger', ({ params, request }) =>
     fixture(request, `ledger-${String(params.book)}`),
   ),

@@ -3,6 +3,7 @@ import { useSearchParams } from 'react-router'
 import type { z } from 'zod'
 import {
   candlesResponseSchema,
+  dataHealthSchema,
   forwardTestsResponseSchema,
   healthSchema,
   ledgerResponseSchema,
@@ -94,6 +95,7 @@ export const queryKeys = {
   study: (name: string) => ['study', name] as const,
   runs: ['runs'] as const,
   run: (id: string) => ['run', id] as const,
+  dataHealth: (ledger: string) => ['data-health', ledger] as const,
 }
 
 export function useForwardTests() {
@@ -191,5 +193,19 @@ export function useRun(date: string, name: string) {
       fetchJSON(`/research/runs/${encodeURIComponent(date)}/${encodeURIComponent(name)}`, runDocSchema, signal),
     staleTime: 60_000,
     enabled: date !== '' && name !== '',
+  })
+}
+
+/**
+ * Collector flushes, archive compaction and executor runs for the selected
+ * ledger. ui-api caches the S3 listing for a minute, so polling faster gains
+ * nothing.
+ */
+export function useDataHealth() {
+  const ledger = useLedgerName()
+  return useQuery({
+    queryKey: queryKeys.dataHealth(ledger),
+    queryFn: ({ signal }) => fetchJSON(withLedger('/health/data', ledger), dataHealthSchema, signal),
+    refetchInterval: REFRESH_MS,
   })
 }
