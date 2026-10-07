@@ -19,8 +19,13 @@ every stage order (step R1, §6.4):
 CI runs in [`.github/workflows/operator-ui.yml`](../../.github/workflows/operator-ui.yml) (Go 1.22 vet + `-race`
 tests for shared, daily-executor and ui-api; `npm ci && npm run ci` on Node 22).
 
-What is **not** done yet: there is no halt switch the UI can flip (R2/R4), no alerting (R3), and
-nothing is deployed beyond localhost.
+What is **not** done yet: there is no halt switch the UI can flip (R4), no alerting (R3), no data-health
+page, and nothing is deployed beyond localhost.
+
+**Update 2026-10-07.** Research step 4 is complete: both research tools write `research-run/v1`
+JSON (`-json`), `ui-api` serves the reports, and the web app has `/research/runs` (list) and
+`/research/runs/<date>/<name>` (heat-map matrix, window detail, cost sensitivity and, for 2–3 window
+runs, the **development vs holdout comparison**), §8.5.
 
 ---
 
@@ -105,9 +110,9 @@ Location: `web/` at the repo root, served by Vite in development (proxying `/api
 - Per book: stage position and its notional, **realized cost per leg** (fee + slippage) vs assumed, paper drawdown vs review level, limit meters (position, entry order size, entry notional, drawdown), **the next stage order run through `risk.Check`** ("would pass" / "would be blocked" with reasons), **the executor's last recorded check** (touch price vs close, policy version, sent / blocked, blocked days), and findings.
 - Policy table: every limit per book, with its type (block or warn).
 
-### 4.3 Research and backtests (Phase 2; study index built 2026-10-06)
+### 4.3 Research and backtests (Phase 2; study index built 2026-10-06, runs and comparison 2026-10-07)
 - **Built:** `/research` lists the studies (`docs/backtest-readiness/*.md`), newest first, with kind, question, summary, lineage chips and evidence count; search and kind filter live in the URL. `/research/<name>` renders the study with a table of contents, what it builds on, what links to it, and its evidence files (§8.4).
-- Strategy comparison view: return, max DD, Sharpe, trades and cost drag, development vs holdout side by side (from `weekly-research` / `daily-research` outputs, exported as JSON).
+- **Built:** strategy comparison view: return, vs hold, max DD, Sharpe, trades and cost, development vs holdout side by side, with beat-hold / lower-DD verdicts per rule and a sort on the holdout (from `weekly-research` / `daily-research` `-json` outputs), §8.5.
 - Backtest runs from the `backtesting` service: equity curve, trades, parameters. Pick **one** canonical engine first (see §7).
 - The volume-confirmed SMA50 variant, once pre-registered, gets its own forward-test card from its separate dry-run ledger (`ui-api -ledger …`; multi-ledger support needed, §8).
 
@@ -144,11 +149,12 @@ Location: `web/` at the repo root, served by Vite in development (proxying `/api
 | `GET /api/ui/stream?books=` | live hub | Server-Sent Events: `snapshot`, `book` (≤1/s per book), `status`, `heartbeat` (15 s) |
 | `GET /api/ui/research/studies` | `-studies-dir` (default `docs/backtest-readiness`) | metadata per study: kind, date, question, summary, follows, references, evidence dir; empty list if the dir is missing |
 | `GET /api/ui/research/studies/{name}` | one study file | sanitized HTML (goldmark, raw HTML dropped), h2/h3 headings, followed-by / referenced-by; 400 bad name, 404 unknown |
+| `GET /api/ui/research/runs` | `research-run/v1` JSON in `evidence-<date>/` | summary per report: data, costs (incl. additive `level`/`note`), window headers, per-rule beat-hold scores, citing studies; unreadable reports listed as `skipped` |
+| `GET /api/ui/research/runs/{date}/{name}` | one report | the summary plus the report passed through unchanged, so additive fields reach the UI |
 
 Files are cached by mtime; the ledger is re-read only when it changes.
 
-Still to build (Phase 2–3): `/research/runs/{id}` (needs `-json` on the research tools),
-`/market/{book}/…` proxy, `/health/data`.
+Still to build (Phase 2–3): `/market/{book}/…` proxy, `/health/data`.
 
 ### 5.2 Contracts
 - **Go ↔ Go:** `shared/pkg/dailyledger` mirrors the executor's unexported ledger types.
@@ -259,7 +265,7 @@ returns the executor's last recorded check. The Risk page shows all of it.
 3. **Do not expose signal-publishing endpoints** (`/strategies/process`, `/test/signals`, order cancel) through any public route.
 4. **Fix or remove the gateway's dead routes** (orders and positions on order-management, strategy config PUT) and the port defaults.
 5. **One backtest engine.** Either persist `strategy-executor` jobs and add an equity curve, or route everything to `backtesting`. Two result shapes double the UI work.
-6. **Machine-readable research output.** Add `-json` to `weekly-research` / `daily-research` so the UI renders tables without parsing text.
+6. ~~**Machine-readable research output.**~~ **Done 2026-10-07:** `-json` on `daily-research` and `weekly-research` (schema `research-run/v1`), §8.5.
 7. **Risk:** the R1–R5 items in §6.4.
 
 ---
@@ -271,7 +277,7 @@ returns the executor's last recorded check. The Risk page shows all of it.
 | **0. Foundations** | `web/` scaffold (Vite, TS strict, router, Query, tokens, dark theme, layout), `npm run ci`, MSW mocks from real data | `npm run build` passes; Forward tests page renders from mocks | **Done** |
 | **1. Forward tests + risk, local** | Forward-tests pages and Risk page against a local `ui-api` reading the local ledger; localhost only | Today's signal, paper vs hold, fills and fees for both books, matching the CLI output | **Done** |
 | **1b. Close-out** | GitHub Actions job (`go test` for shared, ui-api, daily-executor; `npm run ci`), Playwright smoke test, multi-ledger support in `ui-api` (stage + dry-run + future volume variant), risk step **R1** | CI runs on every PR; a blocked order is enforced and visible | **Done**: R1 (2026-10-05); CI (`operator-ui.yml`), multi-ledger, Playwright (2026-10-06) |
-| **2. Research + data health** | Study index, strategy comparison (needs `-json`), data-health page, ledger read from S3, risk **R2** + **R3** | Holdout vs development tables match the evidence files; a missed run alerts | **R2 done**, **study index done** (2026-10-06) |
+| **2. Research + data health** | Study index, strategy comparison (needs `-json`), data-health page, ledger read from S3, risk **R2** + **R3** | Holdout vs development tables match the evidence files; a missed run alerts | **R2 done**, **study index done** (2026-10-06), **runs + comparison done** (2026-10-07); data health, S3 ledger, R3 open |
 | **3. Market data** | Market page via BFF proxy and SSE; candles with volume ratio | Live ticker updates within 2 s; no direct browser calls to internal services | **Live-data slice done** (2026-10-06, §8.3); Market page still to build |
 | **4. Hardening + controls** | OIDC, TLS, CORS, audit log, role-gated controls (halt, kill switch, start/stop), risk **R4** | Security review passes; every control action is audited | |
 | **5. Deploy** | Static build behind CloudFront or served by `ui-api`; k8s/compose entries; risk **R5** | Reachable only through auth over HTTPS | |
@@ -287,7 +293,8 @@ and R3 alerts follow.
 | **1b. Playwright smoke (done)** | `@playwright/test` against `vite preview` in mock mode (captured fixtures). The 3 pages, a desktop and a phone viewport. Fails on any console error or on a schema mismatch banner. 3rd job in `operator-ui.yml`. | `npm run e2e` passes locally and in CI |
 | **2. R2 halt file (done)** | See §8.2. | Setting the file halts the next run (recorded as a block) and `/risk` shows who, when, why |
 | **3. Live-data slice (done)** | See §8.3. | Cards and the detail chart update about once a second; a stale feed is visible; nothing live reaches the executor |
-| **4. Research views** | **4a (done):** study index from `docs/backtest-readiness/*.md` (§8.4). **4b:** `-json` on the research tools, then the comparison view | As in Phase 2 |
+| **4. Research views (done)** | **4a (done 2026-10-06):** study index from `docs/backtest-readiness/*.md` (§8.4). **4b (done 2026-10-07):** `-json` on the research tools, `/research/runs`, the comparison view (§8.5) | As in Phase 2 |
+| **5. Next** | Data-health page (§4.5) with `GET /api/ui/health/data`; ledger read from S3 (§5.3); **R3** alerts | A stale collector or a missed run is visible in the UI and pages |
 
 ### 8.2 R2 halt file (design)
 
@@ -377,9 +384,37 @@ unfinished bar is labelled provisional. The decision path never reads live data.
 - **Tests.** Go: metadata, sanitization (script, `javascript:` links), traversal, cache refresh,
   missing dir, handlers. Web: zod contract per fixture, filters in the URL, in-app vs inert links,
   unknown study; Playwright: list → filter → study → follow a lineage link.
-- **Next (4b).** Agree a `-json` schema for `daily-research` / `weekly-research` (per strategy and
-  split: return, max DD, Sharpe, trades, cost drag, vs hold), write it next to the evidence, then
-  `/research/runs` and the comparison table.
+- **Next (4b, done 2026-10-07):** see §8.5.
+
+### 8.5 Research runs and strategy comparison (as built, 2026-10-07)
+
+- **One schema, two tools.** `daily-research -json` and `weekly-research -json` both write
+  `research-run/v1` (`cmd/*/report.go`; changes are additive only). `weekly-research` writes one file per
+  cost level: `<name>.json` (base) and `<name>-stress-<bps>bps.json`. Its additive fields: per rule
+  `label`, `trades`, `turnover_x`, `return_zero_cost_pct`, `cagr_pct`, `sharpe`, weekly up/down/flat,
+  median and worst week; per window (base report only) `events` (volume-spike event study) and
+  `sensitivity` (the post-hoc volume threshold check, flagged `post_hoc`); `costs.level` and
+  `costs.note` (one per-leg cost that already includes slippage). `round_trips` counts entries from
+  flat; `trades` counts every rebalance.
+- **Evidence.** The JSON twins sit next to the text in `evidence-2026-09-27/`, `-09-28/` and
+  `-10-03/`. The 2026-10-03 JSON was regenerated with the committed tool and its text output was
+  **byte-identical** to the committed `.txt`, so the JSON and the study's numbers agree.
+- **ui-api.** `internal/research/runs.go` scans `evidence-<date>/*.json` for the schema prefix,
+  builds summaries (per-rule beat-hold counts) and passes each report through unchanged.
+- **UI.** `/research/runs` groups reports by evidence folder (cost filter and search in the URL;
+  cards show the cost level, the tool and at most six rules). `/research/runs/<date>/<name>`:
+  - **Comparison** (2–3 windows): every rule × window with return, vs hold, max DD (teal when below
+    holding's), Sharpe and trades when present, costs; then *beat hold* and *lower DD* counts. Sort
+    (`?sort=vs_hold|sharpe|max_dd`) ranks on the **holdout** (else the last window), never on
+    development.
+  - A holdout design opens on the holdout window (`?w=` overrides) and tags the columns
+    *development* / *holdout*; daily-research keeps *in-sample*.
+  - Matrix, window detail (CAGR, Sharpe, trades, no-cost return when present; the random-baseline
+    column only when the report has one), event study, sensitivity, and cost siblings (base ↔ stress
+    links) for the selected window.
+- **Tests.** Go: report mapping, v1 field contract, stress file naming, round-trip counting; ui-api
+  level/note pass-through. Web: zod contract per captured fixture, helpers, comparison and sort in the
+  URL, holdout default, base/stress links; Playwright: list → weekly run → sort → detail.
 
 ---
 
