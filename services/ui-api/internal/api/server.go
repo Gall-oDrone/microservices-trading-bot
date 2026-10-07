@@ -2,6 +2,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -14,6 +15,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"bitso-trading-platform/shared/pkg/dailyledger"
@@ -59,8 +61,20 @@ var (
 )
 
 // ParseLedgers parses "name=path,name=path". Names must be unique and match
-// ledgerNameRe; each ledger's candles are read from <ledger dir>/candles.
+// ledgerNameRe; each ledger's candles are read from <ledger dir>/candles. A
+// path may be s3://bucket/prefix: the copy scripts/daily-executor-run.sh
+// uploads (read with the default AWS credentials, list and get only).
 func ParseLedgers(spec string) ([]Ledger, error) {
+	return ParseLedgersWith(spec, nil)
+}
+
+// OpenS3 opens a bucket; ParseLedgersWith calls it once per bucket.
+type OpenS3 func(bucket string) (objstore.Store, error)
+
+// ParseLedgersWith is ParseLedgers with the S3 opener given (nil: the
+// default AWS chain).
+func ParseLedgersWith(spec string, open OpenS3) ([]Ledger, error) {
+	open = cachedOpener(open)
 	var out []Ledger
 	seen := map[string]bool{}
 	for _, part := range strings.Split(spec, ",") {
@@ -80,12 +94,58 @@ func ParseLedgers(spec string) ([]Ledger, error) {
 			return nil, fmt.Errorf("ledger name %q given twice", name)
 		}
 		seen[name] = true
-		out = append(out, Ledger{Name: name, Store: store.New(path, "")})
+		st, err := OpenStore(path, "", open)
+		if err != nil {
+			return nil, fmt.Errorf("ledger %s: %w", name, err)
+		}
+		out = append(out, Ledger{Name: name, Store: st})
 	}
 	if len(out) == 0 {
 		return nil, errors.New("no ledgers")
 	}
 	return out, nil
+}
+
+// OpenStore opens a ledger given as a path on disk or as s3://bucket/prefix
+// (candlesDir applies to disk only; in S3 the candles are <prefix>/candles).
+func OpenStore(path, candlesDir string, open OpenS3) (*store.Store, error) {
+	if !strings.HasPrefix(path, "s3://") {
+		return store.New(path, candlesDir), nil
+	}
+	bucket, prefix, err := objstore.ParseURI(path)
+	if err != nil {
+		return nil, err
+	}
+	if candlesDir != "" {
+		return nil, errors.New("a separate candles dir is not supported for an S3 ledger (they are read from <prefix>/candles)")
+	}
+	obj, err := cachedOpener(open)(bucket)
+	if err != nil {
+		return nil, err
+	}
+	return store.NewRemote(obj, prefix), nil
+}
+
+// cachedOpener shares one client per bucket.
+func cachedOpener(open OpenS3) OpenS3 {
+	if open == nil {
+		open = func(bucket string) (objstore.Store, error) { return objstore.NewS3(context.Background(), bucket) }
+	}
+	var mu sync.Mutex
+	buckets := map[string]objstore.Store{}
+	return func(bucket string) (objstore.Store, error) {
+		mu.Lock()
+		defer mu.Unlock()
+		if o, ok := buckets[bucket]; ok {
+			return o, nil
+		}
+		o, err := open(bucket)
+		if err != nil {
+			return nil, err
+		}
+		buckets[bucket] = o
+		return o, nil
+	}
 }
 
 func (s *Server) ledgers() []Ledger {
@@ -241,10 +301,10 @@ func (s *Server) healthz(w http.ResponseWriter, r *http.Request) {
 	ls := s.ledgers()
 	st := ls[0].Store
 	recs, err := st.Records()
-	_, statErr := os.Stat(st.LedgerPath)
-	h := Health{Status: "ok", Version: s.Version, Ledger: st.LedgerPath, LedgerFound: statErr == nil,
+	_, found, statErr := st.LedgerInfo()
+	h := Health{Status: "ok", Version: s.Version, Ledger: st.Where(st.LedgerPath), LedgerFound: found,
 		Records: len(recs), Ledgers: len(ls), Policy: s.PolicySrc, Time: s.Now().UTC().Format(time.RFC3339)}
-	if err != nil {
+	if err != nil || statErr != nil {
 		h.Status = "degraded"
 	}
 	writeJSON(w, http.StatusOK, h)
@@ -270,9 +330,8 @@ type LedgersResponse struct {
 func (s *Server) listLedgers(w http.ResponseWriter, r *http.Request) {
 	resp := LedgersResponse{Ledgers: []LedgerInfo{}}
 	for i, l := range s.ledgers() {
-		info := LedgerInfo{Name: l.Name, Path: l.Store.LedgerPath, Default: i == 0, Modes: []string{}}
-		_, statErr := os.Stat(l.Store.LedgerPath)
-		info.Found = statErr == nil
+		info := LedgerInfo{Name: l.Name, Path: l.Store.Where(l.Store.LedgerPath), Default: i == 0, Modes: []string{}}
+		_, info.Found, _ = l.Store.LedgerInfo()
 		recs, err := l.Store.Records()
 		if err != nil {
 			info.Error = err.Error()
@@ -317,9 +376,8 @@ type HaltFileInfo struct {
 // policyFor is the policy as the executor would apply it to this ledger: the
 // configured policy with the ledger's halt file merged in.
 func (s *Server) policyFor(l Ledger) (risk.Policy, HaltFileInfo) {
-	path := risk.HaltPath(l.Store.LedgerPath)
-	info := HaltFileInfo{Path: path}
-	h, found, err := risk.LoadHaltState(path)
+	info := HaltFileInfo{Path: l.Store.Where(l.Store.HaltPath())}
+	h, found, err := l.Store.Halt()
 	info.Found = found
 	if err != nil {
 		info.Error = err.Error()
@@ -453,7 +511,7 @@ func (s *Server) candles(w http.ResponseWriter, r *http.Request) {
 	}
 	rows, path, err := l.Store.Candles(b)
 	if errors.Is(err, os.ErrNotExist) {
-		writeErr(w, http.StatusNotFound, "no candle file for "+b+" in "+l.Store.CandlesDir)
+		writeErr(w, http.StatusNotFound, "no candle file for "+b+" in "+l.Store.Where(l.Store.CandlesDir))
 		return
 	}
 	if err != nil {

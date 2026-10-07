@@ -17,6 +17,11 @@
 // The Data health page lists the collector's S3 archive when -archive is set
 // (go run ./cmd -archive s3://mtb-development-data-archive-<account>), with
 // the default AWS credentials; it only lists and reads.
+//
+// A ledger can also be read from the copy scripts/daily-executor-run.sh
+// uploads (DAILY_EXECUTOR_S3_URI), list and get only:
+//
+//	go run ./cmd -ledgers stage=s3://<bucket>/daily-executor/stage,local=../strategy-executor/daily-executor-data/stage/ledger.jsonl
 package main
 
 import (
@@ -52,9 +57,9 @@ func env(key, def string) string {
 
 func main() {
 	addr := flag.String("addr", env("UI_API_ADDR", "127.0.0.1:8090"), "listen address (loopback only unless UI_API_ALLOW_REMOTE=1)")
-	ledger := flag.String("ledger", env("UI_API_LEDGER", "../strategy-executor/daily-executor-data/stage/ledger.jsonl"), "daily-executor ledger (JSONL)")
+	ledger := flag.String("ledger", env("UI_API_LEDGER", "../strategy-executor/daily-executor-data/stage/ledger.jsonl"), "daily-executor ledger (JSONL), or its S3 copy s3://bucket/prefix")
 	candles := flag.String("candles-dir", env("UI_API_CANDLES_DIR", ""), "daily-executor candles dir (default: <ledger dir>/candles)")
-	ledgerSpec := flag.String("ledgers", env("UI_API_LEDGERS", ""), "named ledgers name=path,name=path (first is the default; overrides -ledger and -candles-dir)")
+	ledgerSpec := flag.String("ledgers", env("UI_API_LEDGERS", ""), "named ledgers name=path,name=s3://bucket/prefix (first is the default; overrides -ledger and -candles-dir)")
 	policyPath := flag.String("risk-policy", env("UI_API_RISK_POLICY", ""), "risk policy JSON (default: built-in shared/pkg/risk.DefaultPolicy)")
 	static := flag.String("static", env("UI_API_STATIC_DIR", ""), "serve the built web app from this dir (e.g. ../../web/dist)")
 	stageSize := flag.Float64("stage-size", envFloat("UI_API_STAGE_SIZE", 0.001), "BTC per stage entry, as passed to daily-executor -size")
@@ -90,7 +95,11 @@ func main() {
 		}
 	}
 
-	ledgers := []api.Ledger{{Name: "stage", Store: store.New(*ledger, *candles)}}
+	st, err := api.OpenStore(*ledger, *candles, nil)
+	if err != nil {
+		logger.Fatal("-ledger: ", err)
+	}
+	ledgers := []api.Ledger{{Name: "stage", Store: st}}
 	if *ledgerSpec != "" {
 		if ledgers, err = api.ParseLedgers(*ledgerSpec); err != nil {
 			logger.Fatal("-ledgers: ", err)
@@ -119,7 +128,16 @@ func main() {
 
 	go func() {
 		for _, l := range ledgers {
-			logger.Printf("ledger %s: %s | candles %s", l.Name, l.Store.LedgerPath, l.Store.CandlesDir)
+			logger.Printf("ledger %s: %s | candles %s", l.Name, l.Store.Where(l.Store.LedgerPath), l.Store.Where(l.Store.CandlesDir))
+			if l.Store.Remote() {
+				// The first S3 call resolves credentials and connects (seconds);
+				// do it now rather than on the first page load.
+				go func(l api.Ledger) {
+					if _, err := l.Store.Records(); err != nil {
+						logger.Printf("ledger %s: %v", l.Name, err)
+					}
+				}(l)
+			}
 		}
 		logger.Printf("studies: %s", *studiesDir)
 		if srv.Archive != nil {

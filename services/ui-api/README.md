@@ -11,14 +11,17 @@ go run ./cmd -ledger ../strategy-executor/daily-executor-data/ledger.jsonl   # t
 go run ./cmd -print-default-policy > risk-policy.json   # starting point for a policy file
 go run ./cmd -risk-policy risk-policy.json -static ../../web/dist            # also serve the built UI
 go run ./cmd -archive s3://mtb-development-data-archive-<account>          # Data health: list the collector's archive
+go run ./cmd -ledgers stage=s3://<bucket>/daily-executor/stage,local=../strategy-executor/daily-executor-data/stage/ledger.jsonl
+                                               # a ledger from the copy scripts/daily-executor-run.sh uploads
 go test ./...
 ```
 
 | Flag | Env | Default |
 |---|---|---|
 | `-addr` | `UI_API_ADDR` | `127.0.0.1:8090` (non-loopback refused unless `UI_API_ALLOW_REMOTE=1`) |
-| `-ledger` | `UI_API_LEDGER` | `../strategy-executor/daily-executor-data/stage/ledger.jsonl` |
-| `-candles-dir` | `UI_API_CANDLES_DIR` | `<ledger dir>/candles` |
+| `-ledger` | `UI_API_LEDGER` | `../strategy-executor/daily-executor-data/stage/ledger.jsonl`; or `s3://bucket/prefix` |
+| `-ledgers` | `UI_API_LEDGERS` | none; `name=path,name=s3://bucket/prefix,…` (first is the default; every endpoint takes `?ledger=`) |
+| `-candles-dir` | `UI_API_CANDLES_DIR` | `<ledger dir>/candles` (disk only) |
 | `-risk-policy` | `UI_API_RISK_POLICY` | built-in `risk.DefaultPolicy()` |
 | `-static` | `UI_API_STATIC_DIR` | none |
 | `-stage-size` | `UI_API_STAGE_SIZE` | `0.001` (the executor's `-size`) |
@@ -39,8 +42,12 @@ go test ./...
 ## Guarantees
 
 - **Read-only.** It never writes the ledger, the candles or the policy, and exposes no endpoint that
-  can place, cancel or halt anything. With `-archive` it only lists and reads objects in that bucket
-  (default AWS credential chain); it never writes to S3.
+  can place, cancel or halt anything. With `-archive` or an `s3://` ledger it only lists and reads
+  objects (default AWS credential chain); it never writes to S3.
+- **S3 ledgers** read the layout `scripts/daily-executor-run.sh` uploads (`ledger.jsonl`,
+  `risk-state.json`, `candles/*.csv`, `run-*.log`). One listing per 30 s, bodies cached by ETag; a
+  new upload shows within 30 s. The halt file is parsed with the executor's rules
+  (`risk.ParseHaltState`) and is as of the last upload.
 - **Risk is enforced by the executor, displayed here.** Since 2026-10-05 the daily-executor runs
   `shared/pkg/risk.Check` before every stage order and records it in the ledger (`stage.risk`;
   `stage.action: "blocked"` when stopped). `/risk` says `"enforcement": "enforced"`, shows that last

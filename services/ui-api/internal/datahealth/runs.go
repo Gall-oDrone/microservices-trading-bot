@@ -3,6 +3,7 @@ package datahealth
 import (
 	"bufio"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -51,6 +52,9 @@ var (
 	errLine   = regexp.MustCompile(`(?i)\b(error|refus|panic|fatal|blocked)`)
 )
 
+// IsRunLog reports whether name is a run-<UTC>.log file name.
+func IsRunLog(name string) bool { return runFileRe.MatchString(name) }
+
 // ReadRuns returns the newest n run logs in dir, newest first. A missing dir
 // is not an error.
 func ReadRuns(dir string, n int, now time.Time) ([]RunLog, error) {
@@ -86,22 +90,29 @@ func ReadRuns(dir string, n int, now time.Time) ([]RunLog, error) {
 // ParseRunLog reads one run log.
 func ParseRunLog(p string, now time.Time) (RunLog, error) {
 	name := filepath.Base(p)
+	f, err := os.Open(p)
+	if err != nil {
+		return RunLog{File: name, Books: []RunBook{}, Errors: []string{}}, err
+	}
+	defer f.Close()
+	fi, err := f.Stat()
+	if err != nil {
+		return RunLog{File: name, Books: []RunBook{}, Errors: []string{}}, err
+	}
+	return ParseRun(name, fi.ModTime(), f, now)
+}
+
+// ParseRun parses one run log's content; name is its file name and modified
+// its last write (the S3 copy's LastModified is the upload time, just after
+// the exit line).
+func ParseRun(name string, modified time.Time, body io.Reader, now time.Time) (RunLog, error) {
 	r := RunLog{File: name, Books: []RunBook{}, Errors: []string{}}
 	if m := runFileRe.FindStringSubmatch(name); m != nil {
 		if t, err := time.Parse("20060102T150405Z", m[1]); err == nil {
 			r.StartedAt = t.UTC().Format(time.RFC3339)
 		}
 	}
-	f, err := os.Open(p)
-	if err != nil {
-		return r, err
-	}
-	defer f.Close()
-	fi, err := f.Stat()
-	if err != nil {
-		return r, err
-	}
-	r.ModifiedAt = fi.ModTime().UTC().Format(time.RFC3339)
+	r.ModifiedAt = modified.UTC().Format(time.RFC3339)
 
 	books := map[string]*RunBook{}
 	book := func(b string) *RunBook {
@@ -111,7 +122,7 @@ func ParseRunLog(p string, now time.Time) (RunLog, error) {
 		return books[b]
 	}
 	current := ""
-	sc := bufio.NewScanner(f)
+	sc := bufio.NewScanner(body)
 	sc.Buffer(make([]byte, 64<<10), 1<<20)
 	first := true
 	for sc.Scan() {
@@ -164,7 +175,7 @@ func ParseRunLog(p string, now time.Time) (RunLog, error) {
 		r.Status, r.Message = Fail, "exit 2: refused to run (bad flags, policy or halt file); nothing was recorded"
 	case r.ExitCode != nil:
 		r.Status, r.Message = Fail, fmt.Sprintf("exit %d: a book failed or an order was blocked; read the log", *r.ExitCode)
-	case now.Sub(fi.ModTime()) < RunningFor:
+	case now.Sub(modified) < RunningFor:
 		r.Status, r.Message = Unknown, "no exit code yet: still running?"
 	default:
 		r.Status, r.Message = Warn, "no exit code recorded (run without scripts/daily-executor-run.sh, or it crashed)"

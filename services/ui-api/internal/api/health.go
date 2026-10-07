@@ -1,11 +1,11 @@
 package api
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"net/http"
-	"os"
-	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -13,6 +13,7 @@ import (
 	"bitso-trading-platform/shared/pkg/dailyledger"
 	"bitso-trading-platform/ui-api/internal/datahealth"
 	"bitso-trading-platform/ui-api/internal/objstore"
+	"bitso-trading-platform/ui-api/internal/store"
 )
 
 // HealthCheck is one row of the data-health summary.
@@ -213,9 +214,9 @@ func runStatusHealth(s string) string {
 
 func (s *Server) executorHealth(l Ledger, by map[string][]dailyledger.Record, books []string,
 	recs []dailyledger.Record, recErr error, now time.Time) ExecutorHealth {
-	e := ExecutorHealth{LedgerPath: l.Store.LedgerPath, Records: len(recs), Books: []ExecutorBook{}, Runs: []datahealth.RunLog{}}
-	if fi, err := os.Stat(l.Store.LedgerPath); err == nil {
-		e.LedgerFound, e.LedgerModifiedAt = true, fi.ModTime().UTC().Format(time.RFC3339)
+	e := ExecutorHealth{LedgerPath: l.Store.Where(l.Store.LedgerPath), Records: len(recs), Books: []ExecutorBook{}, Runs: []datahealth.RunLog{}}
+	if fi, found, err := l.Store.LedgerInfo(); err == nil && found {
+		e.LedgerFound, e.LedgerModifiedAt = true, fi.ModTime.UTC().Format(time.RFC3339)
 	}
 	for _, rec := range recs {
 		if rec.RecordedAt > e.LastRecordedAt {
@@ -232,7 +233,7 @@ func (s *Server) executorHealth(l Ledger, by map[string][]dailyledger.Record, bo
 		e.Books = append(e.Books, ExecutorBook{Book: b, Run: rs})
 		statuses = append(statuses, runStatusHealth(rs.Status))
 	}
-	runs, err := datahealth.ReadRuns(filepath.Dir(l.Store.LedgerPath), runLogsShown, now)
+	runs, err := readRuns(l.Store, runLogsShown, now)
 	if err != nil {
 		s.Log.Printf("run logs %s: %v", l.Name, err)
 	}
@@ -270,6 +271,39 @@ func (s *Server) executorHealth(l Ledger, by map[string][]dailyledger.Record, bo
 		}[e.Status]
 	}
 	return e
+}
+
+// readRuns returns the newest n run-*.log files next to the ledger (on disk
+// or in its S3 copy), newest first.
+func readRuns(st *store.Store, n int, now time.Time) ([]datahealth.RunLog, error) {
+	files, err := st.Files("run-", ".log")
+	if err != nil {
+		return nil, err
+	}
+	var logs []store.Info
+	for _, f := range files {
+		if datahealth.IsRunLog(f.Name) {
+			logs = append(logs, f)
+		}
+	}
+	// The UTC stamp sorts lexically.
+	sort.Slice(logs, func(i, j int) bool { return logs[i].Name > logs[j].Name })
+	if len(logs) > n {
+		logs = logs[:n]
+	}
+	out := make([]datahealth.RunLog, 0, len(logs))
+	for _, f := range logs {
+		b, err := st.ReadFile(f.Path)
+		if err != nil {
+			return out, err
+		}
+		r, err := datahealth.ParseRun(f.Name, f.ModTime, bytes.NewReader(b), now)
+		if err != nil {
+			return out, err
+		}
+		out = append(out, r)
+	}
+	return out, nil
 }
 
 // NewArchive opens the S3 archive named by uri (s3://bucket). Empty disables it.
