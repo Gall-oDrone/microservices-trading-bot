@@ -22,6 +22,8 @@ import {
 import { usePageTitle } from '../lib/usePageTitle'
 
 const RANGES = [90, 180, 365] as const
+/** Stable fallback while the ledger loads: `fills` is a chart build dependency. */
+const NO_FILLS: Fill[] = []
 
 function costTone(total: number, assumed: number): 'pos' | 'neg' | undefined {
   if (total > assumed) return 'neg'
@@ -285,7 +287,7 @@ export function ForwardTestDetailPage() {
           {candles.data && (
             <PriceChart
               candles={candles.data.candles}
-              fills={ledger.data?.fills ?? []}
+              fills={ledger.data?.fills ?? NO_FILLS}
               quote={ft?.quote ?? 'mxn'}
               label={`${bookLabel(book)} daily candles with SMA50`}
               live={

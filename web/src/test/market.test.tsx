@@ -1,8 +1,10 @@
 import { QueryClientProvider } from '@tanstack/react-query'
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { createChart } from 'lightweight-charts'
 import { createMemoryRouter, RouterProvider } from 'react-router'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { liveSnapshotSchema, type CandlePoint, type Market } from '../api/schemas'
+import { liveSnapshotSchema, type CandlePoint, type Fill, type LiveCandle, type Market } from '../api/schemas'
+import { PriceChart } from '../components/charts'
 import { fmtSize, ladder, quoteOf, tapeStats, volumeContext } from '../lib/market'
 import liveMarket from '../mocks/fixtures/live-market.json'
 import { makeQueryClient, routes } from '../router'
@@ -231,5 +233,75 @@ describe('market page', () => {
     const link = await screen.findByRole('link', { name: /market/i })
     expect(link).toHaveAttribute('id', 'nav-market')
     expect(link.getAttribute('href')).toMatch(/^\/market/)
+  })
+
+  // Regression (2026-10-08): `fills={[]}` was a new array on every render, so the
+  // chart was torn down and rebuilt on every live tick and its last bar flickered.
+  it('builds the candles chart once and keeps it across live updates', async () => {
+    renderAt('/market')
+    const es = await stream()
+    es.emit('snapshot', snapshot())
+    await screen.findByTestId('volume-stats')
+    await waitFor(() => expect(vi.mocked(createChart).mock.calls.length).toBeGreaterThan(0))
+    const built = vi.mocked(createChart).mock.calls.length
+    const m = marketOf('btc_mxn')
+    const b = snapshot().books.find((x) => x.book === 'btc_mxn')!
+    for (let i = 1; i <= 5; i++) {
+      es.emit('market', { ...m, bid: m.bid - i })
+      es.emit('book', { ...b, last: b.last + i })
+    }
+    expect(vi.mocked(createChart).mock.calls.length).toBe(built)
+  })
+})
+
+describe('PriceChart live overlay', () => {
+  const bar = (date: string, close: number): CandlePoint => ({
+    date,
+    open: close,
+    high: close,
+    low: close,
+    close,
+    volume: 1,
+    trade_count: 1,
+    sma50: null,
+    volume_ratio_20d: null,
+    long: null,
+  })
+  const candles = [bar('2026-10-06', 100), bar('2026-10-07', 101)]
+  const forming: LiveCandle = {
+    date: '2026-10-08',
+    open: 101,
+    high: 103,
+    low: 100,
+    close: 102,
+    volume: 0.5,
+    trade_count: 3,
+    seeded: true,
+  }
+  type MockSeries = { update: ReturnType<typeof vi.fn> }
+  type MockChart = { addSeries: { mock: { results: { value: MockSeries }[] } } }
+  const priceSeriesOf = (i: number) =>
+    (vi.mocked(createChart).mock.results[i].value as unknown as MockChart).addSeries.mock.results[0].value
+
+  it('re-applies the forming bar after a rebuild that only changed fills', () => {
+    const live = { candle: forming, flip: 100.5, fresh: true }
+    const fillsA: Fill[] = []
+    const { rerender } = render(<PriceChart candles={candles} fills={fillsA} quote="usd" label="x" live={live} />)
+    const first = vi.mocked(createChart).mock.calls.length - 1
+    expect(priceSeriesOf(first).update).toHaveBeenCalledWith(
+      expect.objectContaining({ time: '2026-10-08', close: 102 }),
+    )
+
+    // Same fills identity: no rebuild.
+    rerender(<PriceChart candles={candles} fills={fillsA} quote="usd" label="x" live={{ ...live }} />)
+    expect(vi.mocked(createChart).mock.calls.length - 1).toBe(first)
+
+    // New fills identity: rebuilt, and the new series gets the forming bar too.
+    rerender(<PriceChart candles={candles} fills={[]} quote="usd" label="x" live={live} />)
+    const second = vi.mocked(createChart).mock.calls.length - 1
+    expect(second).toBe(first + 1)
+    expect(priceSeriesOf(second).update).toHaveBeenCalledWith(
+      expect.objectContaining({ time: '2026-10-08', close: 102 }),
+    )
   })
 })

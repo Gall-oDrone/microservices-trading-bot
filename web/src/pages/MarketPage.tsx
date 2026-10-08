@@ -10,7 +10,7 @@ import { useState, type CSSProperties } from 'react'
 import { useSearchParams } from 'react-router'
 import { useCandles, useForwardTests } from '../api/client'
 import { useLiveStream, type LiveState } from '../api/live'
-import type { BookSnapshot, Market, TapeTrade } from '../api/schemas'
+import type { BookSnapshot, Fill, Market, TapeTrade } from '../api/schemas'
 import { PriceChart } from '../components/charts'
 import { LiveBadge, TickPrice } from '../components/live'
 import { Badge, Banner, CardSkeleton, Empty, ErrorState, Stat } from '../components/ui'
@@ -23,6 +23,12 @@ const DEFAULT_BOOKS = ['btc_mxn', 'btc_usd']
 const RANGES = [90, 180, 365] as const
 const LADDER_ROWS = 12
 const TAPE_ROWS = 50
+/**
+ * The Market chart shows no stage fills. One shared array, because `fills` is
+ * a chart build dependency: a fresh `[]` each render (the live stream
+ * re-renders every second) rebuilt the chart every second.
+ */
+const NO_FILLS: Fill[] = []
 
 function spreadText(m: Market, quote: string): string {
   return `${fmtPrice(m.spread, quote)} ${quote.toUpperCase()}`
@@ -301,8 +307,17 @@ function CandlesCard({ book, snap, live }: { book: string; snap: BookSnapshot | 
               <span className="swatch" /> volume ≥ 1.5× 20-day avg
             </span>
             {snap?.candle && (
-              <span className="key" style={{ color: 'var(--text-2)' }}>
-                <span className="swatch dashed" /> today, forming
+              <span
+                className="key"
+                style={{ color: 'var(--text-2)' }}
+                title="Translucent: still forming, not a closed bar"
+              >
+                ▮ today (forming)
+              </span>
+            )}
+            {snap?.provisional && (
+              <span className="key" style={{ color: 'var(--info)' }} title={snap.provisional.label}>
+                <span className="swatch dashed" /> flip level (provisional)
               </span>
             )}
           </div>
@@ -336,7 +351,7 @@ function CandlesCard({ book, snap, live }: { book: string; snap: BookSnapshot | 
       {candles.data && (
         <PriceChart
           candles={candles.data.candles}
-          fills={[]}
+          fills={NO_FILLS}
           quote={quote}
           label={`${bookLabel(book)} daily candles with SMA50 and volume`}
           live={

@@ -196,8 +196,10 @@ export function PriceChart({
   )
   const [theme] = useTheme()
 
-  // Live overlay, applied without rebuilding the chart. Re-runs after a
-  // rebuild (candles in deps) because effects run in declaration order.
+  // Live overlay, applied without rebuilding the chart. It must re-run after
+  // every rebuild (same deps as the build, plus theme) because the rebuilt
+  // series start without the forming bar and flip line; effects run in
+  // declaration order, so this sees the new series.
   const c = live?.candle ?? null
   const flip = live?.flip ?? null
   const fresh = live?.fresh ?? false
@@ -236,7 +238,7 @@ export function PriceChart({
       price.removePriceLine(flipRef.current)
       flipRef.current = null
     }
-  }, [candles, c, flip, fresh, theme])
+  }, [candles, fills, quote, c, flip, fresh, theme])
   return <div ref={ref} className="chart" role="img" aria-label={label} />
 }
 

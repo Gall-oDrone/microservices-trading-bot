@@ -14,13 +14,14 @@ vi.mock('lightweight-charts', () => {
     priceScale: () => ({ applyOptions: vi.fn() }),
   })
   return {
-    createChart: () => ({
+    // A spy, so tests can count chart (re)builds.
+    createChart: vi.fn(() => ({
       addSeries: vi.fn(series),
       priceScale: () => ({ applyOptions: vi.fn() }),
       timeScale: () => ({ fitContent: vi.fn() }),
       applyOptions: vi.fn(),
       remove: vi.fn(),
-    }),
+    })),
     createSeriesMarkers: vi.fn(),
     CandlestickSeries: {},
     LineSeries: {},
