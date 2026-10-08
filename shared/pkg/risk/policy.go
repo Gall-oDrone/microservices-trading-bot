@@ -40,6 +40,22 @@ type BookLimits struct {
 	// CostWarnBps flags a filled leg whose realized cost (fees + slippage vs
 	// the reference price) exceeds this many bps. Warn only.
 	CostWarnBps float64 `json:"cost_warn_bps"`
+	// MaxOpenOrders caps the book's resting (unfilled, uncancelled) orders,
+	// counting the new one. Needs State.OpenOrders: only order-management
+	// knows it; other callers leave it 0 and never trip it. Added 2026-10-08.
+	MaxOpenOrders int `json:"max_open_orders,omitempty"`
+	// MaxOrdersPerMinute caps accepted orders in the trailing 60 s (runaway
+	// algorithm guard). Needs State.OrdersLastMinute (order-management).
+	MaxOrdersPerMinute int `json:"max_orders_per_minute,omitempty"`
+}
+
+// PortfolioLimits apply across every book (firm-wide). Zero disables.
+// Only order-management sees cross-book state, so only it fills the
+// matching State fields. Added 2026-10-08 (order-management's former
+// MAX_OPEN_ORDERS / MAX_ORDERS_PER_MINUTE env limits).
+type PortfolioLimits struct {
+	MaxOpenOrders      int `json:"max_open_orders,omitempty"`
+	MaxOrdersPerMinute int `json:"max_orders_per_minute,omitempty"`
 }
 
 // Policy is the full set of limits plus the global halt.
@@ -53,6 +69,8 @@ type Policy struct {
 	// Default.
 	Books   map[string]BookLimits `json:"books"`
 	Default BookLimits            `json:"default"`
+	// Portfolio holds firm-wide limits; nil means none.
+	Portfolio *PortfolioLimits `json:"portfolio,omitempty"`
 }
 
 // DefaultPolicy mirrors what the daily-executor already enforces on stage
@@ -103,7 +121,8 @@ func (p Policy) Validate() error {
 	check := func(name string, l BookLimits) error {
 		switch {
 		case l.MaxOrderBTC < 0, l.MaxPositionBTC < 0, l.MaxOrderNotional < 0,
-			l.MaxOrdersPerDay < 0, l.MaxPriceDeviationBps < 0, l.CostWarnBps < 0:
+			l.MaxOrdersPerDay < 0, l.MaxPriceDeviationBps < 0, l.CostWarnBps < 0,
+			l.MaxOpenOrders < 0, l.MaxOrdersPerMinute < 0:
 			return fmt.Errorf("%s: limits must be >= 0", name)
 		case l.DrawdownWarn < 0 || l.DrawdownWarn >= 1:
 			return fmt.Errorf("%s: drawdown_warn must be in [0, 1)", name)
@@ -114,6 +133,9 @@ func (p Policy) Validate() error {
 	}
 	if err := check("default", p.Default); err != nil {
 		return err
+	}
+	if pf := p.Portfolio; pf != nil && (pf.MaxOpenOrders < 0 || pf.MaxOrdersPerMinute < 0) {
+		return fmt.Errorf("portfolio: limits must be >= 0")
 	}
 	for _, b := range p.BookNames() {
 		if err := check(b, p.Books[b]); err != nil {

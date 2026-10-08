@@ -3,6 +3,7 @@ package risk
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -11,6 +12,7 @@ import (
 	"bitso-trading-platform/order-management/internal/metrics"
 	"bitso-trading-platform/order-management/internal/models"
 	"bitso-trading-platform/order-management/internal/repository"
+	sharedrisk "bitso-trading-platform/shared/pkg/risk"
 )
 
 // RiskManager manages risk checks for orders
@@ -29,11 +31,15 @@ type Manager struct {
 	orderRepo    repository.OrderRepository
 	positionRepo repository.PositionRepository
 	metrics      *metrics.MetricsCollector
-	shared       *SharedPolicy // optional: shared-format policy + halt files (R5b)
 
-	// Rate limiting
-	orderCounts map[string]int // minute -> count
-	countsMutex sync.RWMutex
+	// shared is the effective limit set and halt files (shared_policy.go).
+	shared   *SharedPolicy
+	policyMu sync.RWMutex
+
+	// rate counts accepted orders in the trailing minute (per book and
+	// firm-wide) for the max_orders_per_minute limits.
+	rate *rateWindow
+	now  func() time.Time
 }
 
 // PositionLimits defines position limits for a book
@@ -63,7 +69,8 @@ func NewRiskManager(
 		orderRepo:    orderRepo,
 		positionRepo: positionRepo,
 		metrics:      metrics,
-		orderCounts:  make(map[string]int),
+		rate:         newRateWindow(time.Minute),
+		now:          time.Now,
 	}
 }
 
@@ -80,36 +87,19 @@ func (rm *Manager) CheckRisk(ctx context.Context, order *models.Order) error {
 
 	result := models.NewRiskCheckResult()
 
-	// Shared policy and operator halt files (risk R5b): a halt rejects here.
-	if findings := rm.checkShared(ctx, order); len(findings) > 0 {
-		for _, f := range findings {
-			result.AddCritical("shared_policy:"+f.Rule, f.Message, f.Value, f.Limit)
-		}
-		rm.metrics.RecordRiskViolation("shared_policy")
-	}
-
-	// Check position limits
-	if err := rm.CheckPositionLimits(ctx, order); err != nil {
-		result.AddError("position_limits", err.Error(), 0, 0)
-		rm.metrics.RecordRiskViolation("position_limits")
-	}
-
-	// Check order limits
-	if err := rm.CheckOrderLimits(ctx, order); err != nil {
-		result.AddError("order_limits", err.Error(), 0, 0)
-		rm.metrics.RecordRiskViolation("order_limits")
+	// One limit set (plan §6.4.6): the effective shared policy, from
+	// TRADING_RISK_POLICY or built from the env limits, plus the operator
+	// halt files. Position, notional, open orders and orders per minute are
+	// all in it, per book and firm-wide.
+	for _, f := range rm.checkShared(ctx, order) {
+		result.AddCritical("shared_policy:"+f.Rule, f.Message, f.Value, f.Limit)
+		rm.metrics.RecordRiskViolation(violationType(f.Rule))
 	}
 
 	// Check concentration risk
 	if err := rm.CheckConcentrationRisk(ctx, order); err != nil {
 		result.AddWarning("concentration", err.Error(), 0, 0)
 		// Warning only, don't fail
-	}
-
-	// Check rate limits
-	if err := rm.CheckRateLimit(ctx); err != nil {
-		result.AddCritical("rate_limit", err.Error(), 0, 0)
-		rm.metrics.RecordRiskViolation("rate_limit")
 	}
 
 	// Record metrics
@@ -123,75 +113,59 @@ func (rm *Manager) CheckRisk(ctx context.Context, order *models.Order) error {
 		return fmt.Errorf("risk check failed: %s", result.Error())
 	}
 
+	// Accepted: it counts towards the orders-per-minute limits.
+	rm.rate.record(order.Book, rateKey(order), rm.now())
 	return nil
 }
 
-// CheckPositionLimits checks if the order exceeds position limits
+// violationType keeps the risk_violations_total labels the dashboards and
+// alerts already use: the limits that used to be order-management's own
+// env checks keep their old names; halts and the other policy rules are
+// "shared_policy" (alert OrderSharedPolicyBlockAtOMS).
+func violationType(rule string) string {
+	switch rule {
+	case sharedrisk.RuleMaxPositionBTC:
+		return "position_limits"
+	case sharedrisk.RuleMaxOrderNotional, sharedrisk.RuleMaxOpenOrders, sharedrisk.RulePortfolioMaxOpenOrders:
+		return "order_limits"
+	case sharedrisk.RuleMaxOrdersPerMinute, sharedrisk.RulePortfolioMaxOrdersPerMinute:
+		return "rate_limit"
+	}
+	return "shared_policy"
+}
+
+// blockedBy runs the effective policy and returns an error listing the
+// blocking findings whose rule is in rules (nil if none).
+func (rm *Manager) blockedBy(ctx context.Context, order *models.Order, rules ...string) error {
+	want := map[string]bool{}
+	for _, r := range rules {
+		want[r] = true
+	}
+	var msgs []string
+	for _, f := range rm.evaluate(ctx, order) {
+		if want[f.Rule] {
+			msgs = append(msgs, f.Message)
+		}
+	}
+	if len(msgs) == 0 {
+		return nil
+	}
+	return fmt.Errorf("%s", strings.Join(msgs, "; "))
+}
+
+// CheckPositionLimits checks if the order exceeds position limits (the
+// effective policy's max_position_btc for the book).
 func (rm *Manager) CheckPositionLimits(ctx context.Context, order *models.Order) error {
-	start := time.Now()
 	defer rm.metrics.RecordRiskCheck("position_limits", "checked")
-
-	// Get current position
-	position, err := rm.positionRepo.Get(ctx, order.Book)
-	if err != nil {
-		// No position yet, create one for checking
-		position = models.NewPosition(order.Book, "long")
-	}
-
-	// Calculate new position size if order fills
-	newSize := position.Size
-	if order.Side == "buy" {
-		newSize += order.Amount
-	} else {
-		newSize -= order.Amount
-	}
-
-	// Check against max position size
-	if newSize > rm.config.MaxPositionSize {
-		rm.logger.Warn("Position limit exceeded", map[string]interface{}{
-			"book":     order.Book,
-			"new_size": newSize,
-			"max_size": rm.config.MaxPositionSize,
-			"duration": time.Since(start),
-		})
-		return fmt.Errorf("position size %f would exceed limit %f", newSize, rm.config.MaxPositionSize)
-	}
-
-	return nil
+	return rm.blockedBy(ctx, order, sharedrisk.RuleMaxPositionBTC)
 }
 
-// CheckOrderLimits checks if the order exceeds order limits
+// CheckOrderLimits checks open orders (book and firm-wide), order size and
+// notional against the effective policy.
 func (rm *Manager) CheckOrderLimits(ctx context.Context, order *models.Order) error {
-	start := time.Now()
 	defer rm.metrics.RecordRiskCheck("order_limits", "checked")
-
-	// Check max open orders
-	activeOrders, err := rm.orderRepo.GetActiveOrders(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to get active orders: %w", err)
-	}
-
-	if len(activeOrders) >= rm.config.MaxOpenOrders {
-		rm.logger.Warn("Max open orders exceeded", map[string]interface{}{
-			"active_orders": len(activeOrders),
-			"max_orders":    rm.config.MaxOpenOrders,
-			"duration":      time.Since(start),
-		})
-		return fmt.Errorf("max open orders limit reached: %d/%d", len(activeOrders), rm.config.MaxOpenOrders)
-	}
-
-	// Check order value
-	orderValue := order.Amount * order.Price
-	if orderValue > rm.config.MaxOrderValue {
-		rm.logger.Warn("Order value limit exceeded", map[string]interface{}{
-			"order_value": orderValue,
-			"max_value":   rm.config.MaxOrderValue,
-			"duration":    time.Since(start),
-		})
-		return fmt.Errorf("order value %f exceeds limit %f", orderValue, rm.config.MaxOrderValue)
-	}
-
-	return nil
+	return rm.blockedBy(ctx, order, sharedrisk.RuleMaxOpenOrders, sharedrisk.RulePortfolioMaxOpenOrders,
+		sharedrisk.RuleMaxOrderNotional, sharedrisk.RuleMaxOrderBTC)
 }
 
 // CheckConcentrationRisk checks if the order creates concentration risk
@@ -223,40 +197,27 @@ func (rm *Manager) CheckConcentrationRisk(ctx context.Context, order *models.Ord
 	return nil
 }
 
-// CheckRateLimit checks if order creation rate is within limits
-func (rm *Manager) CheckRateLimit(ctx context.Context) error {
-	rm.countsMutex.Lock()
-	defer rm.countsMutex.Unlock()
-
-	// Get current minute
-	currentMinute := time.Now().Format("2006-01-02-15-04")
-
-	// Clean old entries
-	for key := range rm.orderCounts {
-		if key != currentMinute {
-			delete(rm.orderCounts, key)
-		}
+// CheckRateLimit reports whether one more order would exceed the effective
+// orders-per-minute limits for book (firm-wide and per book). It does not
+// count anything: CheckRisk records each accepted order.
+func (rm *Manager) CheckRateLimit(ctx context.Context, book string) error {
+	pol := rm.EffectivePolicy()
+	bookN, total := rm.rate.count(book, rm.now())
+	if l := pol.For(book).MaxOrdersPerMinute; l > 0 && bookN >= l {
+		return fmt.Errorf("rate limit exceeded: %d orders on %s in the last minute (max: %d)", bookN, book, l)
 	}
-
-	// Check current count
-	count := rm.orderCounts[currentMinute]
-	if count >= rm.config.MaxOrdersPerMinute {
-		rm.metrics.RecordRiskViolation("rate_limit")
-		return fmt.Errorf("rate limit exceeded: %d orders in current minute (max: %d)",
-			count, rm.config.MaxOrdersPerMinute)
+	if pf := pol.Portfolio; pf != nil && pf.MaxOrdersPerMinute > 0 && total >= pf.MaxOrdersPerMinute {
+		return fmt.Errorf("rate limit exceeded: %d orders in the last minute (max: %d)", total, pf.MaxOrdersPerMinute)
 	}
-
-	// Increment count
-	rm.orderCounts[currentMinute] = count + 1
-
 	return nil
 }
 
-// GetPositionLimits returns position limits for a book
+// GetPositionLimits returns position limits for a book (effective policy).
 func (rm *Manager) GetPositionLimits(book string) (*PositionLimits, error) {
+	l := rm.EffectivePolicy().For(book)
 	return &PositionLimits{
-		MaxSize:  rm.config.MaxPositionSize,
-		MaxValue: rm.config.MaxOrderValue * 10, // Example: 10x order value
+		MaxSize:  l.MaxPositionBTC,
+		MaxValue: l.MaxOrderNotional * 10, // Example: 10x order value
 	}, nil
 }
 
@@ -294,7 +255,5 @@ func (rm *Manager) GetCurrentExposure(ctx context.Context, book string) (*Exposu
 
 // ResetRateLimitForTesting resets rate limit counters (for testing only)
 func (rm *Manager) ResetRateLimitForTesting() {
-	rm.countsMutex.Lock()
-	defer rm.countsMutex.Unlock()
-	rm.orderCounts = make(map[string]int)
+	rm.rate.reset()
 }

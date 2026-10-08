@@ -34,7 +34,11 @@ Quick reference for env vars used by the trading bot, especially for **intraday*
 | `STAGE_BITSO_API_KEY` | - | Bitso stage API key; set to enable Bitso sync job (poll order status). |
 | `STAGE_BITSO_APISECRET` | - | Bitso stage API secret. |
 | `BITSO_API_BASE_URL` | `https://stage.bitso.com/api` | Bitso API base for sync job. |
-| `TRADING_RISK_POLICY` | - | Same file and format as trading-engine. Set: `CheckRisk` also rejects orders that break it (violation `shared_policy:<rule>`). Unset: only the `RiskConfig` limits apply. |
+| `MAX_POSITION_SIZE` | `1.0` | BTC per book. Without `TRADING_RISK_POLICY` this becomes `default.max_position_btc` of the env-built policy `order-management-env`. |
+| `MAX_ORDER_VALUE` | `100000` | Quote currency per order (`default.max_order_notional`); the validator also enforces it. |
+| `MAX_OPEN_ORDERS` | `10` | Firm-wide open orders (`portfolio.max_open_orders`). Kept even with a policy file that has no `portfolio` section. |
+| `MAX_ORDERS_PER_MINUTE` | `60` | Firm-wide accepted orders in a 60 s sliding window, once per signal (`portfolio.max_orders_per_minute`). Per pod. Kept like `MAX_OPEN_ORDERS`. |
+| `TRADING_RISK_POLICY` | - | Same file and format as trading-engine. Set: it is order-management's limit set (violation `shared_policy:<rule>`); per book it may add `max_open_orders` and `max_orders_per_minute`, and a `portfolio` section sets the firm-wide ones. Unset: the policy is built from the four env limits above (plan §6.4.6). |
 | `TRADING_HALT_FILES` | - | Same list as trading-engine. A halted, unreadable or invalid file rejects every new order in `CheckRisk` (defence in depth behind trading-engine). |
 
 ---

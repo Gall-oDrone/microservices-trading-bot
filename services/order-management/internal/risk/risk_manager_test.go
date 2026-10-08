@@ -2,7 +2,10 @@ package risk
 
 import (
 	"context"
+	"fmt"
+	"strings"
 	"testing"
+	"time"
 
 	"bitso-trading-platform/order-management/internal/config"
 	"bitso-trading-platform/order-management/internal/logger"
@@ -142,30 +145,42 @@ func TestCheckConcentrationRisk(t *testing.T) {
 func TestCheckRateLimit(t *testing.T) {
 	manager := setupRiskManager()
 	ctx := context.Background()
+	now := time.Date(2026, 10, 8, 12, 0, 0, 0, time.UTC)
+	manager.now = func() time.Time { return now }
 
-	// Test rate limiting
+	// Accepted orders count towards the firm-wide MAX_ORDERS_PER_MINUTE (60).
 	successCount := 0
 	for i := 0; i < 65; i++ {
-		err := manager.CheckRateLimit(ctx)
-		if err == nil {
+		order := models.NewOrder(fmt.Sprintf("rate-%d", i), "btc_mxn", "buy", "limit", "basic", 500000.0, 0.001)
+		if err := manager.CheckRisk(ctx, order); err == nil {
 			successCount++
+		} else if !strings.Contains(err.Error(), "portfolio_max_orders_per_minute") {
+			t.Fatalf("order %d: unexpected rejection: %v", i, err)
 		}
 	}
-
-	// Should allow up to MaxOrdersPerMinute
-	if successCount > manager.config.MaxOrdersPerMinute {
-		t.Errorf("Rate limit not enforced: allowed %d orders (max: %d)", successCount, manager.config.MaxOrdersPerMinute)
-	}
-
 	if successCount != manager.config.MaxOrdersPerMinute {
 		t.Errorf("Expected exactly %d successful orders, got %d", manager.config.MaxOrdersPerMinute, successCount)
 	}
+	if err := manager.CheckRateLimit(ctx, "btc_mxn"); err == nil {
+		t.Error("CheckRateLimit should report the full window")
+	}
 
-	// Reset and test again
+	// The same signal checked twice (consumer + /orders/validate) counts once.
 	manager.ResetRateLimitForTesting()
-	err := manager.CheckRateLimit(ctx)
-	if err != nil {
-		t.Error("Expected rate limit to be reset")
+	dup := models.NewOrder("same-signal", "btc_mxn", "buy", "limit", "basic", 500000.0, 0.001)
+	for i := 0; i < 3; i++ {
+		if err := manager.CheckRisk(ctx, dup); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if n, total := manager.rate.count("btc_mxn", now); n != 1 || total != 1 {
+		t.Errorf("duplicate signal counted %d/%d times, want 1", n, total)
+	}
+
+	// The window slides: 60 s later the old orders no longer count.
+	now = now.Add(61 * time.Second)
+	if err := manager.CheckRateLimit(ctx, "btc_mxn"); err != nil {
+		t.Errorf("window did not slide: %v", err)
 	}
 }
 

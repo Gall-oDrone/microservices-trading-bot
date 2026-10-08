@@ -251,6 +251,7 @@ returns the executor's last recorded check. The Risk page shows all of it.
 | **R5b (done 2026-10-08)** Platform-wide, §6.4.3 | Move OM and trading-engine checks onto `shared/pkg/risk` (one policy format across services); trading-engine honours the halt (kill switch) | One policy format across services; HALT ALL also stops trading-engine |
 | **R6 (done 2026-10-08)** Trading-risk metrics, §6.4.4 | Production-standard telemetry, alerts, runbook and dashboard for limits, halts, execution quality and reconciliation (§11 Q4) | Every limit, the kill switch and execution quality are visible and alert with a runbook; rules are unit-tested in CI |
 | **R5c (done 2026-10-08)** Cluster kill switch, §6.4.5 | ConfigMap `trading-halt` mounted into trading-engine and order-management; `scripts/k8s-halt.sh` with confirmation, audit and read-back | One audited command halts every trading pod in a namespace within seconds; CI proves every overlay is wired |
+| **R5d (done 2026-10-08)** OMS limits in the shared policy, §6.4.6 | Order-management's position, order-value, open-order and orders-per-minute limits become one `shared/pkg/risk` policy (per book and firm-wide); the env limits are only its fallback | One limit set per service in one format; a policy file can tighten any book without a redeploy of code |
 
 #### 6.4.1 R1 as built
 
@@ -331,9 +332,9 @@ returns the executor's last recorded check. The Risk page shows all of it.
 - **Tests.** `guard/pretrade_test.go`, `execution/exposure_test.go`,
   `risk/shared_policy_test.go`; CI `platform-risk` gofmt-checks them and now vets all of
   order-management (also fixed a context leak on its start-up error paths).
-- **Not done.** Order-management's own limits (`MAX_POSITION_SIZE`, open orders, orders/minute)
+- ~~**Not done.** Order-management's own limits (`MAX_POSITION_SIZE`, open orders, orders/minute)
   still live in `RiskConfig`; moving them into the policy file needs per-minute and open-order
-  limits in `shared/pkg/risk` first.
+  limits in `shared/pkg/risk` first.~~ Done in R5d (§6.4.6).
 
 #### 6.4.4 Trading-risk operations metrics as built (2026-10-08)
 
@@ -404,6 +405,34 @@ trading day), an owning team and a runbook entry.
 - **Not done.** The Risk page's HALT ALL writes local ledger halt files only; it does not reach the
   cluster. That needs ui-api in the cluster (Phase 5) or an authenticated call to the Kubernetes
   API, so it waits for OIDC and roles.
+
+#### 6.4.6 R5d order-management limits in the shared policy as built (2026-10-08)
+
+- **New in `shared/pkg/risk`.** Per book: `max_open_orders`, `max_orders_per_minute`. Firm-wide:
+  an optional `portfolio` section with the same two fields (rules `portfolio_max_open_orders`,
+  `portfolio_max_orders_per_minute`). They count orders *before* this one and apply to
+  non-reducing orders only, so a reducing sell is never trapped. All fields are `omitempty`; old
+  policy files and ledger lines parse unchanged; negative values fail validation.
+- **One limit set in order-management.** `CheckRisk` now enforces only the shared policy (plus the
+  concentration warning). Without `TRADING_RISK_POLICY` the policy `order-management-env` is built
+  from the old env limits with the old meaning: `MAX_POSITION_SIZE` and `MAX_ORDER_VALUE` per book
+  (`default`), `MAX_OPEN_ORDERS` and `MAX_ORDERS_PER_MINUTE` firm-wide (`portfolio`). With a file,
+  the file is the source of truth; if it has no `portfolio` section the env firm-wide limits are
+  kept, so a file written for trading-engine cannot silently drop the runaway guards. Start-up logs
+  the effective policy and its source.
+- **Counting.** Open orders come from the order repository, excluding the order under check; a
+  repository error while an open-order limit is set blocks (fail closed). Orders per minute is a
+  60 s sliding window of *accepted* orders, counted once per signal id (else order id), because the
+  signal consumer and `POST /api/v1/orders/validate` can both check the same signal. The window is
+  in memory per pod: with N replicas the effective firm-wide rate is up to N × the limit
+  (order-management runs one replica today).
+- **Unchanged.** Metric labels (`risk_violations{type="position_limits"|"order_limits"|
+  "rate_limit"|"shared_policy"}`), so the dashboard and `OrderSharedPolicyBlockAtOMS` keep working;
+  the validator still enforces `MAX_ORDER_VALUE` separately; `config.Validate` still refuses zero or
+  negative env limits.
+- **Tests.** `shared/pkg/risk/orderflow_test.go`; order-management `risk_manager_test.go` (sliding
+  window and dedup with a fake clock) and `shared_policy_test.go` (env build, file precedence,
+  portfolio fallback, per-book open orders). CI `platform-risk` gofmt-checks them.
 
 ### 6.5 First findings from the real stage ledger
 - **btc_mxn's first stage leg cost 118 bps against 70 assumed.** The post-only order rested 60 min, filled 0.1%, and fell back to market: taker fee 78 bps + 40 bps above the fill-day open. A stage leg is small and stage liquidity is thin, so this is not yet evidence about production costs. But it is the cost signal to watch: the pre-registration's secondary (taker) scenario is 88 bps per leg, and this leg exceeded both.

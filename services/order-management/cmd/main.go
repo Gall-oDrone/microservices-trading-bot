@@ -127,8 +127,9 @@ func NewApplication() (*Application, error) {
 	// Validator and risk manager
 	orderValidator := validator.NewOrderValidator(&cfg.Risk, appLogger, orderRepo, metricsCollector)
 	riskManager := risk.NewRiskManager(&cfg.Risk, appLogger, orderRepo, positionRepo, metricsCollector)
-	// Risk R5b: shared-format policy and operator halt files (same env as trading-engine).
-	sharedPolicy, err := risk.LoadSharedPolicy(os.Getenv)
+	// Risk R5b / §6.4.6: one limit set in the shared format (TRADING_RISK_POLICY,
+	// else built from the env limits) plus the operator halt files.
+	sharedPolicy, err := risk.LoadSharedPolicy(os.Getenv, &cfg.Risk)
 	if err != nil {
 		if redisClient != nil {
 			redisClient.Close()
@@ -137,15 +138,25 @@ func NewApplication() (*Application, error) {
 		return nil, fmt.Errorf("shared risk policy: %w", err)
 	}
 	riskManager.SetSharedPolicy(sharedPolicy)
-	if sharedPolicy != nil {
-		version := "none (halt files only)"
-		if sharedPolicy.Policy != nil {
-			version = sharedPolicy.Policy.Version
-		}
-		appLogger.Info("Shared risk policy enabled", map[string]interface{}{
-			"policy":     version,
+	{
+		eff := riskManager.EffectivePolicy()
+		fields := map[string]interface{}{
+			"policy":     eff.Version,
+			"source":     sharedPolicy.Source,
 			"halt_files": sharedPolicy.HaltFiles,
-		})
+			"default":    eff.Default,
+			"books":      eff.Books,
+		}
+		if eff.Portfolio != nil {
+			fields["portfolio"] = *eff.Portfolio
+		}
+		if sharedPolicy.PortfolioFromEnv {
+			fields["portfolio_source"] = "env (policy file has no portfolio section)"
+		}
+		if sharedPolicy.Source != "env" {
+			fields["ignored_env"] = "MAX_POSITION_SIZE, MAX_ORDER_VALUE (risk check; the validator still bounds MAX_ORDER_VALUE)"
+		}
+		appLogger.Info("Risk limits (effective policy)", fields)
 	}
 
 	var fillLedger repository.FillLedger

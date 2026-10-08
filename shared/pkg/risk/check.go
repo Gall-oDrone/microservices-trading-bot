@@ -25,6 +25,11 @@ const (
 	RulePriceDeviation   = "max_price_deviation_bps"
 	RuleDrawdownWarn     = "drawdown_warn"
 	RuleCostWarn         = "cost_warn_bps"
+
+	RuleMaxOpenOrders               = "max_open_orders"
+	RuleMaxOrdersPerMinute          = "max_orders_per_minute"
+	RulePortfolioMaxOpenOrders      = "portfolio_max_open_orders"
+	RulePortfolioMaxOrdersPerMinute = "portfolio_max_orders_per_minute"
 )
 
 // Finding is one limit that was hit (or nearly hit, for warnings).
@@ -48,10 +53,20 @@ type Order struct {
 	RefPrice float64 `json:"ref_price"`
 }
 
-// State is what the executor holds before the order.
+// State is what the executor holds before the order. The fields added on
+// 2026-10-08 are omitempty so ledger lines written by callers that do not
+// track them (the daily-executor) are unchanged.
 type State struct {
 	PositionBTC float64 `json:"position_btc"`
 	OrdersToday int     `json:"orders_today"`
+	// OpenOrders is the book's resting orders before this one.
+	OpenOrders int `json:"open_orders,omitempty"`
+	// OrdersLastMinute is the book's accepted orders in the trailing 60 s.
+	OrdersLastMinute int `json:"orders_last_minute,omitempty"`
+	// PortfolioOpenOrders / PortfolioOrdersLastMinute are the same across
+	// every book.
+	PortfolioOpenOrders       int `json:"portfolio_open_orders,omitempty"`
+	PortfolioOrdersLastMinute int `json:"portfolio_orders_last_minute,omitempty"`
 }
 
 // Decision is the outcome of Check.
@@ -102,6 +117,17 @@ func Check(p Policy, o Order, s State) Decision {
 		}
 		if l.MaxOrdersPerDay > 0 && s.OrdersToday >= l.MaxOrdersPerDay {
 			block(RuleMaxOrdersPerDay, float64(l.MaxOrdersPerDay), float64(s.OrdersToday+1), "would be order %d today, max %d", s.OrdersToday+1, l.MaxOrdersPerDay)
+		}
+		count := func(rule string, limit, have int, what string) {
+			if limit > 0 && have >= limit {
+				block(rule, float64(limit), float64(have+1), "would be %s %d, max %d", what, have+1, limit)
+			}
+		}
+		count(RuleMaxOpenOrders, l.MaxOpenOrders, s.OpenOrders, "open order")
+		count(RuleMaxOrdersPerMinute, l.MaxOrdersPerMinute, s.OrdersLastMinute, "order in the last minute")
+		if pf := p.Portfolio; pf != nil {
+			count(RulePortfolioMaxOpenOrders, pf.MaxOpenOrders, s.PortfolioOpenOrders, "open order across all books")
+			count(RulePortfolioMaxOrdersPerMinute, pf.MaxOrdersPerMinute, s.PortfolioOrdersLastMinute, "order in the last minute across all books")
 		}
 	}
 	if dev, ok := DeviationBps(o.Price, o.RefPrice); ok && l.MaxPriceDeviationBps > 0 && dev > l.MaxPriceDeviationBps {
