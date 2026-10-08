@@ -199,6 +199,7 @@ export DEFAULT_STRATEGY=basic
 | **Strategy Configuration** |||
 | `DEFAULT_BOOK` | btc_mxn | Default trading book |
 | `DEFAULT_STRATEGY` | basic | Default strategy type |
+| `STRATEGY_HOLD_FILE` | none (holds in memory only) | JSON file of operator holds, read at boot; a held strategy stays stopped across restarts. A corrupt file stops the boot |
 | **Risk Management** |||
 | `MAX_OPEN_POSITIONS` | 3 | Maximum concurrent positions |
 | `MAX_TRADE_AMOUNT` | 0.1 | Maximum trade amount |
@@ -275,10 +276,19 @@ Lists all active strategies.
 ```
 
 #### POST /api/v1/strategies/{name}/start
-Starts a strategy.
+Starts a strategy. Optional JSON body `{"by", "reason", "release_hold": true}`: without
+`release_hold` a held strategy is refused (409 `held`); with it the hold is lifted and the strategy
+started (the hold comes back if the start fails) and the response has `released_hold`.
 
 #### POST /api/v1/strategies/{name}/stop
-Stops a strategy.
+Stops a strategy. Optional JSON body `{"by", "reason", "hold": true}`: with `hold` the stop is
+recorded in the hold list (written to `STRATEGY_HOLD_FILE` first, then the strategy is stopped), so
+neither strategy-router, `scripts/start-organic-trading.sh` nor a restart starts it again until a
+start with `release_hold`. A hold may be placed on a strategy that is already stopped. An empty
+body keeps the old behaviour. ui-api's Strategies page (`-strategy-executor-url`) uses these bodies.
+
+Lifecycle errors are JSON `{"error", "code"}`: 404 `not_found`, 409 `already_running`,
+`not_running` or `held`. `GET /api/v1/strategies` also returns `holds` (name → `{reason, by, at}`).
 
 #### GET /api/v1/strategies/{name}
 Gets strategy status.

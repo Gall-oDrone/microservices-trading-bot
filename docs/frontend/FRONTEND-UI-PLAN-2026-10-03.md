@@ -32,6 +32,13 @@ daily-executor per ledger through `ui-api`, behind a confirmation dialog, a loca
 an append-only audit log. It is localhost-only and off unless `ui-api` gets `-operator-token-file`;
 OIDC replaces the token in Phase 4 proper.
 
+**Update 2026-10-08 (later).** **Start/stop and the kill switch are built** (§8.13): a new
+`/strategies` page lists every daily-executor ledger with its halt state, has a **halt-all kill
+switch**, and starts/stops the intraday strategy-executor's strategies through `ui-api`, with the
+same token, confirmation and audit log. A stop is a **hold** that strategy-executor persists
+(`STRATEGY_HOLD_FILE`), so it survives restarts and the router cannot undo it. OIDC, TLS and roles
+are still deferred.
+
 ---
 
 ## 1. What exists today (survey of the repo, 2026-10-03)
@@ -135,14 +142,15 @@ Location: `web/` at the repo root, served by Vite in development (proxying `/api
 - Every action needs a confirmation, a reason, and is written to an audit log.
 - Only after auth, roles and audit exist.
 - **Built 2026-10-08 (§8.12):** the daily-executor halt/resume per ledger, as an *Operator controls*
-  card on `/risk`, gated by a local operator token (OIDC later) with an audit log. Start/stop and a
-  global halt for the other strategies are still to do.
+  card on `/risk`, gated by a local operator token (OIDC later) with an audit log.
+- **Built 2026-10-08 (§8.13):** `/strategies`: the strategy list with state, start/stop (a persisted
+  hold) for the strategy-executor's strategies, and the global kill switch (halt every local ledger).
 
 ---
 
 ## 5. Backend for the UI (`services/ui-api`, built)
 
-### 5.1 Endpoints (GET only, except the two R4 controls; any other method returns 405)
+### 5.1 Endpoints (GET only, except the operator controls of §8.12–8.13; any other method returns 405)
 
 | Endpoint | Source | Notes |
 |---|---|---|
@@ -162,6 +170,9 @@ Location: `web/` at the repo root, served by Vite in development (proxying `/api
 | `GET /api/ui/health/data` | `-archive s3://bucket` (list/get only) + ledger dir | collector flushes, compaction, executor coverage, last `run-*.log`, S3 upload; ok/warn/fail checks; S3 listing cached 60 s; `?ledger=` picks the executor section |
 | `GET /api/ui/controls` | halt file + `ui-audit.jsonl` next to the ledger | whether halt/resume is enabled for this ledger (and why not), the halt file, the audit log newest first (§8.12) |
 | `POST /api/ui/risk/halt`, `POST /api/ui/risk/resume` | writes `risk-state.json` | R4: bearer operator token, loopback `Origin`, JSON `{reason, by, confirm}`; every attempt audited; 401/403/400/409/415 as in §8.12 |
+| `GET /api/ui/strategies` | ledgers' halt files + strategy-executor `GET /api/v1/strategies` (`-strategy-executor-url`) | ledgers with halt state, kill-switch state, the executor's strategies (state, exposure, metrics, hold), orphan holds, the strategy audit log (§8.13) |
+| `POST /api/ui/strategies/{name}/start`, `…/stop` | strategy-executor start (`release_hold`) / stop (`hold`) | same gates as R4, `confirm` = strategy name, `ack_position` to stop with exposure; 404/409 passed through, 502 if the executor fails (§8.13) |
+| `POST /api/ui/risk/halt-all` | writes `risk-state.json` next to every local ledger | the kill switch: `confirm` = `HALT ALL`; one audited halt per ledger under a shared `group` id; already halted ledgers left as they are (§8.13) |
 
 Files are cached by size and mtime (by ETag for a ledger in S3, §8.8); the ledger is re-read only
 when it changes.
@@ -294,7 +305,7 @@ returns the executor's last recorded check. The Risk page shows all of it.
 | **1b. Close-out** | GitHub Actions job (`go test` for shared, ui-api, daily-executor; `npm run ci`), Playwright smoke test, multi-ledger support in `ui-api` (stage + dry-run + future volume variant), risk step **R1** | CI runs on every PR; a blocked order is enforced and visible | **Done**: R1 (2026-10-05); CI (`operator-ui.yml`), multi-ledger, Playwright (2026-10-06) |
 | **2. Research + data health** | Study index, strategy comparison (needs `-json`), data-health page, ledger read from S3, risk **R2** + **R3** | Holdout vs development tables match the evidence files; a missed run alerts | **R2 done**, **study index done** (2026-10-06), **runs + comparison done**, **data health done**, **S3 ledger done**, **R3 done** (2026-10-07) |
 | **3. Market data** | Market page via BFF proxy and SSE; candles with volume ratio | Live ticker updates within 2 s; no direct browser calls to internal services | **Done**: live-data slice (2026-10-06, §8.3); Market page (2026-10-08, §8.11) |
-| **4. Hardening + controls** | OIDC, TLS, CORS, audit log, role-gated controls (halt, kill switch, start/stop), risk **R4** | Security review passes; every control action is audited | **R4 + audit log done** (2026-10-08, local token, §8.12); OIDC, TLS, roles, start/stop to do |
+| **4. Hardening + controls** | OIDC, TLS, CORS, audit log, role-gated controls (halt, kill switch, start/stop), risk **R4** | Security review passes; every control action is audited | **R4 + audit log done** (2026-10-08, local token, §8.12); **kill switch and start/stop done** (2026-10-08, local token, §8.13); OIDC, TLS, roles to do |
 | **5. Deploy** | Static build behind CloudFront or served by `ui-api`; k8s/compose entries; risk **R5** | Reachable only through auth over HTTPS | |
 
 ### 8.1 Next phase plan (decided 2026-10-06)
@@ -701,8 +712,73 @@ unfinished bar is labelled provisional. The decision path never reads live data.
   - Web: the captured `controls.json` contract, `controlProblems`, card on/off, dialog validation,
     halt → audit → resume, a 401 clearing the token, a 409, mock parity.
   - Playwright (desktop and phone): halt and resume through the dialog, no horizontal overflow.
-- **Still to do (Phase 4 proper).** OIDC and roles instead of the shared token, TLS, start/stop for
-  the other strategies, a global kill switch.
+- **Still to do (Phase 4 proper).** OIDC and roles instead of the shared token, TLS. (Start/stop for
+  the other strategies and the global kill switch: built, §8.13.)
+
+### 8.13 Strategies page, holds and the kill switch (as built, 2026-10-08)
+
+- **Decision (2026-10-08).** Start/stop next, keeping the shared operator token; OIDC, TLS and roles
+  stay deferred. Scope agreed: a `/strategies` page with the ledgers and their halt state, a
+  halt-all kill switch, and start/stop of the intraday strategy-executor's strategies (only when
+  `ui-api` is given the executor's URL), with stops persisted in strategy-executor.
+- **strategy-executor: the hold list.** A stop from an operator is a *hold*:
+  - `STRATEGY_HOLD_FILE` (JSON `{"version":1,"holds":{name:{reason,by,at}}}`) is read at boot; a
+    missing file is an empty list, a corrupt one stops the boot (fail closed). Writes are atomic
+    (temp file, fsync, rename); a failed write leaves the list unchanged and the strategy running.
+  - A held strategy refuses `Start` (409 `held`), `StartAll` skips it, and the hold applies again as
+    soon as a strategy with that name is registered, so neither strategy-router nor
+    `scripts/start-organic-trading.sh` nor a restart can undo it.
+  - `POST /api/v1/strategies/{name}/stop` takes an optional body `{by, reason, hold}`; `…/start`
+    takes `{release_hold}` (the hold comes back if the start fails). An empty body keeps the old
+    behaviour, so the router and scripts are unchanged.
+  - Lifecycle errors are JSON `{error, code}`: 404 `not_found`, 409 `already_running`,
+    `not_running`, `held` (they were all 500). The strategy list adds `holds`.
+- **ui-api.** `-strategy-executor-url` (env `UI_API_STRATEGY_EXECUTOR_URL`; loopback hosts only,
+  no credentials in the URL) and `-strategy-audit-file` (env `UI_API_STRATEGY_AUDIT_FILE`; default
+  `ui-strategy-audit.jsonl` next to the first local ledger).
+  - `GET /api/ui/strategies`: ledgers (halt file, whether controls work, why not), the kill switch
+    (targets, already halted), the executor (configured, reachable, holds supported, error), its
+    strategies sorted by name with state, exposure, P&L, `dry_run` and hold, holds on names not
+    registered, and the strategy audit log.
+  - `POST /api/ui/strategies/{name}/start|stop`: the R4 gates (§8.12) with `confirm` = the strategy
+    name. Then the state is read from the executor: 404 if unknown; 409 to start a running one or to
+    stop one already stopped and held; 409 to stop one with an open position or pending order unless
+    `ack_position` (a stopped strategy places no exit orders; the audit `detail` records the
+    exposure). Audit `requested` → executor call → `done`/`failed`; an executor 404/409 is passed
+    through, anything else is 502. Stop always sends `hold: true` and start `release_hold: true`.
+  - `POST /api/ui/risk/halt-all`: `confirm` = `HALT ALL`. Each local ledger gets its own audited halt
+    (the §8.12 write path) in its own `ui-audit.jsonl`, sharing a `group` id; ledgers already halted
+    are reported `already_halted` and left alone; 500 if any write failed. Ledgers read from S3 are
+    not targets.
+  - Audit entries gain additive fields: `group`, `strategy`, `executor`, `upstream_status`, `detail`.
+- **UI.** `/strategies` (nav "Strategies", after Risk):
+  - the **kill switch** card: targets, "N of M to halt", a danger button and a dialog that needs the
+    phrase `HALT ALL`; the result names each ledger's outcome and the group id;
+  - **ledger cards**: trading allowed / halted (who, when, why) / invalid file / S3 copy, each
+    linking to its Risk page to resume;
+  - **Intraday strategies**: counters (registered, running, held, open exposure), a table with
+    type, version, dry-run, book, status (running / held with reason / stopped), exposure,
+    signals/trades, P&L, win rate and **Stop** or **Start**; the stop dialog asks for an
+    acknowledgement when the strategy has exposure; banners for no executor, unreachable, read-only
+    (no token) and an executor without a hold list; the strategy audit log.
+  - The confirmation dialog is shared with the Risk page (`components/ConfirmDialog.tsx`).
+- **Mock mode.** `web/src/mocks/strategies.ts` keeps strategies, holds and the audit log in memory,
+  mirrors the server's checks, and halts the same in-memory ledgers as the Risk mock. The fixture
+  `fixtures/strategies.json` was captured from a real ui-api against the sandboxed executor below.
+- **Checked live** against a sandboxed strategy-executor (no Kafka, no Redis, no exchange keys, so
+  it cannot trade) with three dry-run demo strategies: stop through ui-api held `mr_btc_demo`; a
+  plain executor start then got 409 `held`; after an executor restart and re-registration it was
+  still held while the others started. Then stop and start through the UI. The kill switch was
+  exercised in tests and mock mode only; the real stage ledger was not halted.
+- **Tests.**
+  - strategy-executor: the hold file (load, missing, corrupt, atomic write, failed write), the
+    registry (held start refused, `StartAll` skips, hold restored on a failed start), the HTTP
+    bodies and codes.
+  - ui-api: the executor client (loopback only, errors), every gate and state above, audit order,
+    position acknowledgement, upstream 409/502, halt-all with an already halted ledger.
+  - Web: the fixture contract, the page, stop with confirm and audit, the acknowledgement, start
+    releasing a hold, a 409, the kill switch reaching the Risk page, disabled and unreachable
+    states, mock parity. Playwright (desktop and phone): stop, start, kill switch, Risk page.
 
 ---
 
@@ -727,13 +803,17 @@ export PATH=$PWD/.tools/node/bin:$PATH              # portable Node 22
 #   mkdir -p ~/.config/mtb && (umask 077; openssl rand -hex 32 > ~/.config/mtb/operator-token)
 #   go run ./cmd -operator-token-file ~/.config/mtb/operator-token
 #   to rehearse, add a scratch copy of a ledger dir: -ledgers stage=<path>/ledger.jsonl,drill=<copy>/ledger.jsonl
+# Strategies page start/stop (§8.13): run strategy-executor with a hold file, then point ui-api at it:
+#   (cd services/strategy-executor && STRATEGY_HOLD_FILE=$HOME/.config/mtb/strategy-holds.json go run ./cmd)
+#   go run ./cmd -operator-token-file ~/.config/mtb/operator-token -strategy-executor-url http://127.0.0.1:8081
+#   the page is http://127.0.0.1:5173/strategies (the kill switch halts every local ledger: rehearse on a drill copy)
 cd web && npm ci && npm run dev                     # http://127.0.0.1:5173
 # or, without the backend:
 npm run dev:mock
 # tests
 (cd shared && go test ./pkg/risk ./pkg/dailyledger)
 (cd services/ui-api && go test ./...)
-(cd services/strategy-executor && go test ./cmd/daily-executor)
+(cd services/strategy-executor && go test ./cmd/daily-executor ./internal/strategies ./internal/server)
 (cd web && npm run ci && npm run e2e)
 python3 -m unittest discover -s infrastructure/lambda/ledger-watchdog   # §8.10 watchdog
 ```

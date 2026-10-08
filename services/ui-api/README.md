@@ -1,6 +1,6 @@
 # ui-api
 
-Backend for the web UI (`web/`), read-only except the opt-in R4 halt/resume controls. It reads the daily-executor's ledger and candle files,
+Backend for the web UI (`web/`), read-only except the opt-in operator controls (R4 halt/resume, the kill switch, strategy start/stop). It reads the daily-executor's ledger and candle files,
 evaluates the risk policy (`shared/pkg/risk`) against them, and serves JSON under `/api/ui/`.
 Plan: [`docs/frontend/FRONTEND-UI-PLAN-2026-10-03.md`](../../docs/frontend/FRONTEND-UI-PLAN-2026-10-03.md).
 
@@ -15,6 +15,8 @@ go run ./cmd -ledgers stage=s3://<bucket>/daily-executor/stage,local=../strategy
                                                # a ledger from the copy scripts/daily-executor-run.sh uploads
 go run ./cmd/ui-alerts -dry-run                # R3 alerts: what would be sent (see cmd/ui-alerts, scripts/install-ops-cron.sh)
 go run ./cmd -operator-token-file ~/.config/mtb/operator-token   # R4: halt/resume from the Risk page (0600 file, loopback only)
+go run ./cmd -operator-token-file ~/.config/mtb/operator-token -strategy-executor-url http://127.0.0.1:8081
+                                               # Strategies page: start/stop strategy-executor's strategies (loopback only)
 go test ./...
 ```
 
@@ -29,8 +31,10 @@ go test ./...
 | `-stage-size` | `UI_API_STAGE_SIZE` | `0.001` (the executor's `-size`) |
 | `-archive` | `UI_API_ARCHIVE` | none: the Data health archive section is "not configured" |
 | `-operator-token-file` | `UI_API_OPERATOR_TOKEN_FILE` | none: controls off. A 0600 file with a token of ≥ 32 characters (`umask 077; openssl rand -hex 32 > …`); needs a loopback `-addr` |
+| `-strategy-executor-url` | `UI_API_STRATEGY_EXECUTOR_URL` | none: the Strategies page lists ledgers only. A loopback `http://host:port` of strategy-executor (no credentials, query or fragment) |
+| `-strategy-audit-file` | `UI_API_STRATEGY_AUDIT_FILE` | `ui-strategy-audit.jsonl` next to the first local ledger |
 
-## Endpoints (GET only, plus the two R4 POSTs; anything else is 405)
+## Endpoints (GET only, plus the operator-control POSTs; anything else is 405)
 
 | Path | Returns |
 |---|---|
@@ -43,12 +47,17 @@ go test ./...
 | `/api/ui/health/data` | data health: the collector's hourly S3 flushes per book (age, 24 h cadence, gaps), daily compaction progress (latest `_manifest.json`), the executor's ledger coverage, its last `run-*.log` (exit code, S3 upload) and an ok/warn/fail check list. The S3 listing is cached 60 s |
 | `/api/ui/controls` | R4: whether halt/resume is enabled for the ledger (and why not), its halt file, and the audit log newest first |
 | `POST /api/ui/risk/halt`, `POST /api/ui/risk/resume` | R4: write `risk-state.json` next to a **local** ledger. Bearer operator token, loopback `Origin`, JSON `{reason, by, confirm}` (`confirm` = ledger name); every attempt is appended to `ui-audit.jsonl` next to the ledger. Plan §8.12 |
+| `/api/ui/strategies` | every ledger with its halt state, the kill-switch state, and (with `-strategy-executor-url`) the executor's strategies with state, exposure, metrics and holds, plus the strategy audit log |
+| `POST /api/ui/strategies/{name}/start`, `…/stop` | start (releasing any hold) or stop and **hold** a strategy-executor strategy. Same gates as R4, `confirm` = strategy name; stopping one with a position or pending order needs `ack_position: true`. 404/409 from the executor pass through, other failures are 502. Audited in the strategy audit file. Plan §8.13 |
+| `POST /api/ui/risk/halt-all` | the kill switch: halt every local ledger (`confirm` = `HALT ALL`), one audited halt per ledger sharing a `group` id; ledgers already halted are reported and left alone. Plan §8.13 |
 
 ## Guarantees
 
-- **Read-only, except R4.** It never writes the ledger, the candles or the policy, and exposes no
-  endpoint that can place or cancel anything. The only writes are the opt-in R4 controls: the halt
-  file and its audit log, for local ledgers, with `-operator-token-file` set (off by default). With
+- **Read-only, except the operator controls.** It never writes the ledger, the candles or the
+  policy, and exposes no endpoint that can place or cancel anything. The only writes are the opt-in
+  controls, with `-operator-token-file` set (off by default): the halt file and its audit log for
+  local ledgers (R4 and the kill switch), and strategy start/stop calls to a loopback
+  strategy-executor with their audit log. With
   `-archive` or an `s3://` ledger it only lists and reads
   objects (default AWS credential chain); it never writes to S3. `cmd/ui-alerts` is a separate
   command: it reads the same way, writes only its state file and publishes to the SNS topic.
