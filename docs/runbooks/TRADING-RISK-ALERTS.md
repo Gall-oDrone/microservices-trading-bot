@@ -125,3 +125,37 @@ costs and the forward test assume fills.
 *warning.* order-management blocked an order on the shared policy or a halt (`shared_policy:<rule>`).
 The engine gate should have stopped it first: check the engine's `TRADING_RISK_POLICY` /
 `TRADING_HALT_FILES` match order-management's, and look for orders arriving by another path.
+
+### OrderSlippageHigh
+*warning.* Realized slippage, notional-weighted over 6 h, is > 50 bps against the price each order
+was decided at (`order_slippage_cost_quote_total` / `order_filled_notional_quote_total`, fees
+excluded; plan §6.4.7). Each closed order's own figure is in its metadata (`arrival_slippage_bps`).
+Compare with `TradingPriceDeviationHigh` (decision price vs mid): high deviation means the signal
+priced away from the market; low deviation but high slippage means the fill moved (market orders,
+fallbacks after a long rest, thin book). Review the order type and resting time before the next
+session; the pre-registered cost budget does not survive this for long.
+
+## Portfolio risk
+
+Computed by order-management every 30 s (`RISK_PORTFOLIO_INTERVAL`): positions marked at
+market-data's ticker mid, exposure per book, net position per asset, and a 1-day 99 % parametric VaR
+per quote currency = 2.326 × |Σ exposure × daily vol|. The daily vol is a configured model parameter
+(`RISK_VAR_DAILY_VOL`, default 4 %; per book `RISK_VAR_DAILY_VOL_BOOKS`), shown on the dashboard as
+`risk_var_daily_vol_ratio`; review it monthly against realized volatility. VaR is reported, never
+enforced: the limit escalates to a person.
+
+### PortfolioVaRLimitWarning / PortfolioVaRLimitBreached
+*warning at 80 %, critical at 100 % of `RISK_VAR_LIMITS`.* Check which book drives it (dashboard
+"Exposure per book"). At a breach the risk owner decides, within the hour: reduce the position by
+hand on the exchange (recorded), or halt new orders (`scripts/k8s-halt.sh -n <ns> halt ...`, or HALT
+ALL in the UI for local ledgers). Do not raise the limit or lower the vol assumption to clear it.
+
+### PortfolioRiskStale
+*warning.* The monitor has not completed a run for > 5 min (`portfolio_risk_run_errors_total` rising:
+the position store is unreadable). Exposure and VaR gauges are frozen at their last value; treat them
+as unknown. Check order-management's logs ("portfolio risk run failed") and Redis.
+
+### PositionUnpriced
+*warning.* An open book has had no market price for 10 min, so it is marked at its average entry
+price (or at 0 if that is unknown): its exposure and VaR are stale or understated. Check
+market-data's `/api/v1/ticker?book=<book>` and order-management's `MARKET_DATA_URL`.

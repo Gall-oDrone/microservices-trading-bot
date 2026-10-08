@@ -244,9 +244,12 @@ func (rm *Manager) GetCurrentExposure(ctx context.Context, book string) (*Exposu
 		}
 	}
 
+	// Signed (long positive): trading-engine feeds TotalSize to the shared
+	// check, which treats the position as long-positive.
+	size := SignedPositionBTC(position)
 	exposure := &Exposure{
-		TotalSize:  position.Size,
-		TotalValue: position.Size * position.CurrentPrice,
+		TotalSize:  size,
+		TotalValue: size * position.CurrentPrice,
 		OpenOrders: openOrderCount,
 	}
 

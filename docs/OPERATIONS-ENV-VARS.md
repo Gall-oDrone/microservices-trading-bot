@@ -40,6 +40,11 @@ Quick reference for env vars used by the trading bot, especially for **intraday*
 | `MAX_ORDERS_PER_MINUTE` | `60` | Firm-wide accepted orders in a 60 s sliding window, once per signal (`portfolio.max_orders_per_minute`). Per pod. Kept like `MAX_OPEN_ORDERS`. |
 | `TRADING_RISK_POLICY` | - | Same file and format as trading-engine. Set: it is order-management's limit set (violation `shared_policy:<rule>`); per book it may add `max_open_orders` and `max_orders_per_minute`, and a `portfolio` section sets the firm-wide ones. Unset: the policy is built from the four env limits above (plan §6.4.6). |
 | `TRADING_HALT_FILES` | - | Same list as trading-engine. A halted, unreadable or invalid file rejects every new order in `CheckRisk` (defence in depth behind trading-engine). |
+| `MARKET_DATA_URL` | - | market-data base URL (k8s: `http://market-data:8083`). Positions are marked at its `/api/v1/ticker` mid for exposure and VaR; unset or unavailable: entry price, flagged `position_mark_fallback`. |
+| `RISK_PORTFOLIO_INTERVAL` | `30s` | How often exposure and VaR are recomputed (Go duration, at least 1s). |
+| `RISK_VAR_DAILY_VOL` | `0.04` | Daily return volatility assumed in the 1-day 99 % VaR, as a ratio in (0, 1]. A model parameter: review it against realized vol. |
+| `RISK_VAR_DAILY_VOL_BOOKS` | - | Per-book overrides, e.g. `btc_usd=0.03,btc_mxn=0.035`. |
+| `RISK_VAR_LIMITS` | - | VaR limit per quote currency, e.g. `MXN=20000,USD=1000`. Alerts at 80 % / 100 %; nothing is blocked. Any `RISK_*` value that does not parse stops start-up. |
 
 ---
 

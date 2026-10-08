@@ -10,6 +10,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/redis/go-redis/v9"
 	"github.com/shopspring/decimal"
 
@@ -52,6 +53,7 @@ type Application struct {
 	bitsoSyncJob         *sync.BitsoSyncJob
 	userTradesPoller     *sync.UserTradesPoller
 	orderFillsProducer   *kafka.Producer
+	portfolioMonitor     *risk.PortfolioMonitor
 
 	// Redis client (non-nil when STORAGE_TYPE=redis; closed on shutdown)
 	redisClient *redis.Client
@@ -159,6 +161,39 @@ func NewApplication() (*Application, error) {
 		appLogger.Info("Risk limits (effective policy)", fields)
 	}
 
+	// §6.4.7: realized slippage per closed order, and portfolio exposure and
+	// 1-day 99 % VaR (reporting only). A RISK_* value that does not parse
+	// stops start-up, like the trading limits.
+	portfolioCfg, err := risk.LoadPortfolioConfig(os.Getenv)
+	if err != nil {
+		if redisClient != nil {
+			redisClient.Close()
+		}
+		cancel()
+		return nil, fmt.Errorf("portfolio risk config: %w", err)
+	}
+	riskSeries := metrics.NewRiskSeries(prometheus.DefaultRegisterer)
+	portfolioMonitor := &risk.PortfolioMonitor{
+		Positions: positionRepo,
+		Config:    portfolioCfg,
+		Series:    riskSeries,
+		OnError: func(err error) {
+			appLogger.Warn("portfolio risk run failed", map[string]interface{}{"error": err.Error()})
+		},
+	}
+	markSource := "entry price (MARKET_DATA_URL unset)"
+	if portfolioCfg.MarketDataURL != "" {
+		portfolioMonitor.Marks = risk.MarketDataMarks{BaseURL: portfolioCfg.MarketDataURL}
+		markSource = portfolioCfg.MarketDataURL + "/api/v1/ticker"
+	}
+	appLogger.Info("Portfolio risk monitor configured", map[string]interface{}{
+		"interval":          portfolioCfg.Interval.String(),
+		"daily_vol_default": portfolioCfg.DefaultDailyVol,
+		"daily_vol_books":   portfolioCfg.DailyVol,
+		"var_limits":        portfolioCfg.VaRLimits,
+		"marks":             markSource,
+	})
+
 	var fillLedger repository.FillLedger
 	if cfg.Storage.Type == "redis" && redisClient != nil {
 		fillLedger = repository.NewRedisFillLedger(redisClient)
@@ -182,6 +217,7 @@ func NewApplication() (*Application, error) {
 		fillLedger,
 		repositoryActiveOrdersGauge,
 	)
+	orderManager.SetRiskSeries(riskSeries)
 	appLogger.Info("Order manager initialized", map[string]interface{}{
 		"active_orders_gauge_source": map[bool]string{true: "repository", false: "bitso_open_orders"}[repositoryActiveOrdersGauge],
 	})
@@ -362,6 +398,7 @@ func NewApplication() (*Application, error) {
 		bitsoSyncJob:         bitsoSyncJob,
 		userTradesPoller:     userTradesPoller,
 		orderFillsProducer:   orderFillsProducer,
+		portfolioMonitor:     portfolioMonitor,
 		redisClient:          redisClient,
 		ctx:                  ctx,
 		cancel:               cancel,
@@ -392,6 +429,9 @@ func (app *Application) Start() error {
 	}
 	if app.userTradesPoller != nil {
 		go app.userTradesPoller.Run(app.ctx)
+	}
+	if app.portfolioMonitor != nil {
+		go app.portfolioMonitor.Run(app.ctx)
 	}
 
 	// Start metrics collection

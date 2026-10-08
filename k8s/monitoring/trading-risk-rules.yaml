@@ -236,3 +236,71 @@ spec:
             summary: "order-management blocked {{ $value }} order(s) on the shared policy or a halt (15m)"
             description: "Defence in depth fired: an order reached the OMS that the engine gate should have stopped, or arrived by another path."
             runbook_url: "docs/runbooks/TRADING-RISK-ALERTS.md#ordersharedpolicyblockatoms"
+
+        # --- Execution quality, realized (plan §6.4.7) ---
+        - alert: OrderSlippageHigh
+          expr: |
+            1e4 * (
+                sum by (job, book) (increase(order_slippage_cost_quote_total{job=~"order-management.*",direction="adverse"}[6h]))
+              - sum by (job, book) (increase(order_slippage_cost_quote_total{job=~"order-management.*",direction="improvement"}[6h]))
+            ) / sum by (job, book) (increase(order_filled_notional_quote_total{job=~"order-management.*"}[6h])) > 50
+            and sum by (job, book) (increase(order_filled_notional_quote_total{job=~"order-management.*"}[6h])) > 0
+          labels:
+            severity: warning
+            team: trading
+          annotations:
+            summary: "{{ $labels.book }} realized slippage {{ $value | printf \"%.0f\" }} bps vs decision price (notional-weighted, 6h)"
+            description: "Fills are well away from the price the strategy decided on, before fees. The pre-registered cost budget assumes far less; check order type, resting time and liquidity."
+            runbook_url: "docs/runbooks/TRADING-RISK-ALERTS.md#orderslippagehigh"
+
+    - name: portfolio-risk
+      rules:
+        - alert: PortfolioVaRLimitWarning
+          expr: |
+            max by (job, currency) (portfolio_var_quote{job=~"order-management.*"})
+              / max by (job, currency) (portfolio_var_limit_quote{job=~"order-management.*"}) > 0.8
+          for: 5m
+          labels:
+            severity: warning
+            team: risk
+          annotations:
+            summary: "{{ $labels.currency }} 1-day 99% VaR at {{ $value | humanizePercentage }} of its limit"
+            description: "Exposure is approaching the VaR limit. Nothing is blocked automatically; the desk decides whether to reduce."
+            runbook_url: "docs/runbooks/TRADING-RISK-ALERTS.md#portfoliovarlimitwarning"
+
+        - alert: PortfolioVaRLimitBreached
+          expr: |
+            max by (job, currency) (portfolio_var_quote{job=~"order-management.*"})
+              / max by (job, currency) (portfolio_var_limit_quote{job=~"order-management.*"}) >= 1
+          for: 1m
+          labels:
+            severity: critical
+            team: risk
+          annotations:
+            summary: "{{ $labels.currency }} 1-day 99% VaR at {{ $value | humanizePercentage }} of its limit"
+            description: "VaR limit breached: escalate to the risk owner, reduce exposure or halt (scripts/k8s-halt.sh)."
+            runbook_url: "docs/runbooks/TRADING-RISK-ALERTS.md#portfoliovarlimitbreached"
+
+        - alert: PortfolioRiskStale
+          expr: |
+            (time() - portfolio_risk_last_run_timestamp_seconds{job=~"order-management.*"}) > 300
+            and portfolio_risk_last_run_timestamp_seconds{job=~"order-management.*"} > 0
+          for: 5m
+          labels:
+            severity: warning
+            team: risk
+          annotations:
+            summary: "Portfolio exposure and VaR not computed for {{ $value | humanizeDuration }}"
+            description: "The monitor cannot read positions (see portfolio_risk_run_errors_total); exposure and VaR gauges are frozen."
+            runbook_url: "docs/runbooks/TRADING-RISK-ALERTS.md#portfolioriskstale"
+
+        - alert: PositionUnpriced
+          expr: max by (job, book) (position_mark_fallback{job=~"order-management.*"}) == 1
+          for: 10m
+          labels:
+            severity: warning
+            team: risk
+          annotations:
+            summary: "{{ $labels.book }} has an open position but no market price"
+            description: "Marked at the entry price (or 0): its exposure and VaR are stale. Check market-data's ticker and MARKET_DATA_URL."
+            runbook_url: "docs/runbooks/TRADING-RISK-ALERTS.md#positionunpriced"

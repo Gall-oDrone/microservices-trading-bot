@@ -129,3 +129,103 @@ tests:
               summary: "Order status not reconciled with Bitso for 11m 0s"
               description: "OMS and exchange may disagree on open orders and fills (reconciliation break risk)."
               runbook_url: "docs/runbooks/TRADING-RISK-ALERTS.md#orderexchangesyncstale"
+
+  # §6.4.7 realized slippage: btc_mxn at 80 bps (adverse a constant share of
+  # notional, so increase() extrapolation cancels in the ratio) fires;
+  # btc_usd at 20 bps does not.
+  - interval: 1h
+    input_series:
+      - series: 'order_filled_notional_quote_total{job="order-management",instance="om-0",book="btc_mxn",side="buy"}'
+        values: '0 1000 2000 3000 4000 5000 6000'
+      - series: 'order_slippage_cost_quote_total{job="order-management",instance="om-0",book="btc_mxn",side="buy",direction="adverse"}'
+        values: '0 8 16 24 32 40 48'
+      - series: 'order_slippage_cost_quote_total{job="order-management",instance="om-0",book="btc_mxn",side="buy",direction="improvement"}'
+        values: '0 0 0 0 0 0 0'
+      - series: 'order_filled_notional_quote_total{job="order-management",instance="om-0",book="btc_usd",side="buy"}'
+        values: '0 1000 2000 3000 4000 5000 6000'
+      - series: 'order_slippage_cost_quote_total{job="order-management",instance="om-0",book="btc_usd",side="buy",direction="adverse"}'
+        values: '0 2 4 6 8 10 12'
+      - series: 'order_slippage_cost_quote_total{job="order-management",instance="om-0",book="btc_usd",side="buy",direction="improvement"}'
+        values: '0 0 0 0 0 0 0'
+    alert_rule_test:
+      - eval_time: 6h
+        alertname: OrderSlippageHigh
+        exp_alerts:
+          - exp_labels: {severity: warning, team: trading, job: order-management, book: btc_mxn}
+            exp_annotations:
+              summary: "btc_mxn realized slippage 80 bps vs decision price (notional-weighted, 6h)"
+              description: "Fills are well away from the price the strategy decided on, before fees. The pre-registered cost budget assumes far less; check order type, resting time and liquidity."
+              runbook_url: "docs/runbooks/TRADING-RISK-ALERTS.md#orderslippagehigh"
+
+  # VaR at 85 % of the MXN limit: warning after 5m. USD has no limit: no alert.
+  - interval: 1m
+    input_series:
+      - series: 'portfolio_var_quote{job="order-management",instance="om-0",currency="MXN"}'
+        values: '17000x10'
+      - series: 'portfolio_var_limit_quote{job="order-management",instance="om-0",currency="MXN"}'
+        values: '20000x10'
+      - series: 'portfolio_var_quote{job="order-management",instance="om-0",currency="USD"}'
+        values: '900000x10'
+    alert_rule_test:
+      - eval_time: 4m
+        alertname: PortfolioVaRLimitWarning
+        exp_alerts: []
+      - eval_time: 5m
+        alertname: PortfolioVaRLimitWarning
+        exp_alerts:
+          - exp_labels: {severity: warning, team: risk, job: order-management, currency: MXN}
+            exp_annotations:
+              summary: "MXN 1-day 99% VaR at 85% of its limit"
+              description: "Exposure is approaching the VaR limit. Nothing is blocked automatically; the desk decides whether to reduce."
+              runbook_url: "docs/runbooks/TRADING-RISK-ALERTS.md#portfoliovarlimitwarning"
+      - eval_time: 5m
+        alertname: PortfolioVaRLimitBreached
+        exp_alerts: []
+
+  # VaR above the limit: critical after 1m.
+  - interval: 1m
+    input_series:
+      - series: 'portfolio_var_quote{job="order-management",instance="om-0",currency="MXN"}'
+        values: '21000x5'
+      - series: 'portfolio_var_limit_quote{job="order-management",instance="om-0",currency="MXN"}'
+        values: '20000x5'
+    alert_rule_test:
+      - eval_time: 1m
+        alertname: PortfolioVaRLimitBreached
+        exp_alerts:
+          - exp_labels: {severity: critical, team: risk, job: order-management, currency: MXN}
+            exp_annotations:
+              summary: "MXN 1-day 99% VaR at 105% of its limit"
+              description: "VaR limit breached: escalate to the risk owner, reduce exposure or halt (scripts/k8s-halt.sh)."
+              runbook_url: "docs/runbooks/TRADING-RISK-ALERTS.md#portfoliovarlimitbreached"
+
+  # Portfolio monitor stopped after its run at t=60s; an open book without a
+  # market price.
+  - interval: 1m
+    input_series:
+      - series: 'portfolio_risk_last_run_timestamp_seconds{job="order-management",instance="om-0"}'
+        values: '60x15'
+      - series: 'position_mark_fallback{job="order-management",instance="om-0",book="btc_usd"}'
+        values: '1x15'
+      - series: 'position_mark_fallback{job="order-management",instance="om-0",book="btc_mxn"}'
+        values: '0x15'
+    alert_rule_test:
+      - eval_time: 11m
+        alertname: PortfolioRiskStale
+        exp_alerts: []
+      - eval_time: 12m
+        alertname: PortfolioRiskStale
+        exp_alerts:
+          - exp_labels: {severity: warning, team: risk, job: order-management, instance: om-0}
+            exp_annotations:
+              summary: "Portfolio exposure and VaR not computed for 11m 0s"
+              description: "The monitor cannot read positions (see portfolio_risk_run_errors_total); exposure and VaR gauges are frozen."
+              runbook_url: "docs/runbooks/TRADING-RISK-ALERTS.md#portfolioriskstale"
+      - eval_time: 10m
+        alertname: PositionUnpriced
+        exp_alerts:
+          - exp_labels: {severity: warning, team: risk, job: order-management, book: btc_usd}
+            exp_annotations:
+              summary: "btc_usd has an open position but no market price"
+              description: "Marked at the entry price (or 0): its exposure and VaR are stale. Check market-data's ticker and MARKET_DATA_URL."
+              runbook_url: "docs/runbooks/TRADING-RISK-ALERTS.md#positionunpriced"

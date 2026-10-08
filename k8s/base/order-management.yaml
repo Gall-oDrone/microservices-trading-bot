@@ -100,6 +100,9 @@ spec:
         # Cluster kill switch (k8s/base/trading-halt.yaml, scripts/k8s-halt.sh).
         - name: TRADING_HALT_FILES
           value: "/etc/trading-halt/risk-state.json"
+        # Portfolio exposure and VaR marks (plan §6.4.7): market-data's ticker mid.
+        - name: MARKET_DATA_URL
+          value: "http://market-data:8083"
         volumeMounts:
         - name: trading-halt
           mountPath: /etc/trading-halt

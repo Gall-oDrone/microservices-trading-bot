@@ -2,7 +2,7 @@
   "id": null,
   "uid": "trading-risk-operations",
   "title": "Trading Risk Operations",
-  "description": "Kill switch, limits and utilization, pre-trade blocks, execution quality and reconciliation (plan \u00a76.4.4). Alerts: monitoring/prometheus/rules/trading-risk-alerts.yml.",
+  "description": "Kill switch, limits and utilization, pre-trade blocks, execution quality and reconciliation (plan §6.4.4). Alerts: monitoring/prometheus/rules/trading-risk-alerts.yml.",
   "tags": [
     "trading",
     "risk",
@@ -1046,6 +1046,244 @@
               {
                 "color": "red",
                 "value": 60
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        }
+      }
+    },
+    {
+      "id": 27,
+      "title": "Portfolio risk and realized execution (plan §6.4.7)",
+      "type": "row",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 46
+      },
+      "panels": []
+    },
+    {
+      "id": 28,
+      "title": "Realized slippage vs decision price (bps, notional-weighted 6h)",
+      "type": "timeseries",
+      "description": "Implementation shortfall excluding fees: average fill vs the price the order was decided at. Positive = cost. Alert OrderSlippageHigh at 50 bps.",
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 0,
+        "y": 47
+      },
+      "targets": [
+        {
+          "expr": "1e4 * (sum by (book) (increase(order_slippage_cost_quote_total{job=~\"order-management.*\",direction=\"adverse\"}[6h])) - sum by (book) (increase(order_slippage_cost_quote_total{job=~\"order-management.*\",direction=\"improvement\"}[6h]))) / sum by (book) (increase(order_filled_notional_quote_total{job=~\"order-management.*\"}[6h]))",
+          "legendFormat": "{{book}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 25
+              },
+              {
+                "color": "red",
+                "value": 50
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {}
+    },
+    {
+      "id": 29,
+      "title": "Per-order slippage p50 / p95 (bps, 24h)",
+      "type": "timeseries",
+      "description": "Distribution of order_arrival_slippage_bps per closed order.",
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 8,
+        "y": 47
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.5, sum by (book, le) (rate(order_arrival_slippage_bps_bucket{job=~\"order-management.*\"}[24h])))",
+          "legendFormat": "p50 {{book}}",
+          "refId": "A"
+        },
+        {
+          "expr": "histogram_quantile(0.95, sum by (book, le) (rate(order_arrival_slippage_bps_bucket{job=~\"order-management.*\"}[24h])))",
+          "legendFormat": "p95 {{book}}",
+          "refId": "B"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          }
+        },
+        "overrides": []
+      },
+      "options": {}
+    },
+    {
+      "id": 30,
+      "title": "1-day 99% VaR vs limit",
+      "type": "timeseries",
+      "description": "Parametric VaR per quote currency (configured daily vol) and its limit (RISK_VAR_LIMITS).",
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 16,
+        "y": 47
+      },
+      "targets": [
+        {
+          "expr": "max by (currency) (portfolio_var_quote{job=~\"order-management.*\"})",
+          "legendFormat": "VaR {{currency}}",
+          "refId": "A"
+        },
+        {
+          "expr": "max by (currency) (portfolio_var_limit_quote{job=~\"order-management.*\"})",
+          "legendFormat": "limit {{currency}}",
+          "refId": "B"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          }
+        },
+        "overrides": []
+      },
+      "options": {}
+    },
+    {
+      "id": 31,
+      "title": "Exposure per book (quote currency, marked)",
+      "type": "timeseries",
+      "description": "Signed position x mark (market-data mid; entry price when unpriced).",
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 0,
+        "y": 54
+      },
+      "targets": [
+        {
+          "expr": "max by (book, currency) (position_exposure_quote{job=~\"order-management.*\"})",
+          "legendFormat": "{{book}} ({{currency}})",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          }
+        },
+        "overrides": []
+      },
+      "options": {}
+    },
+    {
+      "id": 32,
+      "title": "Net position per asset (base)",
+      "type": "timeseries",
+      "description": "Net across books, e.g. BTC over btc_mxn and btc_usd.",
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 8,
+        "y": 54
+      },
+      "targets": [
+        {
+          "expr": "max by (asset) (portfolio_net_exposure_base{job=~\"order-management.*\"})",
+          "legendFormat": "{{asset}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          }
+        },
+        "overrides": []
+      },
+      "options": {}
+    },
+    {
+      "id": 33,
+      "title": "Unpriced books / monitor age",
+      "type": "stat",
+      "description": "Open books marked without a market price, and seconds since the portfolio monitor last ran.",
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 16,
+        "y": 54
+      },
+      "targets": [
+        {
+          "expr": "sum(position_mark_fallback{job=~\"order-management.*\"})",
+          "legendFormat": "unpriced books",
+          "refId": "A"
+        },
+        {
+          "expr": "time() - max(portfolio_risk_last_run_timestamp_seconds{job=~\"order-management.*\"} > 0)",
+          "legendFormat": "monitor age (s)",
+          "refId": "B"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 1
+              },
+              {
+                "color": "red",
+                "value": 300
               }
             ]
           }

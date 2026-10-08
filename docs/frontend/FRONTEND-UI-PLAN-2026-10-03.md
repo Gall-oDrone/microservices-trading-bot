@@ -252,6 +252,7 @@ returns the executor's last recorded check. The Risk page shows all of it.
 | **R6 (done 2026-10-08)** Trading-risk metrics, §6.4.4 | Production-standard telemetry, alerts, runbook and dashboard for limits, halts, execution quality and reconciliation (§11 Q4) | Every limit, the kill switch and execution quality are visible and alert with a runbook; rules are unit-tested in CI |
 | **R5c (done 2026-10-08)** Cluster kill switch, §6.4.5 | ConfigMap `trading-halt` mounted into trading-engine and order-management; `scripts/k8s-halt.sh` with confirmation, audit and read-back | One audited command halts every trading pod in a namespace within seconds; CI proves every overlay is wired |
 | **R5d (done 2026-10-08)** OMS limits in the shared policy, §6.4.6 | Order-management's position, order-value, open-order and orders-per-minute limits become one `shared/pkg/risk` policy (per book and firm-wide); the env limits are only its fallback | One limit set per service in one format; a policy file can tighten any book without a redeploy of code |
+| **R6b (done 2026-10-08)** Realized execution and portfolio risk, §6.4.7 | Realized slippage per closed order vs its decision price; exposure per book marked to market; 1-day 99 % parametric VaR per quote currency against a limit; Alertmanager routing by severity and team | Implementation shortfall, exposure and VaR are on the dashboard and alert with a runbook; every route is pinned in CI; nothing is sent until receivers are configured |
 
 #### 6.4.1 R1 as built
 
@@ -368,9 +369,10 @@ trading day), an owning team and a runbook entry.
   execution quality, reconciliation and freshness.
 - **CI:** job `monitoring-rules` runs `promtool check rules`, the rule unit tests, the k8s sync check
   and parses every dashboard PromQL expression.
-- **Not covered yet:** realized slippage per fill vs arrival price (needs fill prices joined to the
+- ~~**Not covered yet:** realized slippage per fill vs arrival price (needs fill prices joined to the
   decision mid in order-management), VaR / exposure in quote currency across books, and Alertmanager
-  routing (on-call receivers are not configured in this repo).
+  routing (on-call receivers are not configured in this repo).~~ Done in R6b (§6.4.7); receivers are
+  still a template.
 
 #### 6.4.5 R5c cluster kill switch as built (2026-10-08)
 
@@ -433,6 +435,47 @@ trading day), an owning team and a runbook entry.
 - **Tests.** `shared/pkg/risk/orderflow_test.go`; order-management `risk_manager_test.go` (sliding
   window and dedup with a fake clock) and `shared_policy_test.go` (env build, file precedence,
   portfolio fallback, per-book open orders). CI `platform-risk` gofmt-checks them.
+
+#### 6.4.7 R6b realized execution, exposure, VaR and alert routing as built (2026-10-08)
+
+- **Realized slippage (implementation shortfall, fees excluded).** When order-management's Bitso
+  sync closes an order with fills (filled, or cancelled after a partial fill), the average fill
+  price is compared once with the order's own price, the price the signal decided on: histogram
+  `order_arrival_slippage_bps{book,side}` (positive = cost), counters
+  `order_slippage_cost_quote_total{book,side,direction="adverse"|"improvement"}` (split so both stay
+  monotonic) and `order_filled_notional_quote_total{book,side}` for the notional-weighted figure.
+  The order's metadata keeps `arrival_slippage_bps` and a flag so a re-sync never counts it twice.
+  With trading-engine's `order_price_deviation_bps` (decision price vs the touch mid) this splits
+  shortfall into "priced away from the market" and "the fill moved".
+- **Exposure and VaR** (`internal/risk/portfolio.go`, every `RISK_PORTFOLIO_INTERVAL`, 30 s):
+  each position is marked at market-data's ticker mid (`MARKET_DATA_URL`, set in k8s), else its
+  entry price with `position_mark_fallback=1`. Published: `position_exposure_base{book}`,
+  `position_exposure_quote{book,currency}`, `portfolio_net_exposure_base{asset}`,
+  `portfolio_gross_exposure_quote` / `portfolio_net_exposure_quote{currency}`, and
+  `portfolio_var_quote{currency}` = 2.326 × |Σ exposure × daily vol| (1 day, 99 %, books in one
+  currency share the base asset so correlation 1). The daily vol is a configured model parameter
+  (`RISK_VAR_DAILY_VOL`, default 4 %, above BTC's usual 2.5–3.5 %; per book
+  `RISK_VAR_DAILY_VOL_BOOKS`), published as `risk_var_daily_vol_ratio{book}`: the cluster has no
+  daily closes for a historical or EWMA estimate yet. `RISK_VAR_LIMITS` (`MXN=20000,USD=1000`)
+  publishes `portfolio_var_limit_quote`. VaR is reported, never enforced. A value that does not
+  parse stops start-up.
+- **Fixed: position sign.** `models.Position` keeps an unsigned size plus a side, and
+  order-management passed the unsigned size to the shared check and the exposure endpoint, which
+  trading-engine feeds to its own check. A short then looked long: a covering buy could be blocked
+  and a sell growing the short passed as "reducing". Both now use the signed position. (Bitso spot
+  cannot short, so this needed a tracking anomaly to matter.)
+- **Alerts** (5 new, 23 total): `OrderSlippageHigh` (> 50 bps notional-weighted over 6 h),
+  `PortfolioVaRLimitWarning` (80 %) / `PortfolioVaRLimitBreached` (100 %), `PortfolioRiskStale`,
+  `PositionUnpriced`; promtool unit tests; runbook entries; a "Portfolio risk and realized
+  execution" row on the Trading Risk Operations dashboard.
+- **Alertmanager** (`monitoring/alertmanager/alertmanager.yml`, which `docker-compose.yml` already
+  mounted but did not exist): critical pages the owning team (`risk` / `trading`) with a 1 h
+  repeat, warning goes to the team's review queue, alerts without a team go to platform;
+  breached-supersedes-warning and halt-supersedes-OMS-block inhibitions. **Template:** receivers
+  have no integrations, so nothing is sent; the header shows how to add PagerDuty, Slack or SNS with
+  secrets from files. `scripts/tests/check-alertmanager-routes.sh` (CI `monitoring-rules`) runs
+  `amtool check-config`, pins every route, fails on a severity or team the routes do not know, on an
+  integration committed to the repo, and on an inhibition naming an unknown alert.
 
 ### 6.5 First findings from the real stage ledger
 - **btc_mxn's first stage leg cost 118 bps against 70 assumed.** The post-only order rested 60 min, filled 0.1%, and fell back to market: taker fee 78 bps + 40 bps above the fill-day open. A stage leg is small and stage liquidity is thin, so this is not yet evidence about production costs. But it is the cost signal to watch: the pre-registration's secondary (taker) scenario is 88 bps per leg, and this leg exceeded both.

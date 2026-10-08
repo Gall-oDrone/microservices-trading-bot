@@ -73,6 +73,9 @@ type Manager struct {
 
 	// bitsoClient optional — used to cancel resting orders on the venue (CancelOrderBySignalID).
 	bitsoClient *bitso.Client
+
+	// riskSeries optional — realized slippage per closed order (slippage.go).
+	riskSeries *metrics.RiskSeries
 }
 
 // NewOrderManager creates a new order manager. pnlRecorder is optional (nil disables intraday P&L metrics).
@@ -547,8 +550,12 @@ func (m *Manager) SyncOrderFromBitso(ctx context.Context, bitsoOrderID string, f
 			"to_status":      string(status),
 		})
 	}
+	recordSlippage := m.markSlippage(order, status)
 	if err := m.repository.Update(ctx, order); err != nil {
 		return err
+	}
+	if recordSlippage {
+		m.observeSlippage(order)
 	}
 	switch status {
 	case models.OrderStatusFilled:

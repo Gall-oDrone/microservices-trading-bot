@@ -149,7 +149,8 @@ func (rm *Manager) evaluate(ctx context.Context, order *models.Order) []sharedri
 
 	var st sharedrisk.State
 	if pos, err := rm.positionRepo.Get(ctx, order.Book); err == nil && pos != nil {
-		st.PositionBTC = pos.Size
+		// Signed: the shared check treats PositionBTC as long-positive.
+		st.PositionBTC = SignedPositionBTC(pos)
 	}
 	var out []sharedrisk.Finding
 	l := pol.For(order.Book)

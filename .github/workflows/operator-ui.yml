@@ -35,6 +35,7 @@ on:
       - 'k8s/overlays/**'
       - 'scripts/sync-prometheus-rules.sh'
       - 'monitoring/prometheus/**'
+      - 'monitoring/alertmanager/**'
       - 'monitoring/grafana/dashboards/**'
       - 'k8s/monitoring/trading-risk-rules.yaml'
       - 'web/**'
@@ -124,7 +125,13 @@ jobs:
             services/order-management/internal/risk/shared_policy.go \
             services/order-management/internal/risk/shared_policy_test.go \
             services/order-management/internal/risk/risk_manager.go \
-            services/order-management/internal/risk/risk_manager_test.go)
+            services/order-management/internal/risk/risk_manager_test.go \
+            services/order-management/internal/risk/portfolio.go \
+            services/order-management/internal/risk/portfolio_test.go \
+            services/order-management/internal/metrics/risk_series.go \
+            services/order-management/internal/metrics/risk_series_test.go \
+            services/order-management/internal/manager/slippage.go \
+            services/order-management/internal/testing/slippage_test.go)
           if [ -n "$out" ]; then echo "gofmt needed:"; echo "$out"; exit 1; fi
 
       - name: trading-engine
@@ -215,6 +222,7 @@ jobs:
     timeout-minutes: 10
     env:
       PROM_VERSION: '2.53.2'
+      AM_VERSION: '0.27.0'
     steps:
       - uses: actions/checkout@v4
 
@@ -224,6 +232,17 @@ jobs:
             "https://github.com/prometheus/prometheus/releases/download/v${PROM_VERSION}/prometheus-${PROM_VERSION}.linux-amd64.tar.gz"
           tar xzf /tmp/p.tgz -C /tmp --strip-components=1 "prometheus-${PROM_VERSION}.linux-amd64/promtool"
           /tmp/promtool --version | head -1
+
+      - name: Install amtool
+        run: |
+          curl -sSL -o /tmp/am.tgz \
+            "https://github.com/prometheus/alertmanager/releases/download/v${AM_VERSION}/alertmanager-${AM_VERSION}.linux-amd64.tar.gz"
+          tar xzf /tmp/am.tgz -C /tmp --strip-components=1 "alertmanager-${AM_VERSION}.linux-amd64/amtool"
+          /tmp/amtool --version 2>&1 | head -1
+
+      # Plan §6.4.7: routing by severity and team, no integrations in the repo.
+      - name: Alertmanager routes
+        run: AMTOOL=/tmp/amtool scripts/tests/check-alertmanager-routes.sh
 
       # Plan §6.4.4: every rule file parses, the trading-risk alerts pass their
       # unit tests, and the generated k8s PrometheusRule matches the source.

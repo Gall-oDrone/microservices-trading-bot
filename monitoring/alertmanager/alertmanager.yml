@@ -1,0 +1,72 @@
+# Alertmanager routing (plan §6.4.7). Mounted by docker-compose.yml; the k8s
+# monitoring stack can load the same file (kube-prometheus-stack
+# alertmanager.config).
+#
+# Routing follows the desk standard the alert rules are written to:
+#   severity=critical -> page the owning team now (risk or trading), repeat hourly
+#   severity=warning  -> the team's review queue, same trading day, repeat every 12h
+#   no team label     -> platform (infrastructure alerts from trading-alerts.yml)
+#
+# TEMPLATE: no receiver has an integration yet, so nothing leaves the cluster;
+# alerts are visible in the Alertmanager UI only. To go live, add ONE block per
+# receiver, reading secrets from files (never commit a key or webhook URL):
+#
+#   pagerduty_configs:
+#     - routing_key_file: /etc/alertmanager/secrets/pagerduty-risk
+#   slack_configs:
+#     - api_url_file: /etc/alertmanager/secrets/slack-risk-webhook
+#       channel: '#risk-alerts'
+#       send_resolved: true
+#   sns_configs:            # same SNS path as ui-alerts (§8.9)
+#     - topic_arn: arn:aws:sns:<region>:<account>:trading-risk-alerts
+#       sigv4: {region: <region>}
+#
+# CI (operator-ui.yml, job monitoring-rules) runs amtool check-config and
+# scripts/tests/check-alertmanager-routes.sh, which pins every route below.
+
+global:
+  resolve_timeout: 5m
+
+route:
+  receiver: platform
+  group_by: [alertname, job, book, currency]
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 12h
+  routes:
+    - matchers: [severity="critical", team="risk"]
+      receiver: risk-page
+      group_wait: 10s
+      repeat_interval: 1h
+    - matchers: [severity="critical", team="trading"]
+      receiver: trading-page
+      group_wait: 10s
+      repeat_interval: 1h
+    - matchers: [team="risk"]
+      receiver: risk-review
+    - matchers: [team="trading"]
+      receiver: trading-review
+    - matchers: [severity="critical"]
+      receiver: platform-page
+      repeat_interval: 1h
+
+inhibit_rules:
+  # The breached alert supersedes its own warning stage.
+  - source_matchers: [alertname="PortfolioVaRLimitBreached"]
+    target_matchers: [alertname="PortfolioVaRLimitWarning"]
+    equal: [job, currency]
+  - source_matchers: [alertname="TradingSessionLimitBreached"]
+    target_matchers: [alertname="TradingSessionLimitWarning"]
+    equal: [job, instance]
+  # While an operator halt is engaged, the orders it blocks are expected:
+  # do not also raise them as policy blocks at the OMS.
+  - source_matchers: [alertname="TradingKillSwitchEngaged"]
+    target_matchers: [alertname="OrderSharedPolicyBlockAtOMS"]
+
+receivers:
+  - name: risk-page
+  - name: risk-review
+  - name: trading-page
+  - name: trading-review
+  - name: platform-page
+  - name: platform
