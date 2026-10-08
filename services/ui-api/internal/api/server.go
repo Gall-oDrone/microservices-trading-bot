@@ -1,4 +1,5 @@
-// Package api serves the read-only JSON API for the web UI.
+// Package api serves the JSON API for the web UI. It is read-only except for
+// the operator controls (controls.go: halt/resume, token-gated and audited).
 package api
 
 import (
@@ -53,6 +54,10 @@ type Server struct {
 	// /health/data; nil reports it as not configured.
 	Archive      objstore.Store
 	archiveCache archiveCache
+	// OperatorToken enables the operator controls (R4) when set; empty keeps
+	// the API read-only. See controls.go.
+	OperatorToken string
+	controlsMu    sync.Mutex
 }
 
 var (
@@ -198,6 +203,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/ui/research/runs", s.runs)
 	mux.HandleFunc("GET /api/ui/research/runs/{date}/{name}", s.run)
 	mux.HandleFunc("GET /api/ui/health/data", s.dataHealth)
+	mux.HandleFunc("GET /api/ui/controls", s.controls)
+	mux.HandleFunc("POST /api/ui/risk/halt", s.haltAction)
+	mux.HandleFunc("POST /api/ui/risk/resume", s.resumeAction)
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusNotFound, "no such endpoint")
 	})
@@ -214,8 +222,10 @@ func (s *Server) middleware(next http.Handler) http.Handler {
 		h.Set("X-Content-Type-Options", "nosniff")
 		h.Set("X-Frame-Options", "DENY")
 		h.Set("Referrer-Policy", "no-referrer")
-		if r.Method != http.MethodGet && r.Method != http.MethodHead {
-			// Read-only API: nothing here may change trading state.
+		if r.Method != http.MethodGet && r.Method != http.MethodHead &&
+			!(r.Method == http.MethodPost && controlPaths[r.URL.Path]) {
+			// Read-only API: only the audited operator controls may change
+			// trading state.
 			writeErr(w, http.StatusMethodNotAllowed, "read-only API")
 			return
 		}

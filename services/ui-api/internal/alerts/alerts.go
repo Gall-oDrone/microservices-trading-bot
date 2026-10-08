@@ -73,14 +73,24 @@ func FromHealth(ledger string, h api.DataHealthResponse) []Alert {
 
 // FromRisk maps the risk view of one ledger: an invalid halt file (the
 // executor refuses to run) and block findings are critical, warn findings
-// are warnings. run_missed is skipped: the data-health ledger coverage check
-// reports the same days.
+// are warnings, and a halt is a warning while it lasts (so a halt or resume
+// from the UI also reaches the operator by email). run_missed is skipped:
+// the data-health ledger coverage check reports the same days.
 func FromRisk(ledger string, r api.RiskResponse) []Alert {
 	var out []Alert
 	if r.HaltFile.Error != "" {
 		out = append(out, Alert{Key: ledger + "/risk.halt_file", Severity: Critical,
 			Title:   "Halt file invalid (" + ledger + ")",
 			Message: r.HaltFile.Error + ": the executor refuses to run until it is fixed or removed"})
+	}
+	if r.Halted {
+		msg := r.HaltReason
+		if r.HaltSource == "file" || r.HaltSource == "both" {
+			msg = fmt.Sprintf("%s (by %s at %s, halt file)", r.HaltFile.Reason, r.HaltFile.By, r.HaltFile.At)
+		}
+		out = append(out, Alert{Key: ledger + "/risk.halted", Severity: Warning,
+			Title:   "Trading halted (" + ledger + ")",
+			Message: msg + ": new stage orders are blocked and recorded"})
 	}
 	for _, b := range r.Books {
 		for _, f := range b.Findings {

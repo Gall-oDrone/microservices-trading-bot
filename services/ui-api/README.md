@@ -1,6 +1,6 @@
 # ui-api
 
-Read-only backend for the web UI (`web/`). It reads the daily-executor's ledger and candle files,
+Backend for the web UI (`web/`), read-only except the opt-in R4 halt/resume controls. It reads the daily-executor's ledger and candle files,
 evaluates the risk policy (`shared/pkg/risk`) against them, and serves JSON under `/api/ui/`.
 Plan: [`docs/frontend/FRONTEND-UI-PLAN-2026-10-03.md`](../../docs/frontend/FRONTEND-UI-PLAN-2026-10-03.md).
 
@@ -14,6 +14,7 @@ go run ./cmd -archive s3://mtb-development-data-archive-<account>          # Dat
 go run ./cmd -ledgers stage=s3://<bucket>/daily-executor/stage,local=../strategy-executor/daily-executor-data/stage/ledger.jsonl
                                                # a ledger from the copy scripts/daily-executor-run.sh uploads
 go run ./cmd/ui-alerts -dry-run                # R3 alerts: what would be sent (see cmd/ui-alerts, scripts/install-ops-cron.sh)
+go run ./cmd -operator-token-file ~/.config/mtb/operator-token   # R4: halt/resume from the Risk page (0600 file, loopback only)
 go test ./...
 ```
 
@@ -27,8 +28,9 @@ go test ./...
 | `-static` | `UI_API_STATIC_DIR` | none |
 | `-stage-size` | `UI_API_STAGE_SIZE` | `0.001` (the executor's `-size`) |
 | `-archive` | `UI_API_ARCHIVE` | none: the Data health archive section is "not configured" |
+| `-operator-token-file` | `UI_API_OPERATOR_TOKEN_FILE` | none: controls off. A 0600 file with a token of ≥ 32 characters (`umask 077; openssl rand -hex 32 > …`); needs a loopback `-addr` |
 
-## Endpoints (GET only; anything else is 405)
+## Endpoints (GET only, plus the two R4 POSTs; anything else is 405)
 
 | Path | Returns |
 |---|---|
@@ -39,11 +41,15 @@ go test ./...
 | `/api/ui/forward-tests/{book}/candles?days=180` | daily candles with SMA50, `long`, and 20-day volume ratio |
 | `/api/ui/risk` | policy, per-book exposure, limit utilization, next stage order run through `risk.Check`, the executor's last recorded check and blocked days, realized cost, findings |
 | `/api/ui/health/data` | data health: the collector's hourly S3 flushes per book (age, 24 h cadence, gaps), daily compaction progress (latest `_manifest.json`), the executor's ledger coverage, its last `run-*.log` (exit code, S3 upload) and an ok/warn/fail check list. The S3 listing is cached 60 s |
+| `/api/ui/controls` | R4: whether halt/resume is enabled for the ledger (and why not), its halt file, and the audit log newest first |
+| `POST /api/ui/risk/halt`, `POST /api/ui/risk/resume` | R4: write `risk-state.json` next to a **local** ledger. Bearer operator token, loopback `Origin`, JSON `{reason, by, confirm}` (`confirm` = ledger name); every attempt is appended to `ui-audit.jsonl` next to the ledger. Plan §8.12 |
 
 ## Guarantees
 
-- **Read-only.** It never writes the ledger, the candles or the policy, and exposes no endpoint that
-  can place, cancel or halt anything. With `-archive` or an `s3://` ledger it only lists and reads
+- **Read-only, except R4.** It never writes the ledger, the candles or the policy, and exposes no
+  endpoint that can place or cancel anything. The only writes are the opt-in R4 controls: the halt
+  file and its audit log, for local ledgers, with `-operator-token-file` set (off by default). With
+  `-archive` or an `s3://` ledger it only lists and reads
   objects (default AWS credential chain); it never writes to S3. `cmd/ui-alerts` is a separate
   command: it reads the same way, writes only its state file and publishes to the SNS topic.
 - **S3 ledgers** read the layout `scripts/daily-executor-run.sh` uploads (`ledger.jsonl`,

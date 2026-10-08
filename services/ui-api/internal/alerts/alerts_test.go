@@ -76,6 +76,23 @@ func TestFromRisk(t *testing.T) {
 	}
 }
 
+func TestFromRiskHalted(t *testing.T) {
+	file := api.RiskResponse{Halted: true, HaltSource: "file", HaltReason: "x",
+		HaltFile: api.HaltFileInfo{Found: true, Halted: true, Reason: "exchange incident", By: "diego", At: "2026-10-08T14:00:00Z"}}
+	got := FromRisk("stage", file)
+	if len(got) != 1 || got[0].Key != "stage/risk.halted" || got[0].Severity != Warning ||
+		!strings.Contains(got[0].Message, "exchange incident (by diego at 2026-10-08T14:00:00Z, halt file)") {
+		t.Fatalf("file halt: %+v", got)
+	}
+	policy := api.RiskResponse{Halted: true, HaltSource: "policy", HaltReason: "policy says stop"}
+	if got := FromRisk("stage", policy); len(got) != 1 || !strings.HasPrefix(got[0].Message, "policy says stop") {
+		t.Fatalf("policy halt: %+v", got)
+	}
+	if got := FromRisk("stage", api.RiskResponse{}); len(got) != 0 {
+		t.Fatalf("not halted: %+v", got)
+	}
+}
+
 func TestMergeDedupesArchiveAcrossLedgers(t *testing.T) {
 	a := FromHealth("stage", health())
 	b := FromHealth("dry-run", health())

@@ -22,6 +22,13 @@
 // uploads (DAILY_EXECUTOR_S3_URI), list and get only:
 //
 //	go run ./cmd -ledgers stage=s3://<bucket>/daily-executor/stage,local=../strategy-executor/daily-executor-data/stage/ledger.jsonl
+//
+// Operator controls (R4: halt/resume from the Risk page, audited) are off
+// unless -operator-token-file names a 0600 file with the token, and then
+// only on a loopback address:
+//
+//	umask 077; openssl rand -hex 32 > ~/.config/mtb/operator-token
+//	go run ./cmd -operator-token-file ~/.config/mtb/operator-token
 package main
 
 import (
@@ -69,6 +76,7 @@ func main() {
 	liveREST := flag.String("live-rest-url", env("UI_API_LIVE_REST_URL", live.DefaultRESTURL), "Bitso public REST API, for today's bar")
 	studiesDir := flag.String("studies-dir", env("UI_API_STUDIES_DIR", "../../docs/backtest-readiness"), "study write-ups (markdown) for the Research page")
 	archiveURI := flag.String("archive", env("UI_API_ARCHIVE", ""), "collector trade archive s3://bucket for the data-health page, read-only (default: off)")
+	tokenFile := flag.String("operator-token-file", env("UI_API_OPERATOR_TOKEN_FILE", ""), "enable operator controls (halt/resume, audited) with the token in this 0600 file (default: off, read-only)")
 	flag.Parse()
 
 	if *printPolicy {
@@ -110,6 +118,14 @@ func main() {
 		Research: &research.Index{Dir: *studiesDir, RepoRel: repoRel(*studiesDir)}}
 	if srv.Archive, err = api.NewArchive(context.Background(), *archiveURI); err != nil {
 		logger.Fatal("-archive: ", err)
+	}
+	if *tokenFile != "" {
+		if !isLoopback(*addr) {
+			logger.Fatalf("-operator-token-file needs a loopback -addr (got %s): no TLS or OIDC yet", *addr)
+		}
+		if srv.OperatorToken, err = api.LoadOperatorToken(*tokenFile); err != nil {
+			logger.Fatal("-operator-token-file: ", err)
+		}
 	}
 	ctx, stopLive := context.WithCancel(context.Background())
 	defer stopLive()
@@ -227,17 +243,26 @@ func checkLoopback(addr string) error {
 	if os.Getenv("UI_API_ALLOW_REMOTE") == "1" {
 		return nil
 	}
-	host, _, err := net.SplitHostPort(addr)
-	if err != nil {
+	if _, _, err := net.SplitHostPort(addr); err != nil {
 		return fmt.Errorf("addr %q: %w", addr, err)
 	}
-	if host == "localhost" {
-		return nil
-	}
-	if ip := net.ParseIP(host); ip != nil && ip.IsLoopback() {
+	if isLoopback(addr) {
 		return nil
 	}
 	return fmt.Errorf("refusing to listen on %q: the API has no auth yet; use 127.0.0.1 or set UI_API_ALLOW_REMOTE=1", addr)
+}
+
+// isLoopback reports whether a listen address is localhost or a loopback IP.
+func isLoopback(addr string) bool {
+	host, _, err := net.SplitHostPort(addr)
+	if err != nil {
+		return false
+	}
+	if host == "localhost" {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }
 
 func version() string {
