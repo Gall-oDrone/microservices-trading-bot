@@ -43,6 +43,15 @@ type Entry struct {
 	Before    *risk.HaltState `json:"before,omitempty"`
 	After     *risk.HaltState `json:"after,omitempty"`
 	Error     string          `json:"error,omitempty"`
+	// Group ties together the per-ledger lines of one halt-all (kill switch).
+	Group string `json:"group,omitempty"`
+	// Strategy, Executor and UpstreamStatus describe a strategy start/stop
+	// sent to strategy-executor (Ledger is empty for those).
+	Strategy       string `json:"strategy,omitempty"`
+	Executor       string `json:"executor,omitempty"`
+	UpstreamStatus int    `json:"upstream_status,omitempty"`
+	// Detail is extra context, e.g. an acknowledged open position.
+	Detail string `json:"detail,omitempty"`
 }
 
 // Append writes e as one line and syncs it to disk. The file is created

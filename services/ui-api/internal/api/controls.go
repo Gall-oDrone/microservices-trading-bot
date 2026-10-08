@@ -48,10 +48,18 @@ const (
 )
 
 // controlPaths are the only routes that accept POST; everything else stays
-// read-only (405).
+// read-only (405). Strategy start/stop paths are matched by isControlPath.
 var controlPaths = map[string]bool{
-	"/api/ui/risk/halt":   true,
-	"/api/ui/risk/resume": true,
+	"/api/ui/risk/halt":     true,
+	"/api/ui/risk/resume":   true,
+	"/api/ui/risk/halt-all": true,
+}
+
+var strategyControlRe = regexp.MustCompile(`^/api/ui/strategies/[^/]+/(start|stop)$`)
+
+// isControlPath reports whether POST is allowed on path.
+func isControlPath(path string) bool {
+	return controlPaths[path] || strategyControlRe.MatchString(path)
 }
 
 var byRe = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9 ._@-]{0,63}$`)
@@ -160,7 +168,9 @@ func loopbackOrigin(r *http.Request) bool {
 	return ip != nil && ip.IsLoopback()
 }
 
-func validateControl(req ControlRequest, ledger string) error {
+// validateControl checks reason and by, and that confirm equals want (what
+// describes it in the error, e.g. "the ledger name").
+func validateControl(req ControlRequest, want, what string) error {
 	reason := strings.TrimSpace(req.Reason)
 	switch {
 	case len([]rune(reason)) < minReasonLen:
@@ -171,8 +181,8 @@ func validateControl(req ControlRequest, ledger string) error {
 		return errors.New("reason: one line, no control characters")
 	case !byRe.MatchString(strings.TrimSpace(req.By)):
 		return errors.New("by: 1-64 letters, digits, spaces or . _ @ -")
-	case req.Confirm != ledger:
-		return fmt.Errorf("confirm: type the ledger name %q to confirm", ledger)
+	case req.Confirm != want:
+		return fmt.Errorf("confirm: type %s %q to confirm", what, want)
 	}
 	return nil
 }
@@ -190,6 +200,63 @@ func clip(s string, n int) string {
 	return s
 }
 
+// noteAll appends e to every audit log in sinks, logging (not failing) on
+// error. It is for attempts that change nothing.
+func (s *Server) noteAll(sinks []string, e audit.Entry) {
+	for _, p := range sinks {
+		if p == "" {
+			continue
+		}
+		if err := audit.Append(p, e); err != nil {
+			s.Log.Printf("audit %s: %v", p, err)
+		}
+	}
+}
+
+// admit runs the checks every control shares: a loopback Origin, the
+// operator token, and a JSON body (unknown fields rejected) decoded into req.
+// A denied or refused attempt is audited to every log in sinks and answered;
+// admit then returns false.
+func (s *Server) admit(w http.ResponseWriter, r *http.Request, base audit.Entry, sinks []string, req interface{}) bool {
+	deny := func(status int, msg string) {
+		e := base
+		e.Outcome, e.Error = audit.Denied, msg
+		s.noteAll(sinks, e)
+		writeErr(w, status, msg)
+	}
+	if !loopbackOrigin(r) {
+		deny(http.StatusForbidden, "origin "+clip(r.Header.Get("Origin"), 100)+" may not use controls")
+		return false
+	}
+	if !s.authorized(r) {
+		deny(http.StatusUnauthorized, "missing or wrong operator token")
+		return false
+	}
+	refuse := func(status int, msg string) {
+		e := base
+		e.Outcome, e.Error = audit.Refused, msg
+		s.noteAll(sinks, e)
+		writeErr(w, status, msg)
+	}
+	if mt, _, _ := mime.ParseMediaType(r.Header.Get("Content-Type")); mt != "application/json" {
+		refuse(http.StatusUnsupportedMediaType, "send Content-Type: application/json")
+		return false
+	}
+	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxControlBody))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(req); err != nil {
+		refuse(http.StatusBadRequest, "body: "+err.Error())
+		return false
+	}
+	return true
+}
+
+// baseEntry is the audit line every control starts from.
+func (s *Server) baseEntry(r *http.Request, action string) audit.Entry {
+	return audit.Entry{At: s.Now().UTC().Format(time.RFC3339), Action: action,
+		Remote: r.RemoteAddr, UserAgent: clip(r.UserAgent(), 200)}
+}
+
 func (s *Server) control(w http.ResponseWriter, r *http.Request, action string) {
 	l, ok := s.pick(w, r)
 	if !ok {
@@ -201,27 +268,12 @@ func (s *Server) control(w http.ResponseWriter, r *http.Request, action string) 
 		return
 	}
 	ap := auditPath(l)
-	now := s.Now().UTC()
-	base := audit.Entry{At: now.Format(time.RFC3339), Action: action, Ledger: l.Name,
-		Remote: r.RemoteAddr, UserAgent: clip(r.UserAgent(), 200)}
+	base := s.baseEntry(r, action)
+	base.Ledger = l.Name
 	// note writes a line for an attempt that changes nothing.
-	note := func(e audit.Entry) {
-		if err := audit.Append(ap, e); err != nil {
-			s.Log.Printf("audit %s: %v", ap, err)
-		}
-	}
-	deny := func(status int, msg string) {
-		e := base
-		e.Outcome, e.Error = audit.Denied, msg
-		note(e)
-		writeErr(w, status, msg)
-	}
-	if !loopbackOrigin(r) {
-		deny(http.StatusForbidden, "origin "+clip(r.Header.Get("Origin"), 100)+" may not use controls")
-		return
-	}
-	if !s.authorized(r) {
-		deny(http.StatusUnauthorized, "missing or wrong operator token")
+	note := func(e audit.Entry) { s.noteAll([]string{ap}, e) }
+	var req ControlRequest
+	if !s.admit(w, r, base, []string{ap}, &req) {
 		return
 	}
 	refuse := func(e audit.Entry, status int, msg string) {
@@ -229,19 +281,8 @@ func (s *Server) control(w http.ResponseWriter, r *http.Request, action string) 
 		note(e)
 		writeErr(w, status, msg)
 	}
-	if mt, _, _ := mime.ParseMediaType(r.Header.Get("Content-Type")); mt != "application/json" {
-		refuse(base, http.StatusUnsupportedMediaType, "send Content-Type: application/json")
-		return
-	}
-	var req ControlRequest
-	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxControlBody))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&req); err != nil {
-		refuse(base, http.StatusBadRequest, "body: "+err.Error())
-		return
-	}
 	base.By, base.Reason = clip(strings.TrimSpace(req.By), 64), clip(strings.TrimSpace(req.Reason), maxReasonLen)
-	if err := validateControl(req, l.Name); err != nil {
+	if err := validateControl(req, l.Name, "the ledger name"); err != nil {
 		refuse(base, http.StatusBadRequest, err.Error())
 		return
 	}
@@ -267,6 +308,23 @@ func (s *Server) control(w http.ResponseWriter, r *http.Request, action string) 
 		return
 	}
 
+	done, auditErr, err := s.writeHaltAudited(l, ap, base, action == "halt", curErr)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	resp := ControlResponse{Ledger: l.Name, Action: action, Audit: done, AuditError: auditErr}
+	_, resp.HaltFile = s.policyFor(l)
+	s.Log.Printf("control %s ledger=%s by=%q id=%s", action, l.Name, base.By, done.ID)
+	writeJSON(w, http.StatusOK, resp)
+}
+
+// writeHaltAudited makes one audited halt-file change on a local ledger: a
+// "requested" line first (if it cannot be written nothing changes), then the
+// atomic write, then a "done" or "failed" line. It returns the final entry
+// and, when only the "done" line could not be written, that error as
+// auditErr. Callers hold s.controlsMu.
+func (s *Server) writeHaltAudited(l Ledger, ap string, base audit.Entry, halted bool, curErr error) (done audit.Entry, auditErr string, err error) {
 	base.ID = newID()
 	req1 := base
 	req1.Outcome = audit.Requested
@@ -275,26 +333,21 @@ func (s *Server) control(w http.ResponseWriter, r *http.Request, action string) 
 	}
 	if err := audit.Append(ap, req1); err != nil {
 		s.Log.Printf("audit %s: %v", ap, err)
-		writeErr(w, http.StatusInternalServerError, "cannot write the audit log ("+err.Error()+"); nothing changed")
-		return
+		return base, "", fmt.Errorf("cannot write the audit log (%v); nothing changed", err)
 	}
-	next := risk.HaltState{Halted: action == "halt", Reason: base.Reason, By: base.By, At: base.At}
-	done := base
+	next := risk.HaltState{Halted: halted, Reason: base.Reason, By: base.By, At: base.At}
+	done = base
 	if err := writeHaltFile(l.Store.HaltPath(), next); err != nil {
 		done.Outcome, done.Error = audit.Failed, err.Error()
-		note(done)
-		writeErr(w, http.StatusInternalServerError, "could not write the halt file: "+err.Error())
-		return
+		s.noteAll([]string{ap}, done)
+		return done, "", fmt.Errorf("could not write the halt file: %v", err)
 	}
 	done.Outcome, done.After = audit.Done, &next
-	resp := ControlResponse{Ledger: l.Name, Action: action, Audit: done}
 	if err := audit.Append(ap, done); err != nil {
 		s.Log.Printf("audit %s: %v", ap, err)
-		resp.AuditError = err.Error()
+		auditErr = err.Error()
 	}
-	_, resp.HaltFile = s.policyFor(l)
-	s.Log.Printf("control %s ledger=%s by=%q id=%s", action, l.Name, base.By, base.ID)
-	writeJSON(w, http.StatusOK, resp)
+	return done, auditErr, nil
 }
 
 // writeHaltFile replaces the halt file atomically (temp file in the same

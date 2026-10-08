@@ -21,6 +21,7 @@ import (
 
 	"bitso-trading-platform/shared/pkg/dailyledger"
 	"bitso-trading-platform/shared/pkg/risk"
+	"bitso-trading-platform/ui-api/internal/executor"
 	"bitso-trading-platform/ui-api/internal/live"
 	"bitso-trading-platform/ui-api/internal/objstore"
 	"bitso-trading-platform/ui-api/internal/research"
@@ -58,6 +59,12 @@ type Server struct {
 	// the API read-only. See controls.go.
 	OperatorToken string
 	controlsMu    sync.Mutex
+	// Executor is the intraday strategy-executor (loopback) for the
+	// Strategies page; nil lists ledgers only. See strategies.go.
+	Executor *executor.Client
+	// StrategyAuditPath is the strategy start/stop audit log; empty means
+	// ui-strategy-audit.jsonl next to the first local ledger.
+	StrategyAuditPath string
 }
 
 var (
@@ -206,6 +213,10 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/ui/controls", s.controls)
 	mux.HandleFunc("POST /api/ui/risk/halt", s.haltAction)
 	mux.HandleFunc("POST /api/ui/risk/resume", s.resumeAction)
+	mux.HandleFunc("POST /api/ui/risk/halt-all", s.haltAll)
+	mux.HandleFunc("GET /api/ui/strategies", s.strategies)
+	mux.HandleFunc("POST /api/ui/strategies/{name}/start", s.startStrategy)
+	mux.HandleFunc("POST /api/ui/strategies/{name}/stop", s.stopStrategy)
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusNotFound, "no such endpoint")
 	})
@@ -223,7 +234,7 @@ func (s *Server) middleware(next http.Handler) http.Handler {
 		h.Set("X-Frame-Options", "DENY")
 		h.Set("Referrer-Policy", "no-referrer")
 		if r.Method != http.MethodGet && r.Method != http.MethodHead &&
-			!(r.Method == http.MethodPost && controlPaths[r.URL.Path]) {
+			!(r.Method == http.MethodPost && isControlPath(r.URL.Path)) {
 			// Read-only API: only the audited operator controls may change
 			// trading state.
 			writeErr(w, http.StatusMethodNotAllowed, "read-only API")

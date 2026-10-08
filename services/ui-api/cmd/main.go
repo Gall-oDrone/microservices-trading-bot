@@ -29,6 +29,12 @@
 //
 //	umask 077; openssl rand -hex 32 > ~/.config/mtb/operator-token
 //	go run ./cmd -operator-token-file ~/.config/mtb/operator-token
+//
+// The Strategies page also lists (and, with the token, starts and stops) the
+// intraday strategy-executor's strategies when -strategy-executor-url points
+// at it on a loopback address:
+//
+//	go run ./cmd -operator-token-file ~/.config/mtb/operator-token -strategy-executor-url http://127.0.0.1:8081
 package main
 
 import (
@@ -50,6 +56,7 @@ import (
 
 	"bitso-trading-platform/shared/pkg/risk"
 	"bitso-trading-platform/ui-api/internal/api"
+	"bitso-trading-platform/ui-api/internal/executor"
 	"bitso-trading-platform/ui-api/internal/live"
 	"bitso-trading-platform/ui-api/internal/research"
 	"bitso-trading-platform/ui-api/internal/store"
@@ -77,6 +84,8 @@ func main() {
 	studiesDir := flag.String("studies-dir", env("UI_API_STUDIES_DIR", "../../docs/backtest-readiness"), "study write-ups (markdown) for the Research page")
 	archiveURI := flag.String("archive", env("UI_API_ARCHIVE", ""), "collector trade archive s3://bucket for the data-health page, read-only (default: off)")
 	tokenFile := flag.String("operator-token-file", env("UI_API_OPERATOR_TOKEN_FILE", ""), "enable operator controls (halt/resume, audited) with the token in this 0600 file (default: off, read-only)")
+	executorURL := flag.String("strategy-executor-url", env("UI_API_STRATEGY_EXECUTOR_URL", ""), "intraday strategy-executor base URL (loopback) for the Strategies page; start/stop also needs -operator-token-file (default: off)")
+	strategyAudit := flag.String("strategy-audit-file", env("UI_API_STRATEGY_AUDIT_FILE", ""), "strategy start/stop audit log (default: "+api.StrategyAuditFile+" next to the first local ledger)")
 	flag.Parse()
 
 	if *printPolicy {
@@ -126,6 +135,13 @@ func main() {
 		if srv.OperatorToken, err = api.LoadOperatorToken(*tokenFile); err != nil {
 			logger.Fatal("-operator-token-file: ", err)
 		}
+	}
+	if *executorURL != "" {
+		if srv.Executor, err = executor.New(*executorURL); err != nil {
+			logger.Fatal("-strategy-executor-url: ", err)
+		}
+		srv.StrategyAuditPath = *strategyAudit
+		logger.Printf("strategies: strategy-executor %s", srv.Executor.URL())
 	}
 	ctx, stopLive := context.WithCancel(context.Background())
 	defer stopLive()
