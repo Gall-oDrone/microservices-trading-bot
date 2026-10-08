@@ -14,14 +14,14 @@ import { http, HttpResponse } from 'msw'
 type Json = Record<string, unknown>
 type Fixture = (request: Request, name: string) => Response
 
-interface HaltState {
+export interface HaltState {
   halted: boolean
   reason?: string
   by?: string
   at?: string
 }
 
-interface Entry {
+export interface Entry {
   id: string
   at: string
   action: string
@@ -34,10 +34,20 @@ interface Entry {
   before?: HaltState
   after?: HaltState
   error?: string
+  group?: string
+  strategy?: string
+  executor?: string
+  upstream_status?: number
+  detail?: string
 }
 
 const state = new Map<string, { halt: HaltState | null; audit: Entry[] }>()
 let seq = 0
+
+/** A fresh mock audit id (shared by the strategies mock). */
+export function nextMockId() {
+  return `mock-${++seq}`
+}
 
 /** Forget every mock halt and audit line (tests call this between cases). */
 export function resetMockControls() {
@@ -45,7 +55,8 @@ export function resetMockControls() {
   seq = 0
 }
 
-function ledgerState(ledger: string) {
+/** The mock halt and audit log of a ledger, created on first use. */
+export function ledgerState(ledger: string) {
   let s = state.get(ledger)
   if (!s) {
     s = { halt: null, audit: [] }
@@ -54,7 +65,7 @@ function ledgerState(ledger: string) {
   return s
 }
 
-function haltFileInfo(path: string, h: HaltState | null) {
+export function haltFileInfo(path: string, h: HaltState | null) {
   return {
     path,
     found: h !== null,
@@ -131,7 +142,7 @@ export function controlHandlers(fixture: Fixture, defaultLedger: string) {
       const s = ledgerState(ledger)
       const now = new Date().toISOString()
       const log = (e: Omit<Entry, 'id' | 'at' | 'action' | 'ledger'>): Entry => {
-        const entry: Entry = { id: `mock-${++seq}`, at: now, action, ledger, user_agent: 'msw', ...e }
+        const entry: Entry = { id: nextMockId(), at: now, action, ledger, user_agent: 'msw', ...e }
         s.audit.unshift(entry)
         return entry
       }

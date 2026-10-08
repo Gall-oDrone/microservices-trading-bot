@@ -13,6 +13,10 @@ curl -fsS "$API/api/ui/ledgers" > "$OUT/ledgers.json"
 curl -fsS "$API/api/ui/live?books=btc_mxn,btc_usd" > "$OUT/live.json"
 # The Market page's view (?market=1): depth, spread and the trade tape per book.
 curl -fsS "$API/api/ui/live?books=btc_mxn,btc_usd&market=1" > "$OUT/live-market.json"
+# Strategies page: ledgers, kill switch and the strategy-executor's strategies
+# (needs ui-api -strategy-executor-url and -operator-token-file for the
+# controls to read "enabled"). GET only; the capture never starts or stops anything.
+curl -fsS "$API/api/ui/strategies" > "$OUT/strategies.json"
 LEDGERS=$(node -e 'const l=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")).ledgers;console.log(l.map(x=>x.name).join(" "))' "$OUT/ledgers.json")
 for l in $LEDGERS; do
   D="$OUT/$l"

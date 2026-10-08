@@ -358,6 +358,13 @@ export const auditEntrySchema = z.object({
   before: haltStateSchema.optional(),
   after: haltStateSchema.optional(),
   error: z.string().optional(),
+  /** Halt-all: ties the per-ledger lines of one kill switch together. */
+  group: z.string().optional(),
+  /** Strategy start/stop (ledger is "" for those). */
+  strategy: z.string().optional(),
+  executor: z.string().optional(),
+  upstream_status: z.number().optional(),
+  detail: z.string().optional(),
 })
 export type AuditEntry = z.infer<typeof auditEntrySchema>
 
@@ -382,6 +389,105 @@ export const controlResponseSchema = z.object({
   audit_error: z.string().optional(),
 })
 export type ControlResponse = z.infer<typeof controlResponseSchema>
+
+// --- Strategies page (services/ui-api/internal/api/strategies.go) ---
+
+/** An operator hold on a strategy-executor strategy (persisted stop). */
+export const holdSchema = z.object({
+  name: z.string().optional(),
+  reason: z.string(),
+  by: z.string(),
+  at: z.string(),
+})
+export type Hold = z.infer<typeof holdSchema>
+
+export const strategyViewSchema = z.object({
+  name: z.string(),
+  type: z.string(),
+  version: z.string(),
+  book: z.string(),
+  running: z.boolean(),
+  enabled: z.boolean(),
+  dry_run: z.boolean().optional(),
+  has_position: z.boolean(),
+  position_side: z.string().optional(),
+  position_size: z.number(),
+  entry_price: z.number().optional(),
+  unrealized_pnl: z.number(),
+  pending_buy: z.boolean(),
+  pending_sell: z.boolean(),
+  signal_count: z.number(),
+  trade_count: z.number(),
+  last_signal_at: z.string().optional(),
+  total_pnl: z.number(),
+  daily_pnl: z.number(),
+  win_rate: z.number(),
+  hold: holdSchema.optional(),
+})
+export type StrategyView = z.infer<typeof strategyViewSchema>
+
+export const ledgerControlSchema = z.object({
+  name: z.string(),
+  remote: z.boolean(),
+  controls_enabled: z.boolean(),
+  disabled_reason: z.string().optional(),
+  halt_file: haltFileSchema,
+})
+export type LedgerControl = z.infer<typeof ledgerControlSchema>
+
+/** GET /api/ui/strategies. */
+export const strategiesInfoSchema = z.object({
+  ledgers: z.array(ledgerControlSchema),
+  kill_switch: z.object({
+    enabled: z.boolean(),
+    disabled_reason: z.string().optional(),
+    confirm: z.string(),
+    targets: z.array(z.string()),
+    already_halted: z.array(z.string()),
+  }),
+  executor: z.object({
+    configured: z.boolean(),
+    url: z.string().optional(),
+    reachable: z.boolean(),
+    error: z.string().optional(),
+    controls_enabled: z.boolean(),
+    disabled_reason: z.string().optional(),
+    holds_supported: z.boolean(),
+    fetched_at: z.string().optional(),
+  }),
+  strategies: z.array(strategyViewSchema),
+  /** Holds on names the executor does not have registered now. */
+  holds: z.array(holdSchema),
+  audit_path: z.string().optional(),
+  audit: z.array(auditEntrySchema),
+  audit_error: z.string().optional(),
+})
+export type StrategiesInfo = z.infer<typeof strategiesInfoSchema>
+
+/** POST /api/ui/strategies/{name}/start|stop. */
+export const strategyControlResponseSchema = z.object({
+  strategy: z.string(),
+  action: z.enum(['start', 'stop']),
+  upstream: z.record(z.string(), z.unknown()),
+  audit: auditEntrySchema,
+  audit_error: z.string().optional(),
+})
+export type StrategyControlResponse = z.infer<typeof strategyControlResponseSchema>
+
+/** POST /api/ui/risk/halt-all (the kill switch). */
+export const haltAllResponseSchema = z.object({
+  action: z.literal('halt_all'),
+  group: z.string(),
+  results: z.array(
+    z.object({
+      ledger: z.string(),
+      outcome: z.enum(['halted', 'already_halted', 'failed']),
+      error: z.string().optional(),
+      halt_file: haltFileSchema,
+    }),
+  ),
+})
+export type HaltAllResponse = z.infer<typeof haltAllResponseSchema>
 
 export const healthSchema = z.object({
   status: z.string(),

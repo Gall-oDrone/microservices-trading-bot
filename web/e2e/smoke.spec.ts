@@ -140,6 +140,66 @@ test('risk: operator controls halt and resume through the confirmation dialog', 
   await expectHealthy(page, errors)
 })
 
+test('strategies: ledgers, stop and start a strategy, then the kill switch', async ({ page }) => {
+  const errors = watchConsole(page)
+  await page.goto('/forward-tests')
+  await page.locator('#nav-strategies').click()
+  await expect(page).toHaveURL(/\/strategies$/)
+  await expect(page).toHaveTitle(/Strategies/)
+  await expect(page.getByRole('heading', { level: 1, name: 'Strategies' })).toBeVisible()
+  await expect(page.getByTestId('ledger-card-stage')).toHaveAttribute('data-state', 'running')
+  await expect(page.getByTestId('ledger-card-dry-run')).toBeVisible()
+  const table = page.getByTestId('strategies-table')
+  await expect(table).toBeVisible()
+  await expect(page.getByTestId('strategy-row-mr_btc_demo')).toContainText('held')
+  await expectHealthy(page, errors)
+
+  // Stop: a hold.
+  await page.locator('#strategy-stop-lp_btc_demo').click()
+  const stop = page.getByRole('dialog', { name: 'Stop and hold strategy' })
+  await expect(stop).toBeVisible()
+  const box = await stop.boundingBox()
+  const vp = page.viewportSize() ?? { width: 0, height: 0 }
+  expect(box && box.x >= 0 && box.x + box.width <= vp.width + 1, 'dialog fits the viewport width').toBe(true)
+  await page.locator('#control-reason').fill('E2E: pausing the limit demo')
+  await page.locator('#control-by').fill('e2e')
+  await page.locator('#control-confirm').fill('lp_btc_demo')
+  await page.locator('#control-token').fill('mock-token')
+  await page.locator('#control-submit').click()
+  await expect(stop).toBeHidden()
+  await expect(page.getByTestId('strategy-flash')).toContainText('Stopped and held lp_btc_demo')
+  await expect(page.getByTestId('strategy-row-lp_btc_demo')).toContainText('held')
+  await expect(page.locator('#strategy-start-lp_btc_demo')).toBeFocused()
+
+  // Start: releases the hold.
+  await page.locator('#strategy-start-lp_btc_demo').click()
+  const start = page.getByRole('dialog', { name: 'Start strategy' })
+  await expect(page.getByTestId('control-current')).toContainText('E2E: pausing the limit demo')
+  await page.locator('#control-reason').fill('E2E: back on')
+  await page.locator('#control-confirm').fill('lp_btc_demo')
+  await page.keyboard.press('Enter')
+  await expect(start).toBeHidden()
+  await expect(page.getByTestId('strategy-row-lp_btc_demo')).toContainText('running')
+  await expect(page.getByTestId('strategies-card').getByTestId('audit-row')).toHaveCount(4)
+
+  // Kill switch: mock ledgers only.
+  await page.locator('#kill-switch-open').click()
+  const ks = page.getByRole('dialog', { name: 'Halt all ledgers' })
+  await page.locator('#control-reason').fill('E2E: kill switch drill')
+  await page.locator('#control-confirm').fill('HALT ALL')
+  await page.locator('#control-submit').click()
+  await expect(ks).toBeHidden()
+  await expect(page.getByTestId('halt-all-flash')).toContainText('stage halted')
+  await expect(page.getByTestId('ledger-card-stage')).toHaveAttribute('data-state', 'halted')
+  await expect(page.getByTestId('killswitch-count')).toHaveText('all halted')
+  await expectHealthy(page, errors)
+
+  await page.locator('#ledger-risk-stage').click()
+  await expect(page).toHaveURL(/\/risk\?ledger=stage$/)
+  await expect(page.getByTestId('operator-controls')).toHaveAttribute('data-state', 'halted')
+  await expect(page.locator('#banner-halt')).toContainText('E2E: kill switch drill')
+})
+
 test('market: tickers, depth ladder, trade tape and candles over the live stream', async ({ page }) => {
   const errors = watchConsole(page)
   await page.goto('/forward-tests')

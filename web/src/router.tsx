@@ -11,6 +11,7 @@ import { ResearchPage } from './pages/ResearchPage'
 import { RiskPage } from './pages/RiskPage'
 import { RunPage } from './pages/RunPage'
 import { RunsPage } from './pages/RunsPage'
+import { StrategiesPage } from './pages/StrategiesPage'
 import { StudyPage } from './pages/StudyPage'
 
 export const routes: RouteObject[] = [
@@ -22,6 +23,7 @@ export const routes: RouteObject[] = [
       { path: 'forward-tests', element: <ForwardTestsPage /> },
       { path: 'forward-tests/:book', element: <ForwardTestDetailPage /> },
       { path: 'risk', element: <RiskPage /> },
+      { path: 'strategies', element: <StrategiesPage /> },
       { path: 'market', element: <MarketPage /> },
       { path: 'data-health', element: <DataHealthPage /> },
       { path: 'research', element: <ResearchPage /> },

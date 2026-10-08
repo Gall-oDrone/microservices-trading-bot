@@ -12,6 +12,7 @@ import {
   riskResponseSchema,
   runDocSchema,
   runsResponseSchema,
+  strategiesInfoSchema,
   studiesResponseSchema,
   studyDocSchema,
 } from './schemas'
@@ -103,6 +104,7 @@ export const queryKeys = {
   run: (id: string) => ['run', id] as const,
   dataHealth: (ledger: string) => ['data-health', ledger] as const,
   controls: (ledger: string) => ['controls', ledger] as const,
+  strategies: ['strategies'] as const,
 }
 
 export function useForwardTests() {
@@ -154,6 +156,19 @@ export function useControls() {
     queryKey: queryKeys.controls(ledger),
     queryFn: ({ signal }) => fetchJSON(withLedger('/controls', ledger), controlsInfoSchema, signal),
     refetchInterval: REFRESH_MS,
+  })
+}
+
+/**
+ * Every ledger's halt state, the kill switch, and the intraday
+ * strategy-executor's strategies. Intraday strategies change faster than the
+ * daily ledger, so this polls every 10 s.
+ */
+export function useStrategies() {
+  return useQuery({
+    queryKey: queryKeys.strategies,
+    queryFn: ({ signal }) => fetchJSON('/strategies', strategiesInfoSchema, signal),
+    refetchInterval: 10_000,
   })
 }
 

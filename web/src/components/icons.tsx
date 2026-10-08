@@ -24,6 +24,12 @@ export const IconShield = (p: P) => (
     <path d="M9 12l2 2 4-4" />
   </svg>
 )
+export const IconPower = (p: P) => (
+  <svg {...base} {...p}>
+    <path d="M12 3v8" />
+    <path d="M6.3 6.8a8 8 0 1011.4 0" />
+  </svg>
+)
 export const IconFlask = (p: P) => (
   <svg {...base} {...p}>
     <path d="M9 3h6M10 3v6L4.5 18.5A1.7 1.7 0 006 21h12a1.7 1.7 0 001.5-2.5L14 9V3" />

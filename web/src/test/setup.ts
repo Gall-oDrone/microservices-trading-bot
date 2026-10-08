@@ -4,6 +4,7 @@ import { setupServer } from 'msw/node'
 import { afterAll, afterEach, beforeAll, vi } from 'vitest'
 import { resetMockControls } from '../mocks/controls'
 import { handlers } from '../mocks/handlers'
+import { resetMockStrategies } from '../mocks/strategies'
 
 // Lightweight Charts needs a real canvas; tests check data and text, not pixels.
 vi.mock('lightweight-charts', () => {
@@ -38,6 +39,7 @@ beforeAll(() => server.listen({ onUnhandledRequest: 'error' }))
 afterEach(() => {
   server.resetHandlers()
   resetMockControls()
+  resetMockStrategies()
   cleanup()
 })
 afterAll(() => server.close())

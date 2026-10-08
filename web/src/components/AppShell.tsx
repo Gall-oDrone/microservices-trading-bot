@@ -16,6 +16,7 @@ import {
   IconGrid,
   IconLogo,
   IconMoon,
+  IconPower,
   IconPulse,
   IconShield,
   IconSun,
@@ -139,6 +140,9 @@ function Nav() {
             <Badge tone={blocks > 0 ? 'block' : 'warn'}>{blocks > 0 ? blocks : warns}</Badge>
           </span>
         )}
+      </NavLink>
+      <NavLink to={{ pathname: '/strategies', search }} className="nav-link" id="nav-strategies">
+        <IconPower /> Strategies
       </NavLink>
       <NavLink to={{ pathname: '/market', search }} className="nav-link" id="nav-market">
         <IconCandles /> Market

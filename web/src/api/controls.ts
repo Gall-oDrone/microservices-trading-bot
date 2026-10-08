@@ -6,9 +6,16 @@
  * nothing but halt/resume on the local ledgers. ui-api writes an audit line
  * for every attempt.
  */
-import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQueryClient, type QueryClient } from '@tanstack/react-query'
 import { ApiError, fetchJSON, useLedgerName, withLedger } from './client'
-import { controlResponseSchema, type ControlResponse } from './schemas'
+import {
+  controlResponseSchema,
+  haltAllResponseSchema,
+  strategyControlResponseSchema,
+  type ControlResponse,
+  type HaltAllResponse,
+  type StrategyControlResponse,
+} from './schemas'
 
 const TOKEN_KEY = 'mtb-operator-token'
 
@@ -40,7 +47,7 @@ export interface ControlInput {
   token: string
 }
 
-export type ControlField = 'reason' | 'by' | 'confirm' | 'token'
+export type ControlField = 'reason' | 'by' | 'confirm' | 'token' | 'ack'
 
 export interface ControlProblem {
   field: ControlField
@@ -70,6 +77,30 @@ export function sendControl(i: ControlInput, ledger: string): Promise<ControlRes
   })
 }
 
+/** Every view that shows a halt, a hold or an audit log. The audit log changes even when the action is refused. */
+function refreshControlViews(qc: QueryClient) {
+  void qc.invalidateQueries({ queryKey: ['controls'] })
+  void qc.invalidateQueries({ queryKey: ['risk'] })
+  void qc.invalidateQueries({ queryKey: ['forward-tests'] })
+  void qc.invalidateQueries({ queryKey: ['strategies'] })
+}
+
+function rememberToken(token: string) {
+  setOperatorToken(token.trim())
+}
+
+function forgetRejectedToken(e: unknown) {
+  if (e instanceof ApiError && e.status === 401) setOperatorToken('')
+}
+
+function post(token: string, body: unknown): RequestInit {
+  return {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token.trim()}` },
+    body: JSON.stringify(body),
+  }
+}
+
 /**
  * Halt or resume the selected ledger. On success the token is remembered
  * for the tab and every view that shows the halt is refreshed; a 401
@@ -80,17 +111,75 @@ export function useControlMutation() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: (i: ControlInput) => sendControl(i, ledger),
-    onSuccess: (_r, i) => {
-      setOperatorToken(i.token.trim())
-    },
-    onError: (e) => {
-      if (e instanceof ApiError && e.status === 401) setOperatorToken('')
-    },
-    onSettled: () => {
-      // The audit log changes even when the action is refused.
-      void qc.invalidateQueries({ queryKey: ['controls'] })
-      void qc.invalidateQueries({ queryKey: ['risk'] })
-      void qc.invalidateQueries({ queryKey: ['forward-tests'] })
-    },
+    onSuccess: (_r, i) => rememberToken(i.token),
+    onError: forgetRejectedToken,
+    onSettled: () => refreshControlViews(qc),
+  })
+}
+
+export type StrategyAction = 'start' | 'stop'
+
+export interface StrategyControlInput {
+  name: string
+  action: StrategyAction
+  reason: string
+  by: string
+  /** The strategy name typed again. */
+  confirm: string
+  token: string
+  /** Stop even though the strategy holds a position or a pending order. */
+  ackPosition?: boolean
+}
+
+export function sendStrategyControl(i: StrategyControlInput): Promise<StrategyControlResponse> {
+  return fetchJSON(
+    `/strategies/${encodeURIComponent(i.name)}/${i.action}`,
+    strategyControlResponseSchema,
+    undefined,
+    post(i.token, {
+      reason: i.reason.trim(),
+      by: i.by.trim(),
+      confirm: i.confirm,
+      ...(i.ackPosition ? { ack_position: true } : {}),
+    }),
+  )
+}
+
+/** Operator start (releases a hold) or stop (holds, survives restarts) of a strategy-executor strategy. */
+export function useStrategyControlMutation() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: sendStrategyControl,
+    onSuccess: (_r, i) => rememberToken(i.token),
+    onError: forgetRejectedToken,
+    onSettled: () => refreshControlViews(qc),
+  })
+}
+
+export interface HaltAllInput {
+  reason: string
+  by: string
+  /** The phrase ("HALT ALL") typed again. */
+  confirm: string
+  token: string
+}
+
+export function sendHaltAll(i: HaltAllInput): Promise<HaltAllResponse> {
+  return fetchJSON(
+    '/risk/halt-all',
+    haltAllResponseSchema,
+    undefined,
+    post(i.token, { reason: i.reason.trim(), by: i.by.trim(), confirm: i.confirm }),
+  )
+}
+
+/** The kill switch: halt every local ledger at once. */
+export function useHaltAllMutation() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: sendHaltAll,
+    onSuccess: (_r, i) => rememberToken(i.token),
+    onError: forgetRejectedToken,
+    onSettled: () => refreshControlViews(qc),
   })
 }

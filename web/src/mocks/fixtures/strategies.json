@@ -1,0 +1,113 @@
+{
+  "ledgers": [
+    {
+      "name": "stage",
+      "remote": false,
+      "controls_enabled": true,
+      "halt_file": {
+        "path": "../strategy-executor/daily-executor-data/stage/risk-state.json",
+        "found": false,
+        "halted": false,
+        "reason": "",
+        "by": "",
+        "at": ""
+      }
+    },
+    {
+      "name": "dry-run",
+      "remote": false,
+      "controls_enabled": true,
+      "halt_file": {
+        "path": "../strategy-executor/daily-executor-data/risk-state.json",
+        "found": false,
+        "halted": false,
+        "reason": "",
+        "by": "",
+        "at": ""
+      }
+    }
+  ],
+  "kill_switch": {
+    "enabled": true,
+    "confirm": "HALT ALL",
+    "targets": [
+      "stage",
+      "dry-run"
+    ],
+    "already_halted": []
+  },
+  "executor": {
+    "configured": true,
+    "url": "http://127.0.0.1:18081",
+    "reachable": true,
+    "controls_enabled": true,
+    "holds_supported": true,
+    "fetched_at": "2026-10-08T15:29:57Z"
+  },
+  "strategies": [
+    {
+      "name": "lp_btc_demo",
+      "type": "limit_profit",
+      "version": "1.0.0",
+      "book": "btc_mxn",
+      "running": true,
+      "enabled": true,
+      "dry_run": true,
+      "has_position": false,
+      "position_size": 0,
+      "unrealized_pnl": 0,
+      "pending_buy": false,
+      "pending_sell": false,
+      "signal_count": 0,
+      "trade_count": 0,
+      "total_pnl": 0,
+      "daily_pnl": 0,
+      "win_rate": 0
+    },
+    {
+      "name": "mom_eth_demo",
+      "type": "momentum",
+      "version": "1.0.0",
+      "book": "eth_mxn",
+      "running": false,
+      "enabled": true,
+      "dry_run": true,
+      "has_position": false,
+      "position_size": 0,
+      "unrealized_pnl": 0,
+      "pending_buy": false,
+      "pending_sell": false,
+      "signal_count": 0,
+      "trade_count": 0,
+      "total_pnl": 0,
+      "daily_pnl": 0,
+      "win_rate": 0
+    },
+    {
+      "name": "mr_btc_demo",
+      "type": "mean_reversion",
+      "version": "1.0.0",
+      "book": "btc_mxn",
+      "running": false,
+      "enabled": true,
+      "has_position": false,
+      "position_size": 0,
+      "unrealized_pnl": 0,
+      "pending_buy": false,
+      "pending_sell": false,
+      "signal_count": 0,
+      "trade_count": 0,
+      "total_pnl": 0,
+      "daily_pnl": 0,
+      "win_rate": 0,
+      "hold": {
+        "reason": "live verification of hold",
+        "by": "agent",
+        "at": "2026-10-08T15:16:51.889435237Z"
+      }
+    }
+  ],
+  "holds": [],
+  "audit_path": "../strategy-executor/daily-executor-data/stage/ui-strategy-audit.jsonl",
+  "audit": []
+}
