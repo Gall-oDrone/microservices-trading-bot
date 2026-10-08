@@ -77,7 +77,7 @@ runs, the **development vs holdout comparison**), §8.5.
 | Tables | Plain semantic tables | TanStack Table deferred until a table needs sorting or virtualization |
 | Styling | **Global design tokens** (`web/src/index.css`, CSS variables), dark theme | One stylesheet instead of CSS Modules while the app is small |
 | Components | Own primitives (`components/ui.tsx`) | Radix deferred until dialogs are needed (Phase 4 confirmations) |
-| Live updates | Polling (TanStack Query) | SSE in Phase 3 with the market page |
+| Live updates | Polling (TanStack Query); **SSE** for live prices (§8.3) and the Market page (§8.11) | One EventSource per page through `ui-api` |
 | Testing | **Vitest + Testing Library + MSW** | MSW serves fixtures **captured from the real `ui-api`** (`npm run fixtures`); Playwright deferred |
 | Quality | ESLint (typescript-eslint), Prettier, `tsc -b` | `npm run ci` runs all of them plus the build |
 | Node | Portable Node 22 in `.tools/node` (gitignored) | No system Node on the dev box |
@@ -116,8 +116,8 @@ Location: `web/` at the repo root, served by Vite in development (proxying `/api
 - Backtest runs from the `backtesting` service: equity curve, trades, parameters. Pick **one** canonical engine first (see §7).
 - The volume-confirmed SMA50 variant, once pre-registered, gets its own forward-test card from its separate dry-run ledger (`ui-api -ledger …`; multi-ledger support needed, §8).
 
-### 4.4 Market (Phase 3)
-- Ticker and spread per book, recent trades, order-book depth (from `market-data` REST, live via SSE).
+### 4.4 Market (built 2026-10-08, §8.11)
+- Ticker and spread per book, recent trades, order-book depth, live via SSE through `ui-api`. Source: Bitso's public WebSocket through the `ui-api` live hub, not `market-data` REST (§8.11).
 - Daily candles with volume and the 20-day volume ratio. The ratio is already computed by `ui-api` (`volume_ratio_20d`).
 
 ### 4.5 Data health (built 2026-10-07, §8.7)
@@ -145,8 +145,8 @@ Location: `web/` at the repo root, served by Vite in development (proxying `/api
 | `GET /api/ui/forward-tests/{book}/candles?days=180` | latest `<book>_daily_<date>.csv` | + SMA50, `long`, `volume_ratio_20d`; SMA50 matches the ledger to the cent (tested) |
 | `GET /api/ui/risk` | ledger + candles + risk policy | policy, exposure, utilization, next-order check, realized cost, findings, halt file |
 | `GET /api/ui/ledgers` | configured ledgers (`-ledgers`) | name, path, found, records, default; every endpoint above takes `?ledger=<name>` |
-| `GET /api/ui/live?books=` | live hub (Bitso public WS) | snapshot JSON: upstream status, last trade, bid/ask, forming candle, provisional flip level. Display only; 503 with `-live=false` |
-| `GET /api/ui/stream?books=` | live hub | Server-Sent Events: `snapshot`, `book` (≤1/s per book), `status`, `heartbeat` (15 s) |
+| `GET /api/ui/live?books=[&market=1]` | live hub (Bitso public WS) | snapshot JSON: upstream status, last trade, bid/ask, forming candle, provisional flip level. With `market=1` also `markets[]`: top-20 depth per side, spread, last 50 trades (§8.11). Display only; 503 with `-live=false` |
+| `GET /api/ui/stream?books=[&market=1]` | live hub | Server-Sent Events: `snapshot`, `book` (≤1/s per book), `status`, `heartbeat` (15 s); with `market=1` also `market` (after each `book`) |
 | `GET /api/ui/research/studies` | `-studies-dir` (default `docs/backtest-readiness`) | metadata per study: kind, date, question, summary, follows, references, evidence dir; empty list if the dir is missing |
 | `GET /api/ui/research/studies/{name}` | one study file | sanitized HTML (goldmark, raw HTML dropped), h2/h3 headings, followed-by / referenced-by; 400 bad name, 404 unknown |
 | `GET /api/ui/research/runs` | `research-run/v1` JSON in `evidence-<date>/` | summary per report: data, costs (incl. additive `level`/`note`), window headers, per-rule beat-hold scores, citing studies; unreadable reports listed as `skipped` |
@@ -283,7 +283,7 @@ returns the executor's last recorded check. The Risk page shows all of it.
 | **1. Forward tests + risk, local** | Forward-tests pages and Risk page against a local `ui-api` reading the local ledger; localhost only | Today's signal, paper vs hold, fills and fees for both books, matching the CLI output | **Done** |
 | **1b. Close-out** | GitHub Actions job (`go test` for shared, ui-api, daily-executor; `npm run ci`), Playwright smoke test, multi-ledger support in `ui-api` (stage + dry-run + future volume variant), risk step **R1** | CI runs on every PR; a blocked order is enforced and visible | **Done**: R1 (2026-10-05); CI (`operator-ui.yml`), multi-ledger, Playwright (2026-10-06) |
 | **2. Research + data health** | Study index, strategy comparison (needs `-json`), data-health page, ledger read from S3, risk **R2** + **R3** | Holdout vs development tables match the evidence files; a missed run alerts | **R2 done**, **study index done** (2026-10-06), **runs + comparison done**, **data health done**, **S3 ledger done**, **R3 done** (2026-10-07) |
-| **3. Market data** | Market page via BFF proxy and SSE; candles with volume ratio | Live ticker updates within 2 s; no direct browser calls to internal services | **Live-data slice done** (2026-10-06, §8.3); Market page still to build |
+| **3. Market data** | Market page via BFF proxy and SSE; candles with volume ratio | Live ticker updates within 2 s; no direct browser calls to internal services | **Done**: live-data slice (2026-10-06, §8.3); Market page (2026-10-08, §8.11) |
 | **4. Hardening + controls** | OIDC, TLS, CORS, audit log, role-gated controls (halt, kill switch, start/stop), risk **R4** | Security review passes; every control action is audited | |
 | **5. Deploy** | Static build behind CloudFront or served by `ui-api`; k8s/compose entries; risk **R5** | Reachable only through auth over HTTPS | |
 
@@ -590,6 +590,50 @@ unfinished bar is labelled provisional. The decision path never reads live data.
   City while the workstation is up. The watchdog fires only after 30 h, which happens only when
   the workstation (or its cron) is down.
 
+### 8.11 Market page (as built, 2026-10-08)
+
+- **Source decision.** The plan said "`market-data` REST, live via SSE". `market-data` (8083) is
+  not running and not reachable from the workstation, and it would add Kafka and Redis to a
+  display-only page. So the page extends the `ui-api` live hub (§8.3), which already holds one
+  connection to Bitso's public WebSocket. The browser still calls only `ui-api`. If `market-data`
+  comes back, the hub can be swapped behind the same contract.
+- **Contract (additive).** `?market=1` on `/api/ui/live` and `/api/ui/stream` adds `markets[]`
+  (one per book) and, on the stream, a `market` event after each `book` event. It goes only to
+  subscribers that asked for it, so the Forward-tests pages get the same bytes as before. Fields:
+  `bid`, `ask`, `mid`, `spread`, `spread_bps`, `bids`/`asks` (`{price, amount}`, best first),
+  `depth_at`, `trades` and `tape_seeded`. The levels are merged at equal prices, invalid levels
+  are dropped, and each side is capped at 20, which is what the Bitso `orders` channel sends as a
+  full snapshot. `trades` holds the newest 50 (`{id, price, amount, side, at}`), deduplicated by
+  id.
+- **Taker side.** In the WS `trades` channel, `t` = 0 is a taker buy and `t` = 1 is a taker sell.
+  This was checked against REST `/api/v3/trades`, whose `maker_side` is always the opposite for
+  the same `tid`. The tape colours the taker: a buy lifted the ask, a sell hit the bid.
+- **Tape seed.** When the hub connects it fetches the last 50 trades per book from REST
+  `/api/v3/trades` (`RESTTapeSeeder`), so the tape is full at once. `tape_seeded` says so. Live
+  trades merge in by id. A REST error (e.g. 429) only leaves the tape to fill from the WebSocket.
+- **Page (`/market`).**
+  - **Tickers.** One card per forward-test book: last trade with tick flash, taker side, bid/ask,
+    spread in quote and bps with a gauge. The cards are also the book switcher (`?book=`), and a
+    switch keeps the same stream.
+  - **Order book.** Top 12 levels per side: asks above, best at the bottom, then a spread/mid
+    row, then bids. Cumulative-depth bars share one scale, under a bid/ask share meter.
+  - **Recent trades.** Newest first, with taker-buy share and VWAP of the tape. New trades flash
+    on arrival.
+  - **Daily candles.** SMA50 and volume, highlighting days with `volume_ratio_20d` ≥ 1.5, plus
+    today's forming bar. Above the chart: last closed day's volume, the ratio, the implied 20-day
+    average and the number of high-volume days in the range.
+- **Done-when check.** Bid/ask/spread update on every flush (≤ 1 s per book) and the last price
+  updates on every trade, so the 2 s target holds.
+  `curl '127.0.0.1:8090/api/ui/live?books=btc_mxn,btc_usd&market=1'` showed spreads of about
+  2–6 bps, 14–20 levels per side and 50 seeded trades.
+- **Tests.**
+  - Go: level parsing and merging, tape order/dedupe/cap, seeded-tape merge, spread maths,
+    `market` events only for market subscribers, the REST seeder including a 429, and
+    `TestStreamMarket`.
+  - Web: the contract of the captured `live-market.json`, the helpers (`lib/market.ts`), page
+    render, book switch without reconnect, `market` events, contract errors.
+  - Playwright: desktop and phone.
+
 ---
 
 ## 9. How to run (local)
@@ -598,6 +642,7 @@ unfinished bar is labelled provisional. The decision path never reads live data.
 export PATH=$PWD/.tools/node/bin:$PATH              # portable Node 22
 (cd services/ui-api && go run ./cmd) &              # 127.0.0.1:8090, stage ledger, live on, studies from docs/backtest-readiness
 #   add -archive s3://mtb-development-data-archive-<account> for the Data health archive section
+#   the Market page is http://127.0.0.1:5173/market (needs live on, the default)
 # several ledgers, live data off, another studies dir:
 #   go run ./cmd -ledgers stage=<path>/ledger.jsonl,dry-run=<path>/ledger.jsonl -live=false -studies-dir <dir>
 # a ledger from its S3 copy (list/get only), next to a local one:
