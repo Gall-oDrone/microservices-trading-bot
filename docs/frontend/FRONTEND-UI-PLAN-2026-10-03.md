@@ -191,8 +191,8 @@ Still to build (Phase 2–3): `/market/{book}/…` proxy.
 ### 5.3 Prerequisites still open
 - ~~**Ledger location.**~~ **Done 2026-10-07 (§8.8):** `scripts/daily-executor-run.sh` uploads the
   ledger to `s3://…/daily-executor/<ledger>/` after each run when `DAILY_EXECUTOR_S3_URI` is set, and
-  `ui-api -ledgers name=s3://…` reads that copy. **Still open:** a scheduled run that sets it (none
-  of the runs so far did, so the prefix does not exist yet).
+  `ui-api -ledgers name=s3://…` reads that copy. ~~**Still open:** a scheduled run that sets it.~~
+  **Done:** the 06:15 UTC `ops-run.sh executor` cron job uploads it (first copy 2026-10-08 06:15 UTC).
 
 ---
 
@@ -202,10 +202,10 @@ Still to build (Phase 2–3): `/market/{book}/…` proxy.
 
 | Component | Enforces | Wired? |
 |---|---|---|
-| `order-management/internal/risk` | position ≤ `MAX_POSITION_SIZE`, open orders, order value, orders/minute; concentration (warn) | **Yes**, on the OM order path (`order_manager.go` → `CheckRisk`). But trading-engine can still place an order after OM rejects it (comments at `order_manager.go` L456/648). |
+| `order-management/internal/risk` | position ≤ `MAX_POSITION_SIZE`, open orders, order value, orders/minute; concentration (warn) | **Yes**, on the OM order path (`order_manager.go` → `CheckRisk`). ~~But trading-engine can still place an order after OM rejects it.~~ **Fixed 2026-10-08 (R5a, §6.4.2).** Exposure readable at `GET /api/v1/risk/exposure`. |
 | `order-management` `GET /api/v1/risk/session` | daily realized P&L, drawdown % | Read by trading-engine |
-| trading-engine `CheckSessionLimits` | `MaxDailyLoss`, `MaxDrawdownPct` | Called, but **both are 0** in `createTradingConfig()`, so it never blocks |
-| strategy-executor `internal/risk` | trade amount, positions, hours | **Dead code** (only used by an unused manager) |
+| trading-engine `CheckSessionLimits` | `MaxDailyLoss`, `MaxDrawdownPct` | ~~Called, but both are 0, so it never blocks.~~ **Blocks since 2026-10-08 (R5a):** from env, defaults 500 / 10 % |
+| strategy-executor `internal/risk` | trade amount, positions, hours | ~~Dead code~~ **Deleted 2026-10-08 (R5a)** with the unused `internal/manager` |
 | Strategy params `max_daily_loss_quote` | per-strategy daily-loss pause | limit-profit and momentum only |
 | daily-executor | `DAILY_EXECUTOR_DISABLED=1`, `-size` ≤ 0.01 BTC, stale-candle refusal, history-revision refusal, file lock, stage-only URL, balance check before orders; **since 2026-10-05 also `shared/pkg/risk.Check` before every stage order (R1)** | **Yes**, the only path that trades today |
 | Global halt / StopAll | none | **Missing** |
@@ -247,7 +247,8 @@ returns the executor's last recorded check. The Risk page shows all of it.
 | **R2 (done 2026-10-06)** Halt file, §8.2 | `risk-state.json` next to the ledger (`{halted, reason, by, at}`), read by the executor alongside `DAILY_EXECUTOR_DISABLED`; `ui-api` shows it read-only | Setting the file halts the next run and the UI shows who set it, when and why |
 | **R3 (done 2026-10-07)** Alerts, §8.9 | Alert on a missed or failed run (exit code ≠ 0), a block, or a warning. `ui-alerts` (cron, every 15 min) evaluates ui-api's own views and publishes to SNS (email) | A missed day pages within an hour of 06:00 Mexico City |
 | **R4 (done 2026-10-08, local token)** Halt from the UI, §8.12 | `POST /api/ui/risk/halt` and `/resume` with a required reason, an audit log (append-only JSONL), a confirmation dialog | Built localhost-only behind a 0600 operator-token file instead of OIDC (decided 2026-10-08); OIDC swaps in with Phase 4; every attempt is audited |
-| **R5** Platform-wide | Load trading-engine `MaxDailyLoss`/`MaxDrawdownPct` from env (non-zero defaults); stop trading-engine from placing orders OM rejected; expose OM `GetCurrentExposure`; move OM and trading-engine checks onto `shared/pkg/risk`; delete the dead strategy-executor risk package | One policy format across services; the session check actually blocks |
+| **R5a (done 2026-10-08)** Platform-wide, §6.4.2 | Load trading-engine `MaxDailyLoss`/`MaxDrawdownPct` from env (non-zero defaults); stop trading-engine from placing orders OM rejected; expose OM `GetCurrentExposure`; delete the dead strategy-executor risk package; live trading-engine fails closed (needs OM, stage only) | The session check actually blocks; a pending or rejected OM row never approves an order |
+| **R5b** Platform-wide | Move OM and trading-engine checks onto `shared/pkg/risk` (one policy format across services); trading-engine honours the halt (kill switch) | One policy format across services; HALT ALL also stops trading-engine |
 
 #### 6.4.1 R1 as built
 
@@ -276,6 +277,34 @@ returns the executor's last recorded check. The Risk page shows all of it.
 - Also fixed: `lastStagePosition` now takes the ledger lock (books finish in parallel goroutines).
 - Dated note for the forward tests:
   [`EXECUTION-RISK-GUARDS-2026-10-05.md`](../backtest-readiness/EXECUTION-RISK-GUARDS-2026-10-05.md).
+
+#### 6.4.2 R5a as built (2026-10-08)
+
+- **Session limits block.** `services/trading-engine/internal/guard` loads `TRADING_MAX_DAILY_LOSS`
+  (quote currency, default 500) and `TRADING_MAX_DRAWDOWN_PCT` (default 10) into the trading config;
+  the executor's `CheckSessionLimits` runs before every order with order-management's session P&L.
+  0, negative, NaN, a typo or a drawdown above 100 stops start-up (a typo must not disable a limit).
+- **Live mode fails closed.** Without `DRY_RUN` the engine refuses to start without
+  `ORDER_MANAGEMENT_URL` (pre-trade validation and session P&L come from it; without it every order
+  passed unchecked) and on any Bitso host but `stage.bitso.com` unless
+  `TRADING_ENGINE_ALLOW_PRODUCTION=1` (§11 Q3: production later, stage for now). k8s already sets
+  both (`k8s/base/trading-engine.yaml`).
+- **No order after an OM rejection.** order-management's signal consumer stores the order as
+  `pending` *before* it validates and risk-checks it, and trading-engine's `POST
+  /api/v1/orders/validate` treated that row as "risk already applied" and approved. A pending row now
+  vouches only once it settles: validation waits up to 2 s, approves if it becomes `validated`,
+  refuses if it is `rejected` (with the rejection reason) or still pending. Errors from either OM call
+  already blocked the order.
+- **Exposure.** `GET /api/v1/risk/exposure?book=<book>` on order-management: position size and
+  value, open orders, the position limit and utilization, as the risk check sees them.
+- **Dead code removed.** strategy-executor `internal/risk` and the unused `internal/manager` that
+  was its only importer.
+- **CI.** The `platform-risk` job in `operator-ui.yml` runs trading-engine's and order-management's
+  tests.
+- **Still R5b:** one policy format (`shared/pkg/risk`) across order-management and trading-engine,
+  and trading-engine honouring the halt so HALT ALL stops it too. The daily-executor's limits (one
+  0.01 BTC leg per book per day) do not fit intraday strategies, so this needs per-service limits in
+  the shared policy first.
 
 ### 6.5 First findings from the real stage ledger
 - **btc_mxn's first stage leg cost 118 bps against 70 assumed.** The post-only order rested 60 min, filled 0.1%, and fell back to market: taker fee 78 bps + 40 bps above the fill-day open. A stage leg is small and stage liquidity is thin, so this is not yet evidence about production costs. But it is the cost signal to watch: the pre-registration's secondary (taker) scenario is 88 bps per leg, and this leg exceeded both.
@@ -876,7 +905,7 @@ python3 -m unittest discover -s infrastructure/lambda/ledger-watchdog   # §8.10
 
 1. ~~Who uses it?~~ One operator for now. Phase 1 is localhost-only with no auth (decided 2026-10-03).
 2. ~~Hosting?~~ Local first (decided). AWS when Phase 4 auth exists.
-3. Should controls ever reach production trading, or stay limited to stage?
-4. Is Grafana enough for service metrics, so the UI covers only trading and research views? (Recommended: yes, and link out to Grafana.)
+3. ~~Should controls ever reach production trading, or stay limited to stage?~~ **Yes, they will reach production; for now they stay limited to stage** (decided 2026-10-08). Enforced: the daily-executor trades only on the stage URL, and a live trading-engine refuses a non-stage Bitso host unless `TRADING_ENGINE_ALLOW_PRODUCTION=1` (§6.4.2). Going to production needs OIDC, TLS and roles (Phase 4) first.
+4. ~~Is Grafana enough for service metrics?~~ **Follow production standards, as hedge funds and private banks run trading operations** (decided 2026-10-08). Proposed reading: Prometheus + Grafana stay the service-metrics stack (the UI links out rather than rebuilding it), with SLOs and alerts on the order path and a trading-operations dashboard set: signal-to-order latency (p50/p99), order reject and error rates by reason, fill ratio and slippage against arrival price (implementation shortfall), exposure and limit utilization per book, intraday P&L and drawdown against limits, position reconciliation breaks (order-management vs exchange), market-data and ledger freshness, kill-switch time-to-halt, and alert acknowledgement time. To be planned as its own step.
 5. ~~**R1 policy on a blocked stage order?**~~ **Skip and record, no retry of that order** (decided 2026-10-05). As built (§6.4.1), the next day's run re-plans from the recorded position, so the stage position diverges from paper only until the next run that is not blocked, rather than until the next signal flip. This keeps a blocked *exit* from leaving a long position open through a whole flat period.
 6. ~~Are the default limits in §6.2 right?~~ **Keep the defaults** (decided 2026-10-05), version `default-2026-10-03`. Revisit `cost_warn_bps` once more stage legs exist (btc_mxn's first leg already exceeded it).

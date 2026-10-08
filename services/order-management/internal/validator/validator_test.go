@@ -2,7 +2,10 @@ package validator
 
 import (
 	"context"
+	"fmt"
+	"strings"
 	"testing"
+	"time"
 
 	"bitso-trading-platform/order-management/internal/config"
 	"bitso-trading-platform/order-management/internal/logger"
@@ -368,6 +371,67 @@ func TestPreTradeValidateOrder_ConflictingPrice(t *testing.T) {
 	_, err := v.PreTradeValidateOrder(temp)
 	if err == nil {
 		t.Fatal("expected error for economics conflict")
+	}
+}
+
+// R5: a row the trading.signals consumer has created but not yet validated
+// and risk-checked (pending) must not vouch for the order.
+func TestPreTradeValidateOrder_PendingRowSettles(t *testing.T) {
+	old := pendingSettleWait
+	pendingSettleWait = 300 * time.Millisecond
+	defer func() { pendingSettleWait = old }()
+
+	cfg := &config.RiskConfig{
+		MaxOpenOrders:        10,
+		MaxOrderValue:        100000.0,
+		MinOrderSize:         0.001,
+		MaxPositionSize:      1.0,
+		EnableDuplicateCheck: true,
+		MaxOrdersPerMinute:   60,
+	}
+	temp := func(sig string) *models.Order {
+		return &models.Order{ID: "validate-" + sig, Book: "btc_mxn", Side: "buy", Type: "limit",
+			Amount: 0.001, Price: 1261960.0, SignalID: sig, Strategy: "limit_profit", Status: models.OrderStatusPending}
+	}
+	cases := []struct {
+		name    string
+		settle  func(o *models.Order) // nil: stays pending
+		wantOK  bool
+		wantErr string
+	}{
+		{"validated", func(o *models.Order) { o.Status = models.OrderStatusValidated }, true, ""},
+		{"rejected by risk", func(o *models.Order) { o.Reject("position size 2 would exceed limit 1") }, false, "would exceed limit"},
+		{"still pending", nil, false, "still pending"},
+	}
+	for i, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			repo := repository.NewInMemoryOrderRepository(testValidatorLogger, testValidatorMetrics)
+			v := NewOrderValidator(cfg, testValidatorLogger, repo, testValidatorMetrics)
+			sig := fmt.Sprintf("sig-pending-%d", i)
+			existing := models.NewOrder(sig, "btc_mxn", "buy", "limit", "limit_profit", 1261960.0, 0.001)
+			if err := repo.Create(context.Background(), existing); err != nil {
+				t.Fatal(err)
+			}
+			if tc.settle != nil {
+				go func() {
+					time.Sleep(60 * time.Millisecond)
+					o, _ := repo.Get(context.Background(), existing.ID)
+					cp := *o
+					tc.settle(&cp)
+					_ = repo.Update(context.Background(), &cp)
+				}()
+			}
+			ok, err := v.PreTradeValidateOrder(temp(sig))
+			if ok != tc.wantOK {
+				t.Fatalf("idempotent = %v, want %v (err %v)", ok, tc.wantOK, err)
+			}
+			if tc.wantErr == "" && err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if tc.wantErr != "" && (err == nil || !strings.Contains(err.Error(), tc.wantErr)) {
+				t.Fatalf("error %v, want it to contain %q", err, tc.wantErr)
+			}
+		})
 	}
 }
 

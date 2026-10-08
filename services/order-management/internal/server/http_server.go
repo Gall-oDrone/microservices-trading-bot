@@ -171,6 +171,11 @@ func (s *HTTPServer) setupRoutes() {
 		s.router.HandleFunc("/api/v1/orders/validate", s.withMetrics(s.validateOrderHandler))
 	}
 
+	// Exposure the risk check sees for one book (risk R5; read-only)
+	if s.riskManager != nil {
+		s.router.HandleFunc("/api/v1/risk/exposure", s.withMetrics(s.exposureHandler))
+	}
+
 	if s.signalCanceler != nil {
 		s.router.HandleFunc("/api/v1/orders/cancel-by-signal", s.withMetrics(s.cancelBySignalHandler))
 		s.logger.Info("HTTP route enabled", map[string]interface{}{"path": "/api/v1/orders/cancel-by-signal"})

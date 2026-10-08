@@ -19,6 +19,7 @@ import (
 	"bitso-trading-platform/shared/pkg/models"
 	"bitso-trading-platform/trading-engine/internal/engine"
 	"bitso-trading-platform/trading-engine/internal/execution"
+	"bitso-trading-platform/trading-engine/internal/guard"
 	"bitso-trading-platform/trading-engine/internal/metrics"
 )
 
@@ -62,6 +63,21 @@ func NewApplication() (*Application, error) {
 	}
 	logger.Println("✓ Configuration loaded successfully")
 
+	// Risk R5: refuse a live configuration that would trade without
+	// order-management's checks or outside Bitso stage, and load the session
+	// limits (non-zero defaults) before anything connects.
+	if err := guard.CheckStartup(guard.FromEnv(os.Getenv, cfg.DryRun, cfg.BitsoAPIBaseURL)); err != nil {
+		cancel()
+		return nil, fmt.Errorf("unsafe configuration: %w", err)
+	}
+	limits, err := guard.LoadLimits(os.Getenv)
+	if err != nil {
+		cancel()
+		return nil, fmt.Errorf("session limits: %w", err)
+	}
+	logger.Printf("✓ Session limits: max daily loss %.2f (quote currency), max drawdown %.2f%% (dry run %v)",
+		limits.MaxDailyLoss, limits.MaxDrawdownPct, cfg.DryRun)
+
 	// Initialize Bitso API client (required: STAGE_BITSO_API_KEY / STAGE_BITSO_API_SECRET from AWS Secrets Manager)
 	bitsoClient := initializeBitsoClient(cfg, logger)
 	if bitsoClient == nil {
@@ -104,7 +120,7 @@ func NewApplication() (*Application, error) {
 	logger.Println("✓ Kafka consumer initialized")
 
 	// Create trading configuration
-	tradingConfig := createTradingConfig()
+	tradingConfig := createTradingConfig(limits)
 	logger.Printf("✓ Trading configuration: Book=%s, Strategy=%s",
 		tradingConfig.Book.String(), tradingConfig.StrategyType)
 
@@ -256,8 +272,9 @@ func initializeOrderPlacedProducer(cfg *config.Config, logger *log.Logger) (*kaf
 	return producer, nil
 }
 
-// createTradingConfig creates the trading configuration
-func createTradingConfig() *models.TradingConfig {
+// createTradingConfig creates the trading configuration. The session limits
+// (guard.LoadLimits) are enforced by the executor before every order.
+func createTradingConfig(limits guard.Limits) *models.TradingConfig {
 	return &models.TradingConfig{
 		Book:              bitso.NewBook(bitso.BTC, bitso.MXN),
 		MinTradeAmount:    0.001,          // 0.001 BTC minimum
@@ -269,6 +286,8 @@ func createTradingConfig() *models.TradingConfig {
 		StartTime:         time.Now(),
 		EndTime:           time.Now().Add(24 * time.Hour),
 		MaxOpenPositions:  3, // Maximum 3 concurrent positions
+		MaxDailyLoss:      limits.MaxDailyLoss,
+		MaxDrawdownPct:    limits.MaxDrawdownPct,
 		StrategyType:      "",
 		Parameters:        make(map[string]interface{}),
 	}

@@ -76,10 +76,21 @@ func nearlyEqualFloat(a, b, absEps float64) bool {
 	return math.Abs(a-b) <= absEps
 }
 
+// pendingSettleWait bounds how long pre-trade validation waits for the
+// trading.signals consumer to finish validating and risk-checking a row it has
+// just created (status pending). Until then risk has not been applied, so the
+// row cannot vouch for the order (risk step R5: trading-engine must never place
+// an order that order-management rejects). A var so tests can shorten it.
+var pendingSettleWait = 2 * time.Second
+
+const pendingSettlePoll = 25 * time.Millisecond
+
 // resolvePreTradeDuplicate implements idempotent pre-trade validation when order-management has
 // already created a Redis row for this signal_id (trading.signals consumer) and trading-engine
 // calls POST /api/v1/orders/validate with a temporary order id.
-// Returns idempotentOK=true when the existing row matches proposed economics and is not yet placed on Bitso.
+// Returns idempotentOK=true when the existing row matches proposed economics, is not yet placed on
+// Bitso, and has passed the consumer's validation and risk check. A row still pending is waited on
+// (up to pendingSettleWait): rejected or still pending means an error, never an approval.
 func (v *Validator) resolvePreTradeDuplicate(order *models.Order) (idempotentOK bool, err error) {
 	if order.SignalID == "" {
 		return false, nil
@@ -96,25 +107,8 @@ func (v *Validator) resolvePreTradeDuplicate(order *models.Order) (idempotentOK 
 		return false, nil
 	}
 
-	if metaBitsoOrderID(existing) != "" {
-		return false, fmt.Errorf(
-			"duplicate order for signal %s (already placed on exchange, existing order: %s)",
-			order.SignalID, existing.ID,
-		)
-	}
-
-	if terminalPreTradeConflict(existing.Status) {
-		return false, fmt.Errorf(
-			"duplicate order for signal %s (existing order %s in terminal status %s)",
-			order.SignalID, existing.ID, existing.Status,
-		)
-	}
-
-	if !prePlacementStatus(existing.Status) {
-		return false, fmt.Errorf(
-			"duplicate order for signal %s (existing order %s unexpected status %s)",
-			order.SignalID, existing.ID, existing.Status,
-		)
+	if err := preTradeRowConflict(order, existing); err != nil {
+		return false, err
 	}
 
 	if !preTradeEconomicsMatch(existing, order) {
@@ -124,5 +118,71 @@ func (v *Validator) resolvePreTradeDuplicate(order *models.Order) (idempotentOK 
 		)
 	}
 
+	if existing.Status == models.OrderStatusPending {
+		settled, err := v.waitPendingSettled(ctx, existing)
+		if err != nil {
+			return false, err
+		}
+		if err := preTradeRowConflict(order, settled); err != nil {
+			return false, err
+		}
+	}
+
 	return true, nil
+}
+
+// preTradeRowConflict reports why an existing row for the signal rules the proposed order out:
+// already placed on the exchange, terminal (with the rejection reason), or an unexpected status.
+func preTradeRowConflict(order, existing *models.Order) error {
+	if metaBitsoOrderID(existing) != "" {
+		return fmt.Errorf(
+			"duplicate order for signal %s (already placed on exchange, existing order: %s)",
+			order.SignalID, existing.ID,
+		)
+	}
+
+	if terminalPreTradeConflict(existing.Status) {
+		reason := ""
+		if existing.Status == models.OrderStatusRejected && existing.RejectionReason != "" {
+			reason = ": " + existing.RejectionReason
+		}
+		return fmt.Errorf(
+			"duplicate order for signal %s (existing order %s in terminal status %s%s)",
+			order.SignalID, existing.ID, existing.Status, reason,
+		)
+	}
+
+	if !prePlacementStatus(existing.Status) {
+		return fmt.Errorf(
+			"duplicate order for signal %s (existing order %s unexpected status %s)",
+			order.SignalID, existing.ID, existing.Status,
+		)
+	}
+	return nil
+}
+
+// waitPendingSettled re-reads a pending row until the consumer moves it on (validated, rejected,
+// …) or pendingSettleWait passes. Still pending at the deadline is an error: fail closed.
+func (v *Validator) waitPendingSettled(ctx context.Context, existing *models.Order) (*models.Order, error) {
+	deadline := time.Now().Add(pendingSettleWait)
+	for {
+		select {
+		case <-ctx.Done():
+			return nil, fmt.Errorf("signal %s: waiting for order-management's risk check: %w", existing.SignalID, ctx.Err())
+		case <-time.After(pendingSettlePoll):
+		}
+		cur, err := v.repo.Get(ctx, existing.ID)
+		if err != nil {
+			return nil, fmt.Errorf("signal %s: re-read order %s: %w", existing.SignalID, existing.ID, err)
+		}
+		if cur.Status != models.OrderStatusPending {
+			return cur, nil
+		}
+		if time.Now().After(deadline) {
+			return nil, fmt.Errorf(
+				"signal %s: order-management has not finished validating order %s (still pending after %s); not approving",
+				existing.SignalID, existing.ID, pendingSettleWait,
+			)
+		}
+	}
 }

@@ -22,6 +22,8 @@ on:
       - 'services/strategy-executor/internal/bitsodaily/**'
       - 'services/strategy-executor/internal/bitsostage/**'
       - 'services/ui-api/**'
+      - 'services/trading-engine/**'
+      - 'services/order-management/**'
       - 'scripts/kill-switch-drill.sh'
       - 'web/**'
   workflow_dispatch: {}
@@ -73,6 +75,46 @@ jobs:
         working-directory: services/ui-api
         run: |
           go vet ./...
+          go test -race -count=1 ./...
+
+  platform-risk:
+    name: Platform risk R5 (trading-engine, order-management)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      # trading-engine's go.mod needs 1.23; order-management (1.21) builds
+      # unchanged on it.
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.23.x'
+          cache-dependency-path: |
+            shared/go.sum
+            services/trading-engine/go.sum
+            services/order-management/go.sum
+
+      # Plan §6.4 R5: session limits and the live-mode start-up guard
+      # (internal/guard), the pending-row pre-trade fix and the exposure
+      # endpoint in order-management.
+      - name: gofmt (R5 files)
+        run: |
+          out=$(gofmt -l services/trading-engine/internal/guard \
+            services/order-management/internal/server/exposure.go \
+            services/order-management/internal/server/exposure_test.go \
+            services/order-management/internal/validator/pretrade_duplicate.go)
+          if [ -n "$out" ]; then echo "gofmt needed:"; echo "$out"; exit 1; fi
+
+      - name: trading-engine
+        working-directory: services/trading-engine
+        run: |
+          go vet ./...
+          go test -race -count=1 ./...
+
+      - name: order-management
+        working-directory: services/order-management
+        run: |
+          go vet ./internal/server ./internal/validator ./internal/risk
           go test -race -count=1 ./...
 
   drill:
