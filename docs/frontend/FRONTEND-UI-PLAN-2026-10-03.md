@@ -474,6 +474,10 @@ unfinished bar is labelled provisional. The decision path never reads live data.
     scheduled job. *Fixed 2026-10-08 (§8.9): caught up through 2026-10-06 and scheduled daily.*
   - **The stage ledger is missing 2026-10-05 and 2026-10-06** for both books: the last run was
     2026-10-05 16:53 Mexico City. Runs are manual today; R3 alerts and a schedule are the fix.
+    *Decided 2026-10-08: left as a gap, not backfilled.* A late run would have recorded the
+    2026-10-06 decision at a later price than the pre-registered run time, so the two days stay
+    missing: a known gap in the forward-test record. The scheduled run (§8.9) records
+    2026-10-07 onward; ledger coverage then measures from that bar, so its alert resolves.
   - Run logs before 2026-10-05 22:53 UTC have no `exit=` line (they predate the wrapper).
 - **Tests.** Go: archive thresholds (healthy, stale, compaction lag, gap, missing book, outage),
   run-log parsing, the handler (archive off, missed days and a failed upload, cache, unreachable
@@ -552,11 +556,39 @@ unfinished bar is labelled provisional. The decision path never reads live data.
   alerts resolved on the next alerts run ("[mtb-ops] 2 resolved").
 - **Known limit.** The executor and the alerts run on the same workstation: if it is off, nothing
   runs and nothing alerts. A watchdog outside it (e.g. a scheduled Lambda that checks the S3 ledger's
-  age, now that it is uploaded daily) would close that gap.
+  age, now that it is uploaded daily) would close that gap. *Done: §8.10.*
 - **Tests.** Mapping from health and risk (incl. what does not alert), de-duplication and ordering,
   the new → quiet → escalated → reminder → resolved lifecycle, `repeat 0`, a downgrade, rendering and
   the SNS-safe subject, SNS publish and errors (fake client); in-process evaluation against the test
   ledger and the state round trip.
+
+### 8.10 Off-machine watchdog (as built, 2026-10-08)
+
+- **What.** The Lambda `mtb-ledger-watchdog` (`infrastructure/lambda/ledger-watchdog/`, Python
+  3.12). EventBridge runs it once per clock hour (`cron(5 * * * ? *)`). For every ledger prefix
+  (default `stage=daily-executor/stage`) it finds the newest `run-*.log` in S3. The run wrapper
+  uploads that file last, so it marks the last run. If it is more than **30 h** old, the Lambda
+  publishes to `mtb-operator-alerts`. A missed 06:15 UTC run is therefore reported at about 12:05
+  UTC the next day, even if the workstation is off.
+- **When it sends.** It keeps no state. Each decision uses a 62-minute window around the 30 h
+  crossing, then every 12 h while the ledger stays stale. It sends "resolved" once, on the first
+  check after a new run log that ends a gap of 30 h or more. A prefix with no run logs is reported
+  at 00:05 and 12:05 UTC. A 72 h simulation of hourly runs in the tests proves exactly one first
+  alert, then reminders every 12 h.
+- **Message.** An ASCII subject, e.g. `[mtb-ops] watchdog: 1 stale - stage: no run for 30 h`. The
+  body has the last run's `exit=`/`upload=` lines and the age of `ledger.jsonl`.
+- **Access.** `s3:ListBucket` limited to `daily-executor/*`, `s3:GetObject` on
+  `daily-executor/*`, and `sns:Publish` on the one topic. Logs are kept 30 days.
+- **Deploy.** `deploy.sh --bucket … --topic-arn … [--test]` does four things:
+  1. runs the unit tests;
+  2. packages `src/` to `s3://<bucket>/lambda-artifacts/ledger-watchdog/`;
+  3. deploys the CloudFormation stack `mtb-ledger-watchdog` (function, role, hourly rule, log group);
+  4. invokes it once with `{"dry_run": true}`.
+
+  `deploy.sh --delete` removes the stack.
+- **Overlap with ui-alerts.** None in practice. ui-alerts reports a missed day by 06:15 Mexico
+  City while the workstation is up. The watchdog fires only after 30 h, which happens only when
+  the workstation (or its cron) is down.
 
 ---
 
@@ -584,6 +616,7 @@ npm run dev:mock
 (cd services/ui-api && go test ./...)
 (cd services/strategy-executor && go test ./cmd/daily-executor)
 (cd web && npm run ci && npm run e2e)
+python3 -m unittest discover -s infrastructure/lambda/ledger-watchdog   # §8.10 watchdog
 ```
 
 ---

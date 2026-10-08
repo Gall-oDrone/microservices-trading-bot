@@ -1,0 +1,113 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >-
+  mtb-ledger-watchdog: hourly off-machine check that the daily executor's S3 run logs are fresh;
+  publishes to the operators' SNS topic when the newest is older than MaxAgeHours
+  (docs/frontend/FRONTEND-UI-PLAN-2026-10-03.md section 8.10). Deploy with ./deploy.sh.
+
+Parameters:
+  Bucket:
+    Type: String
+    Description: Archive bucket holding daily-executor/<ledger>/ (read-only access).
+  TopicArn:
+    Type: String
+    Description: SNS topic for operator alerts.
+  Ledgers:
+    Type: String
+    Default: stage=daily-executor/stage
+    Description: name=prefix[,name=prefix...]; every prefix must be under daily-executor/.
+  MaxAgeHours:
+    Type: Number
+    Default: 30
+  RepeatHours:
+    Type: Number
+    Default: 12
+
+Resources:
+  Role:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: mtb-ledger-watchdog
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: {Service: lambda.amazonaws.com}
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: read-ledgers-publish-alerts
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: ListLedgerPrefixes
+                Effect: Allow
+                Action: s3:ListBucket
+                Resource: !Sub arn:aws:s3:::${Bucket}
+                Condition:
+                  StringLike: {"s3:prefix": ["daily-executor/*"]}
+              - Sid: ReadLedgerObjects
+                Effect: Allow
+                Action: s3:GetObject
+                Resource: !Sub arn:aws:s3:::${Bucket}/daily-executor/*
+              - Sid: PublishAlerts
+                Effect: Allow
+                Action: sns:Publish
+                Resource: !Ref TopicArn
+              - Sid: Logs
+                Effect: Allow
+                Action: [logs:CreateLogStream, logs:PutLogEvents]
+                Resource: !GetAtt LogGroup.Arn
+
+  LogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: /aws/lambda/mtb-ledger-watchdog
+      RetentionInDays: 30
+
+  Function:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: mtb-ledger-watchdog
+      Description: Alerts when the daily executor's newest S3 run log is stale (read-only on S3).
+      Runtime: python3.12
+      Handler: lambda_function.lambda_handler
+      Code: src/
+      Role: !GetAtt Role.Arn
+      Timeout: 30
+      MemorySize: 128
+      Environment:
+        Variables:
+          BUCKET: !Ref Bucket
+          TOPIC_ARN: !Ref TopicArn
+          LEDGERS: !Ref Ledgers
+          MAX_AGE_HOURS: !Ref MaxAgeHours
+          REPEAT_HOURS: !Ref RepeatHours
+          WINDOW_MINUTES: "62"
+    DependsOn: LogGroup
+
+  Schedule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: mtb-ledger-watchdog-hourly
+      Description: Once per clock hour, at :05 (the watchdog's windows assume one run per hour).
+      ScheduleExpression: cron(5 * * * ? *)
+      State: ENABLED
+      Targets:
+        - Id: watchdog
+          Arn: !GetAtt Function.Arn
+          RetryPolicy:
+            MaximumRetryAttempts: 2
+            MaximumEventAgeInSeconds: 1800
+
+  InvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref Function
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt Schedule.Arn
+
+Outputs:
+  FunctionName:
+    Value: !Ref Function
+  ScheduleRule:
+    Value: !Ref Schedule
