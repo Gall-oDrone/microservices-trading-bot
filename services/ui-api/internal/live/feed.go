@@ -1,6 +1,7 @@
 // Package live keeps one connection to Bitso's public WebSocket and turns it
 // into display-only market data for the UI: last trade, best bid/ask, today's
-// forming daily candle and the provisional SMA50 flip level.
+// forming daily candle and the provisional SMA50 flip level, plus (for the
+// Market page) the top order-book levels and a tape of recent trades.
 //
 // Nothing here feeds a trading decision. The daily-executor decides on closed
 // production candles only; everything computed from the forming candle is
@@ -15,6 +16,7 @@ import (
 	"fmt"
 	"log"
 	"math/rand"
+	"sort"
 	"strconv"
 	"sync"
 	"time"
@@ -31,15 +33,29 @@ type Trade struct {
 	ID     int64
 	Price  float64
 	Amount float64 // base currency
-	Side   string  // taker side: "buy" or "sell"
-	At     time.Time
+	// Side is the taker's side: "buy" or "sell". The channel's "t" is 0 for a
+	// taker buy and 1 for a taker sell (checked 2026-10-08 against REST
+	// /v3/trades, whose maker_side is always the opposite).
+	Side string
+	At   time.Time
 }
 
-// Top is the best bid and ask from the orders channel.
+// MaxDepth is how many levels per side the orders channel sends (Bitso's top 20).
+const MaxDepth = 20
+
+// Level is one aggregated price level of the order book.
+type Level struct {
+	Price  float64 `json:"price"`
+	Amount float64 `json:"amount"` // base currency
+}
+
+// Top is the top of the book from the orders channel: the best bid and ask,
+// and up to MaxDepth levels per side, best first.
 type Top struct {
-	Book     string
-	Bid, Ask float64
-	At       time.Time
+	Book       string
+	Bid, Ask   float64
+	Bids, Asks []Level
+	At         time.Time
 }
 
 // Handler receives upstream events. Calls come from the feed's goroutine.
@@ -210,7 +226,13 @@ func (f *Feed) session(ctx context.Context) error {
 				f.Log.Printf("live: orders payload: %v", err)
 				continue
 			}
-			top := Top{Book: m.Book, Bid: best(o.Bids, true), Ask: best(o.Asks, false), At: now}
+			top := Top{Book: m.Book, Bids: levels(o.Bids, true), Asks: levels(o.Asks, false), At: now}
+			if len(top.Bids) > 0 {
+				top.Bid = top.Bids[0].Price
+			}
+			if len(top.Asks) > 0 {
+				top.Ask = top.Asks[0].Price
+			}
 			if m.Sent > 0 {
 				top.At = time.UnixMilli(m.Sent)
 			}
@@ -232,17 +254,30 @@ func toTrade(book string, t wsTrade) (Trade, bool) {
 	return Trade{Book: book, ID: t.I, Price: p, Amount: a, Side: side, At: time.UnixMilli(t.X)}, true
 }
 
-// best is the highest bid or lowest ask; the channel's order is not relied on.
-func best(levels []wsLevel, highest bool) float64 {
-	out := 0.0
-	for _, l := range levels {
-		r, err := strconv.ParseFloat(l.R, 64)
-		if err != nil || r <= 0 {
+// levels parses one side, best first (highest bid / lowest ask; the
+// channel's order is not relied on), merging equal prices, capped at MaxDepth.
+func levels(in []wsLevel, bids bool) []Level {
+	by := map[float64]float64{}
+	for _, l := range in {
+		r, err1 := strconv.ParseFloat(l.R, 64)
+		a, err2 := strconv.ParseFloat(l.A, 64)
+		if err1 != nil || err2 != nil || r <= 0 || a <= 0 {
 			continue
 		}
-		if out == 0 || (highest && r > out) || (!highest && r < out) {
-			out = r
+		by[r] += a
+	}
+	out := make([]Level, 0, len(by))
+	for p, a := range by {
+		out = append(out, Level{Price: p, Amount: a})
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if bids {
+			return out[i].Price > out[j].Price
 		}
+		return out[i].Price < out[j].Price
+	})
+	if len(out) > MaxDepth {
+		out = out[:MaxDepth]
 	}
 	return out
 }

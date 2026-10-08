@@ -205,6 +205,7 @@ func startLive(ctx context.Context, st *store.Store, wsURL, restURL string, logg
 		return cs, rows[len(rows)-1].Date, nil
 	}
 	hub := live.NewHub(books, wsURL, live.RESTSeeder(restURL, nil), closes, logger)
+	hub.Tape = live.RESTTapeSeeder(restURL, nil) // the Market page's recent trades
 	feed := &live.Feed{URL: wsURL, Books: hub.Books, Handler: hub, Log: logger}
 	go hub.Run(ctx)
 	go feed.Run(ctx)

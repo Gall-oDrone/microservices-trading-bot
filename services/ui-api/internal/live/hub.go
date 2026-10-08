@@ -131,11 +131,42 @@ type Status struct {
 	LastError     string `json:"last_error,omitempty"`
 }
 
-// Snapshot is the full live state for a set of books.
+// Snapshot is the full live state for a set of books. Markets is filled
+// only when asked for (the Market page: ?market=1).
 type Snapshot struct {
 	GeneratedAt string         `json:"generated_at"`
 	Upstream    Status         `json:"upstream"`
 	Books       []BookSnapshot `json:"books"`
+	Markets     []Market       `json:"markets,omitempty"`
+}
+
+// TapeSize is how many recent trades the tape keeps per book.
+const TapeSize = 50
+
+// TapeTrade is one trade on the tape.
+type TapeTrade struct {
+	ID     int64   `json:"id"`
+	Price  float64 `json:"price"`
+	Amount float64 `json:"amount"`
+	Side   string  `json:"side"` // taker side: "buy" lifted the ask, "sell" hit the bid
+	At     string  `json:"at"`
+}
+
+// Market is the Market page's view of one book: spread, the top levels and
+// the tape. Display only, like everything in this package.
+type Market struct {
+	Book      string  `json:"book"`
+	Bid       float64 `json:"bid"`
+	Ask       float64 `json:"ask"`
+	Mid       float64 `json:"mid"`
+	Spread    float64 `json:"spread"`
+	SpreadBps float64 `json:"spread_bps"` // spread / mid × 10⁴
+	Bids      []Level `json:"bids"`       // best first, at most MaxDepth
+	Asks      []Level `json:"asks"`
+	DepthAt   string  `json:"depth_at"` // time of the orders message
+	// Trades is newest first, at most TapeSize; seeded from REST on connect.
+	Trades     []TapeTrade `json:"trades"`
+	TapeSeeded bool        `json:"tape_seeded"`
 }
 
 // Event is one server-sent event.
@@ -156,13 +187,48 @@ type bookState struct {
 	seeding  bool
 	seedFrom time.Time
 	pending  []Trade
+	// Market page: the top levels and the tape (newest first).
+	bids, asks []Level
+	depthAt    time.Time
+	tape       []Trade
+	tapeSeeded bool
+}
+
+// addTape inserts t (newest first, by time then id), ignoring a trade
+// already on the tape, and keeps the newest TapeSize.
+func (st *bookState) addTape(t Trade) {
+	i := 0
+	for ; i < len(st.tape); i++ {
+		x := st.tape[i]
+		if x.ID == t.ID {
+			return
+		}
+		if t.At.After(x.At) || (t.At.Equal(x.At) && t.ID > x.ID) {
+			break
+		}
+	}
+	if i >= TapeSize {
+		return
+	}
+	for _, x := range st.tape[i:] { // a duplicate further down (older time)
+		if x.ID == t.ID {
+			return
+		}
+	}
+	st.tape = append(st.tape, Trade{})
+	copy(st.tape[i+1:], st.tape[i:])
+	st.tape[i] = t
+	if len(st.tape) > TapeSize {
+		st.tape = st.tape[:TapeSize]
+	}
 }
 
 // Subscription receives events for some books. C is closed when the hub
 // drops a subscriber that cannot keep up, or on Close.
 type Subscription struct {
-	C     chan Event
-	books map[string]bool
+	C      chan Event
+	books  map[string]bool
+	market bool // also "market" events
 }
 
 // Hub is the shared live state; it implements Handler and fans out
@@ -171,6 +237,7 @@ type Hub struct {
 	Books     []string
 	Source    string
 	Seeder    Seeder
+	Tape      TapeSeeder // optional: seeds the Market page's tape on connect
 	Closes    Closes
 	Throttle  time.Duration // at most one "book" event per book per Throttle
 	Heartbeat time.Duration
@@ -239,13 +306,14 @@ func (h *Hub) Run(ctx context.Context) {
 		case <-hb.C:
 			h.mu.Lock()
 			ev := Event{Name: "heartbeat", Data: map[string]any{"time": h.Now().UTC().Format(time.RFC3339), "upstream": h.status}}
-			h.broadcastLocked(ev, nil)
+			h.broadcastLocked(ev, nil, false)
 			h.mu.Unlock()
 		}
 	}
 }
 
-// flush sends one "book" event per book that changed since the last flush.
+// flush sends one "book" event per book that changed since the last flush,
+// and a "market" event for it to the subscribers that asked for markets.
 func (h *Hub) flush() {
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -258,14 +326,26 @@ func (h *Hub) flush() {
 	}
 	sort.Strings(names)
 	h.dirty = map[string]bool{}
+	wantMarket := false
+	for s := range h.subs {
+		wantMarket = wantMarket || s.market
+	}
 	for _, b := range names {
-		h.broadcastLocked(Event{Name: "book", Data: h.bookSnapshotLocked(b)}, &b)
+		h.broadcastLocked(Event{Name: "book", Data: h.bookSnapshotLocked(b)}, &b, false)
+		if wantMarket {
+			h.broadcastLocked(Event{Name: "market", Data: h.marketLocked(b)}, &b, true)
+		}
 	}
 }
 
-func (h *Hub) broadcastLocked(ev Event, book *string) {
+// broadcastLocked sends ev to the subscribers of book (all when nil); with
+// marketOnly, only to those that asked for "market" events.
+func (h *Hub) broadcastLocked(ev Event, book *string, marketOnly bool) {
 	for s := range h.subs {
 		if book != nil && !s.books[*book] {
+			continue
+		}
+		if marketOnly && !s.market {
 			continue
 		}
 		select {
@@ -280,10 +360,13 @@ func (h *Hub) broadcastLocked(ev Event, book *string) {
 }
 
 // Subscribe registers a subscriber for books (all books when empty).
-func (h *Hub) Subscribe(books []string) *Subscription {
+func (h *Hub) Subscribe(books []string) *Subscription { return h.SubscribeWith(books, false) }
+
+// SubscribeWith is Subscribe; with market it also receives "market" events.
+func (h *Hub) SubscribeWith(books []string, market bool) *Subscription {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	s := &Subscription{C: make(chan Event, 64), books: map[string]bool{}}
+	s := &Subscription{C: make(chan Event, 64), books: map[string]bool{}, market: market}
 	if len(books) == 0 {
 		books = h.Books
 	}
@@ -320,19 +403,44 @@ func (h *Hub) Close() {
 }
 
 // Snapshot returns the current state for books (all when empty).
-func (h *Hub) Snapshot(books []string) Snapshot {
+func (h *Hub) Snapshot(books []string) Snapshot { return h.SnapshotWith(books, false) }
+
+// SnapshotWith is Snapshot; with market it also fills Markets.
+func (h *Hub) SnapshotWith(books []string, market bool) Snapshot {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	if len(books) == 0 {
 		books = h.Books
 	}
 	out := Snapshot{GeneratedAt: h.Now().UTC().Format(time.RFC3339), Upstream: h.status, Books: []BookSnapshot{}}
+	if market {
+		out.Markets = []Market{}
+	}
 	for _, b := range books {
 		if _, ok := h.books[b]; ok {
 			out.Books = append(out.Books, h.bookSnapshotLocked(b))
+			if market {
+				out.Markets = append(out.Markets, h.marketLocked(b))
+			}
 		}
 	}
 	return out
+}
+
+// marketLocked is the Market page's view of book b (copies, safe to send).
+func (h *Hub) marketLocked(b string) Market {
+	st := h.books[b]
+	m := Market{Book: b, Bid: st.bid, Ask: st.ask, DepthAt: rfc(st.depthAt), TapeSeeded: st.tapeSeeded,
+		Bids: append([]Level{}, st.bids...), Asks: append([]Level{}, st.asks...), Trades: make([]TapeTrade, 0, len(st.tape))}
+	if st.bid > 0 && st.ask > 0 {
+		m.Mid = (st.bid + st.ask) / 2
+		m.Spread = st.ask - st.bid
+		m.SpreadBps = m.Spread / m.Mid * 1e4
+	}
+	for _, t := range st.tape {
+		m.Trades = append(m.Trades, TapeTrade{ID: t.ID, Price: t.Price, Amount: t.Amount, Side: t.Side, At: rfc(t.At)})
+	}
+	return m
 }
 
 func rfc(t time.Time) string {
@@ -369,8 +477,8 @@ func (h *Hub) bookSnapshotLocked(b string) BookSnapshot {
 
 // --- Handler ---
 
-// OnConnect marks the upstream connected and re-seeds today's bars from
-// REST, so trades missed while disconnected are not lost.
+// OnConnect marks the upstream connected and re-seeds today's bars (and the
+// tape) from REST, so trades missed while disconnected are not lost.
 func (h *Hub) OnConnect() {
 	h.mu.Lock()
 	now := h.Now()
@@ -379,11 +487,37 @@ func (h *Hub) OnConnect() {
 	}
 	h.status.Connected, h.status.Since, h.status.LastError = true, rfc(now), ""
 	ctx := h.ctx
-	h.broadcastLocked(Event{Name: "status", Data: h.status}, nil)
+	h.broadcastLocked(Event{Name: "status", Data: h.status}, nil, false)
 	h.mu.Unlock()
 	for _, b := range h.Books {
 		go h.seed(ctx, b)
+		go h.seedTape(ctx, b)
 	}
+}
+
+// seedTape merges the last trades from REST into the tape (by trade id, so
+// trades already received live are not doubled).
+func (h *Hub) seedTape(ctx context.Context, book string) {
+	if h.Tape == nil {
+		return
+	}
+	sctx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+	trades, err := h.Tape(sctx, book)
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if err != nil {
+		h.Log.Printf("live: tape %s: %v (tape built from live trades only)", book, err)
+		return
+	}
+	st := h.books[book]
+	for _, t := range trades {
+		if t.Book == book {
+			st.addTape(t)
+		}
+	}
+	st.tapeSeeded = true
+	h.dirty[book] = true
 }
 
 func (h *Hub) seed(ctx context.Context, book string) {
@@ -461,11 +595,12 @@ func (h *Hub) OnTrade(t Trade) {
 	if st.seeding {
 		st.pending = append(st.pending, t)
 	}
+	st.addTape(t)
 	st.updated = h.Now()
 	h.dirty[t.Book] = true
 }
 
-// OnTop updates the best bid and ask.
+// OnTop updates the best bid and ask and the top levels.
 func (h *Hub) OnTop(t Top) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -479,6 +614,17 @@ func (h *Hub) OnTop(t Top) {
 	if t.Ask > 0 {
 		st.ask = t.Ask
 	}
+	// Each orders message is a full top-of-book snapshot; an empty side
+	// (never seen for BTC) keeps the previous levels rather than blanking.
+	if len(t.Bids) > 0 {
+		st.bids = append([]Level(nil), t.Bids...)
+	}
+	if len(t.Asks) > 0 {
+		st.asks = append([]Level(nil), t.Asks...)
+	}
+	if len(t.Bids) > 0 || len(t.Asks) > 0 {
+		st.depthAt = t.At
+	}
 	st.updated = h.Now()
 	h.dirty[t.Book] = true
 }
@@ -491,5 +637,5 @@ func (h *Hub) OnDisconnect(err error) {
 	if err != nil {
 		h.status.LastError = err.Error()
 	}
-	h.broadcastLocked(Event{Name: "status", Data: h.status}, nil)
+	h.broadcastLocked(Event{Name: "status", Data: h.status}, nil, false)
 }

@@ -34,24 +34,33 @@ func (s *Server) liveBooks(w http.ResponseWriter, r *http.Request) ([]string, bo
 	return out, true
 }
 
+// wantMarket is ?market=1: also the Market page's depth and tape.
+func wantMarket(r *http.Request) bool {
+	v := r.URL.Query().Get("market")
+	return v == "1" || v == "true"
+}
+
 // liveSnapshot is GET /api/ui/live: the same state as the stream, as JSON
-// (REST fallback and first paint).
+// (REST fallback and first paint). ?market=1 adds "markets".
 func (s *Server) liveSnapshot(w http.ResponseWriter, r *http.Request) {
 	books, ok := s.liveBooks(w, r)
 	if !ok {
 		return
 	}
-	writeJSON(w, http.StatusOK, s.Live.Snapshot(books))
+	writeJSON(w, http.StatusOK, s.Live.SnapshotWith(books, wantMarket(r)))
 }
 
 // stream is GET /api/ui/stream: Server-Sent Events with a "snapshot" on
 // connect, then throttled "book" updates, "status" changes and a
-// "heartbeat" every 15 s. Display only: nothing here reaches the executor.
+// "heartbeat" every 15 s. With ?market=1 the snapshot has "markets" and a
+// throttled "market" event (spread, top levels, tape) follows each "book".
+// Display only: nothing here reaches the executor.
 func (s *Server) stream(w http.ResponseWriter, r *http.Request) {
 	books, ok := s.liveBooks(w, r)
 	if !ok {
 		return
 	}
+	market := wantMarket(r)
 	rc := http.NewResponseController(w)
 	// The server's WriteTimeout would cut a long-lived stream.
 	if err := rc.SetWriteDeadline(time.Time{}); err != nil {
@@ -64,7 +73,7 @@ func (s *Server) stream(w http.ResponseWriter, r *http.Request) {
 	h.Set("X-Accel-Buffering", "no")
 	w.WriteHeader(http.StatusOK)
 
-	sub := s.Live.Subscribe(books)
+	sub := s.Live.SubscribeWith(books, market)
 	defer s.Live.Unsubscribe(sub)
 	send := func(ev live.Event) error {
 		b, err := json.Marshal(ev.Data)
@@ -79,7 +88,7 @@ func (s *Server) stream(w http.ResponseWriter, r *http.Request) {
 	if _, err := fmt.Fprint(w, "retry: 3000\n\n"); err != nil {
 		return
 	}
-	if err := send(live.Event{Name: "snapshot", Data: s.Live.Snapshot(books)}); err != nil {
+	if err := send(live.Event{Name: "snapshot", Data: s.Live.SnapshotWith(books, market)}); err != nil {
 		return
 	}
 	for {
