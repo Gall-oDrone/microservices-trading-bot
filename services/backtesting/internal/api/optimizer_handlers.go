@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 
@@ -71,8 +72,10 @@ func (h *Handler) CreateOptimization(w http.ResponseWriter, r *http.Request) {
 		TopN:        req.TopN,
 	}
 
-	// Start optimization
-	opt, err := h.optimizer.Optimize(r.Context(), optConfig)
+	// Start optimization. It must outlive this request: r.Context() is
+	// cancelled as soon as the 201 is written, which used to cancel every
+	// optimization immediately. Stop it with the cancel endpoint instead.
+	opt, err := h.optimizer.Optimize(context.WithoutCancel(r.Context()), optConfig)
 	if err != nil {
 		SendError(w, http.StatusBadRequest, "OPTIMIZATION_FAILED", err.Error())
 		return

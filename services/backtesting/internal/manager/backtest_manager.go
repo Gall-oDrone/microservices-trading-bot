@@ -31,7 +31,16 @@ type BacktestManager struct {
 
 	ctx    context.Context
 	cancel context.CancelFunc
+
+	// wg tracks runBacktest goroutines and the queue loop so Stop can wait
+	// for them (they persist results; exiting early lost or raced writes).
+	wg sync.WaitGroup
+	// stopTimeout bounds how long Stop waits for them.
+	stopTimeout time.Duration
 }
+
+// queuePollInterval is how often the queue loop looks for a free slot.
+const queuePollInterval = 100 * time.Millisecond
 
 // SetNotifiers sets optional completion notifiers (webhook, Kafka, S3 export)
 func (m *BacktestManager) SetNotifiers(notifiers []export.Notifier) {
@@ -59,6 +68,7 @@ func NewBacktestManager(
 		createdBacktests: make(map[string]*models.Backtest),
 		ctx:              ctx,
 		cancel:           cancel,
+		stopTimeout:      30 * time.Second,
 	}
 }
 
@@ -201,21 +211,31 @@ func (m *BacktestManager) Start(ctx context.Context) error {
 	})
 
 	// Start queue processor
+	m.wg.Add(1)
 	go m.processQueue()
 
 	return nil
 }
 
-// Stop stops the manager
+// Stop cancels running backtests and waits up to stopTimeout for their
+// goroutines (which persist the failed/cancelled result) and the queue loop
+// to return. It returns an error if they are still running at the deadline.
 func (m *BacktestManager) Stop() error {
 	m.logger.Info("Stopping backtest manager", nil)
 
 	m.cancel()
 
-	// Wait for running backtests to complete or timeout
-	// (In a production system, we'd want graceful shutdown)
-
-	return nil
+	done := make(chan struct{})
+	go func() {
+		m.wg.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+		return nil
+	case <-time.After(m.stopTimeout):
+		return fmt.Errorf("backtest manager: workers still running after %s", m.stopTimeout)
+	}
 }
 
 // Private methods
@@ -243,12 +263,14 @@ func (m *BacktestManager) startBacktestNow(backtestID string) error {
 	backtest.Start()
 	m.trackBacktest(backtest)
 
+	m.wg.Add(1)
 	go m.runBacktest(backtestID, config)
 	return nil
 }
 
 // runBacktest executes the backtest in the engine and updates status on completion
 func (m *BacktestManager) runBacktest(backtestID string, config *models.BacktestConfig) {
+	defer m.wg.Done()
 	result, err := m.engine.Run(m.ctx, config)
 	m.mu.Lock()
 	backtest := m.runningBacktests[backtestID]
@@ -363,16 +385,26 @@ func (m *BacktestManager) notifyWithTimeout(n export.Notifier, ev *export.Backte
 }
 
 func (m *BacktestManager) processQueue() {
-	// Process queued backtests
+	defer m.wg.Done()
+	// Process queued backtests. A ticker, not a bare default branch: the old
+	// loop spun a CPU core at 100% while idle.
+	ticker := time.NewTicker(queuePollInterval)
+	defer ticker.Stop()
 	for {
 		select {
 		case <-m.ctx.Done():
 			return
-		default:
-			if m.canStartNewBacktest() && !m.queue.IsEmpty() {
+		case <-ticker.C:
+			for m.canStartNewBacktest() && !m.queue.IsEmpty() {
 				backtestID, err := m.queue.Dequeue()
-				if err == nil {
-					m.startBacktestNow(backtestID)
+				if err != nil {
+					break
+				}
+				if err := m.startBacktestNow(backtestID); err != nil {
+					m.logger.Warn("Queued backtest not started", map[string]interface{}{
+						"backtest_id": backtestID,
+						"error":       err.Error(),
+					})
 				}
 			}
 		}

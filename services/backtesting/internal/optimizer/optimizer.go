@@ -53,6 +53,29 @@ type Optimization struct {
 	mu            sync.RWMutex          `json:"-"`
 }
 
+// Snapshot returns a copy taken under the read lock. The worker goroutine
+// keeps mutating the live value, so callers must only ever see snapshots.
+func (o *Optimization) Snapshot() *Optimization {
+	o.mu.RLock()
+	defer o.mu.RUnlock()
+	return &Optimization{
+		ID:            o.ID,
+		Name:          o.Name,
+		Description:   o.Description,
+		Status:        o.Status,
+		Config:        o.Config,
+		Progress:      o.Progress,
+		TotalRuns:     o.TotalRuns,
+		CompletedRuns: o.CompletedRuns,
+		Results:       append([]*OptimizationResult(nil), o.Results...),
+		BestResult:    o.BestResult,
+		CreatedAt:     o.CreatedAt,
+		StartedAt:     o.StartedAt,
+		CompletedAt:   o.CompletedAt,
+		Error:         o.Error,
+	}
+}
+
 // OptimizationResult represents the result of a single parameter combination
 type OptimizationResult struct {
 	Parameters map[string]interface{} `json:"parameters"`
@@ -120,10 +143,13 @@ func (o *optimizer) Optimize(ctx context.Context, config *OptimizationConfig) (*
 	o.runningOpts[opt.ID] = opt
 	o.mu.Unlock()
 
+	// Snapshot before the worker starts mutating it.
+	snap := opt.Snapshot()
+
 	// Start optimization in background
 	go o.runOptimization(ctx, opt)
 
-	return opt, nil
+	return snap, nil
 }
 
 // GetOptimization retrieves an optimization by ID
@@ -136,7 +162,7 @@ func (o *optimizer) GetOptimization(id string) (*Optimization, error) {
 		return nil, fmt.Errorf("optimization not found: %s", id)
 	}
 
-	return opt, nil
+	return opt.Snapshot(), nil
 }
 
 // CancelOptimization cancels a running optimization

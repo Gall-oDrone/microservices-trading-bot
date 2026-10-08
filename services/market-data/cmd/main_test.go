@@ -8,79 +8,67 @@ import (
 	"bitso-trading-platform/shared/pkg/bitso"
 )
 
-// TestParseBook tests the parseBook function
+// TestParseBook tests the parseBook function.
+//
+// parseBook only validates the "major_minor" shape: empty segments produced by
+// leading/trailing/repeated underscores are skipped, and currencies are
+// lowercased via bitso.ToCurrency but not checked against a known list.
 func TestParseBook(t *testing.T) {
 	tests := []struct {
 		name        string
 		bookStr     string
-		expected    *bitso.Book
+		expected    string
 		expectError bool
 	}{
 		{
 			name:        "Valid BTC/MXN book",
 			bookStr:     "btc_mxn",
-			expected:    bitso.ToBook("btc_mxn"),
+			expected:    "btc_mxn",
 			expectError: false,
 		},
 		{
 			name:        "Valid ETH/MXN book",
 			bookStr:     "eth_mxn",
-			expected:    bitso.ToBook("eth_mxn"),
+			expected:    "eth_mxn",
 			expectError: false,
 		},
 		{
 			name:        "Valid XRP/MXN book",
 			bookStr:     "xrp_mxn",
-			expected:    bitso.ToBook("xrp_mxn"),
+			expected:    "xrp_mxn",
 			expectError: false,
 		},
 		{
 			name:        "Invalid format - no underscore",
 			bookStr:     "btcmxn",
-			expected:    nil,
 			expectError: true,
 		},
 		{
 			name:        "Invalid format - multiple underscores",
 			bookStr:     "btc_mxn_usd",
-			expected:    nil,
 			expectError: true,
 		},
 		{
 			name:        "Invalid format - empty string",
 			bookStr:     "",
-			expected:    nil,
 			expectError: true,
 		},
 		{
 			name:        "Invalid format - only underscore",
 			bookStr:     "_",
-			expected:    nil,
 			expectError: true,
 		},
 		{
-			name:        "Invalid format - underscore at start",
+			name:        "Underscore at start is ignored",
 			bookStr:     "_btc_mxn",
-			expected:    nil,
-			expectError: true,
+			expected:    "btc_mxn",
+			expectError: false,
 		},
 		{
-			name:        "Invalid format - underscore at end",
+			name:        "Underscore at end is ignored",
 			bookStr:     "btc_mxn_",
-			expected:    nil,
-			expectError: true,
-		},
-		{
-			name:        "Invalid currency - unknown major",
-			bookStr:     "unknown_mxn",
-			expected:    nil,
-			expectError: true,
-		},
-		{
-			name:        "Invalid currency - unknown minor",
-			bookStr:     "btc_unknown",
-			expected:    nil,
-			expectError: true,
+			expected:    "btc_mxn",
+			expectError: false,
 		},
 	}
 
@@ -105,8 +93,8 @@ func TestParseBook(t *testing.T) {
 				return
 			}
 
-			if result.String() != tt.expected.String() {
-				t.Errorf("Expected book '%s', got '%s'", tt.expected.String(), result.String())
+			if result.String() != tt.expected {
+				t.Errorf("Expected book '%s', got '%s'", tt.expected, result.String())
 			}
 		})
 	}
@@ -138,48 +126,42 @@ func TestParseBookEdgeCases(t *testing.T) {
 	edgeCases := []struct {
 		name        string
 		bookStr     string
+		expected    string
 		expectError bool
 	}{
 		{
-			name:        "Single character major",
-			bookStr:     "a_mxn",
-			expectError: true, // 'a' is not a valid currency
+			name:     "Mixed case",
+			bookStr:  "BTC_mxn",
+			expected: "btc_mxn", // bitso.ToCurrency lowercases currency names
 		},
 		{
-			name:        "Single character minor",
-			bookStr:     "btc_a",
-			expectError: true, // 'a' is not a valid currency
+			name:     "Repeated underscore",
+			bookStr:  "btc__mxn",
+			expected: "btc_mxn", // empty segments are skipped
 		},
 		{
-			name:        "Numbers in currency",
-			bookStr:     "btc1_mxn",
-			expectError: true, // 'btc1' is not a valid currency
+			name:        "Only underscores",
+			bookStr:     "___",
+			expectError: true,
 		},
 		{
-			name:        "Special characters",
-			bookStr:     "btc@_mxn",
-			expectError: true, // '@' is not valid in currency
-		},
-		{
-			name:        "Whitespace",
-			bookStr:     "btc _mxn",
-			expectError: true, // whitespace is not valid
-		},
-		{
-			name:        "Mixed case",
-			bookStr:     "BTC_mxn",
-			expectError: true, // uppercase is not valid
+			name:        "Single segment surrounded by underscores",
+			bookStr:     "_btc_",
+			expectError: true,
 		},
 	}
 
 	for _, tt := range edgeCases {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := parseBook(tt.bookStr)
+			book, err := parseBook(tt.bookStr)
 			if tt.expectError && err == nil {
 				t.Errorf("Expected error for input '%s', but got none", tt.bookStr)
 			}
 			if !tt.expectError && err != nil {
 				t.Errorf("Unexpected error for input '%s': %v", tt.bookStr, err)
+			}
+			if !tt.expectError && err == nil && book.String() != tt.expected {
+				t.Errorf("Expected book '%s', got '%s'", tt.expected, book.String())
 			}
 		})
 	}

@@ -6,34 +6,33 @@ import (
 	"time"
 )
 
+// configEnvVars lists every environment variable read by LoadConfig.
+var configEnvVars = []string{
+	"SERVICE_NAME", "SERVICE_PORT", "BITSO_WS_URL", "BITSO_API_BASE_URL", "BITSO_BOOKS", "BITSO_CHANNELS",
+	"KAFKA_BROKERS", "KAFKA_TOPIC_TRADES", "KAFKA_TOPIC_ORDERBOOK", "KAFKA_TOPIC_TICKER",
+	"REDIS_HOST", "REDIS_PORT", "REDIS_PASSWORD", "REDIS_DB",
+	"CACHE_TICKER_TTL", "CACHE_ORDERBOOK_TTL", "CACHE_TRADES_SIZE",
+	"PUBLISH_ORDERBOOK_INTERVAL", "PUBLISH_TICKER_INTERVAL",
+	"WS_RECONNECT_ATTEMPTS", "WS_RECONNECT_INTERVAL", "WS_RECONNECT_MAX_DELAY",
+	"TRADE_SILENCE_THRESHOLD", "TRADE_SILENCE_RECONNECT_COOLDOWN",
+	"TRADE_REST_FALLBACK_ENABLED", "TRADE_REST_FALLBACK_INTERVAL", "TRADE_REST_FALLBACK_THRESHOLD",
+	"READINESS_MAX_TRADE_AGE", "READINESS_STARTUP_GRACE",
+	"ENABLE_WEBSOCKET", "ENABLE_KAFKA", "ENABLE_CACHE", "ENABLE_HTTP_API",
+}
+
+// clearConfigEnv blanks every config variable for the duration of the test.
+// getEnv treats an empty value the same as unset, and t.Setenv restores the
+// original values when the test finishes.
+func clearConfigEnv(t *testing.T) {
+	t.Helper()
+	for _, envVar := range configEnvVars {
+		t.Setenv(envVar, "")
+	}
+}
+
 // TestLoadConfig tests configuration loading
 func TestLoadConfig(t *testing.T) {
-	// Save original environment variables
-	originalEnv := make(map[string]string)
-	envVars := []string{
-		"SERVICE_NAME", "SERVICE_PORT", "BITSO_WS_URL", "BITSO_BOOKS", "BITSO_CHANNELS",
-		"KAFKA_BROKERS", "KAFKA_TOPIC_TRADES", "KAFKA_TOPIC_ORDERBOOK", "KAFKA_TOPIC_TICKER",
-		"REDIS_HOST", "REDIS_PORT", "REDIS_PASSWORD", "REDIS_DB",
-		"CACHE_TICKER_TTL", "CACHE_ORDERBOOK_TTL", "CACHE_TRADES_SIZE",
-		"PUBLISH_ORDERBOOK_INTERVAL", "PUBLISH_TICKER_INTERVAL",
-		"WS_RECONNECT_ATTEMPTS", "WS_RECONNECT_INTERVAL", "WS_RECONNECT_MAX_DELAY",
-		"ENABLE_WEBSOCKET", "ENABLE_KAFKA", "ENABLE_CACHE", "ENABLE_HTTP_API",
-	}
-
-	for _, envVar := range envVars {
-		originalEnv[envVar] = os.Getenv(envVar)
-	}
-
-	// Clean up after test
-	defer func() {
-		for _, envVar := range envVars {
-			if originalEnv[envVar] == "" {
-				os.Unsetenv(envVar)
-			} else {
-				os.Setenv(envVar, originalEnv[envVar])
-			}
-		}
-	}()
+	clearConfigEnv(t)
 
 	// Test with default values
 	config, err := LoadConfig()
@@ -103,59 +102,34 @@ func TestLoadConfig(t *testing.T) {
 
 // TestLoadConfigWithCustomValues tests configuration loading with custom values
 func TestLoadConfigWithCustomValues(t *testing.T) {
-	// Save original environment variables
-	originalEnv := make(map[string]string)
-	envVars := []string{
-		"SERVICE_NAME", "SERVICE_PORT", "BITSO_WS_URL", "BITSO_BOOKS", "BITSO_CHANNELS",
-		"KAFKA_BROKERS", "KAFKA_TOPIC_TRADES", "KAFKA_TOPIC_ORDERBOOK", "KAFKA_TOPIC_TICKER",
-		"REDIS_HOST", "REDIS_PORT", "REDIS_PASSWORD", "REDIS_DB",
-		"CACHE_TICKER_TTL", "CACHE_ORDERBOOK_TTL", "CACHE_TRADES_SIZE",
-		"PUBLISH_ORDERBOOK_INTERVAL", "PUBLISH_TICKER_INTERVAL",
-		"WS_RECONNECT_ATTEMPTS", "WS_RECONNECT_INTERVAL", "WS_RECONNECT_MAX_DELAY",
-		"ENABLE_WEBSOCKET", "ENABLE_KAFKA", "ENABLE_CACHE", "ENABLE_HTTP_API",
-	}
-
-	for _, envVar := range envVars {
-		originalEnv[envVar] = os.Getenv(envVar)
-	}
-
-	// Clean up after test
-	defer func() {
-		for _, envVar := range envVars {
-			if originalEnv[envVar] == "" {
-				os.Unsetenv(envVar)
-			} else {
-				os.Setenv(envVar, originalEnv[envVar])
-			}
-		}
-	}()
+	clearConfigEnv(t)
 
 	// Set custom values
-	os.Setenv("SERVICE_NAME", "custom-market-data")
-	os.Setenv("SERVICE_PORT", "9090")
-	os.Setenv("BITSO_WS_URL", "wss://custom.bitso.com")
-	os.Setenv("BITSO_BOOKS", "btc_mxn,eth_mxn,xrp_mxn")
-	os.Setenv("BITSO_CHANNELS", "trades,orders,diff-orders")
-	os.Setenv("KAFKA_BROKERS", "kafka1:9092,kafka2:9092")
-	os.Setenv("KAFKA_TOPIC_TRADES", "custom.trades")
-	os.Setenv("KAFKA_TOPIC_ORDERBOOK", "custom.orderbook")
-	os.Setenv("KAFKA_TOPIC_TICKER", "custom.ticker")
-	os.Setenv("REDIS_HOST", "redis.example.com")
-	os.Setenv("REDIS_PORT", "6380")
-	os.Setenv("REDIS_PASSWORD", "secretpassword")
-	os.Setenv("REDIS_DB", "5")
-	os.Setenv("CACHE_TICKER_TTL", "10s")
-	os.Setenv("CACHE_ORDERBOOK_TTL", "5s")
-	os.Setenv("CACHE_TRADES_SIZE", "2000")
-	os.Setenv("PUBLISH_ORDERBOOK_INTERVAL", "2s")
-	os.Setenv("PUBLISH_TICKER_INTERVAL", "3s")
-	os.Setenv("WS_RECONNECT_ATTEMPTS", "5")
-	os.Setenv("WS_RECONNECT_INTERVAL", "2s")
-	os.Setenv("WS_RECONNECT_MAX_DELAY", "20s")
-	os.Setenv("ENABLE_WEBSOCKET", "false")
-	os.Setenv("ENABLE_KAFKA", "false")
-	os.Setenv("ENABLE_CACHE", "false")
-	os.Setenv("ENABLE_HTTP_API", "false")
+	t.Setenv("SERVICE_NAME", "custom-market-data")
+	t.Setenv("SERVICE_PORT", "9090")
+	t.Setenv("BITSO_WS_URL", "wss://custom.bitso.com")
+	t.Setenv("BITSO_BOOKS", "btc_mxn,eth_mxn,xrp_mxn")
+	t.Setenv("BITSO_CHANNELS", "trades,orders,diff-orders")
+	t.Setenv("KAFKA_BROKERS", "kafka1:9092,kafka2:9092")
+	t.Setenv("KAFKA_TOPIC_TRADES", "custom.trades")
+	t.Setenv("KAFKA_TOPIC_ORDERBOOK", "custom.orderbook")
+	t.Setenv("KAFKA_TOPIC_TICKER", "custom.ticker")
+	t.Setenv("REDIS_HOST", "redis.example.com")
+	t.Setenv("REDIS_PORT", "6380")
+	t.Setenv("REDIS_PASSWORD", "secretpassword")
+	t.Setenv("REDIS_DB", "5")
+	t.Setenv("CACHE_TICKER_TTL", "10s")
+	t.Setenv("CACHE_ORDERBOOK_TTL", "5s")
+	t.Setenv("CACHE_TRADES_SIZE", "2000")
+	t.Setenv("PUBLISH_ORDERBOOK_INTERVAL", "2s")
+	t.Setenv("PUBLISH_TICKER_INTERVAL", "3s")
+	t.Setenv("WS_RECONNECT_ATTEMPTS", "5")
+	t.Setenv("WS_RECONNECT_INTERVAL", "2s")
+	t.Setenv("WS_RECONNECT_MAX_DELAY", "20s")
+	t.Setenv("ENABLE_WEBSOCKET", "false")
+	t.Setenv("ENABLE_KAFKA", "false")
+	t.Setenv("ENABLE_CACHE", "false")
+	t.Setenv("ENABLE_HTTP_API", "false")
 
 	config, err := LoadConfig()
 	if err != nil {
@@ -240,84 +214,101 @@ func TestLoadConfigWithCustomValues(t *testing.T) {
 	}
 }
 
-// TestConfigValidation tests configuration validation
+// validTestConfig returns a Config that passes Validate.
+func validTestConfig() *Config {
+	return &Config{
+		ServiceName:  "market-data",
+		ServicePort:  "8083",
+		BitsoWSURL:   "wss://ws.bitso.com",
+		BitsoBooks:   []string{"btc_mxn"},
+		EnableKafka:  true,
+		KafkaBrokers: "localhost:9092",
+	}
+}
+
+// TestConfigValidation tests configuration validation.
+//
+// LoadConfig substitutes a default for every unset or empty variable (see
+// getEnv), so the required-field errors in Validate cannot be reached through
+// the environment; they are exercised here by calling Validate directly.
 func TestConfigValidation(t *testing.T) {
-	// Save original environment variables
-	originalEnv := make(map[string]string)
-	envVars := []string{
-		"SERVICE_NAME", "SERVICE_PORT", "BITSO_WS_URL", "BITSO_BOOKS", "KAFKA_BROKERS",
+	tests := []struct {
+		name      string
+		mutate    func(c *Config)
+		expectErr bool
+	}{
+		{name: "valid config", mutate: func(c *Config) {}},
+		{name: "missing SERVICE_NAME", mutate: func(c *Config) { c.ServiceName = "" }, expectErr: true},
+		{name: "missing SERVICE_PORT", mutate: func(c *Config) { c.ServicePort = "" }, expectErr: true},
+		{name: "missing BITSO_WS_URL", mutate: func(c *Config) { c.BitsoWSURL = "" }, expectErr: true},
+		{name: "missing BITSO_BOOKS", mutate: func(c *Config) { c.BitsoBooks = nil }, expectErr: true},
+		{name: "empty BITSO_BOOKS", mutate: func(c *Config) { c.BitsoBooks = []string{} }, expectErr: true},
+		{
+			name:      "missing KAFKA_BROKERS when Kafka is enabled",
+			mutate:    func(c *Config) { c.EnableKafka = true; c.KafkaBrokers = "" },
+			expectErr: true,
+		},
+		{
+			name:   "missing KAFKA_BROKERS when Kafka is disabled",
+			mutate: func(c *Config) { c.EnableKafka = false; c.KafkaBrokers = "" },
+		},
 	}
 
-	for _, envVar := range envVars {
-		originalEnv[envVar] = os.Getenv(envVar)
-	}
-
-	// Clean up after test
-	defer func() {
-		for _, envVar := range envVars {
-			if originalEnv[envVar] == "" {
-				os.Unsetenv(envVar)
-			} else {
-				os.Setenv(envVar, originalEnv[envVar])
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := validTestConfig()
+			tt.mutate(c)
+			err := c.Validate()
+			if tt.expectErr && err == nil {
+				t.Error("Expected validation error, got nil")
 			}
+			if !tt.expectErr && err != nil {
+				t.Errorf("Unexpected validation error: %v", err)
+			}
+		})
+	}
+}
+
+// TestLoadConfigDefaultsForMissingRequired verifies that LoadConfig falls back
+// to defaults (and therefore validates successfully) when required variables
+// are unset or empty.
+func TestLoadConfigDefaultsForMissingRequired(t *testing.T) {
+	tests := []struct {
+		envVar string
+		get    func(c *Config) string
+		want   string
+	}{
+		{"SERVICE_NAME", func(c *Config) string { return c.ServiceName }, "market-data"},
+		{"SERVICE_PORT", func(c *Config) string { return c.ServicePort }, "8083"},
+		{"BITSO_WS_URL", func(c *Config) string { return c.BitsoWSURL }, "wss://ws.bitso.com"},
+		{"BITSO_BOOKS", func(c *Config) string {
+			if len(c.BitsoBooks) != 1 {
+				return ""
+			}
+			return c.BitsoBooks[0]
+		}, "btc_mxn"},
+		{"KAFKA_BROKERS", func(c *Config) string { return c.KafkaBrokers }, "localhost:9092"},
+	}
+
+	for _, tt := range tests {
+		for _, mode := range []string{"unset", "empty"} {
+			t.Run(tt.envVar+"/"+mode, func(t *testing.T) {
+				clearConfigEnv(t)
+				t.Setenv("ENABLE_KAFKA", "true")
+				if mode == "unset" {
+					// t.Setenv (via clearConfigEnv) restores the original value afterwards.
+					os.Unsetenv(tt.envVar)
+				}
+
+				config, err := LoadConfig()
+				if err != nil {
+					t.Fatalf("Expected defaults to satisfy validation, got error: %v", err)
+				}
+				if got := tt.get(config); got != tt.want {
+					t.Errorf("Expected default %q for %s, got %q", tt.want, tt.envVar, got)
+				}
+			})
 		}
-	}()
-
-	// Test missing SERVICE_NAME
-	os.Unsetenv("SERVICE_NAME")
-	os.Setenv("SERVICE_PORT", "8080")
-	os.Setenv("BITSO_WS_URL", "wss://ws.bitso.com")
-	os.Setenv("BITSO_BOOKS", "btc_mxn")
-	os.Setenv("KAFKA_BROKERS", "localhost:9092")
-
-	_, err := LoadConfig()
-	if err == nil {
-		t.Error("Expected error for missing SERVICE_NAME")
-	}
-
-	// Test missing SERVICE_PORT
-	os.Setenv("SERVICE_NAME", "test")
-	os.Unsetenv("SERVICE_PORT")
-
-	_, err = LoadConfig()
-	if err == nil {
-		t.Error("Expected error for missing SERVICE_PORT")
-	}
-
-	// Test missing BITSO_WS_URL
-	os.Setenv("SERVICE_PORT", "8080")
-	os.Unsetenv("BITSO_WS_URL")
-
-	_, err = LoadConfig()
-	if err == nil {
-		t.Error("Expected error for missing BITSO_WS_URL")
-	}
-
-	// Test missing BITSO_BOOKS
-	os.Setenv("BITSO_WS_URL", "wss://ws.bitso.com")
-	os.Unsetenv("BITSO_BOOKS")
-
-	_, err = LoadConfig()
-	if err == nil {
-		t.Error("Expected error for missing BITSO_BOOKS")
-	}
-
-	// Test empty BITSO_BOOKS
-	os.Setenv("BITSO_BOOKS", "")
-
-	_, err = LoadConfig()
-	if err == nil {
-		t.Error("Expected error for empty BITSO_BOOKS")
-	}
-
-	// Test missing KAFKA_BROKERS when Kafka is enabled
-	os.Setenv("BITSO_BOOKS", "btc_mxn")
-	os.Setenv("ENABLE_KAFKA", "true")
-	os.Unsetenv("KAFKA_BROKERS")
-
-	_, err = LoadConfig()
-	if err == nil {
-		t.Error("Expected error for missing KAFKA_BROKERS when Kafka is enabled")
 	}
 }
 
@@ -328,7 +319,7 @@ func TestHelperFunctions(t *testing.T) {
 		t.Error("getEnv should return default for non-existent variable")
 	}
 
-	os.Setenv("TEST_VAR", "test_value")
+	t.Setenv("TEST_VAR", "test_value")
 	if getEnv("TEST_VAR", "default") != "test_value" {
 		t.Error("getEnv should return environment variable value")
 	}
@@ -390,6 +381,8 @@ func TestHelperFunctions(t *testing.T) {
 
 // TestConfigCopy tests that config validation doesn't modify the original
 func TestConfigCopy(t *testing.T) {
+	clearConfigEnv(t)
+
 	config, err := LoadConfig()
 	if err != nil {
 		t.Fatalf("Failed to load config: %v", err)

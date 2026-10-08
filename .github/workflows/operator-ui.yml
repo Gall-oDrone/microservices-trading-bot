@@ -16,8 +16,8 @@ on:
       - 'shared/pkg/dailyledger/**'
       - 'shared/pkg/httpcors/**'
       - 'services/api-gateway/**'
-      - 'services/market-data/internal/server/**'
-      - 'services/backtesting/internal/server/**'
+      - 'services/market-data/**'
+      - 'services/backtesting/**'
       - 'services/strategy-executor/go.mod'
       - 'services/strategy-executor/go.sum'
       - 'services/strategy-executor/cmd/daily-executor/**'
@@ -29,6 +29,10 @@ on:
       - 'services/trading-engine/**'
       - 'services/order-management/**'
       - 'scripts/kill-switch-drill.sh'
+      - 'scripts/k8s-halt.sh'
+      - 'scripts/tests/**'
+      - 'k8s/base/**'
+      - 'k8s/overlays/**'
       - 'scripts/sync-prometheus-rules.sh'
       - 'monitoring/prometheus/**'
       - 'monitoring/grafana/dashboards/**'
@@ -160,7 +164,15 @@ jobs:
             services/api-gateway/internal/config \
             services/api-gateway/internal/router/routes.go \
             services/api-gateway/cmd/main.go \
-            services/backtesting/internal/server/middleware.go)
+            services/backtesting/internal/server/middleware.go \
+            services/backtesting/internal/manager/backtest_manager.go \
+            services/backtesting/internal/optimizer/optimizer.go \
+            services/backtesting/internal/api/optimizer_handlers.go \
+            services/market-data/cmd/main_test.go \
+            services/market-data/internal/config/config_test.go \
+            services/market-data/internal/processor/trade_processor_test.go \
+            services/market-data/internal/publisher \
+            services/market-data/internal/websocket/manager_test.go)
           if [ -n "$out" ]; then echo "gofmt needed:"; echo "$out"; exit 1; fi
 
       - name: shared httpcors
@@ -175,22 +187,24 @@ jobs:
           go vet ./...
           go test -race -count=1 ./...
 
-      # internal/testing (e2e) is skipped: it needs market-data on :8083 and
-      # flakes on a pre-existing race (the manager still writes results after
-      # Stop, so t.TempDir cleanup fails). Not related to §7.
+      # internal/testing (e2e) runs without market-data (it tolerates the
+      # refused connection). -race guards the 2026-10-08 fixes: the manager
+      # now waits for its workers on Stop and optimizations are read through
+      # locked snapshots.
       - name: backtesting
         working-directory: services/backtesting
         run: |
           go build ./...
-          go test -count=1 $(go list ./... | grep -v /internal/testing)
+          go test -race -count=1 ./...
 
-      # Some market-data test packages (processor, publisher, websocket) do
-      # not compile and predate this job; build everything, vet the server.
+      # The stale test packages (cmd, config, processor, publisher, websocket)
+      # were ported to the current APIs on 2026-10-08; the whole module is
+      # vetted and tested now.
       - name: market-data
         working-directory: services/market-data
         run: |
-          go build ./...
-          go vet ./internal/server
+          go vet ./...
+          go test -race -count=1 ./...
 
   monitoring-rules:
     name: Monitoring rules and dashboards (promtool)
@@ -262,6 +276,17 @@ jobs:
         env:
           DRILL_DIR: ${{ runner.temp }}/kill-switch-drill
         run: scripts/kill-switch-drill.sh --offline --keep --source services/ui-api/internal/api/testdata
+
+      # §6.4.5: the cluster kill switch. scripts/k8s-halt.sh against a fake
+      # kubectl (refusals, audit log, nudge, read-back, files checked by the
+      # real Go halt parser), and every rendered overlay mounts trading-halt
+      # into trading-engine and order-management and ships it not halted.
+      - name: k8s kill switch
+        run: |
+          scripts/tests/k8s-halt-test.sh
+          for o in development staging production; do
+            kubectl kustomize "k8s/overlays/$o" | python3 scripts/tests/check-k8s-halt-wiring.py "$o"
+          done
 
       - uses: actions/upload-artifact@v4
         if: failure()

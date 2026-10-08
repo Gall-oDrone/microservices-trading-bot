@@ -8,9 +8,14 @@ import (
 	"sync"
 	"time"
 
-	"bitso-trading-platform/shared/pkg/kafka"
 	"bitso-trading-platform/shared/pkg/models"
 )
+
+// Producer is the subset of the shared Kafka producer (*kafka.Producer) used
+// by Publisher.
+type Producer interface {
+	Produce(ctx context.Context, key, value []byte) error
+}
 
 // TradePublisher publishes trade events to Kafka
 type TradePublisher interface {
@@ -25,7 +30,7 @@ type Publisher struct {
 	logger *log.Logger
 
 	// Kafka producer
-	producer *kafka.Producer
+	producer Producer
 	topic    string
 
 	// Input stream
@@ -57,7 +62,7 @@ type PublisherStatistics struct {
 // PublisherConfig holds configuration for the publisher
 type PublisherConfig struct {
 	Logger      *log.Logger
-	Producer    *kafka.Producer
+	Producer    Producer
 	Topic       string
 	TradesInput <-chan *models.TradeEvent
 }

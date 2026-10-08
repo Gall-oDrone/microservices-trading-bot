@@ -2,8 +2,11 @@ package processor
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"log"
 	"os"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -106,8 +109,11 @@ func TestProcessor(t *testing.T) {
 		if tradeEvent.MakerSide != "buy" {
 			t.Errorf("Expected maker side buy, got %s", tradeEvent.MakerSide)
 		}
-		if tradeEvent.GetTakerSide() != "sell" {
-			t.Errorf("Expected taker side sell, got %s", tradeEvent.GetTakerSide())
+		if tradeEvent.Amount != 0.001 {
+			t.Errorf("Expected amount 0.001, got %f", tradeEvent.Amount)
+		}
+		if tradeEvent.Value != 50.0 {
+			t.Errorf("Expected value 50.0, got %f", tradeEvent.Value)
 		}
 	case <-time.After(1 * time.Second):
 		t.Fatal("Timeout waiting for trade event")
@@ -148,7 +154,7 @@ func TestProcessorConcurrency(t *testing.T) {
 			defer wg.Done()
 			trade := createTestWebSocketTrade()
 			trade.Payload[0].TID = uint64(10000 + id)
-			trade.Payload[0].Price = bitso.Monetary{Value: 50000.0 + float64(id)}
+			trade.Payload[0].Price = bitso.ToMonetary(50000.0 + float64(id))
 			tradesInput <- trade
 		}(i)
 	}
@@ -204,9 +210,9 @@ func TestProcessorStatistics(t *testing.T) {
 	books := []string{"btc_mxn", "eth_mxn", "xrp_mxn"}
 	for i, book := range books {
 		trade := createTestWebSocketTrade()
-		trade.Book = bitso.ToBook(book)
+		trade.Book = testBook(book)
 		trade.Payload[0].TID = uint64(1000 + i)
-		trade.Payload[0].Price = bitso.Monetary{Value: 1000.0 + float64(i)*100}
+		trade.Payload[0].Price = bitso.ToMonetary(1000.0 + float64(i)*100)
 		tradesInput <- trade
 	}
 
@@ -294,10 +300,8 @@ func TestProcessorErrorHandling(t *testing.T) {
 	}
 
 	// Test invalid trade (empty payload)
-	invalidTrade := &bitso.WebSocketTrade{
-		Book:    bitso.ToBook("btc_mxn"),
-		Payload: []bitso.WebSocketTradePayload{}, // Empty payload
-	}
+	invalidTrade := createTestWebSocketTrade()
+	invalidTrade.Payload = invalidTrade.Payload[:0] // Empty payload
 	tradesInput <- invalidTrade
 
 	time.Sleep(100 * time.Millisecond)
@@ -309,6 +313,39 @@ func TestProcessorErrorHandling(t *testing.T) {
 	}
 
 	processor.Stop()
+}
+
+// TestProcessTradeMakerSide tests decoding of Bitso's numeric maker side
+func TestProcessTradeMakerSide(t *testing.T) {
+	tests := []struct {
+		makerSide int
+		want      string
+	}{
+		{makerSide: 0, want: "buy"},
+		{makerSide: 1, want: "sell"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.want, func(t *testing.T) {
+			processor := NewProcessor(&ProcessorConfig{
+				Logger:       log.New(os.Stdout, "[TEST-MAKER-SIDE] ", log.LstdFlags),
+				OutputBuffer: 1,
+			})
+
+			if err := processor.ProcessTrade(newTestWebSocketTrade(tt.makerSide)); err != nil {
+				t.Fatalf("ProcessTrade returned error: %v", err)
+			}
+
+			select {
+			case tradeEvent := <-processor.GetProcessedTradesStream():
+				if tradeEvent.MakerSide != tt.want {
+					t.Errorf("Expected maker side %s, got %s", tt.want, tradeEvent.MakerSide)
+				}
+			default:
+				t.Fatal("Expected a processed trade event")
+			}
+		})
+	}
 }
 
 // BenchmarkProcessor benchmarks the processor performance
@@ -352,22 +389,28 @@ func BenchmarkProcessor(b *testing.B) {
 	processor.Stop()
 }
 
-// Helper function to create a test WebSocket trade
+// Helper function to create a test WebSocket trade.
+// The trade payload is an anonymous struct in the bitso package, so the trade
+// is built from a Bitso-shaped JSON message (this also exercises decoding).
 func createTestWebSocketTrade() *bitso.WebSocketTrade {
-	return &bitso.WebSocketTrade{
-		Book: bitso.ToBook("btc_mxn"),
-		Payload: []bitso.WebSocketTradePayload{
-			{
-				TID:               12345,
-				Price:             bitso.Monetary{Value: 50000.0},
-				Amount:            bitso.Monetary{Value: 0.001},
-				Value:             bitso.Monetary{Value: 50.0},
-				MakerOrderID:      "maker-order-123",
-				TakerOrderID:      "taker-order-456",
-				MakerSide:         "0", // 0 = buy, 1 = sell
-				CreationTimestamp: uint64(time.Now().UnixMilli()),
-			},
-		},
-		Sent: uint64(time.Now().UnixMilli()),
+	return newTestWebSocketTrade(0)
+}
+
+// newTestWebSocketTrade builds a test trade with the given maker side
+// (0 = buy, 1 = sell).
+func newTestWebSocketTrade(makerSide int) *bitso.WebSocketTrade {
+	now := time.Now().UnixMilli()
+	raw := fmt.Sprintf(`{"type":"trades","book":"btc_mxn","payload":[{"i":12345,"a":"0.001","r":"50000","v":"50","t":%d,"x":%d,"mo":"maker-order-123","to":"taker-order-456"}],"sent":%d}`, makerSide, now, now)
+
+	var trade bitso.WebSocketTrade
+	if err := json.Unmarshal([]byte(raw), &trade); err != nil {
+		panic(fmt.Sprintf("failed to build test trade: %v", err))
 	}
+	return &trade
+}
+
+// testBook builds a bitso.Book from a "major_minor" string.
+func testBook(s string) bitso.Book {
+	major, minor, _ := strings.Cut(s, "_")
+	return *bitso.NewBook(bitso.ToCurrency(major), bitso.ToCurrency(minor))
 }

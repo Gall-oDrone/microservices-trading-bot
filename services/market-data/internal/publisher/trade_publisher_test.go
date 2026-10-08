@@ -9,20 +9,29 @@ import (
 	"testing"
 	"time"
 
-	"bitso-trading-platform/shared/pkg/kafka"
 	"bitso-trading-platform/shared/pkg/models"
 )
 
-// MockProducer is a mock implementation of kafka.Producer for testing
+// producedMessage records a message passed to MockProducer.Produce
+type producedMessage struct {
+	Key   []byte
+	Value []byte
+	Time  time.Time
+}
+
+// MockProducer is a mock implementation of the Producer interface for testing
 type MockProducer struct {
-	producedMessages []kafka.Message
+	producedMessages []producedMessage
 	produceError     error
 	mu               sync.RWMutex
 }
 
+// Compile-time check that MockProducer satisfies the publisher's Producer seam.
+var _ Producer = (*MockProducer)(nil)
+
 func NewMockProducer() *MockProducer {
 	return &MockProducer{
-		producedMessages: make([]kafka.Message, 0),
+		producedMessages: make([]producedMessage, 0),
 	}
 }
 
@@ -34,7 +43,7 @@ func (m *MockProducer) Produce(ctx context.Context, key, value []byte) error {
 		return m.produceError
 	}
 
-	m.producedMessages = append(m.producedMessages, kafka.Message{
+	m.producedMessages = append(m.producedMessages, producedMessage{
 		Key:   key,
 		Value: value,
 		Time:  time.Now(),
@@ -42,43 +51,11 @@ func (m *MockProducer) Produce(ctx context.Context, key, value []byte) error {
 	return nil
 }
 
-func (m *MockProducer) ProduceMessage(ctx context.Context, msg kafka.Message) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	if m.produceError != nil {
-		return m.produceError
-	}
-
-	m.producedMessages = append(m.producedMessages, msg)
-	return nil
-}
-
-func (m *MockProducer) ProduceMessages(ctx context.Context, messages ...kafka.Message) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	if m.produceError != nil {
-		return m.produceError
-	}
-
-	m.producedMessages = append(m.producedMessages, messages...)
-	return nil
-}
-
-func (m *MockProducer) Close() error {
-	return nil
-}
-
-func (m *MockProducer) Stats() kafka.WriterStats {
-	return kafka.WriterStats{}
-}
-
-func (m *MockProducer) GetProducedMessages() []kafka.Message {
+func (m *MockProducer) GetProducedMessages() []producedMessage {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
-	messages := make([]kafka.Message, len(m.producedMessages))
+	messages := make([]producedMessage, len(m.producedMessages))
 	copy(messages, m.producedMessages)
 	return messages
 }
@@ -156,7 +133,7 @@ func TestPublisher(t *testing.T) {
 	// Check mock producer
 	messages := mockProducer.GetProducedMessages()
 	if len(messages) != 1 {
-		t.Errorf("Expected 1 message in mock producer, got %d", len(messages))
+		t.Fatalf("Expected 1 message in mock producer, got %d", len(messages))
 	}
 
 	// Verify message content
@@ -418,22 +395,18 @@ func BenchmarkPublisher(b *testing.B) {
 
 // Helper function to create a test trade event
 func createTestTradeEvent() *models.TradeEvent {
+	now := time.Now()
 	return &models.TradeEvent{
-		ID:           12345,
-		Book:         "btc_mxn",
-		Price:        50000.0,
-		Amount:       0.001,
-		Value:        50.0,
-		MakerOrderID: "maker-order-123",
-		TakerOrderID: "taker-order-456",
-		MakerSide:    "buy",
-		Timestamp:    time.Now(),
-		CreatedAt:    uint64(time.Now().UnixMilli()),
-		ReceivedAt:   time.Now(),
-		Source:       "bitso_websocket",
-		Metadata: map[string]interface{}{
-			"test": true,
-		},
+		ID:              12345,
+		Book:            "btc_mxn",
+		Price:           50000.0,
+		Amount:          0.001,
+		Value:           50.0,
+		Side:            "buy",
+		MakerSide:       "buy",
+		Timestamp:       now,
+		ReceivedAt:      now,
+		CreatedAtMillis: now.UnixMilli(),
 	}
 }
 
