@@ -250,6 +250,7 @@ returns the executor's last recorded check. The Risk page shows all of it.
 | **R5a (done 2026-10-08)** Platform-wide, §6.4.2 | Load trading-engine `MaxDailyLoss`/`MaxDrawdownPct` from env (non-zero defaults); stop trading-engine from placing orders OM rejected; expose OM `GetCurrentExposure`; delete the dead strategy-executor risk package; live trading-engine fails closed (needs OM, stage only) | The session check actually blocks; a pending or rejected OM row never approves an order |
 | **R5b (done 2026-10-08)** Platform-wide, §6.4.3 | Move OM and trading-engine checks onto `shared/pkg/risk` (one policy format across services); trading-engine honours the halt (kill switch) | One policy format across services; HALT ALL also stops trading-engine |
 | **R6 (done 2026-10-08)** Trading-risk metrics, §6.4.4 | Production-standard telemetry, alerts, runbook and dashboard for limits, halts, execution quality and reconciliation (§11 Q4) | Every limit, the kill switch and execution quality are visible and alert with a runbook; rules are unit-tested in CI |
+| **R5c (done 2026-10-08)** Cluster kill switch, §6.4.5 | ConfigMap `trading-halt` mounted into trading-engine and order-management; `scripts/k8s-halt.sh` with confirmation, audit and read-back | One audited command halts every trading pod in a namespace within seconds; CI proves every overlay is wired |
 
 #### 6.4.1 R1 as built
 
@@ -326,7 +327,7 @@ returns the executor's last recorded check. The Risk page shows all of it.
 - **Kill switch.** Point both at the halt files ui-api writes (the stage ledger's
   `risk-state.json`, plus any other ledger halt file) and HALT ALL stops the daily-executor,
   trading-engine and order-management. In k8s this needs the halt files on a volume both pods mount;
-  until then the env is documented, not set (`k8s/base/trading-engine.yaml` unchanged).
+  ~~until then the env is documented, not set~~ done in R5c (§6.4.5): ConfigMap `trading-halt`.
 - **Tests.** `guard/pretrade_test.go`, `execution/exposure_test.go`,
   `risk/shared_policy_test.go`; CI `platform-risk` gofmt-checks them and now vets all of
   order-management (also fixed a context leak on its start-up error paths).
@@ -369,6 +370,40 @@ trading day), an owning team and a runbook entry.
 - **Not covered yet:** realized slippage per fill vs arrival price (needs fill prices joined to the
   decision mid in order-management), VaR / exposure in quote currency across books, and Alertmanager
   routing (on-call receivers are not configured in this repo).
+
+#### 6.4.5 R5c cluster kill switch as built (2026-10-08)
+
+- **Mechanism.** ConfigMap `trading-halt` (`k8s/base/trading-halt.yaml`) holds one
+  `risk-state.json` in the `shared/pkg/risk` HaltState format. trading-engine and order-management
+  mount it read-only as a directory at `/etc/trading-halt` (no `subPath`, which would never see
+  updates) and set `TRADING_HALT_FILES=/etc/trading-halt/risk-state.json`. Both already re-read the
+  file before every order (R5b), so a halt needs no restart. A missing ConfigMap keeps the pods from
+  starting, and a broken file blocks every order (fail closed).
+- **Why a ConfigMap, not a shared volume.** ui-api is not deployed in the cluster yet (Phase 5), so a
+  ReadWriteMany volume would have no writer. A ConfigMap needs no storage class, is versioned by the
+  API server, and `kubectl apply` replaces it atomically.
+- **Operator command.** `scripts/k8s-halt.sh -n <ns> halt|resume --reason ... --confirm <ns>` and
+  `status`:
+  - requires the namespace (no default), a reason of at least 8 characters, and the namespace typed
+    again;
+  - writes `{halted, reason, by, at}` plus ConfigMap annotations;
+  - annotates the pods so the kubelet refreshes the volume within seconds instead of its ~1–2 min
+    sync, then reads the file back from every trading-engine and order-management pod until all
+    see the change (default 90 s; exit 1 and `unverified` in the audit if not);
+  - appends every attempt (refused, failed, unverified, applied) to
+    `~/.trading-ops/k8s-halt-audit.jsonl`.
+- **Tests (CI `drill` job).** `scripts/tests/k8s-halt-test.sh` runs the script against a fake
+  kubectl: refusals, dry run, propagation lag, stuck pods, an apply failure, status exit codes. The
+  files it writes, and the shipped default, are parsed by the real Go parser
+  (`shared/pkg/risk/halt_external_test.go`). `scripts/tests/check-k8s-halt-wiring.py` fails any
+  rendered overlay (development, staging, production) that does not mount the ConfigMap correctly
+  or ships it halted.
+- **Also fixed.** The staging and production overlays did not build: their `*-patches.yaml` files
+  hold only comments, and kustomize refuses an empty patch. The entries are commented out until a
+  real patch exists.
+- **Not done.** The Risk page's HALT ALL writes local ledger halt files only; it does not reach the
+  cluster. That needs ui-api in the cluster (Phase 5) or an authenticated call to the Kubernetes
+  API, so it waits for OIDC and roles.
 
 ### 6.5 First findings from the real stage ledger
 - **btc_mxn's first stage leg cost 118 bps against 70 assumed.** The post-only order rested 60 min, filled 0.1%, and fell back to market: taker fee 78 bps + 40 bps above the fill-day open. A stage leg is small and stage liquidity is thin, so this is not yet evidence about production costs. But it is the cost signal to watch: the pre-registration's secondary (taker) scenario is 88 bps per leg, and this leg exceeded both.

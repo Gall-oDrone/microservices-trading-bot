@@ -5,8 +5,11 @@ resources:
   - namespace.yaml
   - ../../base
 
-patchesStrategicMerge:
-  - production-patches.yaml
+# production-patches.yaml holds comments only, and kustomize refuses an empty patch
+# ("patch appears to be empty"), so `kubectl apply -k` of this overlay failed.
+# Re-add it here once it contains a real patch:
+# patches:
+#   - path: production-patches.yaml
 
 namespace: bitso-trading-prod
 

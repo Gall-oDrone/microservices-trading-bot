@@ -1,0 +1,24 @@
+# Cluster kill switch (plan §6.4.5). One risk-state.json, the shared/pkg/risk
+# HaltState format ({halted, reason, by, at}), mounted read-only into
+# trading-engine and order-management at /etc/trading-halt and listed in
+# their TRADING_HALT_FILES. Both re-read it before every order (trading-engine
+# also every 10 s for its metrics), so HALT ALL needs no restart.
+#
+# Change it ONLY with scripts/k8s-halt.sh (halt | resume | status): it writes
+# a valid file with who/when/why, nudges the pods so the kubelet refreshes the
+# volume within seconds instead of ~1-2 min, and appends to the audit log.
+# A hand edit that breaks the JSON blocks every order (fail closed) and fires
+# TradingHaltFileInvalid.
+#
+# Must be mounted as a directory (no subPath): subPath mounts never receive
+# ConfigMap updates.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: trading-halt
+  labels:
+    app: bitso-trading-platform
+    component: risk-kill-switch
+data:
+  risk-state.json: |
+    {"halted": false}

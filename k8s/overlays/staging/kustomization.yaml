@@ -5,8 +5,11 @@ resources:
   - namespace.yaml
   - ../../base
 
-patchesStrategicMerge:
-  - staging-patches.yaml
+# staging-patches.yaml holds comments only, and kustomize refuses an empty patch
+# ("patch appears to be empty"), so `kubectl apply -k` of this overlay failed.
+# Re-add it here once it contains a real patch:
+# patches:
+#   - path: staging-patches.yaml
 
 namespace: bitso-trading-staging
 

@@ -12,6 +12,10 @@ reconciliation).
 **Golden rules**
 - When in doubt, halt. HALT ALL on the Risk page (or write the halt file by hand) stops the
   daily-executor, trading-engine and order-management. Resuming needs a reason and is audited.
+- **In k8s**, the engines read the ConfigMap `trading-halt` instead (plan §6.4.5). Halt the
+  cluster with `scripts/k8s-halt.sh -n <ns> halt --reason "..." --confirm <ns>`; it applies the
+  change, nudges the pods and waits until every trading-engine and order-management pod sees it
+  (`status` shows each pod's view). The Risk page's HALT ALL does not reach the cluster yet.
 - Never raise a limit to clear an alert during the session. Limit changes go through a new
   `TRADING_RISK_POLICY` file, reviewed, with a new `version`.
 - Record every breach attempt and every halt: who, what, when, why, outcome.
@@ -23,8 +27,10 @@ reconciliation).
 ### TradingKillSwitchEngaged
 *warning.* `trading_halt_active == 1`: a halt file is halted (or invalid).
 1. Expected after HALT ALL: confirm on the Risk page who halted, when and why (ui-api audit log).
+   In k8s: `scripts/k8s-halt.sh -n <ns> status` and the ConfigMap annotations
+   (`trading-halt/last-by`, `last-at`), plus the operator's `~/.trading-ops/k8s-halt-audit.jsonl`.
 2. Not expected: read the halt files (`TRADING_HALT_FILES`), find who wrote them, then decide
-   whether to resume from the UI.
+   whether to resume from the UI (in k8s: `k8s-halt.sh resume --reason ... --confirm <ns>`).
 3. Halted engines keep running and keep reporting; no order leaves until resumed.
 
 ### TradingHaltFileInvalid
@@ -32,6 +38,7 @@ reconciliation).
 reason/by/at). Every order is blocked, but nobody chose this halt.
 1. The engine log names the file and the error at start-up and on each blocked order.
 2. Fix the file with the UI (halt/resume writes a valid file) or remove it if the ledger is retired.
+   In k8s someone hand-edited the ConfigMap: rewrite it with `k8s-halt.sh halt` or `resume`.
 3. Do not delete a halted file to "unblock": resume from the UI so the action is audited.
 
 ### TradingKillSwitchUnreachable
@@ -39,7 +46,9 @@ reason/by/at). Every order is blocked, but nobody chose this halt.
 stop it.
 1. Set `TRADING_HALT_FILES` to the ledger halt files (the stage ledger's `risk-state.json`) and
    restart, or stop the engine until it is set.
-2. In k8s the halt files must be on a volume both ui-api and the engine mount.
+2. In k8s the base manifests mount ConfigMap `trading-halt` at `/etc/trading-halt` and set
+   `TRADING_HALT_FILES=/etc/trading-halt/risk-state.json`; an overlay or a manual edit removed it.
+   CI (`check-k8s-halt-wiring.py`) fails on any overlay that drops it.
 
 ### TradingHaltWatcherStale
 *warning.* The 10 s halt-file watcher stopped updating. Orders are still checked against the files
