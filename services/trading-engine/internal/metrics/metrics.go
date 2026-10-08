@@ -16,6 +16,7 @@ const (
 	ReasonSessionRisk       = "session_risk"
 	ReasonTickerFetch       = "ticker_fetch"
 	ReasonPreTradeValidation = "pretrade_validation"
+	ReasonRiskPolicy         = "risk_policy" // shared policy or operator halt file (R5b)
 )
 
 // Bounded reasons for signals_dropped_total.

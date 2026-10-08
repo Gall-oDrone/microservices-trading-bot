@@ -109,6 +109,7 @@ func NewApplication() (*Application, error) {
 		})
 		if err := redisClient.Ping(ctx).Err(); err != nil {
 			redisClient.Close()
+			cancel()
 			return nil, fmt.Errorf("redis connect: %w", err)
 		}
 		orderRepo = repository.NewRedisOrderRepository(redisClient, appLogger, metricsCollector)
@@ -126,6 +127,26 @@ func NewApplication() (*Application, error) {
 	// Validator and risk manager
 	orderValidator := validator.NewOrderValidator(&cfg.Risk, appLogger, orderRepo, metricsCollector)
 	riskManager := risk.NewRiskManager(&cfg.Risk, appLogger, orderRepo, positionRepo, metricsCollector)
+	// Risk R5b: shared-format policy and operator halt files (same env as trading-engine).
+	sharedPolicy, err := risk.LoadSharedPolicy(os.Getenv)
+	if err != nil {
+		if redisClient != nil {
+			redisClient.Close()
+		}
+		cancel()
+		return nil, fmt.Errorf("shared risk policy: %w", err)
+	}
+	riskManager.SetSharedPolicy(sharedPolicy)
+	if sharedPolicy != nil {
+		version := "none (halt files only)"
+		if sharedPolicy.Policy != nil {
+			version = sharedPolicy.Policy.Version
+		}
+		appLogger.Info("Shared risk policy enabled", map[string]interface{}{
+			"policy":     version,
+			"halt_files": sharedPolicy.HaltFiles,
+		})
+	}
 
 	var fillLedger repository.FillLedger
 	if cfg.Storage.Type == "redis" && redisClient != nil {

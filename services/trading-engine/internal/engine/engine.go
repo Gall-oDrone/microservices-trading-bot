@@ -92,6 +92,7 @@ type TradingEngine struct {
 	sessionRiskProvider execution.SessionRiskProvider  // optional: for daily loss / drawdown limits
 	preTradeValidator   execution.PreTradeValidator    // optional: validates orders with order-management before execution
 	metricsRecorder     MetricsRecorder                // optional: for Prometheus metrics
+	riskGate            RiskGate                       // optional: shared-format policy + halt files (risk R5b)
 	book                *bitso.Book
 
 	// State management
@@ -128,6 +129,14 @@ type EngineStatistics struct {
 	LastErrorTime    time.Time
 	LastError        string
 }
+
+// RiskGate decides whether an order may be sent (risk step R5b: the shared
+// policy format and the operator halt files). side is "buy" or "sell"; ref is
+// an independent reference price (the touch mid). A non-nil error blocks.
+type RiskGate func(ctx context.Context, book, side string, qty, price, ref float64) error
+
+// SetRiskGate installs the per-order risk gate. Call before Start.
+func (te *TradingEngine) SetRiskGate(g RiskGate) { te.riskGate = g }
 
 // NewTradingEngine creates a new trading engine instance.
 // sessionRiskProvider is optional; if set, used to enforce MaxDailyLoss/MaxDrawdownPct before placing orders.
@@ -482,6 +491,17 @@ func (te *TradingEngine) processTradeSignal(signal *models.TradeSignalEvent) err
 	if err := te.validateSignalPrice(signal, ticker); err != nil {
 		te.recordOrderFailedIfMetrics(signal, "validation")
 		return fmt.Errorf("signal validation failed: %w", err)
+	}
+
+	// Risk policy (shared format) and operator halt files: a halt or a
+	// breached limit blocks here, before anything else is asked.
+	if te.riskGate != nil {
+		ref := (ticker.Bid.Float64() + ticker.Ask.Float64()) / 2
+		side := strings.ToLower(strings.TrimSpace(signal.Signal))
+		if err := te.riskGate(te.ctx, book.String(), side, signal.Amount, signal.Price, ref); err != nil {
+			te.recordOrderFailedIfMetrics(signal, "risk_policy")
+			return err
+		}
 	}
 
 	// Session risk check (daily loss / drawdown limits)

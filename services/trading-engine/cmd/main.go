@@ -17,6 +17,7 @@ import (
 	"bitso-trading-platform/shared/pkg/database"
 	"bitso-trading-platform/shared/pkg/kafka"
 	"bitso-trading-platform/shared/pkg/models"
+	"bitso-trading-platform/shared/pkg/risk"
 	"bitso-trading-platform/trading-engine/internal/engine"
 	"bitso-trading-platform/trading-engine/internal/execution"
 	"bitso-trading-platform/trading-engine/internal/guard"
@@ -78,6 +79,26 @@ func NewApplication() (*Application, error) {
 	logger.Printf("✓ Session limits: max daily loss %.2f (quote currency), max drawdown %.2f%% (dry run %v)",
 		limits.MaxDailyLoss, limits.MaxDrawdownPct, cfg.DryRun)
 
+	// Risk R5b: per-order policy in the shared format plus the operator halt
+	// files (the same risk-state.json ui-api's halt and HALT ALL write).
+	riskPolicy, policySrc, err := guard.LoadPolicy(os.Getenv)
+	if err != nil {
+		cancel()
+		return nil, fmt.Errorf("risk policy: %w", err)
+	}
+	haltFiles := guard.HaltFiles(os.Getenv)
+	logger.Printf("✓ Risk policy %s (%s); halt files %v", riskPolicy.Version, policySrc, haltFiles)
+	for _, f := range haltFiles {
+		if h, found, herr := risk.LoadHaltState(f); herr != nil {
+			logger.Printf("⚠ %v: every order is blocked until it is fixed or removed", herr)
+		} else if found && h.Halted {
+			logger.Printf("⚠ HALTED by %s: %s (by %s at %s); orders are blocked", f, h.Reason, h.By, h.At)
+		}
+	}
+	if !cfg.DryRun && len(haltFiles) == 0 {
+		logger.Printf("⚠ %s is not set: the operator kill switch (HALT ALL) cannot stop this engine", guard.EnvHaltFiles)
+	}
+
 	// Initialize Bitso API client (required: STAGE_BITSO_API_KEY / STAGE_BITSO_API_SECRET from AWS Secrets Manager)
 	bitsoClient := initializeBitsoClient(cfg, logger)
 	if bitsoClient == nil {
@@ -134,8 +155,11 @@ func NewApplication() (*Application, error) {
 	// Optional: PreTradeValidator for pre-trade validation (call order-management POST /api/v1/orders/validate)
 	var sessionRiskProvider execution.SessionRiskProvider
 	var preTradeValidator execution.PreTradeValidator
+	preTrade := &guard.PreTrade{Policy: riskPolicy, HaltFiles: haltFiles}
 	if orderMgmtURL := os.Getenv("ORDER_MANAGEMENT_URL"); orderMgmtURL != "" {
-		sessionRiskProvider = execution.NewOrderManagementRiskProvider(orderMgmtURL)
+		omRisk := execution.NewOrderManagementRiskProvider(orderMgmtURL)
+		sessionRiskProvider = omRisk
+		preTrade.Position = omRisk.Position // GET /api/v1/risk/exposure
 		preTradeValidator = execution.NewHTTPPreTradeValidator(orderMgmtURL, 5*time.Second)
 		logger.Println("✓ Session risk provider configured (ORDER_MANAGEMENT_URL)")
 		logger.Println("✓ Pre-trade validator configured (ORDER_MANAGEMENT_URL)")
@@ -166,6 +190,10 @@ func NewApplication() (*Application, error) {
 		return nil, fmt.Errorf("failed to create trading engine: %w", err)
 	}
 	logger.Println("✓ Trading engine created")
+	tradingEngine.SetRiskGate(func(ctx context.Context, book, side string, qty, price, ref float64) error {
+		_, err := preTrade.Allow(ctx, risk.Order{Book: book, Side: side, QtyBTC: qty, Price: price, RefPrice: ref})
+		return err
+	})
 
 	return &Application{
 		logger:              logger,

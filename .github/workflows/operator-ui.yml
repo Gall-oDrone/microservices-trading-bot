@@ -96,13 +96,18 @@ jobs:
 
       # Plan §6.4 R5: session limits and the live-mode start-up guard
       # (internal/guard), the pending-row pre-trade fix and the exposure
-      # endpoint in order-management.
+      # endpoint in order-management. R5b (§6.4.3): the shared-format policy
+      # and halt-file gate in both services.
       - name: gofmt (R5 files)
         run: |
           out=$(gofmt -l services/trading-engine/internal/guard \
+            services/trading-engine/internal/execution/exposure.go \
+            services/trading-engine/internal/execution/exposure_test.go \
             services/order-management/internal/server/exposure.go \
             services/order-management/internal/server/exposure_test.go \
-            services/order-management/internal/validator/pretrade_duplicate.go)
+            services/order-management/internal/validator/pretrade_duplicate.go \
+            services/order-management/internal/risk/shared_policy.go \
+            services/order-management/internal/risk/shared_policy_test.go)
           if [ -n "$out" ]; then echo "gofmt needed:"; echo "$out"; exit 1; fi
 
       - name: trading-engine
@@ -114,7 +119,7 @@ jobs:
       - name: order-management
         working-directory: services/order-management
         run: |
-          go vet ./internal/server ./internal/validator ./internal/risk
+          go vet ./...
           go test -race -count=1 ./...
 
   drill:

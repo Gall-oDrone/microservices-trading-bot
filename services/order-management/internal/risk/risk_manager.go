@@ -29,6 +29,7 @@ type Manager struct {
 	orderRepo    repository.OrderRepository
 	positionRepo repository.PositionRepository
 	metrics      *metrics.MetricsCollector
+	shared       *SharedPolicy // optional: shared-format policy + halt files (R5b)
 
 	// Rate limiting
 	orderCounts map[string]int // minute -> count
@@ -78,6 +79,14 @@ func (rm *Manager) CheckRisk(ctx context.Context, order *models.Order) error {
 	}()
 
 	result := models.NewRiskCheckResult()
+
+	// Shared policy and operator halt files (risk R5b): a halt rejects here.
+	if findings := rm.checkShared(ctx, order); len(findings) > 0 {
+		for _, f := range findings {
+			result.AddCritical("shared_policy:"+f.Rule, f.Message, f.Value, f.Limit)
+		}
+		rm.metrics.RecordRiskViolation("shared_policy")
+	}
 
 	// Check position limits
 	if err := rm.CheckPositionLimits(ctx, order); err != nil {

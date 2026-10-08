@@ -208,7 +208,7 @@ Still to build (Phase 2–3): `/market/{book}/…` proxy.
 | strategy-executor `internal/risk` | trade amount, positions, hours | ~~Dead code~~ **Deleted 2026-10-08 (R5a)** with the unused `internal/manager` |
 | Strategy params `max_daily_loss_quote` | per-strategy daily-loss pause | limit-profit and momentum only |
 | daily-executor | `DAILY_EXECUTOR_DISABLED=1`, `-size` ≤ 0.01 BTC, stale-candle refusal, history-revision refusal, file lock, stage-only URL, balance check before orders; **since 2026-10-05 also `shared/pkg/risk.Check` before every stage order (R1)** | **Yes**, the only path that trades today |
-| Global halt / StopAll | none | **Missing** |
+| Global halt / StopAll | ~~none~~ halt files (`risk-state.json`) | ~~**Missing**~~ daily-executor since R2; ui-api HALT ALL since R4; **trading-engine and order-management since R5b (2026-10-08, §6.4.3)** via `TRADING_HALT_FILES` |
 
 ### 6.2 New: `shared/pkg/risk` (stdlib only, Go 1.21)
 
@@ -248,7 +248,7 @@ returns the executor's last recorded check. The Risk page shows all of it.
 | **R3 (done 2026-10-07)** Alerts, §8.9 | Alert on a missed or failed run (exit code ≠ 0), a block, or a warning. `ui-alerts` (cron, every 15 min) evaluates ui-api's own views and publishes to SNS (email) | A missed day pages within an hour of 06:00 Mexico City |
 | **R4 (done 2026-10-08, local token)** Halt from the UI, §8.12 | `POST /api/ui/risk/halt` and `/resume` with a required reason, an audit log (append-only JSONL), a confirmation dialog | Built localhost-only behind a 0600 operator-token file instead of OIDC (decided 2026-10-08); OIDC swaps in with Phase 4; every attempt is audited |
 | **R5a (done 2026-10-08)** Platform-wide, §6.4.2 | Load trading-engine `MaxDailyLoss`/`MaxDrawdownPct` from env (non-zero defaults); stop trading-engine from placing orders OM rejected; expose OM `GetCurrentExposure`; delete the dead strategy-executor risk package; live trading-engine fails closed (needs OM, stage only) | The session check actually blocks; a pending or rejected OM row never approves an order |
-| **R5b** Platform-wide | Move OM and trading-engine checks onto `shared/pkg/risk` (one policy format across services); trading-engine honours the halt (kill switch) | One policy format across services; HALT ALL also stops trading-engine |
+| **R5b (done 2026-10-08)** Platform-wide, §6.4.3 | Move OM and trading-engine checks onto `shared/pkg/risk` (one policy format across services); trading-engine honours the halt (kill switch) | One policy format across services; HALT ALL also stops trading-engine |
 
 #### 6.4.1 R1 as built
 
@@ -305,6 +305,33 @@ returns the executor's last recorded check. The Risk page shows all of it.
   and trading-engine honouring the halt so HALT ALL stops it too. The daily-executor's limits (one
   0.01 BTC leg per book per day) do not fit intraday strategies, so this needs per-service limits in
   the shared policy first.
+
+#### 6.4.3 R5b as built (2026-10-08)
+
+- **One format, per-service limits.** Both services read `TRADING_RISK_POLICY` (a `shared/pkg/risk`
+  policy file, the daily-executor's JSON) and `TRADING_HALT_FILES` (comma list of `risk-state.json`).
+  Each service keeps its own limits in that one format: trading-engine's built-in
+  `trading-engine-default-2026-10-08` keeps its existing per-order caps (btc_mxn 0.1 BTC / 10,000 MXN,
+  btc_usd 0.1 BTC / 600 USD, others 0.01 BTC) and adds a 500 bps fat-finger guard against the touch
+  mid. Order-management applies a policy only when one is set, on top of its `RiskConfig` limits.
+- **trading-engine** (`internal/guard/pretrade.go`): the gate runs after signal price validation and
+  before the session and OM checks. A block records `orders_failed{reason="risk_policy"}`. The
+  position comes from OM `GET /api/v1/risk/exposure`, so a reducing sell is never trapped; an unknown
+  position, an unreadable or invalid halt file all block (fail closed). Start-up logs the policy
+  version and any halted or invalid halt file, and warns when live mode has no halt files.
+- **order-management** (`internal/risk/shared_policy.go`): `CheckRisk` adds critical violations
+  `shared_policy:<rule>` (metric `risk_violations{type="shared_policy"}`), so a halt also stops orders
+  that reach OM by another path.
+- **Kill switch.** Point both at the halt files ui-api writes (the stage ledger's
+  `risk-state.json`, plus any other ledger halt file) and HALT ALL stops the daily-executor,
+  trading-engine and order-management. In k8s this needs the halt files on a volume both pods mount;
+  until then the env is documented, not set (`k8s/base/trading-engine.yaml` unchanged).
+- **Tests.** `guard/pretrade_test.go`, `execution/exposure_test.go`,
+  `risk/shared_policy_test.go`; CI `platform-risk` gofmt-checks them and now vets all of
+  order-management (also fixed a context leak on its start-up error paths).
+- **Not done.** Order-management's own limits (`MAX_POSITION_SIZE`, open orders, orders/minute)
+  still live in `RiskConfig`; moving them into the policy file needs per-minute and open-order
+  limits in `shared/pkg/risk` first.
 
 ### 6.5 First findings from the real stage ledger
 - **btc_mxn's first stage leg cost 118 bps against 70 assumed.** The post-only order rested 60 min, filled 0.1%, and fell back to market: taker fee 78 bps + 40 bps above the fill-day open. A stage leg is small and stage liquidity is thin, so this is not yet evidence about production costs. But it is the cost signal to watch: the pre-registration's secondary (taker) scenario is 88 bps per leg, and this leg exceeded both.
