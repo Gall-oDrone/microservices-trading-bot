@@ -471,7 +471,7 @@ unfinished bar is labelled provisional. The decision path never reads live data.
   - The collector is healthy: 25 hourly flushes per book in 24 h, longest wait 63 min.
   - **Compaction stopped**: both books are compacted through 2026-09-30, from a single run on
     2026-10-01 17:48 UTC, so it is **6 days behind**. It looks like a one-off backfill, not a
-    scheduled job.
+    scheduled job. *Fixed 2026-10-08 (§8.9): caught up through 2026-10-06 and scheduled daily.*
   - **The stage ledger is missing 2026-10-05 and 2026-10-06** for both books: the last run was
     2026-10-05 16:53 Mexico City. Runs are manual today; R3 alerts and a schedule are the fix.
   - Run logs before 2026-10-05 22:53 UTC have no `exit=` line (they predate the wrapper).
@@ -536,8 +536,20 @@ unfinished bar is labelled provisional. The decision path never reads live data.
     an exit code and an S3 copy (§8.8).
   - `*/15 * * * *` `scripts/ops-run.sh alerts`. A day still missing at 06:00 Mexico City is reported
     by 06:15; a failed run at 00:15 by about 00:30 (or when the maker timeout ends).
+  - `30 2 * * *` `scripts/ops-run.sh compact` (added 2026-10-08): the archive compactor's
+    **non-destructive** refresh, `bin/compact-archive -bucket <bucket>`. It writes
+    `trades_compacted/` and a manifest per day after a read-back check, skips days whose manifest is
+    current, and leaves `trades/` untouched; 02:30 UTC is after its 2 h settle on the UTC day.
+    `-cutover` (deletes the small files) is **refused** by `ops-run.sh` and stays a manual, reviewed
+    step (`docs/data-collector/S3-COMPACTION-2026-09-22.md`). The compactor is not on this branch:
+    the installer builds it from `--compactor-ref` (default `origin/feat/intraday-data-collector`,
+    `services/data-collector` + `shared` via `git archive`) when missing or with
+    `--rebuild-compactor`, and records the commit in `bin/compact-archive.ref`. `--no-compact` skips it.
   - Settings in `~/.config/microservices-trading-bot/ops.env` (chmod 600: PATH with the AWS CLI,
-    topic, bucket, ledger); logs in `~/.local/state/mtb-ops/{executor,alerts}.log`.
+    topic, bucket, ledger); logs in `~/.local/state/mtb-ops/{executor,alerts,compact}.log`.
+- **First catch-up (2026-10-08 00:08 UTC).** 2026-10-01 … 10-06 compacted for both books (12
+  partitions, rows match: btc_mxn 26 949 → 49 files in total, btc_usd 149 → 7); the two compaction
+  alerts resolved on the next alerts run ("[mtb-ops] 2 resolved").
 - **Known limit.** The executor and the alerts run on the same workstation: if it is off, nothing
   runs and nothing alerts. A watchdog outside it (e.g. a scheduled Lambda that checks the S3 ledger's
   age, now that it is uploaded daily) would close that gap.
@@ -560,9 +572,10 @@ export PATH=$PWD/.tools/node/bin:$PATH              # portable Node 22
 #   go run ./cmd -ledgers stage=s3://<bucket>/daily-executor/stage,local=<path>/ledger.jsonl
 # one executor run with a run log (and an S3 copy when DAILY_EXECUTOR_S3_URI is set):
 #   scripts/daily-executor-run.sh -stage
-# R3 alerts: print what would be sent; install the cron jobs (daily run + alerts every 15 min):
+# R3 alerts: print what would be sent; install the cron jobs (daily run, compaction refresh, alerts every 15 min):
 #   (cd services/ui-api && go run ./cmd/ui-alerts -dry-run)
 #   scripts/install-ops-cron.sh --topic-arn <arn> --bucket <bucket>   # --print to preview, --uninstall
+#   scripts/ops-run.sh compact -dry-run                              # what the compaction job would do
 cd web && npm ci && npm run dev                     # http://127.0.0.1:5173
 # or, without the backend:
 npm run dev:mock

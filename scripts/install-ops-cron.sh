@@ -3,12 +3,20 @@
 #
 #   15 6 * * *    scripts/ops-run.sh executor   daily stage run at 00:15 Mexico City (06:15 UTC)
 #   */15 * * * *  scripts/ops-run.sh alerts     R3 alerts every 15 minutes
+#   30 2 * * *    scripts/ops-run.sh compact    archive compaction refresh (non-destructive;
+#                                               02:30 UTC = after the compactor's 2 h settle)
 #
 # It builds services/ui-api/bin/ui-alerts (and the executor binary only when it is
 # missing, or with --rebuild-executor), writes the jobs' settings to
 # ~/.config/microservices-trading-bot/ops.env (chmod 600), and replaces its own block
 # in your crontab (between "# BEGIN mtb-ops" and "# END mtb-ops"); other entries are
 # kept.
+#
+# The compactor (services/data-collector/cmd/compact-archive) lives on the collector
+# branch, so it is built from --compactor-ref (default origin/feat/intraday-data-collector)
+# with git archive into bin/compact-archive, only when missing or with
+# --rebuild-compactor; the commit is recorded in bin/compact-archive.ref. The job never
+# passes -cutover (ops-run.sh refuses it): deleting the small files stays manual.
 #
 #   scripts/install-ops-cron.sh --topic-arn arn:aws:sns:us-east-1:<account>:mtb-operator-alerts \
 #       --bucket mtb-development-data-archive-<account>
@@ -17,15 +25,19 @@
 #
 # Options:
 #   --topic-arn ARN       SNS topic for alerts (required to install; otherwise alerts go to the log)
-#   --bucket NAME         archive bucket: -archive s3://NAME for alerts, and the executor uploads
-#                         to s3://NAME/daily-executor/stage
-#   --no-executor         install the alerts job only
+#   --bucket NAME         archive bucket: -archive s3://NAME for alerts, the executor uploads
+#                         to s3://NAME/daily-executor/stage, and the compaction job runs on it
+#   --no-executor         install the alerts job only (plus compaction with --bucket)
+#   --no-compact          do not schedule the compaction refresh
 #   --rebuild-executor    rebuild services/strategy-executor/daily-executor-data/daily-executor
+#   --compactor-ref REF   git ref holding services/data-collector (see above)
+#   --rebuild-compactor   rebuild bin/compact-archive from --compactor-ref
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 ENV_FILE="${MTB_OPS_ENV:-$HOME/.config/microservices-trading-bot/ops.env}"
 topic="" bucket="" print=0 uninstall=0 executor=1 rebuild=0
+compact=1 compactor_ref="origin/feat/intraday-data-collector" rebuild_compactor=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --topic-arn) topic="$2"; shift 2 ;;
@@ -33,11 +45,15 @@ while [ $# -gt 0 ]; do
     --print) print=1; shift ;;
     --uninstall) uninstall=1; shift ;;
     --no-executor) executor=0; shift ;;
+    --no-compact) compact=0; shift ;;
     --rebuild-executor) rebuild=1; shift ;;
-    -h | --help) sed -n '2,25p' "$0"; exit 0 ;;
+    --compactor-ref) compactor_ref="$2"; shift 2 ;;
+    --rebuild-compactor) rebuild_compactor=1; shift ;;
+    -h | --help) sed -n '2,34p' "$0"; exit 0 ;;
     *) echo "unknown option $1" >&2; exit 2 ;;
   esac
 done
+if [ -z "$bucket" ]; then compact=0; fi
 
 strip_block() { sed '/^# BEGIN mtb-ops/,/^# END mtb-ops/d'; }
 
@@ -83,12 +99,17 @@ UI_ALERTS_NOTIFY=$notify
 UI_API_ARCHIVE=$archive
 UI_API_LEDGER=$ledger
 UI_ALERTS_UI_URL=http://127.0.0.1:5173
-DAILY_EXECUTOR_S3_URI=$s3uri"
+DAILY_EXECUTOR_S3_URI=$s3uri
+COMPACT_BUCKET=$bucket"
 
 block="# BEGIN mtb-ops: managed by scripts/install-ops-cron.sh; times are UTC (06:15 UTC = 00:15 Mexico City)"
 if [ "$executor" = 1 ]; then
   block="$block
 15 6 * * * $ROOT/scripts/ops-run.sh executor"
+fi
+if [ "$compact" = 1 ]; then
+  block="$block
+30 2 * * * $ROOT/scripts/ops-run.sh compact"
 fi
 block="$block
 */15 * * * * $ROOT/scripts/ops-run.sh alerts
@@ -109,6 +130,21 @@ if [ "$executor" = 1 ] && { [ "$rebuild" = 1 ] || [ ! -x "$exe" ]; }; then
   echo "building $exe"
   (cd "$ROOT/services/strategy-executor" && go build -o daily-executor-data/daily-executor ./cmd/daily-executor)
 fi
+comp="$ROOT/bin/compact-archive"
+if [ "$compact" = 1 ] && { [ "$rebuild_compactor" = 1 ] || [ ! -x "$comp" ]; }; then
+  rev="$(git -C "$ROOT" rev-parse --verify --short "$compactor_ref^{commit}")" || {
+    echo "cannot resolve $compactor_ref: git fetch origin, or pass --compactor-ref / --no-compact" >&2
+    exit 1
+  }
+  echo "building $comp from $compactor_ref ($rev)"
+  tmp="$(mktemp -d)"
+  trap 'rm -rf "$tmp"' EXIT
+  # The module replaces bitso-trading-platform/shared => ../../shared, so take both.
+  git -C "$ROOT" archive "$rev" services/data-collector shared | tar -x -C "$tmp"
+  mkdir -p "$ROOT/bin"
+  (cd "$tmp/services/data-collector" && go build -o "$comp" ./cmd/compact-archive)
+  printf '%s %s\n' "$compactor_ref" "$rev" >"$comp.ref"
+fi
 
 mkdir -p "$(dirname "$ENV_FILE")"
 umask 077
@@ -119,4 +155,4 @@ echo "wrote $ENV_FILE"
 { (crontab -l 2>/dev/null || true) | strip_block; printf '%s\n' "$block"; } | crontab -
 echo "installed:"
 printf '%s\n' "$block"
-echo "logs: ${XDG_STATE_HOME:-$HOME/.local/state}/mtb-ops/{executor,alerts}.log"
+echo "logs: ${XDG_STATE_HOME:-$HOME/.local/state}/mtb-ops/{executor,alerts,compact}.log"
