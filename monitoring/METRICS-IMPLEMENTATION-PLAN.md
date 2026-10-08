@@ -240,6 +240,7 @@ The same Prometheus series are queried in both service and domain dashboards; do
 | 2 | Other services (OM, market-data, api-gateway, backtesting) | Document current + recommended additions; implement when prioritizing | Done |
 | 3 | Domain/flow metrics and dashboard layout | services/ and domain/ folders; import script paths; domain query/panel spec | Done |
 | 4 | Prometheus alert rules | Alerts for balance stale, orders failed rate, engine state, health check failures, service down, latency, low balance | Done |
+| 5 | Trading-risk operations (2026-10-08) | Kill switch, limits and utilization, breach attempts, execution quality, reconciliation; `trading-risk-alerts.yml` with unit tests, runbook `docs/runbooks/TRADING-RISK-ALERTS.md`, dashboard `domain/trading-risk-operations.json`. Details: `docs/frontend/FRONTEND-UI-PLAN-2026-10-03.md` §6.4.4 | Done |
 
 ---
 

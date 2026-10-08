@@ -145,6 +145,9 @@ run_phase_4() {
   if [ -f "$REPO_ROOT/k8s/monitoring/prometheus-rules.yaml" ]; then
     kubectl apply -f "$REPO_ROOT/k8s/monitoring/prometheus-rules.yaml" 2>/dev/null && print_success "Prometheus rules applied" || print_warning "Prometheus rules apply failed"
   fi
+  if [ -f "$REPO_ROOT/k8s/monitoring/trading-risk-rules.yaml" ]; then
+    kubectl apply -f "$REPO_ROOT/k8s/monitoring/trading-risk-rules.yaml" 2>/dev/null && print_success "Trading-risk rules applied" || print_warning "Trading-risk rules apply failed"
+  fi
   print_success "Phase 4: Monitoring manifests applied"
 }
 

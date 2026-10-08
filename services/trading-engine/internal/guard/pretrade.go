@@ -75,6 +75,45 @@ type PreTrade struct {
 // ErrBlocked wraps a policy decision that blocks the order.
 var ErrBlocked = errors.New("blocked by risk policy")
 
+// ErrFailClosed marks a block caused by not knowing the state (a halt file
+// that cannot be read or parsed, or an unknown position), as opposed to a
+// limit or halt that was actually hit. Such errors wrap both sentinels.
+var ErrFailClosed = errors.New("risk state unknown")
+
+// RulePositionUnknown is the metrics rule for an unknown position.
+const RulePositionUnknown = "position_unknown"
+
+// HaltStatus evaluates the halt files: whether any is halted, how many are
+// unreadable or invalid, and one line per halted or invalid file.
+func HaltStatus(files []string) (halted bool, invalid int, details []string) {
+	for _, f := range files {
+		h, _, err := risk.LoadHaltState(f)
+		switch {
+		case err != nil:
+			invalid++
+			details = append(details, err.Error())
+		case h.Halted:
+			halted = true
+			details = append(details, fmt.Sprintf("%s: %s (by %s at %s)", f, h.Reason, h.By, h.At))
+		}
+	}
+	return halted, invalid, details
+}
+
+// BlockingRules lists the rules that blocked an order, for metrics.
+func BlockingRules(d risk.Decision, err error) []string {
+	var rules []string
+	for _, f := range d.Findings {
+		if f.Severity == risk.Block {
+			rules = append(rules, f.Rule)
+		}
+	}
+	if len(rules) == 0 && errors.Is(err, ErrFailClosed) {
+		rules = append(rules, RulePositionUnknown)
+	}
+	return rules
+}
+
 // Allow returns nil when the order may be sent. Every failure to know the
 // halt state or the position blocks the order (fail closed).
 func (p *PreTrade) Allow(ctx context.Context, o risk.Order) (risk.Decision, error) {
@@ -84,7 +123,7 @@ func (p *PreTrade) Allow(ctx context.Context, o risk.Order) (risk.Decision, erro
 		if err != nil {
 			d := risk.Decision{Findings: []risk.Finding{{Rule: risk.RuleHalted, Severity: risk.Block, Value: 1,
 				Message: err.Error() + " (fix or remove it; no order is sent until then)"}}}
-			return d, fmt.Errorf("%w: %s", ErrBlocked, d.Findings[0].Message)
+			return d, fmt.Errorf("%w: %w: %s", ErrBlocked, ErrFailClosed, d.Findings[0].Message)
 		}
 		pol = risk.ApplyHalt(pol, h)
 	}
@@ -92,7 +131,7 @@ func (p *PreTrade) Allow(ctx context.Context, o risk.Order) (risk.Decision, erro
 	if p.Position != nil {
 		pos, err := p.Position(ctx, o.Book)
 		if err != nil {
-			return risk.Decision{}, fmt.Errorf("%w: position for %s unknown: %v", ErrBlocked, o.Book, err)
+			return risk.Decision{}, fmt.Errorf("%w: %w: position for %s unknown: %v", ErrBlocked, ErrFailClosed, o.Book, err)
 		}
 		st.PositionBTC = pos
 	}

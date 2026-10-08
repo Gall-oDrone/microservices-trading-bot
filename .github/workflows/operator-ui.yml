@@ -25,6 +25,10 @@ on:
       - 'services/trading-engine/**'
       - 'services/order-management/**'
       - 'scripts/kill-switch-drill.sh'
+      - 'scripts/sync-prometheus-rules.sh'
+      - 'monitoring/prometheus/**'
+      - 'monitoring/grafana/dashboards/**'
+      - 'k8s/monitoring/trading-risk-rules.yaml'
       - 'web/**'
   workflow_dispatch: {}
 
@@ -103,6 +107,8 @@ jobs:
           out=$(gofmt -l services/trading-engine/internal/guard \
             services/trading-engine/internal/execution/exposure.go \
             services/trading-engine/internal/execution/exposure_test.go \
+            services/trading-engine/internal/metrics/risk.go \
+            services/trading-engine/internal/metrics/risk_test.go \
             services/order-management/internal/server/exposure.go \
             services/order-management/internal/server/exposure_test.go \
             services/order-management/internal/validator/pretrade_duplicate.go \
@@ -121,6 +127,52 @@ jobs:
         run: |
           go vet ./...
           go test -race -count=1 ./...
+
+  monitoring-rules:
+    name: Monitoring rules and dashboards (promtool)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      PROM_VERSION: '2.53.2'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install promtool
+        run: |
+          curl -sSL -o /tmp/p.tgz \
+            "https://github.com/prometheus/prometheus/releases/download/v${PROM_VERSION}/prometheus-${PROM_VERSION}.linux-amd64.tar.gz"
+          tar xzf /tmp/p.tgz -C /tmp --strip-components=1 "prometheus-${PROM_VERSION}.linux-amd64/promtool"
+          /tmp/promtool --version | head -1
+
+      # Plan §6.4.4: every rule file parses, the trading-risk alerts pass their
+      # unit tests, and the generated k8s PrometheusRule matches the source.
+      - name: promtool check rules
+        run: /tmp/promtool check rules monitoring/prometheus/rules/*.yml
+
+      - name: promtool test rules
+        run: /tmp/promtool test rules monitoring/prometheus/tests/*.test.yml
+
+      - name: k8s PrometheusRule in sync
+        run: scripts/sync-prometheus-rules.sh --check
+
+      - name: dashboards are valid JSON with parseable PromQL
+        run: |
+          python3 - <<'EOF' > /tmp/exprs.txt
+          import glob, json
+          for f in glob.glob('monitoring/grafana/dashboards/**/*.json', recursive=True):
+              d = json.load(open(f))
+              if 'trading-risk-operations' not in f:
+                  continue
+              for p in d['panels']:
+                  for t in p.get('targets', []):
+                      print(t['expr'])
+          EOF
+          n=0
+          while IFS= read -r e; do
+            /tmp/promtool promql format --experimental "$e" >/dev/null
+            n=$((n+1))
+          done < /tmp/exprs.txt
+          echo "parsed $n expressions"
 
   drill:
     name: Kill-switch drill (drill-only ui-api, fixture ledger, offline)

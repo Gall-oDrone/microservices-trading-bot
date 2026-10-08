@@ -12,6 +12,8 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
+
 	"bitso-trading-platform/shared/pkg/bitso"
 	"bitso-trading-platform/shared/pkg/config"
 	"bitso-trading-platform/shared/pkg/database"
@@ -168,6 +170,17 @@ func NewApplication() (*Application, error) {
 	// Metrics collector for Prometheus (/metrics and balance/order gauges)
 	metricsCollector := metrics.NewCollector()
 
+	// Trading-risk metrics (plan §6.4.4): live policy, every limit, halt state.
+	riskMetrics := metrics.NewRiskMetrics(prometheus.DefaultRegisterer)
+	riskMetrics.SetPolicy(riskPolicy.Version, policySrc)
+	guard.PublishLimits(riskPolicy, riskMetrics)
+	riskMetrics.SetLimit(metrics.SessionBook, metrics.LimitMaxDailyLoss, limits.MaxDailyLoss)
+	riskMetrics.SetLimit(metrics.SessionBook, metrics.LimitMaxDrawdownPct, limits.MaxDrawdownPct)
+	go guard.WatchHalts(ctx, haltFiles, 10*time.Second,
+		func(configured, invalid int, halted bool, at time.Time, _ []string) {
+			riskMetrics.SetHaltState(configured, invalid, halted, at)
+		})
+
 	// Initialize trading engine
 	tradingEngine, err := engine.NewTradingEngine(
 		tradingConfig,
@@ -191,9 +204,9 @@ func NewApplication() (*Application, error) {
 	}
 	logger.Println("✓ Trading engine created")
 	tradingEngine.SetRiskGate(func(ctx context.Context, book, side string, qty, price, ref float64) error {
-		_, err := preTrade.Allow(ctx, risk.Order{Book: book, Side: side, QtyBTC: qty, Price: price, RefPrice: ref})
-		return err
+		return preTrade.Check(ctx, risk.Order{Book: book, Side: side, QtyBTC: qty, Price: price, RefPrice: ref}, riskMetrics)
 	})
+	tradingEngine.SetRiskObserver(riskMetrics)
 
 	return &Application{
 		logger:              logger,

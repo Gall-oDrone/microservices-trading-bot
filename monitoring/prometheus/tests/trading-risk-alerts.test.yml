@@ -1,0 +1,131 @@
+# promtool unit tests for ../rules/trading-risk-alerts.yml.
+# Run: promtool test rules monitoring/prometheus/tests/trading-risk-alerts.test.yml
+# (Kept outside rules/ so Prometheus' rules/*.yml glob does not load it.)
+
+rule_files:
+  - ../rules/trading-risk-alerts.yml
+
+evaluation_interval: 1m
+
+tests:
+  # Kill switch engaged by the operator: warning, immediately; no invalid-file page.
+  - interval: 1m
+    input_series:
+      - series: 'trading_halt_active{job="trading-engine",instance="te-0"}'
+        values: '0 1 1 1'
+      - series: 'trading_halt_files_invalid{job="trading-engine",instance="te-0"}'
+        values: '0 0 0 0'
+    alert_rule_test:
+      - eval_time: 0m
+        alertname: TradingKillSwitchEngaged
+        exp_alerts: []
+      - eval_time: 1m
+        alertname: TradingKillSwitchEngaged
+        exp_alerts:
+          - exp_labels: {severity: warning, team: risk, job: trading-engine, instance: te-0}
+            exp_annotations:
+              summary: "Trading halted on te-0: new orders are blocked"
+              description: "A halt file is halted, unreadable or invalid. Expected after HALT ALL; otherwise check risk-state.json and the ui-api audit log."
+              runbook_url: "docs/runbooks/TRADING-RISK-ALERTS.md#tradingkillswitchengaged"
+      - eval_time: 3m
+        alertname: TradingHaltFileInvalid
+        exp_alerts: []
+
+  # A corrupt halt file pages after 1m.
+  - interval: 1m
+    input_series:
+      - series: 'trading_halt_files_invalid{job="trading-engine",instance="te-0"}'
+        values: '1 1 1'
+    alert_rule_test:
+      - eval_time: 2m
+        alertname: TradingHaltFileInvalid
+        exp_alerts:
+          - exp_labels: {severity: critical, team: risk, job: trading-engine, instance: te-0}
+            exp_annotations:
+              summary: "1 halt file(s) cannot be read on te-0"
+              description: "Every order is blocked (fail closed) until the file is fixed or removed. Nobody chose this halt."
+              runbook_url: "docs/runbooks/TRADING-RISK-ALERTS.md#tradinghaltfileinvalid"
+
+  # No halt files: page only when live, not in dry run.
+  - interval: 1m
+    input_series:
+      - series: 'trading_halt_files_configured{job="trading-engine",instance="live"}'
+        values: '0x10'
+      - series: 'trading_engine_dry_run{job="trading-engine",instance="live"}'
+        values: '0x10'
+      - series: 'trading_halt_files_configured{job="trading-engine",instance="dry"}'
+        values: '0x10'
+      - series: 'trading_engine_dry_run{job="trading-engine",instance="dry"}'
+        values: '1x10'
+    alert_rule_test:
+      - eval_time: 6m
+        alertname: TradingKillSwitchUnreachable
+        exp_alerts:
+          - exp_labels: {severity: critical, team: risk, job: trading-engine, instance: live}
+            exp_annotations:
+              summary: "Live trading-engine live watches no halt files"
+              description: "TRADING_HALT_FILES is empty, so HALT ALL cannot stop this engine. Set it or stop the engine."
+              runbook_url: "docs/runbooks/TRADING-RISK-ALERTS.md#tradingkillswitchunreachable"
+
+  # Session limits: warning at 80 %, critical at 100 %, never both.
+  - interval: 1m
+    input_series:
+      - series: 'trading_session_limit_utilization_ratio{job="trading-engine",instance="te-0",limit="max_daily_loss"}'
+        values: '0.5 0.85 1.0'
+    alert_rule_test:
+      - eval_time: 0m
+        alertname: TradingSessionLimitWarning
+        exp_alerts: []
+      - eval_time: 1m
+        alertname: TradingSessionLimitWarning
+        exp_alerts:
+          - exp_labels: {severity: warning, team: risk, job: trading-engine, limit: max_daily_loss}
+            exp_annotations:
+              summary: "max_daily_loss at 85% of its limit"
+              description: "Session loss or drawdown is past 80 % of the limit. New orders stop at 100 %."
+              runbook_url: "docs/runbooks/TRADING-RISK-ALERTS.md#tradingsessionlimitwarning"
+      - eval_time: 2m
+        alertname: TradingSessionLimitWarning
+        exp_alerts: []
+      - eval_time: 2m
+        alertname: TradingSessionLimitBreached
+        exp_alerts:
+          - exp_labels: {severity: critical, team: risk, job: trading-engine, limit: max_daily_loss}
+            exp_annotations:
+              summary: "max_daily_loss breached (100%): new orders are blocked"
+              description: "Session limit hit. Orders stay blocked for the rest of the session; open positions are not flattened automatically."
+              runbook_url: "docs/runbooks/TRADING-RISK-ALERTS.md#tradingsessionlimitbreached"
+
+  # A hard-limit block is a breach attempt; halts and fail-closed blocks are not.
+  - interval: 1m
+    input_series:
+      - series: 'pretrade_policy_rejections_total{job="trading-engine",instance="te-0",book="btc_mxn",rule="max_order_btc"}'
+        values: '0 0 1 1'
+      - series: 'pretrade_policy_rejections_total{job="trading-engine",instance="te-0",book="btc_mxn",rule="halted"}'
+        values: '0 5 10 15'
+    alert_rule_test:
+      - eval_time: 3m
+        alertname: TradingLimitBreachAttempt
+        exp_alerts:
+          - exp_labels: {severity: warning, team: risk, job: trading-engine, book: btc_mxn, rule: max_order_btc}
+            exp_annotations:
+              summary: "btc_mxn: 1 order(s) blocked by max_order_btc in 15m"
+              description: "A strategy tried to exceed a hard limit. Every breach attempt is reviewed (who, which strategy, why)."
+              runbook_url: "docs/runbooks/TRADING-RISK-ALERTS.md#tradinglimitbreachattempt"
+
+  # Reconciliation: stale sync pages; a never-run sync (gauge 0) does not.
+  - interval: 1m
+    input_series:
+      - series: 'bitso_sync_last_success_timestamp_seconds{job="order-management",instance="om-0"}'
+        values: '60x20'
+      - series: 'bitso_sync_last_success_timestamp_seconds{job="order-management",instance="om-off"}'
+        values: '0x20'
+    alert_rule_test:
+      - eval_time: 12m
+        alertname: OrderExchangeSyncStale
+        exp_alerts:
+          - exp_labels: {severity: critical, team: trading, job: order-management, instance: om-0}
+            exp_annotations:
+              summary: "Order status not reconciled with Bitso for 11m 0s"
+              description: "OMS and exchange may disagree on open orders and fills (reconciliation break risk)."
+              runbook_url: "docs/runbooks/TRADING-RISK-ALERTS.md#orderexchangesyncstale"

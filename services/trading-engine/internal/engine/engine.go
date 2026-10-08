@@ -93,6 +93,7 @@ type TradingEngine struct {
 	preTradeValidator   execution.PreTradeValidator    // optional: validates orders with order-management before execution
 	metricsRecorder     MetricsRecorder                // optional: for Prometheus metrics
 	riskGate            RiskGate                       // optional: shared-format policy + halt files (risk R5b)
+	riskObserver        RiskObserver                   // optional: trading-risk telemetry (plan §6.4.4)
 	book                *bitso.Book
 
 	// State management
@@ -137,6 +138,31 @@ type RiskGate func(ctx context.Context, book, side string, qty, price, ref float
 
 // SetRiskGate installs the per-order risk gate. Call before Start.
 func (te *TradingEngine) SetRiskGate(g RiskGate) { te.riskGate = g }
+
+// RiskObserver receives trading-risk telemetry: how old a signal is when it
+// is checked, session loss and drawdown as a fraction of their limits, and
+// signal-to-exchange-ack latency (tick-to-trade).
+type RiskObserver interface {
+	ObserveSignalAge(book string, age time.Duration)
+	SetSessionUtilization(limit string, v float64)
+	ObserveSignalToOrder(book string, d time.Duration)
+}
+
+// SetRiskObserver installs the risk telemetry sink. Call before Start.
+func (te *TradingEngine) SetRiskObserver(o RiskObserver) { te.riskObserver = o }
+
+// signalTime converts a signal timestamp: Unix seconds, or milliseconds
+// when above 1e12. Zero or negative is unknown.
+func signalTime(ts int64) (time.Time, bool) {
+	switch {
+	case ts <= 0:
+		return time.Time{}, false
+	case ts > 1e12:
+		return time.UnixMilli(ts), true
+	default:
+		return time.Unix(ts, 0), true
+	}
+}
 
 // NewTradingEngine creates a new trading engine instance.
 // sessionRiskProvider is optional; if set, used to enforce MaxDailyLoss/MaxDrawdownPct before placing orders.
@@ -495,6 +521,10 @@ func (te *TradingEngine) processTradeSignal(signal *models.TradeSignalEvent) err
 
 	// Risk policy (shared format) and operator halt files: a halt or a
 	// breached limit blocks here, before anything else is asked.
+	sigAt, sigKnown := signalTime(signal.Timestamp)
+	if te.riskObserver != nil && sigKnown {
+		te.riskObserver.ObserveSignalAge(book.String(), time.Since(sigAt))
+	}
 	if te.riskGate != nil {
 		ref := (ticker.Bid.Float64() + ticker.Ask.Float64()) / 2
 		side := strings.ToLower(strings.TrimSpace(signal.Signal))
@@ -512,6 +542,18 @@ func (te *TradingEngine) processTradeSignal(signal *models.TradeSignalEvent) err
 		if err != nil {
 			te.recordOrderFailedIfMetrics(signal, "session_risk")
 			return fmt.Errorf("session risk check: %w", err)
+		}
+		if te.riskObserver != nil && te.config != nil {
+			if te.config.MaxDailyLoss > 0 {
+				loss := 0.0
+				if dailyPnL < 0 {
+					loss = -dailyPnL
+				}
+				te.riskObserver.SetSessionUtilization("max_daily_loss", loss/te.config.MaxDailyLoss)
+			}
+			if te.config.MaxDrawdownPct > 0 {
+				te.riskObserver.SetSessionUtilization("max_drawdown_pct", drawdownPct/te.config.MaxDrawdownPct)
+			}
 		}
 	}
 	if err := te.executor.CheckSessionLimits(dailyPnL, drawdownPct); err != nil {
@@ -622,6 +664,9 @@ func (te *TradingEngine) processTradeSignal(signal *models.TradeSignalEvent) err
 
 	if execErr != nil {
 		return execErr
+	}
+	if te.riskObserver != nil && sigKnown && orderID != "dry-run" {
+		te.riskObserver.ObserveSignalToOrder(bookStr, time.Since(sigAt))
 	}
 	// Publish order-placed event for order-management sync (Phase 3)
 	if orderID != "" && orderID != "dry-run" && te.orderPlacedProducer != nil {
