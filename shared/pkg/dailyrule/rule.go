@@ -10,6 +10,11 @@
 // signal they compute cannot drift apart. Do NOT change the arithmetic here:
 // the pre-registrations freeze it, and the running-sum order is what makes
 // the results bit-identical to the registered evidence.
+//
+// Moved verbatim from strategy-executor/internal/dailyrule on 2026-10-08
+// (plan §7 item 5) so that services/backtesting, the canonical backtest
+// service, runs the same rule and the same simulator (sim.go) as
+// cmd/daily-research. strategy-executor/internal/dailyrule forwards here.
 package dailyrule
 
 import "time"

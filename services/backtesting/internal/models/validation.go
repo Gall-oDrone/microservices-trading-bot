@@ -57,10 +57,17 @@ func ValidateStrategy(strategy string, params map[string]interface{}) error {
 		"trend":          true,
 		"arbitrage":      true,
 		"mean_reversion": true,
+		"sma50_daily":    true,
 	}
 
 	if !validStrategies[strategy] {
-		return fmt.Errorf("unknown strategy: %s (valid: basic, trend, arbitrage, mean_reversion)", strategy)
+		return fmt.Errorf("unknown strategy: %s (valid: basic, trend, arbitrage, mean_reversion, sma50_daily)", strategy)
+	}
+
+	// sma50_daily is the frozen daily rule: its only parameters (bars_file,
+	// and sma which must be 50) are optional and checked by internal/daily.
+	if strategy == "sma50_daily" {
+		return nil
 	}
 
 	// Validate params is not nil

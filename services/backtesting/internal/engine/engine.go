@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"sync"
 
+	"bitso-trading-platform/backtesting/internal/daily"
 	"bitso-trading-platform/backtesting/internal/data"
 	"bitso-trading-platform/backtesting/internal/logger"
 	"bitso-trading-platform/backtesting/internal/metrics"
@@ -33,6 +34,15 @@ type Engine struct {
 
 	runningBacktests map[string]*runningBacktest
 	mu               sync.RWMutex
+
+	// dailyBarsDir is where the sma50_daily path reads Bitso daily CSVs.
+	dailyBarsDir string
+}
+
+// SetDailyBarsDir sets the directory the sma50_daily strategy reads daily
+// bar CSVs from (BACKTEST_DAILY_BARS_DIR). Empty disables that strategy.
+func (e *Engine) SetDailyBarsDir(dir string) {
+	e.dailyBarsDir = dir
 }
 
 // runningBacktest tracks a running backtest
@@ -86,6 +96,12 @@ func (e *Engine) Run(ctx context.Context, config *models.BacktestConfig) (*model
 	// Track running backtest
 	e.trackBacktest(config.ID, config, 0.0, cancel)
 	defer e.untrackBacktest(config.ID)
+
+	// The frozen daily SMA50 rule runs on the shared rule and simulator, not
+	// the event-driven runner (plan §7 item 5).
+	if daily.IsDaily(config) {
+		return e.runDaily(ctx, backtestCtx, config, backtestTimer)
+	}
 
 	// Create and run backtest runner
 	runner, err := NewBacktestRunner(config, e.dataProvider, e.logger, e.metricsCollector)
@@ -145,6 +161,37 @@ func (e *Engine) Run(ctx context.Context, config *models.BacktestConfig) (*model
 		"trades":      len(result.Trades),
 	})
 
+	return result, nil
+}
+
+// runDaily runs the sma50_daily path with the same metrics, storage and
+// logging as the event-driven path.
+func (e *Engine) runDaily(ctx, backtestCtx context.Context, config *models.BacktestConfig, backtestTimer func(string)) (*models.BacktestResult, error) {
+	result, err := daily.Run(backtestCtx, config, e.dailyBarsDir)
+	if err != nil {
+		if backtestTimer != nil {
+			backtestTimer("failed")
+		}
+		if e.metricsCollector != nil {
+			e.metricsCollector.RecordBacktestFailed("execution")
+		}
+		return nil, fmt.Errorf("backtest execution failed: %w", err)
+	}
+	e.updateProgress(config.ID, 1.0)
+	if backtestTimer != nil {
+		backtestTimer("completed")
+	}
+	if e.resultStorage != nil {
+		if err := e.resultStorage.Save(ctx, result); err != nil {
+			e.logger.Error("Failed to save result", map[string]interface{}{"error": err})
+		}
+	}
+	e.logger.Info("Backtest completed", map[string]interface{}{
+		"backtest_id": config.ID,
+		"status":      result.Status,
+		"engine":      "dailyrule",
+		"trades":      len(result.Trades),
+	})
 	return result, nil
 }
 

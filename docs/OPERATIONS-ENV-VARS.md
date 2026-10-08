@@ -68,6 +68,25 @@ The api-gateway defaults also match the k8s Services: `SERVICE_PORT` 8085, `ORDE
 
 ---
 
+## Backtest engine (backtesting, strategy-executor)
+
+`services/backtesting` is the canonical backtest engine (plan §7 item 5).
+
+| Variable | Service | Default | Meaning |
+|---|---|---|---|
+| `BACKTEST_DAILY_BARS_DIR` | backtesting | unset | Directory holding Bitso daily CSVs (`date,open,high,low,close,...`) for strategy `sma50_daily`, the frozen SMA50 rule on the shared simulator. A run picks a file with `strategy_params.bars_file`, a relative path inside this directory that defaults to `<book>_daily_bitso.csv`. Unset: `sma50_daily` fails with a clear error, and every other strategy is unaffected. |
+| `STRATEGY_EXECUTOR_LEGACY_BACKTESTS` | strategy-executor | unset | `1` restores the deprecated in-process `/api/v1/backtests` handler for a transition period. Otherwise those routes answer 410 Gone, pointing to services/backtesting. |
+
+Example `sma50_daily` request to backtesting `POST /api/v1/backtests` at Bitso btc_mxn taker cost (78 bps + 10 bps slippage per leg):
+
+```json
+{"name":"sma50 2025","book":"btc_mxn","start_date":"2025-01-01T00:00:00Z","end_date":"2025-12-31T00:00:00Z",
+ "initial_balance":100000,"strategy":"sma50_daily","data_source":"file",
+ "taker_fee":0.0078,"slippage_model":"percentage","slippage_value":0.001}
+```
+
+---
+
 ## See also
 
 - **docs/ORDER-FLOW-AND-BITSO-TESTING.md** — when orders hit Bitso testing, how to validate the flow, and Bitso dashboard.

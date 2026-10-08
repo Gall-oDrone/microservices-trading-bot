@@ -3,6 +3,7 @@ package models
 import (
 	"encoding/json"
 	"fmt"
+	"math"
 	"strings"
 	"time"
 )
@@ -174,8 +175,10 @@ func (r *BacktestResult) EvaluateSuccessCriteria(criteria *SuccessCriteria) {
 	if criteria.MinSharpeRatio > 0 && s.SharpeRatio < criteria.MinSharpeRatio {
 		reasons = append(reasons, fmt.Sprintf("sharpe_ratio %.2f < min %.2f", s.SharpeRatio, criteria.MinSharpeRatio))
 	}
-	if criteria.MaxDrawdownPercent > 0 && (-s.MaxDrawdownPercent) > criteria.MaxDrawdownPercent {
-		reasons = append(reasons, fmt.Sprintf("max_drawdown %.2f%% exceeds -%.2f%%", s.MaxDrawdownPercent, criteria.MaxDrawdownPercent))
+	// The analyzer and the daily path report drawdown as a positive percent;
+	// older callers used negative. Compare the magnitude so both work.
+	if dd := math.Abs(s.MaxDrawdownPercent); criteria.MaxDrawdownPercent > 0 && dd > criteria.MaxDrawdownPercent {
+		reasons = append(reasons, fmt.Sprintf("max_drawdown %.2f%% exceeds %.2f%%", dd, criteria.MaxDrawdownPercent))
 	}
 	if criteria.MinTotalTrades > 0 && s.TotalTrades < criteria.MinTotalTrades {
 		reasons = append(reasons, fmt.Sprintf("total_trades %d < min %d", s.TotalTrades, criteria.MinTotalTrades))

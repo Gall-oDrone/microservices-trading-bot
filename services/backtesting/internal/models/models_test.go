@@ -570,6 +570,15 @@ func TestEvaluateSuccessCriteria(t *testing.T) {
 	if result2.FailureReason == "" || !strings.Contains(result2.FailureReason, "sharpe_ratio") {
 		t.Errorf("Expected failure reason to mention sharpe_ratio, got %s", result2.FailureReason)
 	}
+
+	// Drawdown as the analyzer reports it (positive percent) beyond the limit.
+	result3 := NewBacktestResult("bt-3", "cfg-3")
+	result3.Status = "completed"
+	result3.SetSummary(&PerformanceSummary{MaxDrawdownPercent: 12})
+	result3.EvaluateSuccessCriteria(&SuccessCriteria{MaxDrawdownPercent: 10})
+	if result3.MetThresholds || !strings.Contains(result3.FailureReason, "max_drawdown") {
+		t.Errorf("Expected a 12%% drawdown to fail a 10%% limit, got met=%v reason=%q", result3.MetThresholds, result3.FailureReason)
+	}
 }
 
 // Helper function for creating test errors

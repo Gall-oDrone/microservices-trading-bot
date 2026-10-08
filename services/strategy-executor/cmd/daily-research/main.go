@@ -208,72 +208,18 @@ func and(a, b []bool) []bool {
 
 type costModel struct{ buy, sell float64 } // per-leg decimal, commission + slippage
 
-type result struct {
-	ReturnPct   float64
-	RoundTrips  int
-	ExposurePct float64
-	MaxDDPct    float64
-	CostPct     float64 // total costs as % of starting equity
-}
+type result = dailyrule.Result
 
 // simulate trades bars[lo..hi] (inclusive). want[i] is the position desired
 // after day i's close; it is filled at bars[i+1].Open. So the first possible
 // fill is at bars[lo].Open, driven by want[lo-1]; when lo == 0 there is no
 // prior close to decide on, and the first fill is at bars[1].Open.
+//
+// The loop moved verbatim to shared/pkg/dailyrule (Simulate) on 2026-10-08
+// so services/backtesting runs the same simulator (plan §7 item 5); the
+// golden test pins its output bit for bit.
 func simulate(bars []bar, want []bool, lo, hi int, c costModel) result {
-	const start = 1.0
-	cash, units := start, 0.0
-	held := false
-	peak, maxDD, costs := start, 0.0, 0.0
-	exposed, trips := 0, 0
-
-	for i := lo; i <= hi; i++ {
-		// Decision from the previous close, filled at today's open.
-		var desire bool
-		if i > 0 {
-			desire = want[i-1]
-		}
-		o := bars[i].Open
-		switch {
-		case desire && !held:
-			fee := cash * c.buy
-			units = (cash - fee) / o
-			costs += fee
-			cash, held = 0, true
-		case !desire && held:
-			gross := units * o
-			fee := gross * c.sell
-			cash = gross - fee
-			costs += fee
-			units, held = 0, false
-			trips++
-		}
-		if held {
-			exposed++
-		}
-		eq := cash + units*bars[i].Close
-		if eq > peak {
-			peak = eq
-		}
-		if dd := (peak - eq) / peak; dd > maxDD {
-			maxDD = dd
-		}
-	}
-	if held { // close out at the final close, with costs
-		gross := units * bars[hi].Close
-		fee := gross * c.sell
-		cash = gross - fee
-		costs += fee
-		trips++
-	}
-	days := hi - lo + 1
-	return result{
-		ReturnPct:   (cash/start - 1) * 100,
-		RoundTrips:  trips,
-		ExposurePct: 100 * float64(exposed) / float64(days),
-		MaxDDPct:    maxDD * 100,
-		CostPct:     costs / start * 100,
-	}
+	return dailyrule.Simulate(bars, want, lo, hi, dailyrule.Costs{Buy: c.buy, Sell: c.sell})
 }
 
 // randomWant builds a position series over [lo-1, hi-1] with exactly `trips`

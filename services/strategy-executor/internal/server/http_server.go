@@ -141,9 +141,14 @@ func NewWithOptions(config *Config, healthMgr *health.Manager, metrics *metrics.
 		mux.HandleFunc("/api/v1/indicators/", handlers.Indicators.HandleIndicators)
 	}
 
-	if handlers.Backtests != nil {
+	// Deprecated: services/backtesting is the canonical engine (see
+	// backtest_deprecation.go). 410 Gone unless the legacy env is set.
+	if handlers.Backtests != nil && legacyBacktestsEnabled() {
 		mux.HandleFunc("/api/v1/backtests", handlers.Backtests.HandleBacktests)
 		mux.HandleFunc("/api/v1/backtests/", handlers.Backtests.HandleBacktest)
+	} else {
+		mux.HandleFunc("/api/v1/backtests", backtestsGone)
+		mux.HandleFunc("/api/v1/backtests/", backtestsGone)
 	}
 
 	server := &http.Server{

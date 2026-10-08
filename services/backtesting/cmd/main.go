@@ -154,6 +154,12 @@ func NewApplication() (*Application, error) {
 
 	// Initialize backtest engine
 	backtestEngine := engine.NewEngine(dataProvider, resultStorage, appLogger, metricsCollector)
+	// sma50_daily (the frozen daily rule) reads Bitso daily CSVs from here;
+	// unset leaves that strategy disabled with a clear error.
+	if dir := os.Getenv("BACKTEST_DAILY_BARS_DIR"); dir != "" {
+		backtestEngine.SetDailyBarsDir(dir)
+		appLogger.Info("Daily bars directory configured", map[string]interface{}{"dir": dir})
+	}
 	appLogger.Info("Backtest engine initialized", nil)
 
 	// Initialize backtest manager

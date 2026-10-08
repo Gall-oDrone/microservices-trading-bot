@@ -3,6 +3,11 @@
 # Run a backtest for a strategy via the strategy-executor /api/v1/backtests API,
 # poll until complete, and print the text report.
 #
+# DEPRECATED (2026-10-08, plan §7 item 5): strategy-executor's
+# /api/v1/backtests answers 410 Gone; services/backtesting is the canonical
+# engine. Set STRATEGY_EXECUTOR_LEGACY_BACKTESTS=1 on strategy-executor to use
+# this script against it during the transition.
+#
 # Usage:
 #   ./scripts/backtest-strategy.sh <strategy> <book> [options]
 #

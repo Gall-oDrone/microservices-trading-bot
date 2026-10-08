@@ -14,6 +14,7 @@ on:
       - 'shared/go.sum'
       - 'shared/pkg/risk/**'
       - 'shared/pkg/dailyledger/**'
+      - 'shared/pkg/dailyrule/**'
       - 'shared/pkg/httpcors/**'
       - 'services/api-gateway/**'
       - 'services/market-data/**'
@@ -21,10 +22,15 @@ on:
       - 'services/strategy-executor/go.mod'
       - 'services/strategy-executor/go.sum'
       - 'services/strategy-executor/cmd/daily-executor/**'
+      - 'services/strategy-executor/cmd/daily-research/**'
       - 'services/strategy-executor/internal/dailyexec/**'
       - 'services/strategy-executor/internal/dailyrule/**'
       - 'services/strategy-executor/internal/bitsodaily/**'
       - 'services/strategy-executor/internal/bitsostage/**'
+      - 'services/strategy-executor/internal/server/**'
+      # Registered daily-research runs and the Bitso bars they read: the
+      # golden and parity tests replay them.
+      - 'docs/backtest-readiness/evidence-*/**'
       - 'services/ui-api/**'
       - 'services/trading-engine/**'
       - 'services/order-management/**'
@@ -66,23 +72,31 @@ jobs:
             services/strategy-executor/go.sum
             services/ui-api/go.sum
 
+      # Plan §7 item 5: the frozen SMA50 rule and the registered simulator
+      # live in shared/pkg/dailyrule; cmd/daily-research's golden test pins
+      # the simulator's output bit for bit, and strategy-executor's
+      # /api/v1/backtests answers 410 (internal/server).
       - name: gofmt (new packages)
         run: |
-          out=$(gofmt -l shared/pkg/risk shared/pkg/dailyledger \
-            services/strategy-executor/cmd/daily-executor services/ui-api)
+          out=$(gofmt -l shared/pkg/risk shared/pkg/dailyledger shared/pkg/dailyrule \
+            services/strategy-executor/cmd/daily-executor services/ui-api \
+            services/strategy-executor/internal/dailyrule \
+            services/strategy-executor/cmd/daily-research/golden_test.go \
+            services/strategy-executor/internal/server/backtest_deprecation.go \
+            services/strategy-executor/internal/server/backtest_deprecation_test.go)
           if [ -n "$out" ]; then echo "gofmt needed:"; echo "$out"; exit 1; fi
 
       - name: shared
         working-directory: shared
         run: |
-          go vet ./pkg/risk ./pkg/dailyledger
-          go test -race -count=1 ./pkg/risk ./pkg/dailyledger
+          go vet ./pkg/risk ./pkg/dailyledger ./pkg/dailyrule
+          go test -race -count=1 ./pkg/risk ./pkg/dailyledger ./pkg/dailyrule
 
-      - name: daily-executor
+      - name: daily-executor, daily-research, deprecated backtest routes
         working-directory: services/strategy-executor
         run: |
-          go vet ./cmd/daily-executor ./internal/dailyexec
-          go test -race -count=1 ./cmd/daily-executor ./internal/dailyexec
+          go vet ./cmd/daily-executor ./internal/dailyexec ./internal/dailyrule ./cmd/daily-research ./internal/server
+          go test -race -count=1 ./cmd/daily-executor ./internal/dailyexec ./internal/dailyrule ./cmd/daily-research ./internal/server
 
       - name: ui-api
         working-directory: services/ui-api
@@ -178,6 +192,9 @@ jobs:
             services/backtesting/internal/manager/backtest_manager.go \
             services/backtesting/internal/optimizer/optimizer.go \
             services/backtesting/internal/api/optimizer_handlers.go \
+            services/backtesting/internal/daily \
+            services/backtesting/internal/api/daily_http_test.go \
+            services/backtesting/internal/engine/engine.go \
             services/market-data/cmd/main_test.go \
             services/market-data/internal/config/config_test.go \
             services/market-data/internal/processor/trade_processor_test.go \
@@ -200,7 +217,8 @@ jobs:
       # internal/testing (e2e) runs without market-data (it tolerates the
       # refused connection). -race guards the 2026-10-08 fixes: the manager
       # now waits for its workers on Stop and optimizations are read through
-      # locked snapshots.
+      # locked snapshots. internal/daily (plan §7 item 5) replays all 82
+      # registered trend_sma50 windows and must match them bit for bit.
       - name: backtesting
         working-directory: services/backtesting
         run: |
