@@ -780,6 +780,36 @@ unfinished bar is labelled provisional. The decision path never reads live data.
     releasing a hold, a 409, the kill switch reaching the Risk page, disabled and unreachable
     states, mock parity. Playwright (desktop and phone): stop, start, kill switch, Risk page.
 
+### 8.14 Kill-switch drill (as run, 2026-10-08)
+
+- **Setup.** A second, throwaway `ui-api` that knows **only scratch copies** of the stage ledger
+  dir (`alpha`, `beta`, `gamma`) plus the stage ledger's S3 copy (`s3copy`, read-only, to confirm
+  remote ledgers are not targets), its own port, live data off, the operator token; a second Vite
+  dev server pointed at it (`UI_API_URL=http://127.0.0.1:8093 npx vite --port 5174`). `gamma` was
+  halted beforehand.
+- **Through the UI** (`/strategies` on that server): "2 of 3 to halt"; the dialog listed `gamma`
+  as already halted; after `HALT ALL` the result read `alpha halted · beta halted · gamma already
+  halted` in ~130 ms, the button disabled itself ("all halted"), the Risk page showed the halt
+  banner, and alpha was resumed from its Risk page. `s3copy` stayed "S3 copy", untouched.
+- **Checked beyond the UI:**
+  - gates: no/wrong token 401, foreign `Origin` 403, `text/plain` 415, wrong phrase, short reason
+    and an extra `ledgers` field 400; no halt file written; every refusal audited in every ledger;
+  - `gamma` kept its own halt (reason, who, when); one `group` id in all three audit logs;
+  - the **daily-executor itself** (dry run, `-no-record`, no keys) printed `HALTED by …/beta/
+    risk-state.json … stage orders will be blocked and recorded`, and refused to run over a
+    corrupt halt file ("nothing ran");
+  - `ui-alerts -dry-run` raised "Trading halted" for each halted copy;
+  - two simultaneous presses: one halted all three, the other reported `already_halted` for each;
+  - a press over a corrupt halt file replaced it with a valid halt;
+  - the stage ledger dir (ledger checksum, no `risk-state.json`) and its S3 copy were unchanged.
+- **Repeatable.** `scripts/kill-switch-drill.sh` does all of the above except the browser part in
+  a temp dir with its own token and port and exits non-zero on any failure (35 checks; `--keep`
+  keeps the work dir, `--source <dir>` copies another ledger dir, `--no-executor` skips the
+  executor step, which fetches public candles). Run it after any change to the controls.
+- **Findings.** None blocking. Notes: a `GET` on a control path is 404 (only POST is routed;
+  other methods are 405), and the alert e-mail subject names only the first halted ledger (the
+  body lists all).
+
 ---
 
 ## 9. How to run (local)
@@ -807,6 +837,8 @@ export PATH=$PWD/.tools/node/bin:$PATH              # portable Node 22
 #   (cd services/strategy-executor && STRATEGY_HOLD_FILE=$HOME/.config/mtb/strategy-holds.json go run ./cmd)
 #   go run ./cmd -operator-token-file ~/.config/mtb/operator-token -strategy-executor-url http://127.0.0.1:8081
 #   the page is http://127.0.0.1:5173/strategies (the kill switch halts every local ledger: rehearse on a drill copy)
+# Kill-switch drill (§8.14): scratch copies, a throwaway ui-api, 35 checks; touches no real ledger:
+#   scripts/kill-switch-drill.sh            # --keep, --source <ledger dir>, --no-executor
 cd web && npm ci && npm run dev                     # http://127.0.0.1:5173
 # or, without the backend:
 npm run dev:mock
