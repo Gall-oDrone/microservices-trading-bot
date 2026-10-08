@@ -1,0 +1,14 @@
+{
+  "ledger": "stage",
+  "enabled": true,
+  "halt_file": {
+    "path": "../strategy-executor/daily-executor-data/stage/risk-state.json",
+    "found": false,
+    "halted": false,
+    "reason": "",
+    "by": "",
+    "at": ""
+  },
+  "audit_path": "../strategy-executor/daily-executor-data/stage/ui-audit.jsonl",
+  "audit": []
+}

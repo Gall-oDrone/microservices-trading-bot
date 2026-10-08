@@ -2,6 +2,7 @@ import '@testing-library/jest-dom/vitest'
 import { cleanup } from '@testing-library/react'
 import { setupServer } from 'msw/node'
 import { afterAll, afterEach, beforeAll, vi } from 'vitest'
+import { resetMockControls } from '../mocks/controls'
 import { handlers } from '../mocks/handlers'
 
 // Lightweight Charts needs a real canvas; tests check data and text, not pixels.
@@ -36,6 +37,7 @@ export const server = setupServer(...handlers)
 beforeAll(() => server.listen({ onUnhandledRequest: 'error' }))
 afterEach(() => {
   server.resetHandlers()
+  resetMockControls()
   cleanup()
 })
 afterAll(() => server.close())

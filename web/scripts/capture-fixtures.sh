@@ -2,7 +2,7 @@
 # Re-capture the MSW fixtures in src/mocks/fixtures from a running ui-api.
 #   (cd services/ui-api && go run ./cmd -ledgers stage=...,dry-run=... -archive s3://<bucket>) &   then:   npm run fixtures
 # Layout: healthz.json and ledgers.json at the top, then one directory per
-# ledger with forward-tests.json, risk.json, health-data.json, ledger-<book>.json, candles-<book>.json.
+# ledger with forward-tests.json, risk.json, health-data.json, controls.json, ledger-<book>.json, candles-<book>.json.
 set -eu
 API="${UI_API_URL:-http://127.0.0.1:8090}"
 OUT="$(dirname "$0")/../src/mocks/fixtures"
@@ -22,6 +22,9 @@ for l in $LEDGERS; do
   curl -fsS "$API/api/ui/risk?ledger=$l" > "$D/risk.json"
   # Data health: the archive section is "off" unless ui-api runs with -archive.
   curl -fsS "$API/api/ui/health/data?ledger=$l" > "$D/health-data.json"
+  # Operator controls (R4): "enabled" only when ui-api runs with -operator-token-file.
+  # GET only; the capture never halts or resumes anything.
+  curl -fsS "$API/api/ui/controls?ledger=$l" > "$D/controls.json"
   for b in btc_mxn btc_usd; do
     curl -fsS "$API/api/ui/forward-tests/$b/ledger?ledger=$l" > "$D/ledger-$b.json"
     # A ledger without a candles dir yet has no candle file (404): skip it.

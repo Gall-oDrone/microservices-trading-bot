@@ -1,5 +1,6 @@
 import { useRisk } from '../api/client'
 import type { BookLimits, BookRisk, RiskResponse } from '../api/schemas'
+import { OperatorControls } from '../components/controls'
 import { IconCheck, IconShield } from '../components/icons'
 import { Badge, Banner, CardSkeleton, ErrorState, FindingRow, LedgerBadge, Meter, Stat } from '../components/ui'
 import { bookLabel, fmtBps, fmtBTC, fmtDate, fmtFrac, fmtMoney, fmtMx, fmtUTC } from '../lib/format'
@@ -265,8 +266,14 @@ function HaltBanner({ r }: { r: RiskResponse }) {
       ) : (
         <>{r.halt_reason || 'No reason given.'}</>
       )}{' '}
-      Every new stage order is blocked and recorded. Remove the file (or set <code>&quot;halted&quot;: false</code>) to
-      resume.
+      Every new stage order is blocked and recorded.{' '}
+      {fromFile ? (
+        <>
+          Resume from <a href="#operator-controls">Operator controls</a> below (or remove the file by hand).
+        </>
+      ) : (
+        <>Lift it in the policy to resume.</>
+      )}
     </Banner>
   )
 }
@@ -361,6 +368,10 @@ export function RiskPage() {
             <div className="card">
               <Stat label="Policy" value={r.policy.version} hint={r.policy_source} title={r.policy_source} />
             </div>
+          </div>
+
+          <div style={{ marginBottom: 16 }}>
+            <OperatorControls policyHalted={r.policy.halted} />
           </div>
 
           <div className="grid grid-2" style={{ marginBottom: 16 }}>

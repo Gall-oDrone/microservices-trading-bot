@@ -3,6 +3,7 @@ import { useSearchParams } from 'react-router'
 import type { z } from 'zod'
 import {
   candlesResponseSchema,
+  controlsInfoSchema,
   dataHealthSchema,
   forwardTestsResponseSchema,
   healthSchema,
@@ -31,10 +32,15 @@ export async function fetchJSON<S extends z.ZodTypeAny>(
   path: string,
   schema: S,
   signal?: AbortSignal,
+  init?: RequestInit,
 ): Promise<z.infer<S>> {
   let res: Response
   try {
-    res = await fetch(BASE + path, { signal, headers: { Accept: 'application/json' } })
+    res = await fetch(BASE + path, {
+      ...init,
+      signal,
+      headers: { Accept: 'application/json', ...(init?.headers as Record<string, string> | undefined) },
+    })
   } catch (e) {
     if ((e as Error).name === 'AbortError') throw e
     throw new ApiError('ui-api is not reachable. Is it running on 127.0.0.1:8090?', 0)
@@ -79,7 +85,7 @@ export function useLedgerSearch(): string {
   return name ? `?ledger=${encodeURIComponent(name)}` : ''
 }
 
-function withLedger(path: string, ledger: string): string {
+export function withLedger(path: string, ledger: string): string {
   if (!ledger) return path
   return `${path}${path.includes('?') ? '&' : '?'}ledger=${encodeURIComponent(ledger)}`
 }
@@ -96,6 +102,7 @@ export const queryKeys = {
   runs: ['runs'] as const,
   run: (id: string) => ['run', id] as const,
   dataHealth: (ledger: string) => ['data-health', ledger] as const,
+  controls: (ledger: string) => ['controls', ledger] as const,
 }
 
 export function useForwardTests() {
@@ -136,6 +143,16 @@ export function useRisk() {
   return useQuery({
     queryKey: queryKeys.risk(ledger),
     queryFn: ({ signal }) => fetchJSON(withLedger('/risk', ledger), riskResponseSchema, signal),
+    refetchInterval: REFRESH_MS,
+  })
+}
+
+/** Halt/resume availability for the selected ledger and its audit log (R4). */
+export function useControls() {
+  const ledger = useLedgerName()
+  return useQuery({
+    queryKey: queryKeys.controls(ledger),
+    queryFn: ({ signal }) => fetchJSON(withLedger('/controls', ledger), controlsInfoSchema, signal),
     refetchInterval: REFRESH_MS,
   })
 }

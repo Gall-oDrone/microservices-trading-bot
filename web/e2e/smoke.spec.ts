@@ -91,6 +91,55 @@ test('risk: enforced, per-book exposure and policy', async ({ page }) => {
   await expectHealthy(page, errors)
 })
 
+test('risk: operator controls halt and resume through the confirmation dialog', async ({ page }) => {
+  const errors = watchConsole(page)
+  await page.goto('/risk')
+  const card = page.getByTestId('operator-controls')
+  await expect(card).toHaveAttribute('data-state', 'running')
+  await expect(card.getByTestId('audit-empty')).toBeVisible()
+
+  await card.locator('#control-halt').click()
+  const dialog = page.getByRole('dialog', { name: 'Halt trading' })
+  await expect(dialog).toBeVisible()
+  await expect(page.locator('#control-reason')).toBeFocused()
+  // An incomplete form is not sent; the first bad field gets focus.
+  await page.locator('#control-submit').click()
+  await expect(page.locator('#control-reason')).toBeFocused()
+  await expect(dialog.getByText('Type “stage” exactly.')).toBeVisible()
+  const box = await dialog.boundingBox()
+  const vp = page.viewportSize() ?? { width: 0, height: 0 }
+  expect(box && box.x >= 0 && box.x + box.width <= vp.width + 1, 'dialog fits the viewport width').toBe(true)
+  expect(box && box.y >= 0 && box.y + box.height <= vp.height + 1, 'dialog fits the viewport height').toBe(true)
+  for (const id of ['#control-reason', '#control-by', '#control-confirm', '#control-token']) {
+    const h = (await page.locator(id).boundingBox())?.height ?? 0
+    expect(h, `${id} is one line tall`).toBeLessThan(48)
+  }
+
+  await page.locator('#control-reason').fill('E2E drill: pausing the executor')
+  await page.locator('#control-by').fill('e2e')
+  await page.locator('#control-confirm').fill('stage')
+  await page.locator('#control-token').fill('mock-token')
+  await page.locator('#control-submit').click()
+  await expect(dialog).toBeHidden()
+  await expect(page.getByTestId('controls-flash')).toContainText('Halted stage')
+  await expect(card).toHaveAttribute('data-state', 'halted')
+  await expect(page.locator('#banner-halt')).toContainText('E2E drill: pausing the executor')
+  await expect(card.getByTestId('audit-row')).toHaveCount(2)
+  await expectHealthy(page, errors)
+
+  await card.locator('#control-resume').click()
+  const resume = page.getByRole('dialog', { name: 'Resume trading' })
+  await expect(page.locator('#control-token')).toHaveValue('mock-token')
+  await page.locator('#control-reason').fill('E2E drill over, resuming')
+  await page.locator('#control-confirm').fill('stage')
+  await page.keyboard.press('Enter')
+  await expect(resume).toBeHidden()
+  await expect(card).toHaveAttribute('data-state', 'running')
+  await expect(page.locator('#banner-halt')).toHaveCount(0)
+  await expect(card.getByTestId('audit-row')).toHaveCount(4)
+  await expectHealthy(page, errors)
+})
+
 test('market: tickers, depth ladder, trade tape and candles over the live stream', async ({ page }) => {
   const errors = watchConsole(page)
   await page.goto('/forward-tests')

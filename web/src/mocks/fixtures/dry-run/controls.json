@@ -1,0 +1,14 @@
+{
+  "ledger": "dry-run",
+  "enabled": true,
+  "halt_file": {
+    "path": "../strategy-executor/daily-executor-data/risk-state.json",
+    "found": false,
+    "halted": false,
+    "reason": "",
+    "by": "",
+    "at": ""
+  },
+  "audit_path": "../strategy-executor/daily-executor-data/ui-audit.jsonl",
+  "audit": []
+}

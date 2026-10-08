@@ -302,6 +302,18 @@ export const bookRiskSchema = z.object({
 })
 export type BookRisk = z.infer<typeof bookRiskSchema>
 
+/** api.HaltFileInfo: the operator halt file next to a ledger (R2; written by the R4 controls). */
+export const haltFileSchema = z.object({
+  path: z.string(),
+  found: z.boolean(),
+  halted: z.boolean(),
+  reason: z.string(),
+  by: z.string(),
+  at: z.string(),
+  error: z.string().optional(),
+})
+export type HaltFile = z.infer<typeof haltFileSchema>
+
 export const riskResponseSchema = z.object({
   ledger: z.string(),
   generated_at: z.string(),
@@ -319,20 +331,57 @@ export const riskResponseSchema = z.object({
   halted: z.boolean(),
   halt_reason: z.string(),
   halt_source: z.enum(['none', 'policy', 'file', 'both']),
-  halt_file: z.object({
-    path: z.string(),
-    found: z.boolean(),
-    halted: z.boolean(),
-    reason: z.string(),
-    by: z.string(),
-    at: z.string(),
-    error: z.string().optional(),
-  }),
+  halt_file: haltFileSchema,
   books: z.array(bookRiskSchema),
   blocks: z.number(),
   warnings: z.number(),
 })
 export type RiskResponse = z.infer<typeof riskResponseSchema>
+
+// --- Operator controls (R4, services/ui-api/internal/api/controls.go) ---
+// Audit entries carry the halt file before and after (haltStateSchema above).
+
+export const auditOutcome = z.enum(['requested', 'done', 'failed', 'refused', 'denied'])
+export type AuditOutcome = z.infer<typeof auditOutcome>
+
+/** audit.Entry: one line of <ledger dir>/ui-audit.jsonl. */
+export const auditEntrySchema = z.object({
+  id: z.string().optional(),
+  at: z.string(),
+  action: z.string(),
+  outcome: auditOutcome,
+  ledger: z.string(),
+  by: z.string().optional(),
+  reason: z.string().optional(),
+  remote: z.string().optional(),
+  user_agent: z.string().optional(),
+  before: haltStateSchema.optional(),
+  after: haltStateSchema.optional(),
+  error: z.string().optional(),
+})
+export type AuditEntry = z.infer<typeof auditEntrySchema>
+
+/** GET /api/ui/controls: whether halt/resume is available for this ledger, and the audit log (newest first). */
+export const controlsInfoSchema = z.object({
+  ledger: z.string(),
+  enabled: z.boolean(),
+  disabled_reason: z.string().optional(),
+  halt_file: haltFileSchema,
+  audit_path: z.string(),
+  audit: z.array(auditEntrySchema),
+  audit_error: z.string().optional(),
+})
+export type ControlsInfo = z.infer<typeof controlsInfoSchema>
+
+/** POST /api/ui/risk/halt and /resume. */
+export const controlResponseSchema = z.object({
+  ledger: z.string(),
+  action: z.enum(['halt', 'resume']),
+  halt_file: haltFileSchema,
+  audit: auditEntrySchema,
+  audit_error: z.string().optional(),
+})
+export type ControlResponse = z.infer<typeof controlResponseSchema>
 
 export const healthSchema = z.object({
   status: z.string(),

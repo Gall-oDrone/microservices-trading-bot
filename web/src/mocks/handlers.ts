@@ -4,6 +4,7 @@
  * `npm run fixtures` while ui-api is running.
  */
 import { http, HttpResponse } from 'msw'
+import { controlHandlers } from './controls'
 import healthz from './fixtures/healthz.json'
 import ledgers from './fixtures/ledgers.json'
 import live from './fixtures/live.json'
@@ -135,7 +136,8 @@ export const handlers = [
     return doc ? HttpResponse.json(doc) : HttpResponse.json({ error: `no run ${date}/${name}` }, { status: 404 })
   }),
   http.get('/api/ui/forward-tests', ({ request }) => fixture(request, 'forward-tests')),
-  http.get('/api/ui/risk', ({ request }) => fixture(request, 'risk')),
+  // GET /controls, GET /risk (with any mock halt) and POST /risk/halt|resume.
+  ...controlHandlers(fixture, defaultLedger),
   http.get('/api/ui/health/data', ({ request }) => fixture(request, 'health-data')),
   http.get('/api/ui/forward-tests/:book/ledger', ({ params, request }) =>
     fixture(request, `ledger-${String(params.book)}`),
