@@ -27,6 +27,11 @@ JSON (`-json`), `ui-api` serves the reports, and the web app has `/research/runs
 `/research/runs/<date>/<name>` (heat-map matrix, window detail, cost sensitivity and, for 2–3 window
 runs, the **development vs holdout comparison**), §8.5.
 
+**Update 2026-10-08.** **R4 is built** (§8.12): the Risk page can halt and resume the
+daily-executor per ledger through `ui-api`, behind a confirmation dialog, a local operator token and
+an append-only audit log. It is localhost-only and off unless `ui-api` gets `-operator-token-file`;
+OIDC replaces the token in Phase 4 proper.
+
 ---
 
 ## 1. What exists today (survey of the repo, 2026-10-03)
@@ -76,7 +81,7 @@ runs, the **development vs holdout comparison**), §8.5.
 | Charts | **TradingView Lightweight Charts 5** for both candles and equity | ECharts deferred until a chart needs it (heatmaps, histograms in Phase 2) |
 | Tables | Plain semantic tables | TanStack Table deferred until a table needs sorting or virtualization |
 | Styling | **Global design tokens** (`web/src/index.css`, CSS variables), dark theme | One stylesheet instead of CSS Modules while the app is small |
-| Components | Own primitives (`components/ui.tsx`) | Radix deferred until dialogs are needed (Phase 4 confirmations) |
+| Components | Own primitives (`components/ui.tsx`) | Radix still deferred: the R4 confirmation is a small own modal (focus trap, Escape, `aria-modal`), §8.12 |
 | Live updates | Polling (TanStack Query); **SSE** for live prices (§8.3) and the Market page (§8.11) | One EventSource per page through `ui-api` |
 | Testing | **Vitest + Testing Library + MSW** | MSW serves fixtures **captured from the real `ui-api`** (`npm run fixtures`); Playwright deferred |
 | Quality | ESLint (typescript-eslint), Prettier, `tsc -b` | `npm run ci` runs all of them plus the build |
@@ -129,12 +134,15 @@ Location: `web/` at the repo root, served by Vite in development (proxying `/api
 - Strategy list with state; start/stop; a global trading halt; the daily-executor halt.
 - Every action needs a confirmation, a reason, and is written to an audit log.
 - Only after auth, roles and audit exist.
+- **Built 2026-10-08 (§8.12):** the daily-executor halt/resume per ledger, as an *Operator controls*
+  card on `/risk`, gated by a local operator token (OIDC later) with an audit log. Start/stop and a
+  global halt for the other strategies are still to do.
 
 ---
 
 ## 5. Backend for the UI (`services/ui-api`, built)
 
-### 5.1 Endpoints (GET only; any other method returns 405)
+### 5.1 Endpoints (GET only, except the two R4 controls; any other method returns 405)
 
 | Endpoint | Source | Notes |
 |---|---|---|
@@ -152,6 +160,8 @@ Location: `web/` at the repo root, served by Vite in development (proxying `/api
 | `GET /api/ui/research/runs` | `research-run/v1` JSON in `evidence-<date>/` | summary per report: data, costs (incl. additive `level`/`note`), window headers, per-rule beat-hold scores, citing studies; unreadable reports listed as `skipped` |
 | `GET /api/ui/research/runs/{date}/{name}` | one report | the summary plus the report passed through unchanged, so additive fields reach the UI |
 | `GET /api/ui/health/data` | `-archive s3://bucket` (list/get only) + ledger dir | collector flushes, compaction, executor coverage, last `run-*.log`, S3 upload; ok/warn/fail checks; S3 listing cached 60 s; `?ledger=` picks the executor section |
+| `GET /api/ui/controls` | halt file + `ui-audit.jsonl` next to the ledger | whether halt/resume is enabled for this ledger (and why not), the halt file, the audit log newest first (§8.12) |
+| `POST /api/ui/risk/halt`, `POST /api/ui/risk/resume` | writes `risk-state.json` | R4: bearer operator token, loopback `Origin`, JSON `{reason, by, confirm}`; every attempt audited; 401/403/400/409/415 as in §8.12 |
 
 Files are cached by size and mtime (by ETag for a ledger in S3, §8.8); the ledger is re-read only
 when it changes.
@@ -225,7 +235,7 @@ returns the executor's last recorded check. The Risk page shows all of it.
 | **R1 (done 2026-10-05)** Enforce in the daily-executor | See §6.4.1 | A blocked order leaves a ledger line with `risk.allowed=false` and no exchange order (tested with a fake exchange); `/risk` reports `enforcement: "enforced"` |
 | **R2 (done 2026-10-06)** Halt file, §8.2 | `risk-state.json` next to the ledger (`{halted, reason, by, at}`), read by the executor alongside `DAILY_EXECUTOR_DISABLED`; `ui-api` shows it read-only | Setting the file halts the next run and the UI shows who set it, when and why |
 | **R3 (done 2026-10-07)** Alerts, §8.9 | Alert on a missed or failed run (exit code ≠ 0), a block, or a warning. `ui-alerts` (cron, every 15 min) evaluates ui-api's own views and publishes to SNS (email) | A missed day pages within an hour of 06:00 Mexico City |
-| **R4** Halt from the UI | `POST /api/ui/risk/halt` and `/resume` with a required reason, an audit log (append-only JSONL), a confirmation dialog | Needs Phase 4 auth (OIDC) first; every action is audited |
+| **R4 (done 2026-10-08, local token)** Halt from the UI, §8.12 | `POST /api/ui/risk/halt` and `/resume` with a required reason, an audit log (append-only JSONL), a confirmation dialog | Built localhost-only behind a 0600 operator-token file instead of OIDC (decided 2026-10-08); OIDC swaps in with Phase 4; every attempt is audited |
 | **R5** Platform-wide | Load trading-engine `MaxDailyLoss`/`MaxDrawdownPct` from env (non-zero defaults); stop trading-engine from placing orders OM rejected; expose OM `GetCurrentExposure`; move OM and trading-engine checks onto `shared/pkg/risk`; delete the dead strategy-executor risk package | One policy format across services; the session check actually blocks |
 
 #### 6.4.1 R1 as built
@@ -284,7 +294,7 @@ returns the executor's last recorded check. The Risk page shows all of it.
 | **1b. Close-out** | GitHub Actions job (`go test` for shared, ui-api, daily-executor; `npm run ci`), Playwright smoke test, multi-ledger support in `ui-api` (stage + dry-run + future volume variant), risk step **R1** | CI runs on every PR; a blocked order is enforced and visible | **Done**: R1 (2026-10-05); CI (`operator-ui.yml`), multi-ledger, Playwright (2026-10-06) |
 | **2. Research + data health** | Study index, strategy comparison (needs `-json`), data-health page, ledger read from S3, risk **R2** + **R3** | Holdout vs development tables match the evidence files; a missed run alerts | **R2 done**, **study index done** (2026-10-06), **runs + comparison done**, **data health done**, **S3 ledger done**, **R3 done** (2026-10-07) |
 | **3. Market data** | Market page via BFF proxy and SSE; candles with volume ratio | Live ticker updates within 2 s; no direct browser calls to internal services | **Done**: live-data slice (2026-10-06, §8.3); Market page (2026-10-08, §8.11) |
-| **4. Hardening + controls** | OIDC, TLS, CORS, audit log, role-gated controls (halt, kill switch, start/stop), risk **R4** | Security review passes; every control action is audited | |
+| **4. Hardening + controls** | OIDC, TLS, CORS, audit log, role-gated controls (halt, kill switch, start/stop), risk **R4** | Security review passes; every control action is audited | **R4 + audit log done** (2026-10-08, local token, §8.12); OIDC, TLS, roles, start/stop to do |
 | **5. Deploy** | Static build behind CloudFront or served by `ui-api`; k8s/compose entries; risk **R5** | Reachable only through auth over HTTPS | |
 
 ### 8.1 Next phase plan (decided 2026-10-06)
@@ -313,7 +323,8 @@ and R3 alerts follow.
   (§6.4.1); days with no order are recorded as usual, so the forward test keeps its paper record.
   Recorded `stage.risk` gets an additive `halt` object (`{reason, by, at}`).
 - **ui-api.** `/api/ui/risk` adds `halt_source` (`none`, `policy`, `file`, `both`) and `halt_file`
-  (`{path, found, halted, reason, by, at, error}`). Read-only; the file is edited by hand until R4.
+  (`{path, found, halted, reason, by, at, error}`). Read-only; the file is edited by hand until R4
+  (*R4 writes it since 2026-10-08, §8.12*).
 - **UI.** The halt banner names the source and shows who, when and why. An invalid file is shown as an
   error (the executor would refuse to run).
 
@@ -634,6 +645,65 @@ unfinished bar is labelled provisional. The decision path never reads live data.
     render, book switch without reconnect, `market` events, contract errors.
   - Playwright: desktop and phone.
 
+### 8.12 R4 operator controls (as built, 2026-10-08)
+
+- **Decision (2026-10-08).** Build R4 before OIDC, localhost-only, behind a local operator token
+  and an audit log; OIDC replaces the token in Phase 4 proper. The executor needed no change: it
+  already reads `risk-state.json` before every run and fails closed on an invalid file (§8.2).
+- **Off by default.** `ui-api -operator-token-file <file>` (env `UI_API_OPERATOR_TOKEN_FILE`) turns
+  the controls on. The file must be mode 0600 or stricter, hold ≥ 32 characters with no
+  whitespace, and the flag is refused unless `-addr` is loopback. Without it `GET /api/ui/controls`
+  says why (`enabled: false`) and the POSTs are 403.
+- **Endpoints.** `POST /api/ui/risk/halt` and `/resume` (`?ledger=`), body
+  `{"reason", "by", "confirm"}`. Gates, in order:
+  1. controls on, else 403; a ledger read from S3 is excluded (403): its halt file is a copy, so
+     writing it would not reach the executor;
+  2. `Origin`, when sent, must be loopback, else 403 (a page on another site cannot drive it);
+  3. `Authorization: Bearer <token>`, compared in constant time, else 401;
+  4. `Content-Type: application/json` (415), body ≤ 4 KB, unknown fields rejected (400);
+  5. `reason` 8–500 characters on one line, `by` matching `^[A-Za-z0-9][A-Za-z0-9 ._@-]{0,63}$`,
+     `confirm` equal to the ledger name (400);
+  6. state: halting a halted ledger, resuming one that is not halted by the file, or resuming over
+     an invalid file are 409 (the last stays a hand fix). Halting over an invalid file is allowed.
+  Only POST is allowed, and only on these two paths; everything else is still 405.
+- **Order of a change.** An audit line `requested` is appended first; if that fails the response
+  is 500 and nothing changes. Then the halt file is written atomically: validated with
+  `risk.ParseHaltState` (the executor's own rules), written to a temp file, fsynced, renamed, then
+  the directory is fsynced. Then `done` or `failed` is appended. A mutex serialises controls.
+  Resume writes `{"halted": false, reason, by, at}`, so the file keeps who lifted the halt.
+- **Audit log.** `ui-audit.jsonl` next to the ledger, mode 0600, append-only (`O_APPEND`, fsync per
+  line). One line per attempt: `id`, `at`, `action`, `outcome` (`requested`, `done`, `failed`,
+  `refused`, `denied`), `ledger`, `by`, `reason`, remote address, user agent, the halt state
+  `before`/`after`, `error`. Refused and denied attempts are logged too. `GET /api/ui/controls`
+  returns it newest first; unreadable lines are skipped and reported.
+- **Alerts.** While a ledger is halted by the file, `ui-alerts` (§8.9) raises a warning
+  `<ledger>/risk.halted` ("reason (by X at T, halt file)"), so a forgotten halt keeps reminding.
+- **UI.** An *Operator controls* card on `/risk`, under the counters:
+  - state (no halt / halted by operator / invalid file), with who, when and why;
+  - **Halt trading** or **Resume trading**, disabled when the controls are off (the card says why);
+  - a confirmation dialog: reason, by (remembered in localStorage), the ledger name typed again,
+    and the token (password field, kept in **sessionStorage** for the tab, cleared on a 401).
+    Validation mirrors the server for instant feedback; the server decides. Focus is trapped,
+    Escape cancels, and a failed submit focuses the first bad field;
+  - after a change the card, the halt banner and the forward-test views refresh, and a status line
+    names the audit id;
+  - the audit log table (time, action, outcome, by, reason or error), 8 rows with "show all".
+  The halt banner now points to the card. Long banner text (paths) wraps on phones.
+- **Mock mode.** MSW keeps a halt and an audit log in memory (`web/src/mocks/controls.ts`), mirrors
+  the server's checks, and overlays the halt on `/risk`. Any non-empty token is accepted there.
+- **Checked live** with `-ledgers stage=…,drill=<scratch copy>`: a foreign `Origin` (403), a wrong
+  confirm (400), halt (200; `/risk` shows `halt_source: file`), resume (200), each audited; then the
+  same through the UI on desktop and phone. The real stage ledger was not touched.
+- **Tests.**
+  - Go: the audit file (append, tail order, bad lines, permissions); every gate and status above,
+    the order of audit lines, atomic write, invalid-file cases, S3 excluded, token-file checks; the
+    `risk.halted` alert.
+  - Web: the captured `controls.json` contract, `controlProblems`, card on/off, dialog validation,
+    halt → audit → resume, a 401 clearing the token, a 409, mock parity.
+  - Playwright (desktop and phone): halt and resume through the dialog, no horizontal overflow.
+- **Still to do (Phase 4 proper).** OIDC and roles instead of the shared token, TLS, start/stop for
+  the other strategies, a global kill switch.
+
 ---
 
 ## 9. How to run (local)
@@ -653,6 +723,10 @@ export PATH=$PWD/.tools/node/bin:$PATH              # portable Node 22
 #   (cd services/ui-api && go run ./cmd/ui-alerts -dry-run)
 #   scripts/install-ops-cron.sh --topic-arn <arn> --bucket <bucket>   # --print to preview, --uninstall
 #   scripts/ops-run.sh compact -dry-run                              # what the compaction job would do
+# R4 halt/resume from the Risk page (§8.12): create a 0600 token once, then start ui-api with it:
+#   mkdir -p ~/.config/mtb && (umask 077; openssl rand -hex 32 > ~/.config/mtb/operator-token)
+#   go run ./cmd -operator-token-file ~/.config/mtb/operator-token
+#   to rehearse, add a scratch copy of a ledger dir: -ledgers stage=<path>/ledger.jsonl,drill=<copy>/ledger.jsonl
 cd web && npm ci && npm run dev                     # http://127.0.0.1:5173
 # or, without the backend:
 npm run dev:mock
