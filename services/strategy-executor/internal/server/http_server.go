@@ -3,7 +3,9 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
 	"time"
@@ -554,6 +556,9 @@ func (h *StrategyHandler) listStrategies(w http.ResponseWriter, r *http.Request)
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"strategies": infos,
 		"count":      len(infos),
+		// holds lists every operator hold, including names not registered
+		// right now (they stay held when they are registered again).
+		"holds": h.registry.Holds(),
 	})
 }
 
@@ -607,26 +612,88 @@ func (h *StrategyHandler) deleteStrategy(w http.ResponseWriter, r *http.Request,
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// lifecycleRequest is the optional JSON body of start/stop. An empty body keeps
+// the historical behaviour (plain start/stop), so the router and the
+// organic-trading script are unaffected.
+type lifecycleRequest struct {
+	By     string `json:"by,omitempty"`
+	Reason string `json:"reason,omitempty"`
+	// Hold (stop only) records an operator hold so nothing but an operator
+	// start can run the strategy again, across restarts.
+	Hold bool `json:"hold,omitempty"`
+	// ReleaseHold (start only) removes an operator hold before starting.
+	ReleaseHold bool `json:"release_hold,omitempty"`
+}
+
+func decodeLifecycleRequest(r *http.Request) (lifecycleRequest, error) {
+	var req lifecycleRequest
+	if r.Body == nil {
+		return req, nil
+	}
+	dec := json.NewDecoder(io.LimitReader(r.Body, 16<<10))
+	if err := dec.Decode(&req); err != nil && !errors.Is(err, io.EOF) {
+		return req, err
+	}
+	return req, nil
+}
+
+// writeLifecycleError maps registry errors to HTTP: unknown name 404, state
+// conflicts (already running, not running, held) 409, anything else 500.
+func writeLifecycleError(w http.ResponseWriter, action string, err error) {
+	status, code := http.StatusInternalServerError, "failed"
+	switch {
+	case errors.Is(err, strategies.ErrStrategyNotFound):
+		status, code = http.StatusNotFound, "not_found"
+	case errors.Is(err, strategies.ErrStrategyRunning):
+		status, code = http.StatusConflict, "already_running"
+	case errors.Is(err, strategies.ErrStrategyNotRunning):
+		status, code = http.StatusConflict, "not_running"
+	case errors.Is(err, strategies.ErrStrategyHeld):
+		status, code = http.StatusConflict, "held"
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(map[string]string{
+		"error": fmt.Sprintf("Failed to %s strategy: %v", action, err),
+		"code":  code,
+	})
+}
+
 // startStrategy starts a strategy
 func (h *StrategyHandler) startStrategy(w http.ResponseWriter, r *http.Request, name string) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
+	req, err := decodeLifecycleRequest(r)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Invalid request body: %v", err), http.StatusBadRequest)
+		return
+	}
 
 	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
 	defer cancel()
 
-	if err := h.registry.Start(ctx, name); err != nil {
-		http.Error(w, fmt.Sprintf("Failed to start strategy: %v", err), http.StatusInternalServerError)
+	resp := map[string]interface{}{
+		"name":   name,
+		"status": "started",
+	}
+	if req.ReleaseHold {
+		released, err := h.registry.StartReleasingHold(ctx, name)
+		if err != nil {
+			writeLifecycleError(w, "start", err)
+			return
+		}
+		if released != nil {
+			resp["released_hold"] = released
+		}
+	} else if err := h.registry.Start(ctx, name); err != nil {
+		writeLifecycleError(w, "start", err)
 		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
-		"name":   name,
-		"status": "started",
-	})
+	json.NewEncoder(w).Encode(resp)
 }
 
 // stopStrategy stops a strategy
@@ -635,17 +702,40 @@ func (h *StrategyHandler) stopStrategy(w http.ResponseWriter, r *http.Request, n
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
+	req, err := decodeLifecycleRequest(r)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Invalid request body: %v", err), http.StatusBadRequest)
+		return
+	}
 
-	if err := h.registry.Stop(name); err != nil {
-		http.Error(w, fmt.Sprintf("Failed to stop strategy: %v", err), http.StatusInternalServerError)
+	resp := map[string]interface{}{
+		"name":   name,
+		"status": "stopped",
+	}
+	if req.Hold {
+		entry := strategies.HoldEntry{
+			By:     strings.TrimSpace(req.By),
+			Reason: strings.TrimSpace(req.Reason),
+			At:     time.Now().UTC(),
+		}
+		if entry.By == "" {
+			entry.By = "api"
+		}
+		wasRunning, err := h.registry.Hold(name, entry)
+		if err != nil {
+			writeLifecycleError(w, "stop", err)
+			return
+		}
+		resp["held"] = true
+		resp["hold"] = entry
+		resp["was_running"] = wasRunning
+	} else if err := h.registry.Stop(name); err != nil {
+		writeLifecycleError(w, "stop", err)
 		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
-		"name":   name,
-		"status": "stopped",
-	})
+	json.NewEncoder(w).Encode(resp)
 }
 
 // getStrategyState returns the current state of a strategy

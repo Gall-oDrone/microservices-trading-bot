@@ -124,6 +124,17 @@ func main() {
 
 	strategyRegistry := strategies.NewEnhancedRegistry(indicatorSvc)
 
+	if cfg.Strategy.HoldFile != "" {
+		holds, err := strategies.LoadHoldList(cfg.Strategy.HoldFile)
+		if err != nil {
+			// Refuse to boot: ignoring a damaged hold list could let a strategy
+			// an operator stopped start trading again.
+			appLogger.Fatalf("Failed to load strategy hold list: %v", err)
+		}
+		strategyRegistry.SetHoldList(holds)
+		appLogger.Infof("Strategy hold list %s loaded (%d held: %v)", cfg.Strategy.HoldFile, len(holds.Names()), holds.Names())
+	}
+
 	if cfg.OrderManagement.BaseURL != "" {
 		strategyRegistry.SetPendingBuyCancelClient(ordermgmt.NewClient(cfg.OrderManagement.BaseURL))
 		appLogger.Infof("Order-management cancel client enabled (base URL: %s)", cfg.OrderManagement.BaseURL)

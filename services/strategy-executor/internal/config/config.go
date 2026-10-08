@@ -117,6 +117,10 @@ type StrategyConfig struct {
 	DefaultBook     string                 `json:"default_book"`
 	DefaultStrategy string                 `json:"default_strategy"`
 	Parameters      map[string]interface{} `json:"parameters"`
+	// HoldFile persists the operator hold (stop) list so a strategy an
+	// operator stopped stays stopped across restarts. Empty keeps holds in
+	// memory only.
+	HoldFile string `json:"hold_file"`
 }
 
 // RiskConfig holds risk management configuration
@@ -250,6 +254,7 @@ func Load() (*Config, error) {
 			DefaultBook:     getEnv("DEFAULT_BOOK", "btc_mxn"),
 			DefaultStrategy: getEnv("DEFAULT_STRATEGY", "basic"),
 			Parameters:      make(map[string]interface{}),
+			HoldFile:        getEnv("STRATEGY_HOLD_FILE", ""),
 		},
 		Risk: RiskConfig{
 			MaxOpenPositions:  getEnvAsInt("MAX_OPEN_POSITIONS", 3),

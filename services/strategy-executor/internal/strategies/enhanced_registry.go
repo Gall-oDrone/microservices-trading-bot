@@ -3,6 +3,7 @@ package strategies
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"sync"
@@ -12,6 +13,29 @@ import (
 	"bitso-trading-platform/strategy-executor/internal/metrics"
 )
 
+// Sentinel errors for lifecycle calls. Returned errors keep their historical
+// messages but unwrap to one of these so callers (the HTTP API) can tell a
+// missing strategy from a state conflict.
+var (
+	ErrStrategyNotFound   = errors.New("strategy not found")
+	ErrStrategyRunning    = errors.New("strategy already running")
+	ErrStrategyNotRunning = errors.New("strategy not running")
+	ErrStrategyHeld       = errors.New("strategy held by operator")
+)
+
+// lifecycleError carries a human message and a sentinel kind.
+type lifecycleError struct {
+	kind error
+	msg  string
+}
+
+func (e *lifecycleError) Error() string { return e.msg }
+func (e *lifecycleError) Unwrap() error { return e.kind }
+
+func lifecycleErr(kind error, format string, args ...interface{}) error {
+	return &lifecycleError{kind: kind, msg: fmt.Sprintf(format, args...)}
+}
+
 // EnhancedRegistry manages enhanced strategy registration and lifecycle
 type EnhancedRegistry struct {
 	strategies       map[string]EnhancedStrategy
@@ -20,6 +44,7 @@ type EnhancedRegistry struct {
 	feeRates         MakerTakerFeeProvider
 	limitProfitStore LimitProfitRawStateStore
 	pendingBuyCancel PendingBuyCancelClient
+	holds            *HoldList
 	mu               sync.RWMutex
 }
 
@@ -29,6 +54,7 @@ func NewEnhancedRegistry(indicatorSvc *indicators.Service) *EnhancedRegistry {
 		strategies:   make(map[string]EnhancedStrategy),
 		factories:    make(map[string]EnhancedStrategyFactory),
 		indicatorSvc: indicatorSvc,
+		holds:        NewMemoryHoldList(),
 	}
 
 	registry.registerBuiltInFactories()
@@ -144,6 +170,25 @@ func (r *EnhancedRegistry) SetPendingBuyCancelClient(c PendingBuyCancelClient) {
 	}
 }
 
+// SetHoldList replaces the operator hold list (normally one loaded from
+// STRATEGY_HOLD_FILE at boot). A nil list resets to an empty in-memory one.
+func (r *EnhancedRegistry) SetHoldList(h *HoldList) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if h == nil {
+		h = NewMemoryHoldList()
+	}
+	r.holds = h
+}
+
+// Holds returns a copy of the operator holds, including names that are not
+// (yet) registered.
+func (r *EnhancedRegistry) Holds() map[string]HoldEntry {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return r.holds.All()
+}
+
 // Get retrieves a strategy by name
 func (r *EnhancedRegistry) Get(name string) (EnhancedStrategy, error) {
 	r.mu.RLock()
@@ -151,7 +196,7 @@ func (r *EnhancedRegistry) Get(name string) (EnhancedStrategy, error) {
 
 	strategy, exists := r.strategies[name]
 	if !exists {
-		return nil, fmt.Errorf("strategy '%s' not found", name)
+		return nil, lifecycleErr(ErrStrategyNotFound, "strategy '%s' not found", name)
 	}
 
 	return strategy, nil
@@ -198,18 +243,23 @@ func (r *EnhancedRegistry) GetActiveStrategies() []string {
 	return names
 }
 
-// Start starts a strategy by name
+// Start starts a strategy by name. A strategy on the operator hold list is
+// refused with ErrStrategyHeld; use StartReleasingHold for an operator start.
 func (r *EnhancedRegistry) Start(ctx context.Context, name string) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
 	strategy, exists := r.strategies[name]
 	if !exists {
-		return fmt.Errorf("strategy '%s' not found", name)
+		return lifecycleErr(ErrStrategyNotFound, "strategy '%s' not found", name)
 	}
 
 	if strategy.IsRunning() {
-		return fmt.Errorf("strategy '%s' is already running", name)
+		return lifecycleErr(ErrStrategyRunning, "strategy '%s' is already running", name)
+	}
+
+	if h, held := r.holds.Get(name); held {
+		return lifecycleErr(ErrStrategyHeld, "strategy '%s' is held by operator %q (%s); release the hold to start it", name, h.By, h.Reason)
 	}
 
 	err := strategy.Start(ctx)
@@ -219,6 +269,40 @@ func (r *EnhancedRegistry) Start(ctx context.Context, name string) error {
 	return err
 }
 
+// StartReleasingHold is the operator start: it removes any hold on name
+// (persisting the change) and then starts the strategy. If the start fails the
+// hold is put back, so a failed attempt never leaves the strategy unprotected.
+// It returns the hold that was released, if there was one.
+func (r *EnhancedRegistry) StartReleasingHold(ctx context.Context, name string) (*HoldEntry, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	strategy, exists := r.strategies[name]
+	if !exists {
+		return nil, lifecycleErr(ErrStrategyNotFound, "strategy '%s' not found", name)
+	}
+	if strategy.IsRunning() {
+		return nil, lifecycleErr(ErrStrategyRunning, "strategy '%s' is already running", name)
+	}
+
+	var released *HoldEntry
+	if h, held := r.holds.Get(name); held {
+		if err := r.holds.Delete(name); err != nil {
+			return nil, fmt.Errorf("release hold on '%s': %w", name, err)
+		}
+		released = &h
+	}
+
+	if err := strategy.Start(ctx); err != nil {
+		if released != nil {
+			_ = r.holds.Put(name, *released)
+		}
+		return nil, err
+	}
+	r.updatePrometheusMetrics()
+	return released, nil
+}
+
 // Stop stops a strategy by name
 func (r *EnhancedRegistry) Stop(name string) error {
 	r.mu.Lock()
@@ -226,11 +310,11 @@ func (r *EnhancedRegistry) Stop(name string) error {
 
 	strategy, exists := r.strategies[name]
 	if !exists {
-		return fmt.Errorf("strategy '%s' not found", name)
+		return lifecycleErr(ErrStrategyNotFound, "strategy '%s' not found", name)
 	}
 
 	if !strategy.IsRunning() {
-		return fmt.Errorf("strategy '%s' is not running", name)
+		return lifecycleErr(ErrStrategyNotRunning, "strategy '%s' is not running", name)
 	}
 
 	err := strategy.Stop()
@@ -240,6 +324,34 @@ func (r *EnhancedRegistry) Stop(name string) error {
 	return err
 }
 
+// Hold is the operator stop: it persists a hold for name first and then stops
+// the strategy if it is running. Holding an already-stopped strategy is fine
+// (it records the hold so nothing starts it later). It reports whether the
+// strategy was running. If persisting fails nothing is changed.
+func (r *EnhancedRegistry) Hold(name string, entry HoldEntry) (wasRunning bool, err error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	strategy, exists := r.strategies[name]
+	if !exists {
+		return false, lifecycleErr(ErrStrategyNotFound, "strategy '%s' not found", name)
+	}
+	if entry.At.IsZero() {
+		entry.At = time.Now().UTC()
+	}
+	if err := r.holds.Put(name, entry); err != nil {
+		return false, fmt.Errorf("persist hold on '%s': %w", name, err)
+	}
+	if !strategy.IsRunning() {
+		return false, nil
+	}
+	if err := strategy.Stop(); err != nil {
+		return true, fmt.Errorf("stop strategy '%s': %w", name, err)
+	}
+	r.updatePrometheusMetrics()
+	return true, nil
+}
+
 // Remove removes a strategy from the registry
 func (r *EnhancedRegistry) Remove(name string) error {
 	r.mu.Lock()
@@ -247,7 +359,7 @@ func (r *EnhancedRegistry) Remove(name string) error {
 
 	strategy, exists := r.strategies[name]
 	if !exists {
-		return fmt.Errorf("strategy '%s' not found", name)
+		return lifecycleErr(ErrStrategyNotFound, "strategy '%s' not found", name)
 	}
 
 	if strategy.IsRunning() {
@@ -270,13 +382,17 @@ func (r *EnhancedRegistry) Remove(name string) error {
 	return nil
 }
 
-// StartAll starts all registered strategies
+// StartAll starts all registered strategies except those on the operator hold
+// list.
 func (r *EnhancedRegistry) StartAll(ctx context.Context) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
 	var lastErr error
 	for name, strategy := range r.strategies {
+		if _, held := r.holds.Get(name); held {
+			continue
+		}
 		if !strategy.IsRunning() {
 			if err := strategy.Start(ctx); err != nil {
 				lastErr = fmt.Errorf("start strategy '%s': %w", name, err)
@@ -380,6 +496,9 @@ type StrategyInfo struct {
 	Enabled    bool                   `json:"enabled"`
 	State      StrategyState          `json:"state"`
 	Metrics    StrategyMetrics        `json:"metrics"`
+	// Hold is set when an operator stopped the strategy and asked it to stay
+	// stopped (see HoldList).
+	Hold *HoldEntry `json:"hold,omitempty"`
 }
 
 // GetStrategyInfo returns information about a strategy
@@ -389,22 +508,10 @@ func (r *EnhancedRegistry) GetStrategyInfo(name string) (*StrategyInfo, error) {
 
 	strategy, exists := r.strategies[name]
 	if !exists {
-		return nil, fmt.Errorf("strategy '%s' not found", name)
+		return nil, lifecycleErr(ErrStrategyNotFound, "strategy '%s' not found", name)
 	}
 
-	config := strategy.GetConfig()
-
-	return &StrategyInfo{
-		Name:       strategy.Name(),
-		Type:       config.Type,
-		Version:    strategy.Version(),
-		Book:       config.Book,
-		Parameters: config.Parameters,
-		Running:    strategy.IsRunning(),
-		Enabled:    config.Enabled,
-		State:      strategy.GetState(),
-		Metrics:    strategy.GetMetrics(),
-	}, nil
+	return r.infoLocked(name, strategy), nil
 }
 
 // GetAllStrategyInfo returns information about all strategies
@@ -414,22 +521,31 @@ func (r *EnhancedRegistry) GetAllStrategyInfo() []*StrategyInfo {
 
 	infos := make([]*StrategyInfo, 0, len(r.strategies))
 
-	for _, strategy := range r.strategies {
-		config := strategy.GetConfig()
-		infos = append(infos, &StrategyInfo{
-			Name:       strategy.Name(),
-			Type:       config.Type,
-			Version:    strategy.Version(),
-			Book:       config.Book,
-			Parameters: config.Parameters,
-			Running:    strategy.IsRunning(),
-			Enabled:    config.Enabled,
-			State:      strategy.GetState(),
-			Metrics:    strategy.GetMetrics(),
-		})
+	for name, strategy := range r.strategies {
+		infos = append(infos, r.infoLocked(name, strategy))
 	}
 
 	return infos
+}
+
+// infoLocked builds a StrategyInfo. Must be called with r.mu held.
+func (r *EnhancedRegistry) infoLocked(name string, strategy EnhancedStrategy) *StrategyInfo {
+	config := strategy.GetConfig()
+	info := &StrategyInfo{
+		Name:       strategy.Name(),
+		Type:       config.Type,
+		Version:    strategy.Version(),
+		Book:       config.Book,
+		Parameters: config.Parameters,
+		Running:    strategy.IsRunning(),
+		Enabled:    config.Enabled,
+		State:      strategy.GetState(),
+		Metrics:    strategy.GetMetrics(),
+	}
+	if h, held := r.holds.Get(name); held {
+		info.Hold = &h
+	}
+	return info
 }
 
 // RegistryStats contains registry statistics
