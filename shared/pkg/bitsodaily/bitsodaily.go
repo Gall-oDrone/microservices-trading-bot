@@ -10,10 +10,13 @@
 // No credentials are used or needed.
 //
 // Used by cmd/bitso-daily (writes the evidence CSVs) and cmd/daily-executor
-// (computes the day's decision), so both see identical bars.
+// (computes the day's decision), so both see identical bars. Moved from
+// strategy-executor/internal/bitsodaily to shared on 2026-10-08 so
+// order-management's VaR volatility estimate reads the same bars.
 package bitsodaily
 
 import (
+	"context"
 	"encoding/csv"
 	"encoding/json"
 	"fmt"
@@ -24,6 +27,10 @@ import (
 	"sort"
 	"strconv"
 	"time"
+
+	// The service images are alpine without /usr/share/zoneinfo; without the
+	// embedded database the Mexico lookup below panics at start-up.
+	_ "time/tzdata"
 )
 
 // Candle is one bucket as returned by /api/v3/ohlc.
@@ -68,6 +75,12 @@ func mustLoc(name string) *time.Location {
 // FetchRange walks [start, end) in chunks. The endpoint caps a response at a
 // few hundred buckets, so chunks are kept under that.
 func FetchRange(c *http.Client, base, book string, start, end time.Time, chunk time.Duration) ([]Candle, error) {
+	return FetchRangeContext(context.Background(), c, base, book, start, end, chunk)
+}
+
+// FetchRangeContext is FetchRange bounded by ctx: requests and the pauses
+// between chunks and retries stop when ctx ends.
+func FetchRangeContext(ctx context.Context, c *http.Client, base, book string, start, end time.Time, chunk time.Duration) ([]Candle, error) {
 	var all []Candle
 	for s := start; s.Before(end); s = s.Add(chunk) {
 		e := s.Add(chunk)
@@ -76,25 +89,44 @@ func FetchRange(c *http.Client, base, book string, start, end time.Time, chunk t
 		}
 		url := fmt.Sprintf("%s/api/v3/ohlc?book=%s&time_bucket=86400&start=%d&end=%d",
 			base, book, s.UnixMilli(), e.UnixMilli())
-		got, err := fetchOnce(c, url)
+		got, err := fetchOnce(ctx, c, url)
 		if err != nil {
 			return nil, err
 		}
 		all = append(all, got...)
 		if e.Before(end) {
-			time.Sleep(1100 * time.Millisecond) // stay well inside the public rate limit
+			if err := sleep(ctx, 1100*time.Millisecond); err != nil { // stay well inside the public rate limit
+				return nil, err
+			}
 		}
 	}
 	return all, nil
 }
 
-func fetchOnce(c *http.Client, url string) ([]Candle, error) {
+func sleep(ctx context.Context, d time.Duration) error {
+	t := time.NewTimer(d)
+	defer t.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-t.C:
+		return nil
+	}
+}
+
+func fetchOnce(ctx context.Context, c *http.Client, url string) ([]Candle, error) {
 	var lastErr error
 	for attempt := 0; attempt < 3; attempt++ {
 		if attempt > 0 {
-			time.Sleep(time.Duration(attempt) * 3 * time.Second)
+			if err := sleep(ctx, time.Duration(attempt)*3*time.Second); err != nil {
+				return nil, err
+			}
 		}
-		resp, err := c.Get(url)
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+		if err != nil {
+			return nil, err
+		}
+		resp, err := c.Do(req)
 		if err != nil {
 			lastErr = err
 			continue

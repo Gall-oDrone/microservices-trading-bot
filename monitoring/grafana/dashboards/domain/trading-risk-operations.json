@@ -1157,7 +1157,7 @@
       "id": 30,
       "title": "1-day 99% VaR vs limit",
       "type": "timeseries",
-      "description": "Parametric VaR per quote currency (configured daily vol) and its limit (RISK_VAR_LIMITS).",
+      "description": "Parametric VaR per quote currency (z x |sum exposure x daily vol|, vol per risk_var_vol_source) and its limit (RISK_VAR_LIMITS).",
       "gridPos": {
         "h": 7,
         "w": 8,
@@ -1293,6 +1293,345 @@
       "options": {
         "colorMode": "background",
         "graphMode": "none",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        }
+      }
+    },
+    {
+      "id": 34,
+      "title": "VaR model: estimated vol and backtest (plan §6.4.8)",
+      "type": "row",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 61
+      },
+      "panels": []
+    },
+    {
+      "id": 35,
+      "title": "Daily vol: EWMA / 365-day / used",
+      "type": "timeseries",
+      "description": "Vol estimated from Bitso daily closes: RiskMetrics EWMA (lambda 0.94) and 365-day equal-weighted; the VaR uses max of the two when fresh (risk_var_daily_vol_ratio = what is actually used, incl. fallback or override).",
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 0,
+        "y": 62
+      },
+      "targets": [
+        {
+          "expr": "max by (book) (risk_var_vol_estimate_ratio{job=~\"order-management.*\",model=\"ewma\"})",
+          "legendFormat": "EWMA {{book}}",
+          "refId": "A"
+        },
+        {
+          "expr": "max by (book) (risk_var_vol_estimate_ratio{job=~\"order-management.*\",model=\"long\"})",
+          "legendFormat": "365d {{book}}",
+          "refId": "B"
+        },
+        {
+          "expr": "max by (book) (risk_var_daily_vol_ratio{job=~\"order-management.*\"})",
+          "legendFormat": "used {{book}}",
+          "refId": "C"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "unit": "percentunit"
+        },
+        "overrides": []
+      },
+      "options": {}
+    },
+    {
+      "id": 36,
+      "title": "Parametric vs historical-simulation VaR (99%, 1 day)",
+      "type": "timeseries",
+      "description": "Parametric VaR (the one the limit applies to) and historical-simulation VaR: today's exposures revalued over the last year's daily returns. Historical well above parametric = fat tails the normal model misses (PortfolioVaRModelDivergence at 1.5x).",
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 8,
+        "y": 62
+      },
+      "targets": [
+        {
+          "expr": "max by (currency) (portfolio_var_quote{job=~\"order-management.*\"})",
+          "legendFormat": "parametric {{currency}}",
+          "refId": "A"
+        },
+        {
+          "expr": "max by (currency) (portfolio_var_historical_quote{job=~\"order-management.*\"})",
+          "legendFormat": "historical {{currency}}",
+          "refId": "B"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          }
+        },
+        "overrides": []
+      },
+      "options": {}
+    },
+    {
+      "id": 37,
+      "title": "Backtest zone (Basel, 250 days)",
+      "type": "stat",
+      "description": "Basel traffic light of the 250-day VaR backtest per book, worse of long and short: green 0-4 exceptions, yellow 5-9 (VaRBacktestYellow), red 10+ (VaRBacktestRed).",
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 16,
+        "y": 62
+      },
+      "targets": [
+        {
+          "expr": "max by (book) (risk_var_backtest_zone{job=~\"order-management.*\"})",
+          "legendFormat": "{{book}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "-1": {
+                  "text": "< 250 days",
+                  "color": "text"
+                },
+                "0": {
+                  "text": "green",
+                  "color": "green"
+                },
+                "1": {
+                  "text": "yellow",
+                  "color": "yellow"
+                },
+                "2": {
+                  "text": "red",
+                  "color": "red"
+                }
+              }
+            }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 0
+              },
+              {
+                "color": "yellow",
+                "value": 1
+              },
+              {
+                "color": "red",
+                "value": 2
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        }
+      }
+    },
+    {
+      "id": 38,
+      "title": "Backtest exceptions per side (250 days) and Kupiec p-value",
+      "type": "timeseries",
+      "description": "Days whose loss on a unit long / short position exceeded the previous day's 99% VaR (2.5 expected in 250), and Kupiec's proportion-of-failures p-value (right axis; below 0.05 rejects).",
+      "gridPos": {
+        "h": 7,
+        "w": 12,
+        "x": 0,
+        "y": 69
+      },
+      "targets": [
+        {
+          "expr": "max by (book, side) (risk_var_backtest_exceptions{job=~\"order-management.*\"})",
+          "legendFormat": "exceptions {{book}} {{side}}",
+          "refId": "A"
+        },
+        {
+          "expr": "max by (book, side) (risk_var_backtest_kupiec_pvalue{job=~\"order-management.*\"})",
+          "legendFormat": "Kupiec p {{book}} {{side}}",
+          "refId": "B"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "Kupiec.*"
+            },
+            "properties": [
+              {
+                "id": "custom.axisPlacement",
+                "value": "right"
+              },
+              {
+                "id": "min",
+                "value": 0
+              },
+              {
+                "id": "max",
+                "value": 1
+              }
+            ]
+          }
+        ]
+      },
+      "options": {}
+    },
+    {
+      "id": 39,
+      "title": "Vol source / estimate data age",
+      "type": "stat",
+      "description": "Where each book's VaR vol comes from (estimated, override, fallback = no fresh estimate, fixed), and the age of the last daily close behind the estimate (VaRVolEstimateFallback after 30 min on fallback).",
+      "gridPos": {
+        "h": 7,
+        "w": 12,
+        "x": 12,
+        "y": 69
+      },
+      "targets": [
+        {
+          "expr": "max by (book, source) (risk_var_vol_source{job=~\"order-management.*\"} == 1)",
+          "legendFormat": "{{book}}: {{source}}",
+          "refId": "A"
+        },
+        {
+          "expr": "max by (book) (risk_var_vol_data_age_seconds{job=~\"order-management.*\"} >= 0)",
+          "legendFormat": "{{book}} data age",
+          "refId": "B"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byFrameRefID",
+              "options": "A"
+            },
+            "properties": [
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "1": {
+                        "text": "in use"
+                      }
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byFrameRefID",
+              "options": "B"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "s"
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "green",
+                      "value": null
+                    },
+                    {
+                      "color": "orange",
+                      "value": 172800
+                    },
+                    {
+                      "color": "red",
+                      "value": 259200
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*: (fallback|fixed)"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "orange"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "value_and_name",
         "reduceOptions": {
           "calcs": [
             "lastNotNull"

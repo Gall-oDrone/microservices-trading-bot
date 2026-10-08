@@ -15,6 +15,8 @@ on:
       - 'shared/pkg/risk/**'
       - 'shared/pkg/dailyledger/**'
       - 'shared/pkg/dailyrule/**'
+      - 'shared/pkg/bitsodaily/**'
+      - 'shared/pkg/varmodel/**'
       - 'shared/pkg/httpcors/**'
       - 'services/api-gateway/**'
       - 'services/market-data/**'
@@ -76,11 +78,16 @@ jobs:
       # live in shared/pkg/dailyrule; cmd/daily-research's golden test pins
       # the simulator's output bit for bit, and strategy-executor's
       # /api/v1/backtests answers 410 (internal/server).
+      # Plan §6.4.8: the Bitso daily fetcher moved to shared/pkg/bitsodaily
+      # (strategy-executor keeps a forwarding shim); shared/pkg/varmodel is
+      # the VaR vol model and backtest order-management uses.
       - name: gofmt (new packages)
         run: |
           out=$(gofmt -l shared/pkg/risk shared/pkg/dailyledger shared/pkg/dailyrule \
+            shared/pkg/bitsodaily shared/pkg/varmodel \
             services/strategy-executor/cmd/daily-executor services/ui-api \
             services/strategy-executor/internal/dailyrule \
+            services/strategy-executor/internal/bitsodaily \
             services/strategy-executor/cmd/daily-research/golden_test.go \
             services/strategy-executor/internal/server/backtest_deprecation.go \
             services/strategy-executor/internal/server/backtest_deprecation_test.go)
@@ -89,13 +96,13 @@ jobs:
       - name: shared
         working-directory: shared
         run: |
-          go vet ./pkg/risk ./pkg/dailyledger ./pkg/dailyrule
-          go test -race -count=1 ./pkg/risk ./pkg/dailyledger ./pkg/dailyrule
+          go vet ./pkg/risk ./pkg/dailyledger ./pkg/dailyrule ./pkg/bitsodaily ./pkg/varmodel
+          go test -race -count=1 ./pkg/risk ./pkg/dailyledger ./pkg/dailyrule ./pkg/bitsodaily ./pkg/varmodel
 
       - name: daily-executor, daily-research, deprecated backtest routes
         working-directory: services/strategy-executor
         run: |
-          go vet ./cmd/daily-executor ./internal/dailyexec ./internal/dailyrule ./cmd/daily-research ./internal/server
+          go vet ./cmd/daily-executor ./internal/dailyexec ./internal/dailyrule ./internal/bitsodaily ./cmd/daily-research ./internal/server
           go test -race -count=1 ./cmd/daily-executor ./internal/dailyexec ./internal/dailyrule ./cmd/daily-research ./internal/server
 
       - name: ui-api
@@ -142,6 +149,9 @@ jobs:
             services/order-management/internal/risk/risk_manager_test.go \
             services/order-management/internal/risk/portfolio.go \
             services/order-management/internal/risk/portfolio_test.go \
+            services/order-management/internal/risk/portfolio_vol_test.go \
+            services/order-management/internal/risk/volatility.go \
+            services/order-management/internal/risk/volatility_test.go \
             services/order-management/internal/metrics/risk_series.go \
             services/order-management/internal/metrics/risk_series_test.go \
             services/order-management/internal/manager/slippage.go \

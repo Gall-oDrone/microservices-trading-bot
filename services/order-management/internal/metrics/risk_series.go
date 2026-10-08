@@ -4,6 +4,8 @@ import (
 	"math"
 	"time"
 
+	"bitso-trading-platform/shared/pkg/varmodel"
+
 	"github.com/prometheus/client_golang/prometheus"
 )
 
@@ -49,7 +51,21 @@ type RiskSeries struct {
 	varLimit       *prometheus.GaugeVec
 	lastRun        prometheus.Gauge
 	runErrors      prometheus.Counter
+
+	// VaR model (plan §6.4.8).
+	volEstimate *prometheus.GaugeVec
+	volSource   *prometheus.GaugeVec
+	volDataAge  *prometheus.GaugeVec
+	btObs       *prometheus.GaugeVec
+	btExc       *prometheus.GaugeVec
+	btKupiec    *prometheus.GaugeVec
+	btZone      *prometheus.GaugeVec
+	histVaR     *prometheus.GaugeVec
+	histScen    *prometheus.GaugeVec
 }
+
+// VolSources are the values of risk_var_vol_source's source label.
+var VolSources = []string{"estimated", "fallback", "override", "fixed"}
 
 // NewRiskSeries creates and registers the series on reg.
 func NewRiskSeries(reg prometheus.Registerer) *RiskSeries {
@@ -85,7 +101,7 @@ func NewRiskSeries(reg prometheus.Registerer) *RiskSeries {
 		}, []string{"book"}),
 		dailyVol: prometheus.NewGaugeVec(prometheus.GaugeOpts{
 			Name: "risk_var_daily_vol_ratio",
-			Help: "Daily return volatility assumed for the book in the VaR (RISK_VAR_DAILY_VOL*; a model parameter, not an estimate)",
+			Help: "Daily return volatility used for the book in the VaR (see risk_var_vol_source: the estimate when fresh, else the configured RISK_VAR_DAILY_VOL*)",
 		}, []string{"book"}),
 		netBase: prometheus.NewGaugeVec(prometheus.GaugeOpts{
 			Name: "portfolio_net_exposure_base",
@@ -115,10 +131,47 @@ func NewRiskSeries(reg prometheus.Registerer) *RiskSeries {
 			Name: "portfolio_risk_run_errors_total",
 			Help: "Portfolio risk runs that could not read positions",
 		}),
+		volEstimate: prometheus.NewGaugeVec(prometheus.GaugeOpts{
+			Name: "risk_var_vol_estimate_ratio",
+			Help: "Next-day daily vol estimated from Bitso daily closes: model=ewma (RiskMetrics, lambda RISK_VAR_EWMA_LAMBDA), long (365-day equal-weighted), max (the one the VaR uses when fresh)",
+		}, []string{"book", "model"}),
+		volSource: prometheus.NewGaugeVec(prometheus.GaugeOpts{
+			Name: "risk_var_vol_source",
+			Help: "1 for the source of the book's VaR vol: estimated, fallback (no fresh estimate: RISK_VAR_DAILY_VOL), override (RISK_VAR_DAILY_VOL_BOOKS) or fixed (RISK_VAR_VOL_MODEL=fixed); 0 for the others",
+		}, []string{"book", "source"}),
+		volDataAge: prometheus.NewGaugeVec(prometheus.GaugeOpts{
+			Name: "risk_var_vol_data_age_seconds",
+			Help: "Age of the last daily close in the book's vol estimate (-1: no estimate yet)",
+		}, []string{"book"}),
+		btObs: prometheus.NewGaugeVec(prometheus.GaugeOpts{
+			Name: "risk_var_backtest_observations",
+			Help: "Days in the VaR backtest (the last 250 with a forecast)",
+		}, []string{"book"}),
+		btExc: prometheus.NewGaugeVec(prometheus.GaugeOpts{
+			Name: "risk_var_backtest_exceptions",
+			Help: "Backtest days whose loss on a unit position exceeded the previous day's 99 % VaR forecast, per side (expected 2.5 in 250)",
+		}, []string{"book", "side"}),
+		btKupiec: prometheus.NewGaugeVec(prometheus.GaugeOpts{
+			Name: "risk_var_backtest_kupiec_pvalue",
+			Help: "Kupiec proportion-of-failures p-value of the exception rate, per side; below 0.05 rejects the model",
+		}, []string{"book", "side"}),
+		btZone: prometheus.NewGaugeVec(prometheus.GaugeOpts{
+			Name: "risk_var_backtest_zone",
+			Help: "Basel traffic light of the 250-day backtest, worse side: 0 green (0-4 exceptions), 1 yellow (5-9), 2 red (10+), -1 fewer than 250 days",
+		}, []string{"book"}),
+		histVaR: prometheus.NewGaugeVec(prometheus.GaugeOpts{
+			Name: "portfolio_var_historical_quote",
+			Help: "1-day 99 % historical-simulation VaR per quote currency: current exposures revalued over up to 365 daily returns, k-th worst loss with k = ceil(1 % of days); absent when an exposed book has no history",
+		}, []string{"currency"}),
+		histScen: prometheus.NewGaugeVec(prometheus.GaugeOpts{
+			Name: "portfolio_var_historical_scenarios",
+			Help: "Days used for portfolio_var_historical_quote",
+		}, []string{"currency"}),
 	}
 	reg.MustRegister(m.slippageBps, m.slippageCost, m.filledNotional, m.exposureBase, m.exposureQuote,
 		m.markPrice, m.markFallback, m.dailyVol, m.netBase, m.grossQuote, m.netQuote, m.varQuote,
-		m.varLimit, m.lastRun, m.runErrors)
+		m.varLimit, m.lastRun, m.runErrors,
+		m.volEstimate, m.volSource, m.volDataAge, m.btObs, m.btExc, m.btKupiec, m.btZone, m.histVaR, m.histScen)
 	return m
 }
 
@@ -169,12 +222,26 @@ type BookExposure struct {
 	Base, Mark, Quote     float64
 	DailyVol              float64
 	Fallback              bool
+
+	VolSource         string    // estimated | fallback | override | fixed
+	VolDataAgeSeconds float64   // -1: no estimate
+	Model             *VolModel // nil: no estimate yet
+}
+
+// VolModel is the estimator's view of a book.
+type VolModel struct {
+	EWMA, Long, Estimate float64
+	Backtest             varmodel.Backtest
 }
 
 // CurrencyRisk is the aggregate for one quote currency.
 type CurrencyRisk struct {
 	Gross, Net, VaR float64
 	Limit           float64 // 0: none
+
+	HistVaR       float64 // historical-simulation VaR
+	HistScenarios int
+	HistOK        bool
 }
 
 // SetPortfolio publishes one portfolio run.
@@ -192,6 +259,7 @@ func (m *RiskSeries) SetPortfolio(books []BookExposure, netBase map[string]float
 			fb = 1
 		}
 		m.markFallback.WithLabelValues(b.Book).Set(fb)
+		m.setModel(b)
 	}
 	for a, v := range netBase {
 		m.netBase.WithLabelValues(a).Set(v)
@@ -203,8 +271,42 @@ func (m *RiskSeries) SetPortfolio(books []BookExposure, netBase map[string]float
 		if r.Limit > 0 {
 			m.varLimit.WithLabelValues(c).Set(r.Limit)
 		}
+		if r.HistOK {
+			m.histVaR.WithLabelValues(c).Set(r.HistVaR)
+			m.histScen.WithLabelValues(c).Set(float64(r.HistScenarios))
+		} else {
+			// Never leave a stale number behind when history is missing.
+			m.histVaR.DeleteLabelValues(c)
+			m.histScen.DeleteLabelValues(c)
+		}
 	}
 	m.lastRun.Set(float64(at.Unix()))
+}
+
+func (m *RiskSeries) setModel(b BookExposure) {
+	if b.VolSource != "" {
+		for _, s := range VolSources {
+			v := 0.0
+			if s == b.VolSource {
+				v = 1
+			}
+			m.volSource.WithLabelValues(b.Book, s).Set(v)
+		}
+	}
+	m.volDataAge.WithLabelValues(b.Book).Set(b.VolDataAgeSeconds)
+	if b.Model == nil {
+		return
+	}
+	m.volEstimate.WithLabelValues(b.Book, "ewma").Set(b.Model.EWMA)
+	m.volEstimate.WithLabelValues(b.Book, "long").Set(b.Model.Long)
+	m.volEstimate.WithLabelValues(b.Book, "max").Set(b.Model.Estimate)
+	bt := b.Model.Backtest
+	m.btObs.WithLabelValues(b.Book).Set(float64(bt.Observations))
+	m.btExc.WithLabelValues(b.Book, "long").Set(float64(bt.ExceptionsLong))
+	m.btExc.WithLabelValues(b.Book, "short").Set(float64(bt.ExceptionsShort))
+	m.btKupiec.WithLabelValues(b.Book, "long").Set(bt.KupiecLong)
+	m.btKupiec.WithLabelValues(b.Book, "short").Set(bt.KupiecShort)
+	m.btZone.WithLabelValues(b.Book).Set(float64(bt.Zone))
 }
 
 // RecordRunError counts a run that could not read positions.

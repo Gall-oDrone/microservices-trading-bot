@@ -186,8 +186,23 @@ func NewApplication() (*Application, error) {
 		portfolioMonitor.Marks = risk.MarketDataMarks{BaseURL: portfolioCfg.MarketDataURL}
 		markSource = portfolioCfg.MarketDataURL + "/api/v1/ticker"
 	}
+	// §6.4.8: the VaR vol is estimated from Bitso's public daily closes
+	// (refreshed in the background); RISK_VAR_DAILY_VOL is the fallback.
+	volModel := "fixed (RISK_VAR_DAILY_VOL)"
+	if portfolioCfg.VolModel == risk.VolModelEstimated {
+		est := risk.NewVolEstimator(risk.BitsoCloses(portfolioCfg.VolSourceURL, nil))
+		est.Lambda = portfolioCfg.Lambda
+		est.Refresh = portfolioCfg.VolRefresh
+		est.Stale = portfolioCfg.VolStale
+		est.OnError = func(book string, err error) {
+			appLogger.Warn("VaR vol estimate failed; using the configured vol until it recovers", map[string]interface{}{"book": book, "error": err.Error()})
+		}
+		portfolioMonitor.Vol = est
+		volModel = fmt.Sprintf("estimated: max(EWMA lambda %.2f, 365d) from %s, refresh %s, stale after %s", portfolioCfg.Lambda, portfolioCfg.VolSourceURL, portfolioCfg.VolRefresh, portfolioCfg.VolStale)
+	}
 	appLogger.Info("Portfolio risk monitor configured", map[string]interface{}{
 		"interval":          portfolioCfg.Interval.String(),
+		"vol_model":         volModel,
 		"daily_vol_default": portfolioCfg.DefaultDailyVol,
 		"daily_vol_books":   portfolioCfg.DailyVol,
 		"var_limits":        portfolioCfg.VaRLimits,
@@ -431,6 +446,9 @@ func (app *Application) Start() error {
 		go app.userTradesPoller.Run(app.ctx)
 	}
 	if app.portfolioMonitor != nil {
+		if est, ok := app.portfolioMonitor.Vol.(*risk.VolEstimator); ok {
+			go est.Run(app.ctx)
+		}
 		go app.portfolioMonitor.Run(app.ctx)
 	}
 

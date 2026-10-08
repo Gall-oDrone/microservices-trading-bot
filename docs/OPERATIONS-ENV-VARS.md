@@ -42,8 +42,13 @@ Quick reference for env vars used by the trading bot, especially for **intraday*
 | `TRADING_HALT_FILES` | - | Same list as trading-engine. A halted, unreadable or invalid file rejects every new order in `CheckRisk` (defence in depth behind trading-engine). |
 | `MARKET_DATA_URL` | - | market-data base URL (k8s: `http://market-data:8083`). Positions are marked at its `/api/v1/ticker` mid for exposure and VaR; unset or unavailable: entry price, flagged `position_mark_fallback`. |
 | `RISK_PORTFOLIO_INTERVAL` | `30s` | How often exposure and VaR are recomputed (Go duration, at least 1s). |
-| `RISK_VAR_DAILY_VOL` | `0.04` | Daily return volatility assumed in the 1-day 99 % VaR, as a ratio in (0, 1]. A model parameter: review it against realized vol. |
-| `RISK_VAR_DAILY_VOL_BOOKS` | - | Per-book overrides, e.g. `btc_usd=0.03,btc_mxn=0.035`. |
+| `RISK_VAR_VOL_MODEL` | `estimated` | `estimated`: each book's daily vol is max(RiskMetrics EWMA, 365-day) of Bitso's public daily closes, with a 250-day backtest and a historical-simulation VaR (plan §6.4.8). `fixed`: always `RISK_VAR_DAILY_VOL` (no network). |
+| `RISK_VAR_DAILY_VOL` | `0.04` | Daily vol as a ratio in (0, 1]. With `estimated`: the fallback while a book has no fresh estimate (`risk_var_vol_source{source="fallback"}`; alert `VaRVolEstimateFallback`). With `fixed`: the vol. |
+| `RISK_VAR_DAILY_VOL_BOOKS` | - | Per-book overrides that win over the estimate, e.g. `btc_usd=0.03,btc_mxn=0.035`. Use to hold a vol above the estimate (e.g. after a red backtest); the estimate stays visible. |
+| `RISK_VAR_EWMA_LAMBDA` | `0.94` | EWMA decay in [0.8, 1). Lower reacts faster to new volatility. |
+| `RISK_VAR_VOL_REFRESH` | `6h` | How often the closes are re-fetched (at least 1m). Failures retry after 10 min, in the background; a portfolio run never waits for Bitso. |
+| `RISK_VAR_VOL_STALE` | `72h` | An estimate whose last daily close is older than this is not used (at least 1h). |
+| `RISK_VAR_VOL_SOURCE_URL` | `https://api.bitso.com` | Bitso public OHLC base (`/api/v3/ohlc`, no credentials). The pod needs egress to it; without it every book is on the fallback. |
 | `RISK_VAR_LIMITS` | - | VaR limit per quote currency, e.g. `MXN=20000,USD=1000`. Alerts at 80 % / 100 %; nothing is blocked. Any `RISK_*` value that does not parse stops start-up. |
 
 ---

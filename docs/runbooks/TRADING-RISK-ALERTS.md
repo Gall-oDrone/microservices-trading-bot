@@ -139,10 +139,18 @@ session; the pre-registered cost budget does not survive this for long.
 
 Computed by order-management every 30 s (`RISK_PORTFOLIO_INTERVAL`): positions marked at
 market-data's ticker mid, exposure per book, net position per asset, and a 1-day 99 % parametric VaR
-per quote currency = 2.326 × |Σ exposure × daily vol|. The daily vol is a configured model parameter
-(`RISK_VAR_DAILY_VOL`, default 4 %; per book `RISK_VAR_DAILY_VOL_BOOKS`), shown on the dashboard as
-`risk_var_daily_vol_ratio`; review it monthly against realized volatility. VaR is reported, never
-enforced: the limit escalates to a person.
+per quote currency = 2.326 × |Σ exposure × daily vol|. VaR is reported, never enforced: the limit
+escalates to a person.
+
+**Daily vol (§6.4.8).** Estimated per book from Bitso's public daily closes (the bars the
+daily-executor trades on), refreshed every 6 h (`RISK_VAR_VOL_REFRESH`): max(RiskMetrics EWMA,
+λ 0.94; 365-day equal-weighted), shown as `risk_var_vol_estimate_ratio{model=ewma|long|max}`.
+The vol actually used is `risk_var_daily_vol_ratio`, and `risk_var_vol_source` says where it came
+from: `estimated`; `override` (`RISK_VAR_DAILY_VOL_BOOKS`); `fallback` (no fresh estimate, so
+`RISK_VAR_DAILY_VOL`, default 4 %); `fixed` (`RISK_VAR_VOL_MODEL=fixed`). The model is backtested
+daily over the last 250 days (exceptions per side, Kupiec p-value, Basel zone), and a
+historical-simulation VaR (`portfolio_var_historical_quote`: today's exposures over the last year's
+returns) is published next to the parametric one. The limit applies to the parametric VaR.
 
 ### PortfolioVaRLimitWarning / PortfolioVaRLimitBreached
 *warning at 80 %, critical at 100 % of `RISK_VAR_LIMITS`.* Check which book drives it (dashboard
@@ -159,3 +167,31 @@ as unknown. Check order-management's logs ("portfolio risk run failed") and Redi
 *warning.* An open book has had no market price for 10 min, so it is marked at its average entry
 price (or at 0 if that is unknown): its exposure and VaR are stale or understated. Check
 market-data's `/api/v1/ticker?book=<book>` and order-management's `MARKET_DATA_URL`.
+
+### VaRBacktestYellow
+*warning, after 1 h.* 5–9 days in the last 250 had a loss (long or short unit position) beyond the
+previous day's 99 % VaR; 2.5 are expected. One yellow window is common for crypto (fat tails) and
+is not by itself a rejection: check `risk_var_backtest_kupiec_pvalue` (below 0.05 rejects) and
+which side fails. Record the review. If it persists for a month, or Kupiec rejects, consider
+lowering λ (`RISK_VAR_EWMA_LAMBDA`, faster reaction) or setting a per-book override above the
+estimate; never lower the vol to clear an alert.
+
+### VaRBacktestRed
+*critical, after 15 min.* 10+ exceptions in 250 days: the model understates the book's risk
+(Basel presumes the model inaccurate). Until fixed, treat the VaR and its limit as unreliable and
+judge exposure on `portfolio_var_historical_quote` or a stress loss instead. Escalate to the risk
+owner; a per-book override (`RISK_VAR_DAILY_VOL_BOOKS`) above the estimate is the stop-gap.
+
+### VaRVolEstimateFallback
+*warning, after 30 min.* The book's VaR uses `RISK_VAR_DAILY_VOL` because no fresh estimate exists:
+the fetch fails (order-management log "VaR vol estimate failed"), the pod has no egress to
+`api.bitso.com` (`RISK_VAR_VOL_SOURCE_URL`), the book has under 60 days of history, or the last
+close is older than `RISK_VAR_VOL_STALE` (72 h). The last good estimate stays visible in
+`risk_var_vol_estimate_ratio` but is not used. The 4 % fallback is about twice BTC's recent vol,
+so the VaR errs high.
+
+### PortfolioVaRModelDivergence
+*warning, after 1 h.* Historical-simulation VaR is over 1.5× the parametric VaR for a currency:
+the last year held larger losses than a normal distribution with today's vol implies (fat tails,
+or a calm spell since a crash). The limit still applies to the parametric number; the desk should
+size against the larger one and the risk owner should review whether the limit is still adequate.

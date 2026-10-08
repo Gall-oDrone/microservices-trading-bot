@@ -253,6 +253,7 @@ returns the executor's last recorded check. The Risk page shows all of it.
 | **R5c (done 2026-10-08)** Cluster kill switch, §6.4.5 | ConfigMap `trading-halt` mounted into trading-engine and order-management; `scripts/k8s-halt.sh` with confirmation, audit and read-back | One audited command halts every trading pod in a namespace within seconds; CI proves every overlay is wired |
 | **R5d (done 2026-10-08)** OMS limits in the shared policy, §6.4.6 | Order-management's position, order-value, open-order and orders-per-minute limits become one `shared/pkg/risk` policy (per book and firm-wide); the env limits are only its fallback | One limit set per service in one format; a policy file can tighten any book without a redeploy of code |
 | **R6b (done 2026-10-08)** Realized execution and portfolio risk, §6.4.7 | Realized slippage per closed order vs its decision price; exposure per book marked to market; 1-day 99 % parametric VaR per quote currency against a limit; Alertmanager routing by severity and team | Implementation shortfall, exposure and VaR are on the dashboard and alert with a runbook; every route is pinned in CI; nothing is sent until receivers are configured |
+| **R6c (done 2026-10-08)** Estimated VaR vol and model backtest, §6.4.8 | The VaR's daily vol estimated per book from Bitso daily closes (max of RiskMetrics EWMA and 365-day), a historical-simulation VaR beside it, and a daily 250-day backtest (exceptions, Kupiec, Basel zone) | No configured vol unless the estimate is unavailable (and then it says so); model failure alerts with a runbook |
 
 #### 6.4.1 R1 as built
 
@@ -458,7 +459,8 @@ trading day), an owning team and a runbook entry.
   `RISK_VAR_DAILY_VOL_BOOKS`), published as `risk_var_daily_vol_ratio{book}`: the cluster has no
   daily closes for a historical or EWMA estimate yet. `RISK_VAR_LIMITS` (`MXN=20000,USD=1000`)
   publishes `portfolio_var_limit_quote`. VaR is reported, never enforced. A value that does not
-  parse stops start-up.
+  parse stops start-up. *(Superseded by §6.4.8: the vol is now estimated; `RISK_VAR_DAILY_VOL` is
+  the fallback.)*
 - **Fixed: position sign.** `models.Position` keeps an unsigned size plus a side, and
   order-management passed the unsigned size to the shared check and the exposure endpoint, which
   trading-engine feeds to its own check. A short then looked long: a covering buy could be blocked
@@ -476,6 +478,46 @@ trading day), an owning team and a runbook entry.
   secrets from files. `scripts/tests/check-alertmanager-routes.sh` (CI `monitoring-rules`) runs
   `amtool check-config`, pins every route, fails on a severity or team the routes do not know, on an
   integration committed to the repo, and on an inhibition naming an unknown alert.
+
+#### 6.4.8 R6c estimated VaR vol, historical VaR and backtest as built (2026-10-08)
+
+The R6b VaR used a configured 4 % daily vol. It now uses an estimate, the way a bank or fund risk
+function does, and checks the model against what happened.
+
+- **Data.** Bitso's public daily OHLC (`/api/v3/ohlc`, no credentials), labelled by Mexico City
+  date: the same bars the daily-executor trades on. The fetcher moved from strategy-executor to
+  `shared/pkg/bitsodaily` (strategy-executor keeps a forwarding shim; behaviour unchanged) and
+  embeds `time/tzdata`, since the alpine images have no zoneinfo. order-management fetches about
+  800 days per book in the background every 6 h (`RISK_VAR_VOL_REFRESH`), retries after 10 min on
+  failure, and never makes a portfolio run wait on the network.
+- **Model** (`shared/pkg/varmodel`, pure functions). Daily log returns between consecutive
+  calendar days only (a gap breaks the chain instead of inflating vol). Vol = max(RiskMetrics
+  EWMA, λ 0.94; equal-weighted 365-day): a calm month cannot shrink VaR below what the last year
+  supports, and a shock lifts it at once. At least 60 returns or no estimate.
+- **Which vol the VaR uses** (`risk_var_vol_source{book,source}`): `override`
+  (`RISK_VAR_DAILY_VOL_BOOKS`) > `estimated` (fresh: last close under `RISK_VAR_VOL_STALE`, 72 h)
+  > `fallback` (`RISK_VAR_DAILY_VOL`). `RISK_VAR_VOL_MODEL=fixed` restores R6b behaviour (`fixed`).
+  The estimate is published even when overridden or stale (`risk_var_vol_estimate_ratio{model=ewma|long|max}`,
+  `risk_var_vol_data_age_seconds`).
+- **Historical-simulation VaR** (`portfolio_var_historical_quote{currency}`): today's exposures
+  revalued over the days (up to 365) on which every exposed book has a return, P&L = Σ q × (e^r − 1);
+  the k-th worst loss, k = ceil(1 % of days). At least 250 days, and every exposed book must have
+  fresh history; otherwise the series is absent rather than a number that silently omits a book.
+  The limit stays on the parametric VaR.
+- **Backtest** (daily, last 250 days, per book): a long and a short unit position against the
+  previous day's 99 % VaR forecast. `risk_var_backtest_exceptions{side}`,
+  `risk_var_backtest_kupiec_pvalue{side}` (proportion of failures), `risk_var_backtest_zone`
+  (Basel: 0–4 green, 5–9 yellow, 10+ red; worse side).
+- **Evidence.** On the committed Bitso history (`real_data_test.go`, four cut-offs) vol is
+  2.0–2.6 %, about half the 4 % parameter, so VaR roughly halves; btc_mxn to 2026-09-26 is yellow
+  (5 long-side exceptions, Kupiec p 0.16, not rejected), the rest green. Live on 2026-10-08:
+  btc_mxn 2.06 %, btc_usd 2.19 %, both green.
+- **Alerts** (4 new, 27 total, `team: risk`): `VaRBacktestYellow` (warning, 1 h),
+  `VaRBacktestRed` (critical, 15 min), `VaRVolEstimateFallback` (warning, 30 min),
+  `PortfolioVaRModelDivergence` (historical > 1.5 × parametric, warning, 1 h); promtool tests,
+  runbook entries, and a "VaR model" row on the Trading Risk Operations dashboard.
+- **Open:** the order-management pod needs egress to `api.bitso.com`; without it every book reports
+  `fallback` and the alert fires. Stress scenarios and expected shortfall are not built.
 
 ### 6.5 First findings from the real stage ledger
 - **btc_mxn's first stage leg cost 118 bps against 70 assumed.** The post-only order rested 60 min, filled 0.1%, and fell back to market: taker fee 78 bps + 40 bps above the fill-day open. A stage leg is small and stage liquidity is thin, so this is not yet evidence about production costs. But it is the cost signal to watch: the pre-registration's secondary (taker) scenario is 88 bps per leg, and this leg exceeded both.

@@ -16,6 +16,8 @@ import (
 	"bitso-trading-platform/order-management/internal/metrics"
 	"bitso-trading-platform/order-management/internal/models"
 	"bitso-trading-platform/order-management/internal/repository"
+	"bitso-trading-platform/shared/pkg/bitsodaily"
+	"bitso-trading-platform/shared/pkg/varmodel"
 )
 
 // Portfolio exposure and VaR (plan §6.4.7). Every interval the monitor marks
@@ -26,32 +28,61 @@ import (
 //
 // VaR = z(99 %) x |sum over the currency's books of exposure x daily vol|.
 // Books in one quote currency are assumed perfectly correlated (they share
-// the base asset), and the daily vol is a configured model parameter
-// (RISK_VAR_DAILY_VOL*), published so the assumption is visible. A historical
-// or EWMA estimate needs daily closes the cluster does not have yet.
+// the base asset). Since §6.4.8 the daily vol is estimated from Bitso daily
+// closes (volatility.go: max(EWMA 0.94, 365-day), backtested); the
+// configured RISK_VAR_DAILY_VOL is the fallback while no fresh estimate
+// exists, and RISK_VAR_DAILY_VOL_BOOKS pins a book's vol (a desk override).
+// RISK_VAR_VOL_MODEL=fixed restores the configured-parameter behaviour. A
+// historical-simulation VaR over the same 365 days is published alongside;
+// the limit applies to the parametric VaR.
 const (
 	EnvPortfolioInterval = "RISK_PORTFOLIO_INTERVAL"
 	EnvVaRDailyVol       = "RISK_VAR_DAILY_VOL"
 	EnvVaRDailyVolBooks  = "RISK_VAR_DAILY_VOL_BOOKS"
 	EnvVaRLimits         = "RISK_VAR_LIMITS"
 	EnvMarketDataURL     = "MARKET_DATA_URL"
+	EnvVaRVolModel       = "RISK_VAR_VOL_MODEL"
+	EnvVaREWMALambda     = "RISK_VAR_EWMA_LAMBDA"
+	EnvVaRVolRefresh     = "RISK_VAR_VOL_REFRESH"
+	EnvVaRVolStale       = "RISK_VAR_VOL_STALE"
+	EnvVaRVolSourceURL   = "RISK_VAR_VOL_SOURCE_URL"
 
 	// DefaultVaRDailyVol is deliberately above BTC's typical realized daily
 	// vol (~2.5-3.5 %), so an unconfigured VaR errs high.
 	DefaultVaRDailyVol       = 0.04
 	DefaultPortfolioInterval = 30 * time.Second
+
+	// Vol models.
+	VolModelEstimated = "estimated"
+	VolModelFixed     = "fixed"
+
+	// Vol sources, as published in risk_var_vol_source.
+	VolSourceEstimated = "estimated" // varmodel estimate, fresh
+	VolSourceFallback  = "fallback"  // estimator on, no fresh estimate: RISK_VAR_DAILY_VOL
+	VolSourceOverride  = "override"  // RISK_VAR_DAILY_VOL_BOOKS
+	VolSourceFixed     = "fixed"     // RISK_VAR_VOL_MODEL=fixed: RISK_VAR_DAILY_VOL
+
+	// MinHistScenarios is the fewest aligned days for a historical VaR.
+	MinHistScenarios = 250
 )
 
 // PortfolioConfig parameterises the monitor.
 type PortfolioConfig struct {
 	Interval        time.Duration
 	DefaultDailyVol float64
-	DailyVol        map[string]float64 // per book (lower case)
+	DailyVol        map[string]float64 // per book (lower case): overrides
 	VaRLimits       map[string]float64 // per quote currency (upper case)
 	MarketDataURL   string
+
+	VolModel     string // VolModelEstimated (default) or VolModelFixed
+	Lambda       float64
+	VolRefresh   time.Duration
+	VolStale     time.Duration
+	VolSourceURL string
 }
 
-// VolFor is the daily vol assumed for book.
+// VolFor is the configured daily vol for book: its override, else the
+// default (the fallback when an estimate is in use).
 func (c PortfolioConfig) VolFor(book string) float64 {
 	if v, ok := c.DailyVol[strings.ToLower(book)]; ok {
 		return v
@@ -68,6 +99,44 @@ func LoadPortfolioConfig(getenv func(string) string) (PortfolioConfig, error) {
 		DailyVol:        map[string]float64{},
 		VaRLimits:       map[string]float64{},
 		MarketDataURL:   strings.TrimRight(strings.TrimSpace(getenv(EnvMarketDataURL)), "/"),
+		VolModel:        VolModelEstimated,
+		Lambda:          varmodel.Lambda,
+		VolRefresh:      DefaultVolRefresh,
+		VolStale:        DefaultVolStale,
+		VolSourceURL:    bitsodaily.DefaultBaseURL,
+	}
+	switch s := strings.ToLower(strings.TrimSpace(getenv(EnvVaRVolModel))); s {
+	case "", VolModelEstimated:
+	case VolModelFixed:
+		c.VolModel = VolModelFixed
+	default:
+		return c, fmt.Errorf("%s=%q: want %q or %q", EnvVaRVolModel, s, VolModelEstimated, VolModelFixed)
+	}
+	if s := strings.TrimSpace(getenv(EnvVaREWMALambda)); s != "" {
+		v, err := strconv.ParseFloat(s, 64)
+		if err != nil || !(v >= 0.8 && v < 1) {
+			return c, fmt.Errorf("%s=%q: want a decay in [0.8, 1), e.g. 0.94", EnvVaREWMALambda, s)
+		}
+		c.Lambda = v
+	}
+	for _, d := range []struct {
+		env string
+		dst *time.Duration
+		min time.Duration
+	}{{EnvVaRVolRefresh, &c.VolRefresh, time.Minute}, {EnvVaRVolStale, &c.VolStale, time.Hour}} {
+		if s := strings.TrimSpace(getenv(d.env)); s != "" {
+			v, err := time.ParseDuration(s)
+			if err != nil || v < d.min {
+				return c, fmt.Errorf("%s=%q: want a duration of at least %s", d.env, s, d.min)
+			}
+			*d.dst = v
+		}
+	}
+	if s := strings.TrimRight(strings.TrimSpace(getenv(EnvVaRVolSourceURL)), "/"); s != "" {
+		if u, err := url.Parse(s); err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+			return c, fmt.Errorf("%s=%q: want http(s)://host[:port]", EnvVaRVolSourceURL, s)
+		}
+		c.VolSourceURL = s
 	}
 	if s := strings.TrimSpace(getenv(EnvPortfolioInterval)); s != "" {
 		d, err := time.ParseDuration(s)
@@ -218,14 +287,88 @@ type PortfolioSnapshot struct {
 	At         time.Time
 }
 
+// VolLookup is the estimator as the monitor sees it (VolEstimator).
+type VolLookup interface {
+	Lookup(book string) (VolView, bool)
+}
+
 // PortfolioMonitor computes and publishes the snapshot.
 type PortfolioMonitor struct {
 	Positions repository.PositionRepository
 	Marks     MarkSource // nil: entry-price fallback only
 	Config    PortfolioConfig
 	Series    *metrics.RiskSeries
+	Vol       VolLookup // nil: configured vol only (RISK_VAR_VOL_MODEL=fixed)
 	Now       func() time.Time
 	OnError   func(error)
+}
+
+// bookVol picks the daily vol for book and fills the model fields of be.
+// It returns the book's historical returns when the estimate is used.
+func (pm *PortfolioMonitor) bookVol(be *metrics.BookExposure) []varmodel.Return {
+	be.VolDataAgeSeconds = -1
+	if v, ok := pm.Config.DailyVol[be.Book]; ok {
+		be.DailyVol, be.VolSource = v, VolSourceOverride
+		if view, fresh := pm.attachModel(be); fresh {
+			return view.Estimate.HistReturns // historical VaR does not use the vol
+		}
+		return nil
+	}
+	be.DailyVol = pm.Config.DefaultDailyVol
+	if pm.Vol == nil {
+		be.VolSource = VolSourceFixed
+		return nil
+	}
+	view, fresh := pm.attachModel(be)
+	if !fresh {
+		be.VolSource = VolSourceFallback
+		return nil
+	}
+	be.DailyVol, be.VolSource = view.Estimate.Vol, VolSourceEstimated
+	return view.Estimate.HistReturns
+}
+
+// attachModel copies the estimator's view of be.Book into be (published
+// even when overridden or stale, so the model stays visible).
+func (pm *PortfolioMonitor) attachModel(be *metrics.BookExposure) (VolView, bool) {
+	if pm.Vol == nil {
+		return VolView{}, false
+	}
+	view, fresh := pm.Vol.Lookup(be.Book)
+	if view.Have {
+		e := view.Estimate
+		be.Model = &metrics.VolModel{EWMA: e.EWMA, Long: e.Long, Estimate: e.Vol, Backtest: e.Backtest}
+		be.VolDataAgeSeconds = view.DataAge.Seconds()
+	}
+	return view, fresh
+}
+
+// historicalVaR revalues the currency's exposures over the days on which
+// every exposed book has a return: P&L_d = sum(exposure x (e^r - 1)).
+func historicalVaR(exposed map[string]float64, rets map[string][]varmodel.Return) (float64, int, bool) {
+	if len(exposed) == 0 {
+		return 0, 0, true
+	}
+	pnl := map[time.Time]float64{}
+	count := map[time.Time]int{}
+	for book, q := range exposed {
+		rs, ok := rets[book]
+		if !ok {
+			return 0, 0, false // an exposed book without history
+		}
+		for _, r := range rs {
+			pnl[r.Date] += q * math.Expm1(r.R)
+			count[r.Date]++
+		}
+	}
+	var scen []float64
+	for d, n := range count {
+		if n == len(exposed) {
+			scen = append(scen, pnl[d])
+		}
+	}
+	v, ok := varmodel.HistoricalVaR(scen, varmodel.Confidence, MinHistScenarios)
+	return v, len(scen), ok
 }
 
 // Snapshot marks every position and aggregates. Books seen once stay in the
@@ -259,11 +402,14 @@ func (pm *PortfolioMonitor) Snapshot(ctx context.Context, known map[string]bool)
 	sort.Strings(names)
 
 	snap := PortfolioSnapshot{NetBase: map[string]float64{}, Currencies: map[string]metrics.CurrencyRisk{}, At: now()}
-	volSum := map[string]float64{} // currency -> sum(exposure x vol)
+	volSum := map[string]float64{}                    // currency -> sum(exposure x vol)
+	exposed := map[string]map[string]float64{}        // currency -> book -> exposure
+	hist := map[string]map[string][]varmodel.Return{} // currency -> book -> returns
 	for _, book := range names {
 		p := byBook[book]
 		asset, ccy := splitBook(book)
-		be := metrics.BookExposure{Book: book, Asset: asset, Currency: ccy, Base: SignedPositionBTC(p), DailyVol: pm.Config.VolFor(book)}
+		be := metrics.BookExposure{Book: book, Asset: asset, Currency: ccy, Base: SignedPositionBTC(p)}
+		rets := pm.bookVol(&be)
 		if pm.Marks != nil {
 			if m, err := pm.Marks.Mark(ctx, book); err == nil && m > 0 {
 				be.Mark = m
@@ -285,9 +431,21 @@ func (pm *PortfolioMonitor) Snapshot(ctx context.Context, known map[string]bool)
 		r.Net += be.Quote
 		snap.Currencies[ccy] = r
 		volSum[ccy] += be.Quote * be.DailyVol
+		if exposed[ccy] == nil {
+			exposed[ccy], hist[ccy] = map[string]float64{}, map[string][]varmodel.Return{}
+		}
+		if be.Quote != 0 {
+			exposed[ccy][book] = be.Quote
+		}
+		if rets != nil {
+			hist[ccy][book] = rets
+		}
 	}
 	for ccy, r := range snap.Currencies {
 		r.VaR = metrics.VaRZ * math.Abs(volSum[ccy])
+		if pm.Vol != nil {
+			r.HistVaR, r.HistScenarios, r.HistOK = historicalVaR(exposed[ccy], hist[ccy])
+		}
 		r.Limit = pm.Config.VaRLimits[ccy]
 		snap.Currencies[ccy] = r
 	}

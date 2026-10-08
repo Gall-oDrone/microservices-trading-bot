@@ -7,6 +7,8 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
+
+	"bitso-trading-platform/shared/pkg/varmodel"
 )
 
 func TestSlippageBps(t *testing.T) {
@@ -83,5 +85,58 @@ func TestSetPortfolioPublishes(t *testing.T) {
 	// No limit configured for USD: no limit series (an alert would divide by it).
 	if n := testutil.CollectAndCount(reg, "portfolio_var_limit_quote"); n != 1 {
 		t.Fatalf("limit series %d, want 1 (MXN only)", n)
+	}
+}
+
+func TestSetPortfolioPublishesVaRModel(t *testing.T) {
+	reg := prometheus.NewRegistry()
+	m := NewRiskSeries(reg)
+	at := time.Unix(1_790_000_000, 0)
+	bt := varmodel.Backtest{Observations: 250, ExceptionsLong: 6, ExceptionsShort: 1, KupiecLong: 0.06, KupiecShort: 0.4, Zone: varmodel.ZoneYellow}
+	books := []BookExposure{
+		{Book: "btc_mxn", Currency: "MXN", Quote: 100_000, DailyVol: 0.021, VolSource: "estimated", VolDataAgeSeconds: 3600,
+			Model: &VolModel{EWMA: 0.012, Long: 0.021, Estimate: 0.021, Backtest: bt}},
+		{Book: "eth_mxn", Currency: "MXN", DailyVol: 0.04, VolSource: "fallback", VolDataAgeSeconds: -1},
+	}
+	m.SetPortfolio(books, nil, map[string]CurrencyRisk{
+		"MXN": {VaR: 4885, HistVaR: 6100, HistScenarios: 365, HistOK: true},
+	}, at)
+
+	for src, want := range map[string]float64{"estimated": 1, "fallback": 0, "override": 0, "fixed": 0} {
+		if v := testutil.ToFloat64(m.volSource.WithLabelValues("btc_mxn", src)); v != want {
+			t.Errorf("btc_mxn source %s = %v", src, v)
+		}
+	}
+	if v := testutil.ToFloat64(m.volSource.WithLabelValues("eth_mxn", "fallback")); v != 1 {
+		t.Errorf("eth_mxn fallback = %v", v)
+	}
+	if v := testutil.ToFloat64(m.volEstimate.WithLabelValues("btc_mxn", "ewma")); v != 0.012 {
+		t.Errorf("ewma %v", v)
+	}
+	if v := testutil.ToFloat64(m.btZone.WithLabelValues("btc_mxn")); v != 1 {
+		t.Errorf("zone %v", v)
+	}
+	if v := testutil.ToFloat64(m.btExc.WithLabelValues("btc_mxn", "long")); v != 6 {
+		t.Errorf("long exceptions %v", v)
+	}
+	if v := testutil.ToFloat64(m.volDataAge.WithLabelValues("eth_mxn")); v != -1 {
+		t.Errorf("eth_mxn data age %v", v)
+	}
+	// No estimate for eth_mxn: no model series for it.
+	if n := testutil.CollectAndCount(reg, "risk_var_backtest_zone"); n != 1 {
+		t.Errorf("zone series %d, want 1", n)
+	}
+	if v := testutil.ToFloat64(m.histVaR.WithLabelValues("MXN")); v != 6100 {
+		t.Errorf("historical VaR %v", v)
+	}
+
+	// History goes missing: the historical series disappears rather than
+	// freezing at its last value.
+	m.SetPortfolio(books, nil, map[string]CurrencyRisk{"MXN": {VaR: 4885}}, at)
+	if n := testutil.CollectAndCount(reg, "portfolio_var_historical_quote"); n != 0 {
+		t.Errorf("historical VaR series %d after history was lost, want 0", n)
+	}
+	if n := testutil.CollectAndCount(reg, "portfolio_var_historical_scenarios"); n != 0 {
+		t.Errorf("historical scenario series %d after history was lost, want 0", n)
 	}
 }

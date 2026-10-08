@@ -229,3 +229,83 @@ tests:
               summary: "btc_usd has an open position but no market price"
               description: "Marked at the entry price (or 0): its exposure and VaR are stale. Check market-data's ticker and MARKET_DATA_URL."
               runbook_url: "docs/runbooks/TRADING-RISK-ALERTS.md#positionunpriced"
+
+  # VaR model (plan §6.4.8): btc_mxn backtest yellow, btc_usd red, eth_mxn
+  # green; btc_usd's vol on the configured fallback, btc_mxn estimated.
+  - interval: 1m
+    input_series:
+      - series: 'risk_var_backtest_zone{job="order-management",instance="om-0",book="btc_mxn"}'
+        values: '1x70'
+      - series: 'risk_var_backtest_zone{job="order-management",instance="om-0",book="btc_usd"}'
+        values: '2x70'
+      - series: 'risk_var_backtest_zone{job="order-management",instance="om-0",book="eth_mxn"}'
+        values: '0x70'
+      - series: 'risk_var_vol_source{job="order-management",instance="om-0",book="btc_usd",source="fallback"}'
+        values: '1x70'
+      - series: 'risk_var_vol_source{job="order-management",instance="om-0",book="btc_mxn",source="fallback"}'
+        values: '0x70'
+      - series: 'risk_var_vol_source{job="order-management",instance="om-0",book="btc_mxn",source="estimated"}'
+        values: '1x70'
+    alert_rule_test:
+      - eval_time: 59m
+        alertname: VaRBacktestYellow
+        exp_alerts: []
+      - eval_time: 60m
+        alertname: VaRBacktestYellow
+        exp_alerts:
+          - exp_labels: {severity: warning, team: risk, job: order-management, book: btc_mxn}
+            exp_annotations:
+              summary: "btc_mxn VaR backtest in the Basel yellow zone (5-9 exceptions in 250 days)"
+              description: "Losses beyond the 99% VaR are more frequent than 1 in 100 days. Review the model (risk_var_backtest_exceptions, risk_var_backtest_kupiec_pvalue) before relying on the VaR number."
+              runbook_url: "docs/runbooks/TRADING-RISK-ALERTS.md#varbacktestyellow"
+      - eval_time: 14m
+        alertname: VaRBacktestRed
+        exp_alerts: []
+      - eval_time: 15m
+        alertname: VaRBacktestRed
+        exp_alerts:
+          - exp_labels: {severity: critical, team: risk, job: order-management, book: btc_usd}
+            exp_annotations:
+              summary: "btc_usd VaR backtest in the Basel red zone (10+ exceptions in 250 days)"
+              description: "The VaR model understates this book's risk. Treat the VaR and its limit as unreliable until the model is fixed; escalate to the risk owner."
+              runbook_url: "docs/runbooks/TRADING-RISK-ALERTS.md#varbacktestred"
+      - eval_time: 29m
+        alertname: VaRVolEstimateFallback
+        exp_alerts: []
+      - eval_time: 30m
+        alertname: VaRVolEstimateFallback
+        exp_alerts:
+          - exp_labels: {severity: warning, team: risk, job: order-management, book: btc_usd}
+            exp_annotations:
+              summary: "btc_usd VaR uses the configured vol, not an estimate"
+              description: "No fresh estimate from Bitso daily closes (fetch failing, no egress to api.bitso.com, or closes older than RISK_VAR_VOL_STALE). The VaR uses RISK_VAR_DAILY_VOL until it recovers."
+              runbook_url: "docs/runbooks/TRADING-RISK-ALERTS.md#varvolestimatefallback"
+
+  # Historical VaR 1.8x the parametric one in MXN, 1.2x in USD; EUR has a
+  # historical VaR but zero parametric VaR (flat): no division by zero.
+  - interval: 1m
+    input_series:
+      - series: 'portfolio_var_historical_quote{job="order-management",instance="om-0",currency="MXN"}'
+        values: '9000x70'
+      - series: 'portfolio_var_quote{job="order-management",instance="om-0",currency="MXN"}'
+        values: '5000x70'
+      - series: 'portfolio_var_historical_quote{job="order-management",instance="om-0",currency="USD"}'
+        values: '60x70'
+      - series: 'portfolio_var_quote{job="order-management",instance="om-0",currency="USD"}'
+        values: '50x70'
+      - series: 'portfolio_var_historical_quote{job="order-management",instance="om-0",currency="EUR"}'
+        values: '0x70'
+      - series: 'portfolio_var_quote{job="order-management",instance="om-0",currency="EUR"}'
+        values: '0x70'
+    alert_rule_test:
+      - eval_time: 59m
+        alertname: PortfolioVaRModelDivergence
+        exp_alerts: []
+      - eval_time: 60m
+        alertname: PortfolioVaRModelDivergence
+        exp_alerts:
+          - exp_labels: {severity: warning, team: risk, job: order-management, currency: MXN}
+            exp_annotations:
+              summary: "MXN historical-simulation VaR is 1.8x the parametric VaR"
+              description: "The last year's actual returns imply a much larger 99% loss than the normal model. The limit applies to the parametric VaR; the desk should judge exposure on the larger number."
+              runbook_url: "docs/runbooks/TRADING-RISK-ALERTS.md#portfoliovarmodeldivergence"

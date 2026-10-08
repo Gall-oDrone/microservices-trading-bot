@@ -306,3 +306,51 @@ groups:
           summary: "{{ $labels.book }} has an open position but no market price"
           description: "Marked at the entry price (or 0): its exposure and VaR are stale. Check market-data's ticker and MARKET_DATA_URL."
           runbook_url: "docs/runbooks/TRADING-RISK-ALERTS.md#positionunpriced"
+
+      # VaR model risk (plan §6.4.8). The vol behind the VaR is estimated
+      # from Bitso daily closes and backtested over 250 days.
+      - alert: VaRBacktestYellow
+        expr: max by (job, book) (risk_var_backtest_zone{job=~"order-management.*"}) == 1
+        for: 1h
+        labels:
+          severity: warning
+          team: risk
+        annotations:
+          summary: "{{ $labels.book }} VaR backtest in the Basel yellow zone (5-9 exceptions in 250 days)"
+          description: "Losses beyond the 99% VaR are more frequent than 1 in 100 days. Review the model (risk_var_backtest_exceptions, risk_var_backtest_kupiec_pvalue) before relying on the VaR number."
+          runbook_url: "docs/runbooks/TRADING-RISK-ALERTS.md#varbacktestyellow"
+
+      - alert: VaRBacktestRed
+        expr: max by (job, book) (risk_var_backtest_zone{job=~"order-management.*"}) == 2
+        for: 15m
+        labels:
+          severity: critical
+          team: risk
+        annotations:
+          summary: "{{ $labels.book }} VaR backtest in the Basel red zone (10+ exceptions in 250 days)"
+          description: "The VaR model understates this book's risk. Treat the VaR and its limit as unreliable until the model is fixed; escalate to the risk owner."
+          runbook_url: "docs/runbooks/TRADING-RISK-ALERTS.md#varbacktestred"
+
+      - alert: VaRVolEstimateFallback
+        expr: max by (job, book) (risk_var_vol_source{job=~"order-management.*", source="fallback"}) == 1
+        for: 30m
+        labels:
+          severity: warning
+          team: risk
+        annotations:
+          summary: "{{ $labels.book }} VaR uses the configured vol, not an estimate"
+          description: "No fresh estimate from Bitso daily closes (fetch failing, no egress to api.bitso.com, or closes older than RISK_VAR_VOL_STALE). The VaR uses RISK_VAR_DAILY_VOL until it recovers."
+          runbook_url: "docs/runbooks/TRADING-RISK-ALERTS.md#varvolestimatefallback"
+
+      - alert: PortfolioVaRModelDivergence
+        expr: |
+          max by (job, currency) (portfolio_var_historical_quote{job=~"order-management.*"})
+            / max by (job, currency) (portfolio_var_quote{job=~"order-management.*"} > 0) > 1.5
+        for: 1h
+        labels:
+          severity: warning
+          team: risk
+        annotations:
+          summary: "{{ $labels.currency }} historical-simulation VaR is {{ $value | printf \"%.1f\" }}x the parametric VaR"
+          description: "The last year's actual returns imply a much larger 99% loss than the normal model. The limit applies to the parametric VaR; the desk should judge exposure on the larger number."
+          runbook_url: "docs/runbooks/TRADING-RISK-ALERTS.md#portfoliovarmodeldivergence"
