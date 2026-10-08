@@ -38,7 +38,6 @@ type Application struct {
 
 	// Handlers
 	marketDataHandler  *api.MarketDataHandler
-	orderHandler       *api.OrderHandler
 	strategyHandler    *api.StrategyHandler
 	aggregationHandler *api.AggregationHandler
 	mainHandler        *api.Handler
@@ -121,7 +120,6 @@ func NewApplication() (*Application, error) {
 
 	// Initialize handlers
 	marketDataHandler := api.NewMarketDataHandler(marketDataClient, appLogger, metricsCollector)
-	orderHandler := api.NewOrderHandler(orderManagementClient, appLogger, metricsCollector)
 	strategyHandler := api.NewStrategyHandler(strategyExecutorClient, appLogger, metricsCollector)
 	aggregationHandler := api.NewAggregationHandler(
 		marketDataClient,
@@ -139,7 +137,6 @@ func NewApplication() (*Application, error) {
 		metricsCollector,
 		healthManager,
 		marketDataHandler,
-		orderHandler,
 		strategyHandler,
 		aggregationHandler,
 	)
@@ -171,7 +168,6 @@ func NewApplication() (*Application, error) {
 		healthManager:      healthManager,
 		clientFactory:      clientFactory,
 		marketDataHandler:  marketDataHandler,
-		orderHandler:       orderHandler,
 		strategyHandler:    strategyHandler,
 		aggregationHandler: aggregationHandler,
 		mainHandler:        mainHandler,
@@ -198,10 +194,10 @@ func (app *Application) Start() error {
 			})
 		}
 	}()
-	
+
 	// Give server a moment to start
 	time.Sleep(100 * time.Millisecond)
-	
+
 	app.logger.Info("API Gateway is now running", map[string]interface{}{
 		"service": appName,
 		"version": appVersion,

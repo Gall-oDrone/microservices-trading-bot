@@ -5,9 +5,11 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"os"
 	"time"
 
 	"bitso-trading-platform/market-data/internal/api"
+	"bitso-trading-platform/shared/pkg/httpcors"
 )
 
 // HTTPServer handles HTTP server operations
@@ -28,8 +30,17 @@ func NewHTTPServer(port string, handler *api.Handler, logger *log.Logger, metric
 	}
 	handler.RegisterRoutes(mux)
 
+	// CORS: explicit allowlist (CORS_ALLOWED_ORIGINS); unset or invalid = none.
+	cors, err := httpcors.FromEnv(os.Getenv)
+	if err != nil {
+		logger.Printf("CORS disabled: %v", err)
+		cors = nil
+	} else if len(cors.Origins()) > 0 {
+		logger.Printf("CORS allowed origins: %v", cors.Origins())
+	}
+
 	// Add middleware
-	handlerWithMiddleware := addMiddleware(mux, logger)
+	handlerWithMiddleware := addMiddleware(mux, logger, cors)
 
 	server := &http.Server{
 		Addr:         ":" + port,
@@ -77,20 +88,9 @@ func (s *HTTPServer) Stop() error {
 }
 
 // addMiddleware adds common middleware to the HTTP handler
-func addMiddleware(handler http.Handler, logger *log.Logger) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+func addMiddleware(handler http.Handler, logger *log.Logger, cors *httpcors.Policy) http.Handler {
+	return cors.Middleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
-
-		// Add CORS headers
-		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
-
-		// Handle preflight requests
-		if r.Method == "OPTIONS" {
-			w.WriteHeader(http.StatusOK)
-			return
-		}
 
 		// Add request logging
 		logger.Printf("%s %s %s", r.Method, r.URL.Path, r.RemoteAddr)
@@ -109,7 +109,7 @@ func addMiddleware(handler http.Handler, logger *log.Logger) http.Handler {
 		// Log response
 		duration := time.Since(start)
 		logger.Printf("%s %s %d %v", r.Method, r.URL.Path, wrapped.statusCode, duration)
-	})
+	}))
 }
 
 // responseWriter wraps http.ResponseWriter to capture status code

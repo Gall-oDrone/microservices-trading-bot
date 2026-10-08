@@ -56,7 +56,7 @@ The API Gateway provides:
 - ✅ **Metrics** - Prometheus metrics collection
 - ✅ **Logging** - Structured JSON logging
 - ✅ **Error Handling** - Consistent error responses
-- ✅ **CORS** - CORS handling
+- ✅ **CORS** - exact-origin allowlist from `CORS_ALLOWED_ORIGINS` (`shared/pkg/httpcors`); unset = same-origin only, `*` is refused
 - ✅ **Recovery** - Panic recovery
 
 ### Planned Features
@@ -87,30 +87,25 @@ GET  /api/v1/market-data/stats/trades
 GET  /api/v1/market-data/summary
 ```
 
-### Orders (Proxy to order-management:8081)
-```
-GET  /api/v1/orders
-GET  /api/v1/orders/:id
-POST /api/v1/orders/:id/cancel
-GET  /api/v1/orders/active
-GET  /api/v1/orders/history
-```
+### Orders and positions: removed (2026-10-08)
 
-### Positions (Proxy to order-management:8081)
-```
-GET  /api/v1/positions
-GET  /api/v1/positions/:book
-GET  /api/v1/positions/summary
-```
+The gateway used to declare `/api/v1/orders*` and `/api/v1/positions*`, but
+order-management serves none of them (every call was a 404), and an order
+cancel route must not be public. They are gone (plan §7 items 3-4). Operators
+read positions and exposure through ui-api.
 
-### Strategies (Proxy to strategy-executor:8082)
+### Strategies (read-only proxy to strategy-executor:8081)
 ```
 GET  /api/v1/strategies
+GET  /api/v1/strategies/status
 GET  /api/v1/strategies/:name
-POST /api/v1/strategies/:name/start
-POST /api/v1/strategies/:name/stop
-PUT  /api/v1/strategies/:name/config
 ```
+
+Start, stop and config changes are operator controls. They go through ui-api
+(operator token, typed confirmation, audit log; plan §8.13), never through
+this public gateway. Sub-paths such as `/start` return 404, write methods on
+`/:name` return 405, and strategy-executor internals (`process`,
+`order-fill`, `types`, `stats`) are not reachable.
 
 ### Aggregated Endpoints (New functionality)
 ```
@@ -134,13 +129,16 @@ GET  /metrics                   # Prometheus metrics
 SERVICE_NAME=api-gateway
 SERVICE_VERSION=1.0.0
 SERVICE_HOST=0.0.0.0
-SERVICE_PORT=8080
+SERVICE_PORT=8085
 ENVIRONMENT=development
 
-# Backend Services
+# Backend Services (defaults match the k8s Service ports)
 MARKET_DATA_URL=http://localhost:8083
-ORDER_MANAGEMENT_URL=http://localhost:8081
-STRATEGY_EXECUTOR_URL=http://localhost:8082
+ORDER_MANAGEMENT_URL=http://localhost:8082
+STRATEGY_EXECUTOR_URL=http://localhost:8081
+
+# CORS: comma-separated exact origins; unset = no CORS headers
+CORS_ALLOWED_ORIGINS=http://127.0.0.1:5173
 
 # HTTP Client Configuration
 CLIENT_TIMEOUT=30s
@@ -173,8 +171,8 @@ LOG_OUTPUT=stdout
 - Go 1.21 or higher
 - Backend services running:
   - market-data (port 8083)
-  - order-management (port 8081)
-  - strategy-executor (port 8082)
+  - order-management (port 8082)
+  - strategy-executor (port 8081)
 
 ### Installation
 
@@ -199,10 +197,10 @@ go build -o api-gateway ./cmd/main.go
 docker build -t api-gateway:latest .
 
 # Run container
-docker run -p 8080:8080 \
+docker run -p 8085:8085 \
   -e MARKET_DATA_URL=http://market-data:8083 \
-  -e ORDER_MANAGEMENT_URL=http://order-management:8081 \
-  -e STRATEGY_EXECUTOR_URL=http://strategy-executor:8082 \
+  -e ORDER_MANAGEMENT_URL=http://order-management:8082 \
+  -e STRATEGY_EXECUTOR_URL=http://strategy-executor:8081 \
   api-gateway:latest
 ```
 

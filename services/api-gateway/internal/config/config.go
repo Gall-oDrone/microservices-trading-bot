@@ -119,13 +119,13 @@ func Load() (*Config, error) {
 			Name:        getEnv("SERVICE_NAME", "api-gateway"),
 			Version:     getEnv("SERVICE_VERSION", "1.0.0"),
 			Host:        getEnv("SERVICE_HOST", "0.0.0.0"),
-			Port:        getEnvAsInt("SERVICE_PORT", 8080),
+			Port:        getEnvAsInt("SERVICE_PORT", 8085), // matches k8s api-gateway Service
 			Environment: getEnv("ENVIRONMENT", "development"),
 		},
 		Backend: BackendConfig{
 			MarketDataURL:       getEnv("MARKET_DATA_URL", "http://localhost:8083"),
-			OrderManagementURL:  getEnv("ORDER_MANAGEMENT_URL", "http://localhost:8081"),
-			StrategyExecutorURL: getEnv("STRATEGY_EXECUTOR_URL", "http://localhost:8082"),
+			OrderManagementURL:  getEnv("ORDER_MANAGEMENT_URL", "http://localhost:8082"),
+			StrategyExecutorURL: getEnv("STRATEGY_EXECUTOR_URL", "http://localhost:8081"),
 		},
 		Client: ClientConfig{
 			Timeout:            getEnvAsDuration("CLIENT_TIMEOUT", 30*time.Second),

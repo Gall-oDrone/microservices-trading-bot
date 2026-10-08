@@ -49,6 +49,16 @@ Quick reference for env vars used by the trading bot, especially for **intraday*
 
 ---
 
+## CORS (market-data, backtesting, api-gateway)
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `CORS_ALLOWED_ORIGINS` | unset | Comma-separated exact origins, e.g. `https://ops.example.com,http://127.0.0.1:5173`. Each must be `scheme://host[:port]` (http or https, no path). `*` is refused. Unset or invalid: no CORS headers are sent, so browsers reach the service same-origin only (an invalid value is logged as "CORS disabled"). The operator UI uses ui-api, which is same-origin and needs none of this. |
+
+The api-gateway defaults also match the k8s Services: `SERVICE_PORT` 8085, `ORDER_MANAGEMENT_URL` `http://localhost:8082`, `STRATEGY_EXECUTOR_URL` `http://localhost:8081`, `MARKET_DATA_URL` `http://localhost:8083`.
+
+---
+
 ## See also
 
 - **docs/ORDER-FLOW-AND-BITSO-TESTING.md** — when orders hit Bitso testing, how to validate the flow, and Bitso dashboard.

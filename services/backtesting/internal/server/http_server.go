@@ -146,7 +146,7 @@ func (s *HTTPServer) wrapWithMiddleware(handler http.Handler) http.Handler {
 	wrapped = loggingMiddleware(s.logger)(wrapped)
 
 	// CORS middleware
-	wrapped = corsMiddleware()(wrapped)
+	wrapped = corsMiddleware(s.logger)(wrapped)
 
 	return wrapped
 }

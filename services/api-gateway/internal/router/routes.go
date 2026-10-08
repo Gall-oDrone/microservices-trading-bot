@@ -1,11 +1,14 @@
 package router
 
 import (
+	"os"
+
 	"bitso-trading-platform/api-gateway/internal/api"
 	"bitso-trading-platform/api-gateway/internal/config"
 	"bitso-trading-platform/api-gateway/internal/logger"
 	"bitso-trading-platform/api-gateway/internal/metrics"
 	"bitso-trading-platform/api-gateway/internal/middleware"
+	"bitso-trading-platform/shared/pkg/httpcors"
 )
 
 // SetupRoutes sets up all routes and middleware
@@ -30,9 +33,14 @@ func SetupRoutes(
 	// 3. Metrics - collect metrics
 	router.Use(middleware.NewMetricsMiddleware(metrics).Handler)
 
-	// 4. CORS - handle cross-origin requests
-	corsConfig := middleware.DefaultCORSConfig()
-	router.Use(middleware.NewCORSMiddleware(corsConfig).Handler)
+	// 4. CORS - explicit allowlist from CORS_ALLOWED_ORIGINS (shared/pkg/httpcors);
+	// unset or invalid: no CORS headers, same-origin only (plan §7 item 2).
+	cors, err := httpcors.FromEnv(os.Getenv)
+	if err != nil {
+		logger.Warn("CORS disabled", map[string]interface{}{"error": err.Error()})
+		cors = nil
+	}
+	router.Use(cors.Middleware)
 
 	// 5. Timeout - enforce request timeout
 	router.Use(middleware.NewTimeoutMiddleware(cfg.Client.Timeout, logger).Handler)
@@ -78,4 +86,3 @@ func SetupRoutes(
 
 	return router
 }
-

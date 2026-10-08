@@ -81,6 +81,38 @@ func TestLoad(t *testing.T) {
 	}
 }
 
+// TestLoadDefaultPorts pins the defaults to the k8s Service ports
+// (api-gateway 8085, strategy-executor 8081, order-management 8082,
+// market-data 8083) so local runs reach the same services as the cluster.
+func TestLoadDefaultPorts(t *testing.T) {
+	for _, k := range []string{"SERVICE_PORT", "MARKET_DATA_URL", "ORDER_MANAGEMENT_URL", "STRATEGY_EXECUTOR_URL"} {
+		t.Setenv(k, "")
+		os.Unsetenv(k)
+	}
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg.Service.Port != 8085 {
+		t.Errorf("Service.Port = %d, want 8085", cfg.Service.Port)
+	}
+	want := map[string]string{
+		"MarketDataURL":       "http://localhost:8083",
+		"OrderManagementURL":  "http://localhost:8082",
+		"StrategyExecutorURL": "http://localhost:8081",
+	}
+	got := map[string]string{
+		"MarketDataURL":       cfg.Backend.MarketDataURL,
+		"OrderManagementURL":  cfg.Backend.OrderManagementURL,
+		"StrategyExecutorURL": cfg.Backend.StrategyExecutorURL,
+	}
+	for k, w := range want {
+		if got[k] != w {
+			t.Errorf("%s = %q, want %q", k, got[k], w)
+		}
+	}
+}
+
 func TestValidate(t *testing.T) {
 	tests := []struct {
 		name    string

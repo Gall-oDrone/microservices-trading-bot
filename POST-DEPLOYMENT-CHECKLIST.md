@@ -454,7 +454,8 @@ kubectl port-forward svc/api-gateway 8085:8085 -n bitso-trading-dev &
 # Test routes to different services
 curl http://localhost:8085/api/v1/market-data/btc-mxn
 curl http://localhost:8085/api/v1/strategies
-curl http://localhost:8085/api/v1/orders
+curl http://localhost:8085/api/v1/strategies/status
+# /api/v1/orders* was removed from the gateway (plan §7); expect 404
 curl http://localhost:8085/api/v1/backtest/status
 ```
 
@@ -618,8 +619,8 @@ curl http://$EXTERNAL_URL/api/v1/backtest/status/{backtest_id}
 ### 8.3 Test Error Handling
 
 ```bash
-# Test invalid requests
-curl -X POST http://$EXTERNAL_URL/api/v1/orders \
+# Test invalid requests (the public gateway is read-only: expect 405)
+curl -X POST http://$EXTERNAL_URL/api/v1/strategies/example \
   -H "Content-Type: application/json" \
   -d '{"invalid": "data"}'
 

@@ -2,6 +2,8 @@ package api
 
 import (
 	"net/http"
+	"regexp"
+	"strings"
 	"time"
 
 	"bitso-trading-platform/api-gateway/internal/config"
@@ -17,7 +19,6 @@ type Handler struct {
 	metrics            *metrics.MetricsCollector
 	healthManager      *health.HealthManager
 	marketDataHandler  *MarketDataHandler
-	orderHandler       *OrderHandler
 	strategyHandler    *StrategyHandler
 	aggregationHandler *AggregationHandler
 }
@@ -29,7 +30,6 @@ func NewHandler(
 	metrics *metrics.MetricsCollector,
 	healthManager *health.HealthManager,
 	marketDataHandler *MarketDataHandler,
-	orderHandler *OrderHandler,
 	strategyHandler *StrategyHandler,
 	aggregationHandler *AggregationHandler,
 ) *Handler {
@@ -39,7 +39,6 @@ func NewHandler(
 		metrics:            metrics,
 		healthManager:      healthManager,
 		marketDataHandler:  marketDataHandler,
-		orderHandler:       orderHandler,
 		strategyHandler:    strategyHandler,
 		aggregationHandler: aggregationHandler,
 	}
@@ -143,18 +142,15 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/v1/market-data/ticker", h.marketDataHandler.HandleGetTicker)
 	mux.HandleFunc("/api/v1/market-data/summary", h.marketDataHandler.HandleGetMarketSummary)
 
-	// Order management endpoints
-	mux.HandleFunc("/api/v1/orders", h.orderHandler.HandleListOrders)
-	mux.HandleFunc("/api/v1/orders/", h.handleOrderRoutes)
-	mux.HandleFunc("/api/v1/orders/active", h.orderHandler.HandleGetActiveOrders)
-	mux.HandleFunc("/api/v1/orders/history", h.orderHandler.HandleGetOrderHistory)
+	// Order and position routes were removed 2026-10-08 (plan §7 items 3-4):
+	// order-management serves none of them (every call was a 404), and the
+	// order cancel route must not be public. Positions and exposure are read
+	// through ui-api; the aggregation endpoints below still try
+	// order-management and leave those fields empty when it has no data.
 
-	// Position endpoints
-	mux.HandleFunc("/api/v1/positions", h.orderHandler.HandleListPositions)
-	mux.HandleFunc("/api/v1/positions/", h.handlePositionRoutes)
-	mux.HandleFunc("/api/v1/positions/summary", h.orderHandler.HandleGetPositionSummary)
-
-	// Strategy endpoints
+	// Strategy endpoints: read-only. Start/stop are operator controls and go
+	// through ui-api (token, confirmation, audit log, plan §8.13), never
+	// through this public gateway.
 	mux.HandleFunc("/api/v1/strategies", h.strategyHandler.HandleListStrategies)
 	mux.HandleFunc("/api/v1/strategies/", h.handleStrategyRoutes)
 	mux.HandleFunc("/api/v1/strategies/status", h.strategyHandler.HandleGetStatus)
@@ -171,48 +167,28 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	h.logger.Info("API routes registered", nil)
 }
 
-// handleOrderRoutes handles order sub-routes
-func (h *Handler) handleOrderRoutes(w http.ResponseWriter, r *http.Request) {
-	path := r.URL.Path
+// strategyNameRe is a strategy-executor strategy name.
+var strategyNameRe = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$`)
 
-	// Check for /cancel suffix
-	if len(path) > 7 && path[len(path)-7:] == "/cancel" {
-		h.orderHandler.HandleCancelOrder(w, r)
-		return
-	}
-
-	// Otherwise, it's a get order by ID
-	h.orderHandler.HandleGetOrder(w, r)
+// reservedStrategyPaths are strategy-executor endpoints under
+// /api/v1/strategies/ that are not strategy names. process publishes
+// signals and order-fill feeds fills; neither may be reachable from here.
+var reservedStrategyPaths = map[string]bool{
+	"process": true, "order-fill": true, "types": true, "stats": true,
 }
 
-// handlePositionRoutes handles position sub-routes
-func (h *Handler) handlePositionRoutes(w http.ResponseWriter, r *http.Request) {
-	// All position sub-routes are GetPosition by book
-	h.orderHandler.HandleGetPosition(w, r)
-}
-
-// handleStrategyRoutes handles strategy sub-routes
+// handleStrategyRoutes serves GET /api/v1/strategies/{name} only. Any
+// sub-path (start, stop, config, ...) is 404 and any other method is 405.
 func (h *Handler) handleStrategyRoutes(w http.ResponseWriter, r *http.Request) {
-	path := r.URL.Path
-
-	// Check for /start suffix
-	if len(path) > 6 && path[len(path)-6:] == "/start" {
-		h.strategyHandler.HandleStartStrategy(w, r)
+	name := strings.TrimPrefix(r.URL.Path, "/api/v1/strategies/")
+	if strings.Contains(name, "/") || reservedStrategyPaths[name] || !strategyNameRe.MatchString(name) {
+		NotFoundResponse(w, r, "Route not found")
 		return
 	}
-
-	// Check for /stop suffix
-	if len(path) > 5 && path[len(path)-5:] == "/stop" {
-		h.strategyHandler.HandleStopStrategy(w, r)
+	if r.Method != http.MethodGet {
+		w.Header().Set("Allow", http.MethodGet)
+		MethodNotAllowedResponse(w, r)
 		return
 	}
-
-	// Check for /config suffix
-	if len(path) > 7 && path[len(path)-7:] == "/config" {
-		h.strategyHandler.HandleUpdateStrategyConfig(w, r)
-		return
-	}
-
-	// Otherwise, it's a get strategy by name
 	h.strategyHandler.HandleGetStrategy(w, r)
 }

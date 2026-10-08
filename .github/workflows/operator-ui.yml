@@ -14,6 +14,10 @@ on:
       - 'shared/go.sum'
       - 'shared/pkg/risk/**'
       - 'shared/pkg/dailyledger/**'
+      - 'shared/pkg/httpcors/**'
+      - 'services/api-gateway/**'
+      - 'services/market-data/internal/server/**'
+      - 'services/backtesting/internal/server/**'
       - 'services/strategy-executor/go.mod'
       - 'services/strategy-executor/go.sum'
       - 'services/strategy-executor/cmd/daily-executor/**'
@@ -127,6 +131,63 @@ jobs:
         run: |
           go vet ./...
           go test -race -count=1 ./...
+
+  edge-services:
+    name: Edge services §7 (CORS allowlist, read-only gateway)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      # api-gateway's go.mod needs 1.24; shared (1.21), market-data (1.21)
+      # and backtesting (1.23) build unchanged on it.
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24.x'
+          cache-dependency-path: |
+            shared/go.sum
+            services/api-gateway/go.sum
+            services/market-data/go.sum
+            services/backtesting/go.sum
+
+      # Plan §7 items 2-4: exact-origin CORS (CORS_ALLOWED_ORIGINS, no "*"),
+      # no order/strategy-control/signal routes on the public gateway, and
+      # gateway port defaults that match the k8s Services.
+      - name: gofmt (§7 files)
+        run: |
+          out=$(gofmt -l shared/pkg/httpcors \
+            services/api-gateway/internal/api \
+            services/api-gateway/internal/config \
+            services/api-gateway/internal/router/routes.go \
+            services/api-gateway/cmd/main.go \
+            services/backtesting/internal/server/middleware.go)
+          if [ -n "$out" ]; then echo "gofmt needed:"; echo "$out"; exit 1; fi
+
+      - name: shared httpcors
+        working-directory: shared
+        run: |
+          go vet ./pkg/httpcors
+          go test -race -count=1 ./pkg/httpcors
+
+      - name: api-gateway
+        working-directory: services/api-gateway
+        run: |
+          go vet ./...
+          go test -race -count=1 ./...
+
+      - name: backtesting
+        working-directory: services/backtesting
+        run: |
+          go build ./...
+          go test -count=1 ./...
+
+      # Some market-data test packages (processor, publisher, websocket) do
+      # not compile and predate this job; build everything, vet the server.
+      - name: market-data
+        working-directory: services/market-data
+        run: |
+          go build ./...
+          go vet ./internal/server
 
   monitoring-rules:
     name: Monitoring rules and dashboards (promtool)

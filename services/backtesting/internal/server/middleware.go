@@ -2,10 +2,12 @@ package server
 
 import (
 	"net/http"
+	"os"
 	"time"
 
 	"bitso-trading-platform/backtesting/internal/logger"
 	"bitso-trading-platform/backtesting/internal/metrics"
+	"bitso-trading-platform/shared/pkg/httpcors"
 )
 
 // loggingMiddleware logs HTTP requests
@@ -70,23 +72,17 @@ func recoveryMiddleware(log logger.Logger) func(http.Handler) http.Handler {
 	}
 }
 
-// corsMiddleware adds CORS headers
-func corsMiddleware() func(http.Handler) http.Handler {
-	return func(next http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			w.Header().Set("Access-Control-Allow-Origin", "*")
-			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
-
-			// Handle preflight
-			if r.Method == "OPTIONS" {
-				w.WriteHeader(http.StatusOK)
-				return
-			}
-
-			next.ServeHTTP(w, r)
-		})
+// corsMiddleware applies the platform CORS allowlist (CORS_ALLOWED_ORIGINS,
+// shared/pkg/httpcors). Unset or invalid: no CORS headers, same-origin only.
+func corsMiddleware(log logger.Logger) func(http.Handler) http.Handler {
+	cors, err := httpcors.FromEnv(os.Getenv)
+	if err != nil {
+		log.Warn("CORS disabled", map[string]interface{}{"error": err.Error()})
+		cors = nil
+	} else if len(cors.Origins()) > 0 {
+		log.Info("CORS allowed origins", map[string]interface{}{"origins": cors.Origins()})
 	}
+	return cors.Middleware
 }
 
 // responseWriter wraps http.ResponseWriter to capture status code
