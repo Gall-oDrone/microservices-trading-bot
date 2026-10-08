@@ -7,6 +7,7 @@ import { http, HttpResponse } from 'msw'
 import healthz from './fixtures/healthz.json'
 import ledgers from './fixtures/ledgers.json'
 import live from './fixtures/live.json'
+import liveMarket from './fixtures/live-market.json'
 import runs from './research/runs.json'
 import studies from './research/studies.json'
 
@@ -43,12 +44,28 @@ function fixture(request: Request, name: string): Response {
   return HttpResponse.json(f)
 }
 
-const TIME_KEYS = new Set(['generated_at', 'since', 'last_message_at', 'last_at', 'updated_at', 'time'])
+const TIME_KEYS = new Set([
+  'generated_at',
+  'since',
+  'last_message_at',
+  'last_at',
+  'updated_at',
+  'time',
+  'at',
+  'depth_at',
+])
 
-/** The captured live snapshot for `?books=`, with its timestamps moved to now so it reads as fresh. */
+/**
+ * The captured live snapshot for `?books=`, with its timestamps moved to now
+ * so it reads as fresh. `?market=1` serves the capture that also has depth,
+ * spread and the tape (live-market.json), like ui-api.
+ */
 function liveNow(request: Request) {
-  const want = (new URL(request.url).searchParams.get('books') ?? '').split(',').filter(Boolean)
-  const shift = Date.now() - Date.parse(live.generated_at)
+  const params = new URL(request.url).searchParams
+  const want = (params.get('books') ?? '').split(',').filter(Boolean)
+  const market = ['1', 'true'].includes(params.get('market') ?? '')
+  const src: Json = market ? liveMarket : live
+  const shift = Date.now() - Date.parse(String(src.generated_at))
   const move = (v: unknown): unknown => {
     if (Array.isArray(v)) return v.map(move)
     if (v && typeof v === 'object') {
@@ -61,8 +78,13 @@ function liveNow(request: Request) {
     }
     return v
   }
-  const snap = move(live) as typeof live
-  return { ...snap, books: snap.books.filter((b) => want.length === 0 || want.includes(b.book)) }
+  const snap = move(src) as typeof liveMarket
+  const keep = (b: { book: string }) => want.length === 0 || want.includes(b.book)
+  return {
+    ...snap,
+    books: snap.books.filter(keep),
+    ...(market ? { markets: snap.markets.filter(keep) } : { markets: undefined }),
+  }
 }
 
 /** Replays the snapshot as Server-Sent Events, then a heartbeat every 10 s, like ui-api's /stream. */

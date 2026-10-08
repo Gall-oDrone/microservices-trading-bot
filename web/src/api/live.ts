@@ -12,8 +12,10 @@ import {
   heartbeatSchema,
   liveSnapshotSchema,
   liveStatusSchema,
+  marketSchema,
   type BookSnapshot,
   type LiveStatus,
+  type Market,
 } from './schemas'
 
 /** No event at all (ui-api sends a heartbeat every 15 s) for this long means the stream is stale. */
@@ -28,6 +30,8 @@ export interface LiveState {
   phase: LivePhase
   upstream: LiveStatus | null
   books: Record<string, BookSnapshot>
+  /** Depth, spread and tape per book; only filled with `{ market: true }` (the Market page). */
+  markets: Record<string, Market>
   /** Date.now() of the last event received, or null before the first. */
   lastEventAt: number | null
   /** Contract mismatch or why the stream is off. */
@@ -41,13 +45,14 @@ export type LiveRaw = Omit<LiveState, 'phase' | 'now'> & { conn: 'connecting' | 
 type Action =
   | { type: 'reset' }
   | { type: 'open' }
-  | { type: 'snapshot'; upstream: LiveStatus; books: BookSnapshot[]; at: number }
+  | { type: 'snapshot'; upstream: LiveStatus; books: BookSnapshot[]; markets?: Market[]; at: number }
   | { type: 'book'; book: BookSnapshot; at: number }
+  | { type: 'market'; market: Market; at: number }
   | { type: 'status'; upstream: LiveStatus; at: number }
   | { type: 'conn'; conn: LiveRaw['conn']; error?: string }
   | { type: 'contract'; error: string }
 
-const initial: LiveRaw = { conn: 'connecting', upstream: null, books: {}, lastEventAt: null, error: null }
+const initial: LiveRaw = { conn: 'connecting', upstream: null, books: {}, markets: {}, lastEventAt: null, error: null }
 
 function reducer(s: LiveRaw, a: Action): LiveRaw {
   switch (a.type) {
@@ -61,10 +66,13 @@ function reducer(s: LiveRaw, a: Action): LiveRaw {
         conn: 'open',
         upstream: a.upstream,
         books: Object.fromEntries(a.books.map((b) => [b.book, b])),
+        markets: a.markets ? Object.fromEntries(a.markets.map((m) => [m.book, m])) : s.markets,
         lastEventAt: a.at,
       }
     case 'book':
       return { ...s, books: { ...s.books, [a.book.book]: a.book }, lastEventAt: a.at }
+    case 'market':
+      return { ...s, markets: { ...s.markets, [a.market.book]: a.market }, lastEventAt: a.at }
     case 'status':
       return { ...s, upstream: a.upstream, lastEventAt: a.at }
     case 'conn':
@@ -102,9 +110,11 @@ function parse<S extends z.ZodTypeAny>(ev: Event, name: string, schema: S): z.in
  * Subscribes to live data for `books` (one EventSource per page). The
  * browser reconnects on its own after a dropped stream (ui-api sends
  * `retry: 3000`); if the server refuses the stream we retry every REOPEN_MS.
+ * With `market: true` the stream also carries depth, spread and the tape.
  */
-export function useLiveStream(books: string[]): LiveState {
+export function useLiveStream(books: string[], opts: { market?: boolean } = {}): LiveState {
   const key = [...books].sort().join(',')
+  const market = opts.market === true
   const [raw, dispatch] = useReducer(reducer, initial)
   const [now, setNow] = useState(() => Date.now())
 
@@ -130,7 +140,7 @@ export function useLiveStream(books: string[]): LiveState {
       })
     }
     const open = () => {
-      es = new EventSource(`/api/ui/stream?books=${encodeURIComponent(key)}`)
+      es = new EventSource(`/api/ui/stream?books=${encodeURIComponent(key)}${market ? '&market=1' : ''}`)
       es.onopen = () => dispatch({ type: 'open' })
       es.onerror = () => {
         if (es?.readyState === EventSource.CLOSED) {
@@ -143,9 +153,10 @@ export function useLiveStream(books: string[]): LiveState {
         }
       }
       on('snapshot', liveSnapshotSchema, (s) =>
-        dispatch({ type: 'snapshot', upstream: s.upstream, books: s.books, at: Date.now() }),
+        dispatch({ type: 'snapshot', upstream: s.upstream, books: s.books, markets: s.markets, at: Date.now() }),
       )
       on('book', bookSnapshotSchema, (b) => dispatch({ type: 'book', book: b, at: Date.now() }))
+      if (market) on('market', marketSchema, (m) => dispatch({ type: 'market', market: m, at: Date.now() }))
       on('status', liveStatusSchema, (u) => dispatch({ type: 'status', upstream: u, at: Date.now() }))
       on('heartbeat', heartbeatSchema, (h) => dispatch({ type: 'status', upstream: h.upstream, at: Date.now() }))
     }
@@ -154,12 +165,13 @@ export function useLiveStream(books: string[]): LiveState {
       clearTimeout(reopen)
       es?.close()
     }
-  }, [key])
+  }, [key, market])
 
   return {
     phase: livePhase(raw, now),
     upstream: raw.upstream,
     books: raw.books,
+    markets: raw.markets,
     lastEventAt: raw.lastEventAt,
     error: raw.error,
     now,

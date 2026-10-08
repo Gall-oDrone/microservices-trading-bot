@@ -140,6 +140,10 @@ function Nav() {
           </span>
         )}
       </NavLink>
+      <NavLink to={{ pathname: '/market', search }} className="nav-link" id="nav-market">
+        <IconCandles /> Market
+        <span className="count nav-live" aria-hidden="true" title="Live" />
+      </NavLink>
       <span className="nav-label" style={{ marginTop: 14 }}>
         Research
       </span>
@@ -164,13 +168,6 @@ function Nav() {
           </span>
         )}
       </NavLink>
-      <span className="nav-label" style={{ marginTop: 14 }}>
-        Next phases
-      </span>
-      <span className="nav-link disabled" aria-disabled="true" title="Phase 3">
-        <IconCandles /> Market
-        <span className="count faint">P3</span>
-      </span>
     </nav>
   )
 }

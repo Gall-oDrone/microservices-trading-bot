@@ -11,6 +11,8 @@ curl -fsS "$API/api/ui/healthz" > "$OUT/healthz.json"
 curl -fsS "$API/api/ui/ledgers" > "$OUT/ledgers.json"
 # Live snapshot (needs ui-api -live, the default); mock mode replays it over SSE.
 curl -fsS "$API/api/ui/live?books=btc_mxn,btc_usd" > "$OUT/live.json"
+# The Market page's view (?market=1): depth, spread and the trade tape per book.
+curl -fsS "$API/api/ui/live?books=btc_mxn,btc_usd&market=1" > "$OUT/live-market.json"
 LEDGERS=$(node -e 'const l=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")).ledgers;console.log(l.map(x=>x.name).join(" "))' "$OUT/ledgers.json")
 for l in $LEDGERS; do
   D="$OUT/$l"

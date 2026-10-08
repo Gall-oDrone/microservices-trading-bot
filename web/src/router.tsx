@@ -5,6 +5,7 @@ import { DataHealthPage } from './pages/DataHealthPage'
 import { ForwardTestDetailPage } from './pages/ForwardTestDetailPage'
 import { ForwardTestsPage } from './pages/ForwardTestsPage'
 import { LandingPage } from './pages/LandingPage'
+import { MarketPage } from './pages/MarketPage'
 import { NotFoundPage } from './pages/NotFoundPage'
 import { ResearchPage } from './pages/ResearchPage'
 import { RiskPage } from './pages/RiskPage'
@@ -21,6 +22,7 @@ export const routes: RouteObject[] = [
       { path: 'forward-tests', element: <ForwardTestsPage /> },
       { path: 'forward-tests/:book', element: <ForwardTestDetailPage /> },
       { path: 'risk', element: <RiskPage /> },
+      { path: 'market', element: <MarketPage /> },
       { path: 'data-health', element: <DataHealthPage /> },
       { path: 'research', element: <ResearchPage /> },
       { path: 'research/runs', element: <RunsPage /> },

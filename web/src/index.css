@@ -3262,3 +3262,403 @@ table.data td.run-book {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
+
+/* ============================================================
+   Market (/market): tickers, depth ladder, trade tape.
+   Bids/taker buys = teal (long), asks/taker sells = coral (loss).
+   Display only; nothing here is a decision.
+   ============================================================ */
+.tickers {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr));
+  gap: 16px;
+  margin-bottom: 16px;
+}
+.ticker {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+  padding: 16px 18px;
+  text-align: left;
+  font: inherit;
+  color: var(--text);
+  cursor: pointer;
+  background:
+    radial-gradient(120% 140% at 100% 0%, var(--glow-a), transparent 55%),
+    linear-gradient(180deg, var(--surface), var(--card-end));
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-l);
+  box-shadow: var(--shadow-2);
+  overflow: hidden;
+  animation: rise var(--t) var(--ease) both;
+  transition:
+    transform var(--t) var(--ease),
+    border-color var(--t) var(--ease),
+    box-shadow var(--t) var(--ease);
+}
+.ticker:nth-child(2) {
+  animation-delay: 40ms;
+}
+.ticker::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 14px;
+  bottom: 14px;
+  width: 3px;
+  border-radius: 0 3px 3px 0;
+  background: linear-gradient(180deg, var(--info), var(--long));
+  opacity: 0;
+  transform: scaleY(0.4);
+  transition:
+    opacity var(--t) var(--ease),
+    transform var(--t) var(--ease);
+}
+.ticker:hover {
+  transform: translateY(-2px);
+  border-color: var(--line);
+  box-shadow: var(--shadow-hover);
+}
+.ticker:focus-visible {
+  outline: 2px solid var(--info-focus);
+  outline-offset: 2px;
+}
+.ticker.active {
+  border-color: var(--info-line);
+  box-shadow:
+    0 0 0 1px var(--info-line),
+    var(--shadow-hover);
+}
+.ticker.active::before {
+  opacity: 1;
+  transform: none;
+}
+.ticker-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.ticker-book {
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+.ticker-ago {
+  font-size: 11.5px;
+}
+.ticker-price {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 30px;
+  font-weight: 500;
+  letter-spacing: -0.04em;
+  line-height: 1.1;
+  transition: opacity var(--t) var(--ease);
+}
+.ticker-price .tick {
+  padding: 0 4px;
+  margin-left: -4px;
+}
+.ticker-quote {
+  font-family: var(--font-sans);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--text-3);
+}
+.ticker.is-stale .ticker-price {
+  opacity: 0.55;
+}
+.ticker-quotes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 18px;
+  font-size: 12.5px;
+}
+.ticker-spread {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 12px;
+  color: var(--text-2);
+}
+.ticker-spread strong {
+  color: var(--text);
+  font-weight: 600;
+}
+.spread-gauge {
+  flex: none;
+  position: relative;
+  width: 72px;
+  height: 4px;
+  border-radius: 999px;
+  background: var(--surface-3);
+  overflow: hidden;
+}
+.spread-gauge > span {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: calc(var(--g, 0) * 100%);
+  min-width: 4px;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--long), var(--warn));
+  transition: width var(--t) var(--ease);
+}
+
+.side-chip {
+  display: inline-flex;
+  align-items: center;
+  height: 18px;
+  padding: 0 7px;
+  border-radius: 999px;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.side-chip.buy {
+  background: var(--long-soft);
+  color: var(--long);
+}
+.side-chip.sell {
+  background: var(--loss-soft);
+  color: var(--loss);
+}
+
+.market-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 16px;
+  margin-bottom: 16px;
+}
+/* The tape fills the height the depth ladder sets, then scrolls. */
+.tape-card {
+  display: flex;
+  flex-direction: column;
+}
+.market-grid > .card:nth-child(2) {
+  animation-delay: 40ms;
+}
+
+.imbalance {
+  margin-bottom: 12px;
+}
+.imbalance-labels {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 11.5px;
+  margin-bottom: 5px;
+}
+.imbalance-track {
+  position: relative;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--loss-soft);
+  overflow: hidden;
+}
+.imbalance-track > span {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--long-soft), var(--long));
+  transition: width 600ms var(--ease);
+}
+
+.ladder {
+  font-size: 12.5px;
+}
+.ladder-row {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr) minmax(0, 1fr);
+  gap: 8px;
+  padding: 3px 8px;
+  border-radius: 4px;
+  isolation: isolate;
+}
+.ladder-row > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ladder-row .r {
+  text-align: right;
+}
+.ladder-row::before {
+  content: '';
+  position: absolute;
+  z-index: -1;
+  top: 1px;
+  bottom: 1px;
+  right: 0;
+  width: calc(var(--w, 0) * 100%);
+  border-radius: 3px;
+  transition: width var(--t) var(--ease);
+}
+.ladder-row.bid::before {
+  background: var(--long-soft);
+}
+.ladder-row.ask::before {
+  background: var(--loss-soft);
+}
+.ladder-row.bid .price {
+  color: var(--long);
+}
+.ladder-row.ask .price {
+  color: var(--loss);
+}
+.ladder-row.bid:hover,
+.ladder-row.ask:hover {
+  background: var(--row-hover);
+}
+.ladder-row.head {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-3);
+  padding-bottom: 6px;
+}
+.ladder-spread {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  margin: 6px 0;
+  padding: 8px;
+  font-size: 12px;
+  border-radius: var(--radius-s);
+  border: 1px dashed var(--line);
+  background: var(--bg-raised);
+}
+.ladder-spread .r {
+  text-align: right;
+  color: var(--text-2);
+}
+.ladder-empty {
+  padding: 8px;
+  font-size: 12px;
+}
+.ladder-foot {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 4px 12px;
+  margin-top: 10px;
+  font-size: 11.5px;
+}
+
+.tape-vwap {
+  font-size: 12.5px;
+  white-space: nowrap;
+}
+.tape-scroll {
+  flex: 1 1 0;
+  min-height: 240px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  margin: 0 -4px;
+  padding: 0 4px;
+}
+table.data.tape {
+  width: 100%;
+  font-size: 12.5px;
+}
+table.data.tape th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--surface);
+}
+table.data.tape td,
+table.data.tape th {
+  padding-top: 5px;
+  padding-bottom: 5px;
+}
+.tape-row.fresh.buy td {
+  animation: tape-in-buy 1.4s var(--ease);
+}
+.tape-row.fresh.sell td {
+  animation: tape-in-sell 1.4s var(--ease);
+}
+@keyframes tape-in-buy {
+  from {
+    background: var(--long-soft);
+  }
+}
+@keyframes tape-in-sell {
+  from {
+    background: var(--loss-soft);
+  }
+}
+
+.vol-stats {
+  margin-bottom: 14px;
+  padding: 12px 14px;
+  border-radius: var(--radius);
+  border: 1px solid var(--line-soft);
+  background: var(--bg-raised);
+}
+
+.nav-live {
+  position: relative;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--long);
+  margin-right: 4px;
+}
+.nav-live::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: var(--long);
+  animation: live-pulse 2.4s var(--ease) infinite;
+}
+
+@media (max-width: 1100px) {
+  .market-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .tape-scroll {
+    flex: none;
+    max-height: 360px;
+  }
+}
+@media (max-width: 640px) {
+  .market-candles .card-head {
+    flex-wrap: wrap;
+  }
+  .ticker {
+    padding: 14px;
+  }
+  .ticker-price {
+    font-size: 24px;
+  }
+  .ladder,
+  table.data.tape {
+    font-size: 12px;
+  }
+  .ladder-row {
+    padding: 3px 4px;
+    gap: 6px;
+  }
+  .ladder-spread {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .ladder-spread .r {
+    text-align: left;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .nav-live::after,
+  .tape-row.fresh td {
+    animation: none !important;
+  }
+}

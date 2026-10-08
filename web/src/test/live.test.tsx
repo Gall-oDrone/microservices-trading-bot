@@ -87,7 +87,7 @@ describe('live contract', () => {
 
 describe('livePhase', () => {
   const up: LiveStatus = { source: 'wss://x', connected: true, since: '', last_message_at: '', reconnects: 0 }
-  const base: LiveRaw = { conn: 'open', upstream: up, books: {}, lastEventAt: 1_000, error: null }
+  const base: LiveRaw = { conn: 'open', upstream: up, books: {}, markets: {}, lastEventAt: 1_000, error: null }
   it.each<[string, Partial<LiveRaw>, number, string]>([
     ['fresh event', {}, 1_000 + STALE_MS, 'live'],
     ['no event for longer than STALE_MS', {}, 1_001 + STALE_MS, 'stale'],

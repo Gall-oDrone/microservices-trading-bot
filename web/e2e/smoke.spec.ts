@@ -91,6 +91,33 @@ test('risk: enforced, per-book exposure and policy', async ({ page }) => {
   await expectHealthy(page, errors)
 })
 
+test('market: tickers, depth ladder, trade tape and candles over the live stream', async ({ page }) => {
+  const errors = watchConsole(page)
+  await page.goto('/forward-tests')
+  await page.locator('#nav-market').click()
+  await expect(page).toHaveURL(/\/market/)
+  await expect(page).toHaveTitle(/Market/)
+  await expect(page.getByRole('heading', { level: 1, name: 'Market' })).toBeVisible()
+  await expect(page.getByTestId('live-badge')).toHaveText(/^live$/i)
+  for (const book of ['btc_mxn', 'btc_usd']) {
+    const t = page.getByTestId(`ticker-${book}`)
+    await expect(t.getByTestId('live-price')).toHaveText(/\d/)
+    await expect(t.getByTestId(`spread-${book}`)).toHaveText(/\d bps/)
+  }
+  await expect(page.getByTestId('ticker-btc_mxn')).toHaveAttribute('aria-pressed', 'true')
+  await expect(page.getByTestId('bids').getByRole('row').first()).toBeVisible()
+  await expect(page.getByTestId('asks').getByRole('row').first()).toBeAttached()
+  await expect(page.getByTestId('ladder-spread')).toContainText('bps')
+  await expect(page.locator('#tape-table tbody tr').first()).toBeAttached()
+  await expect(page.getByTestId('volume-stats')).toContainText('vs 20-day average')
+  await expect(page.locator('canvas').first()).toBeAttached()
+  await page.locator('#market-book-btc_usd').click()
+  await expect(page).toHaveURL(/book=btc_usd/)
+  await expect(page.getByTestId('depth')).toContainText('BTC / USD')
+  await expect(page.getByRole('heading', { name: 'Daily candles · BTC / USD' })).toBeVisible()
+  await expectHealthy(page, errors)
+})
+
 test('data health: summary, checks, archive, executor runs and the ledger switch', async ({ page }) => {
   const errors = watchConsole(page)
   await page.goto('/forward-tests')

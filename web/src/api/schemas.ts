@@ -413,11 +413,42 @@ export const liveStatusSchema = z.object({
 })
 export type LiveStatus = z.infer<typeof liveStatusSchema>
 
-/** GET /api/ui/live, and the "snapshot" event of /api/ui/stream. */
+/** live.Level: one price level of the order book (orders grouped by price), amount in BTC. */
+export const levelSchema = z.object({ price: z.number(), amount: z.number() })
+export type Level = z.infer<typeof levelSchema>
+
+/** live.TapeTrade; side is the taker's: "buy" lifted the ask, "sell" hit the bid. */
+export const tapeTradeSchema = z.object({
+  id: z.number(),
+  price: z.number(),
+  amount: z.number(),
+  side: z.enum(['buy', 'sell']),
+  at: z.string(),
+})
+export type TapeTrade = z.infer<typeof tapeTradeSchema>
+
+/** live.Market: the Market page's view of a book (GET /live?market=1, "market" events). */
+export const marketSchema = z.object({
+  book: z.string(),
+  bid: z.number(),
+  ask: z.number(),
+  mid: z.number(),
+  spread: z.number(),
+  spread_bps: z.number(),
+  bids: z.array(levelSchema),
+  asks: z.array(levelSchema),
+  depth_at: z.string(),
+  trades: z.array(tapeTradeSchema),
+  tape_seeded: z.boolean(),
+})
+export type Market = z.infer<typeof marketSchema>
+
+/** GET /api/ui/live, and the "snapshot" event of /api/ui/stream (markets only with ?market=1). */
 export const liveSnapshotSchema = z.object({
   generated_at: z.string(),
   upstream: liveStatusSchema,
   books: z.array(bookSnapshotSchema),
+  markets: z.array(marketSchema).optional(),
 })
 export type LiveSnapshot = z.infer<typeof liveSnapshotSchema>
 
