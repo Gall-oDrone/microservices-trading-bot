@@ -30,6 +30,10 @@
 #   --no-executor         install the alerts job only (plus compaction with --bucket)
 #   --no-compact          do not schedule the compaction refresh
 #   --rebuild-executor    rebuild services/strategy-executor/daily-executor-data/daily-executor
+#                         from the committed HEAD in a throwaway clone, so the code version it
+#                         records is the plain commit (never "+dirty" from untracked files;
+#                         uncommitted changes are not included); the old binary is kept as
+#                         daily-executor.prev-<rev>
 #   --compactor-ref REF   git ref holding services/data-collector (see above)
 #   --rebuild-compactor   rebuild bin/compact-archive from --compactor-ref
 set -euo pipefail
@@ -49,7 +53,7 @@ while [ $# -gt 0 ]; do
     --rebuild-executor) rebuild=1; shift ;;
     --compactor-ref) compactor_ref="$2"; shift 2 ;;
     --rebuild-compactor) rebuild_compactor=1; shift ;;
-    -h | --help) sed -n '2,34p' "$0"; exit 0 ;;
+    -h | --help) sed -n '2,38p' "$0"; exit 0 ;;
     *) echo "unknown option $1" >&2; exit 2 ;;
   esac
 done
@@ -123,12 +127,30 @@ if [ -z "$topic" ]; then
   echo "warning: no --topic-arn: alerts are only written to the log" >&2
 fi
 
+tmps=()
+trap 'rm -rf ${tmps[@]+"${tmps[@]}"}' EXIT
+
 echo "building services/ui-api/bin/ui-alerts"
 (cd "$ROOT/services/ui-api" && go build -o bin/ui-alerts ./cmd/ui-alerts)
 exe="$ROOT/services/strategy-executor/daily-executor-data/daily-executor"
 if [ "$executor" = 1 ] && { [ "$rebuild" = 1 ] || [ ! -x "$exe" ]; }; then
-  echo "building $exe"
-  (cd "$ROOT/services/strategy-executor" && go build -o daily-executor-data/daily-executor ./cmd/daily-executor)
+  head="$(git -C "$ROOT" rev-parse HEAD)"
+  if [ -n "$(git -C "$ROOT" status --porcelain --untracked-files=no -- services/strategy-executor shared)" ]; then
+    echo "warning: uncommitted changes under services/strategy-executor or shared are NOT built" >&2
+  fi
+  echo "building $exe from HEAD ${head:0:12} (clean clone)"
+  src="$(mktemp -d)"
+  tmps+=("$src")
+  # A real clone (not a worktree): go stamps vcs.* from the nearest .git directory.
+  git clone -q --shared --no-checkout "$ROOT" "$src"
+  git -C "$src" checkout -q --detach "$head"
+  (cd "$src/services/strategy-executor" && go build -o "$exe.new" ./cmd/daily-executor)
+  if [ -x "$exe" ]; then
+    old="$(go version -m "$exe" | sed -n 's/.*vcs\.revision=\(.\{12\}\).*/\1/p')"
+    if go version -m "$exe" | grep -q 'vcs.modified=true'; then old="$old+dirty"; fi
+    cp -p "$exe" "$exe.prev-${old:-unknown}"
+  fi
+  mv -f "$exe.new" "$exe"
 fi
 comp="$ROOT/bin/compact-archive"
 if [ "$compact" = 1 ] && { [ "$rebuild_compactor" = 1 ] || [ ! -x "$comp" ]; }; then
@@ -138,7 +160,7 @@ if [ "$compact" = 1 ] && { [ "$rebuild_compactor" = 1 ] || [ ! -x "$comp" ]; }; 
   }
   echo "building $comp from $compactor_ref ($rev)"
   tmp="$(mktemp -d)"
-  trap 'rm -rf "$tmp"' EXIT
+  tmps+=("$tmp")
   # The module replaces bitso-trading-platform/shared => ../../shared, so take both.
   git -C "$ROOT" archive "$rev" services/data-collector shared | tar -x -C "$tmp"
   mkdir -p "$ROOT/bin"
