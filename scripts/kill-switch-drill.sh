@@ -7,14 +7,16 @@
 # copies (own port, own 0600 token, live data off), and checks:
 #
 #   1. the gates: no/wrong token 401, foreign Origin 403, text/plain 415, wrong
-#      phrase / short reason / unknown field 400; nothing is written;
+#      phrase / short reason / unknown field 400, GET on a control 405;
+#      nothing is written;
 #   2. a ledger halted beforehand (gamma) is left alone and reported;
 #   3. halt-all halts the others, one audited change per ledger, one group id;
 #   4. ui-api's /risk reads every halt back (the executor's parser);
 #   5. the daily-executor itself reports HALTED for a halted copy (dry run,
 #      -no-record, no keys; it fetches public candles after printing the halt)
 #      and refuses to run over a corrupt halt file;
-#   6. ui-alerts -dry-run raises "Trading halted" for each halted copy;
+#   6. ui-alerts -dry-run raises "Trading halted" for each halted copy and
+#      names every halted ledger in the subject;
 #   7. a double press is serialised: one press halts, the other reports
 #      already_halted for every ledger;
 #   8. halt-all over a corrupt halt file replaces it with a valid halt;
@@ -27,19 +29,28 @@
 #   scripts/kill-switch-drill.sh                         # copies the stage ledger dir
 #   scripts/kill-switch-drill.sh --source <ledger dir>   # another ledger dir to copy
 #   scripts/kill-switch-drill.sh --keep                  # keep the work dir and ui-api logs
+#   scripts/kill-switch-drill.sh --offline               # executor gets no candles (no network)
+#   scripts/kill-switch-drill.sh --no-executor           # skip the daily-executor checks
 #   DRILL_DIR=<dir> DRILL_PORT=8095 scripts/kill-switch-drill.sh
+#
+# CI (.github/workflows/operator-ui.yml) runs it on the checked-in fixture:
+#   scripts/kill-switch-drill.sh --offline --source services/ui-api/internal/api/testdata
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 SOURCE="$ROOT/services/strategy-executor/daily-executor-data/stage"
 KEEP=0
 SKIP_EXECUTOR=0
+CANDLES_URL=()
 while [ $# -gt 0 ]; do
   case "$1" in
-    --source) SOURCE="$2"; shift 2 ;;
+    --source) SOURCE="$(cd "$2" && pwd)"; shift 2 ;;
     --keep) KEEP=1; shift ;;
-    --no-executor) SKIP_EXECUTOR=1; shift ;; # skip step 5 (needs network for candles)
-    -h|--help) sed -n '2,32p' "$0"; exit 0 ;;
+    --no-executor) SKIP_EXECUTOR=1; shift ;; # skip steps 5 and 8's executor runs
+    # The executor prints HALTED before it fetches candles; point the fetch at
+    # a closed local port so the drill never reaches the Bitso API.
+    --offline) CANDLES_URL=(-candles-base-url http://127.0.0.1:9); shift ;;
+    -h|--help) sed -n '2,37p' "$0"; exit 0 ;;
     *) echo "unknown flag $1" >&2; exit 2 ;;
   esac
 done
@@ -106,6 +117,7 @@ check "short reason -> 400" "$(post risk/halt-all '{"reason":"drill","by":"drill
 check "unknown field -> 400" "$(post risk/halt-all '{"reason":"Kill switch drill","by":"drill","confirm":"HALT ALL","ledgers":["alpha"]}' "${auth[@]}")" 400
 check "no halt file written" "$(ls "$WORK"/*/risk-state.json 2>/dev/null | wc -l | tr -d ' ')" 0
 check "every refusal audited in every ledger" "$(cat "$WORK"/{alpha,beta,gamma}/ui-audit.jsonl | python3 -c "import sys,json; print(sum(1 for l in sys.stdin if json.loads(l)['outcome'] in ('denied','refused')))")" 21
+check "GET on a control -> 405 (Allow: POST)" "$(curl -s -o /dev/null -D - -w '%{http_code}' "${auth[@]}" "$API/risk/halt-all" | tr -d '\r' | awk 'tolower($1)=="allow:"{a=$2} /^[0-9]+$/{c=$0} END{print c" "a}')" "405 POST"
 
 step "2-3. gamma halted beforehand, then the kill switch"
 check "halt gamma alone" "$(post 'risk/halt?ledger=gamma' '{"reason":"Drill: gamma halted beforehand","by":"drill","confirm":"gamma"}' "${auth[@]}")" 200
@@ -124,7 +136,7 @@ for n in alpha beta gamma; do check "$n" "$(halted $n)" "true file"; done
 step "5. daily-executor reads the halt (dry run, -no-record, no keys)"
 if [ "$SKIP_EXECUTOR" = 1 ]; then echo "  skipped (--no-executor)"; else
   out="$(env -u STAGE_BITSO_API_KEY -u STAGE_BITSO_API_SECRET timeout 60 "$WORK/bin/daily-executor" \
-    -ledger "$WORK/beta/ledger.jsonl" -books btc_mxn -no-record -env-file "" 2>&1 || true)"
+    -ledger "$WORK/beta/ledger.jsonl" -books btc_mxn -no-record -env-file "" ${CANDLES_URL[@]+"${CANDLES_URL[@]}"} 2>&1 || true)"
   echo "$out" | grep -q "^HALTED by $WORK/beta/risk-state.json: Kill switch drill: first press" \
     && ok "beta: HALTED, stage orders would be blocked and recorded" || bad "beta: no HALTED line: $(echo "$out" | head -3)"
 fi
@@ -134,6 +146,10 @@ alerts="$("$WORK/bin/ui-alerts" -dry-run -state "$WORK/alerts-state.json" -ledge
 for n in alpha beta gamma; do
   echo "$alerts" | grep -q "Trading halted ($n)" && ok "alert for $n" || bad "no alert for $n"
 done
+echo "$alerts" | grep -q '^Subject: \[mtb-ops\] .*Trading halted (alpha, beta, gamma)' \
+  && ok "subject names every halted ledger" || bad "subject: $(echo "$alerts" | grep '^Subject:')"
+echo "$alerts" | grep -q '^Halted ledgers now: alpha, beta, gamma$' \
+  && ok "body lists the halted ledgers" || bad "body lacks 'Halted ledgers now'"
 check "no alert state written" "$([ -e "$WORK/alerts-state.json" ] && echo yes || echo no)" no
 
 step "7. Double press is serialised"
@@ -157,7 +173,7 @@ step "8. Corrupt halt file"
 for n in alpha beta gamma; do post "risk/resume?ledger=$n" "{\"reason\":\"Drill: reset before the corrupt file\",\"by\":\"drill\",\"confirm\":\"$n\"}" "${auth[@]}" > /dev/null; done
 echo '{"halted": "yes"' > "$WORK/alpha/risk-state.json"
 if [ "$SKIP_EXECUTOR" = 0 ]; then
-  out="$("$WORK/bin/daily-executor" -ledger "$WORK/alpha/ledger.jsonl" -no-record -env-file "" 2>&1 || true)"
+  out="$("$WORK/bin/daily-executor" -ledger "$WORK/alpha/ledger.jsonl" -no-record -env-file "" ${CANDLES_URL[@]+"${CANDLES_URL[@]}"} 2>&1 || true)"
   echo "$out" | grep -q "nothing ran" && ok "daily-executor refuses to run (fails closed)" || bad "daily-executor ran over a corrupt halt file"
 fi
 check "page shows it as not halted with an error" "$(curl -s "$API/strategies" | json "[l for l in d['ledgers'] if l['name']=='alpha'][0]['halt_file'].get('error','') != ''")" True

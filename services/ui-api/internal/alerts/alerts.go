@@ -165,6 +165,29 @@ type Notice struct {
 	Reminder  []Entry // still open, last sent ≥ repeat ago
 	Resolved  []Entry // open before, gone now
 	Open      int     // open alerts after this run
+	// Halted is every ledger halted after this run (its risk.halted alert is
+	// open), sent or not, sorted: a kill switch over several ledgers is named
+	// in full even when some of them were halted (and announced) before.
+	Halted []string
+}
+
+// haltSuffix ends the key of a "Trading halted" alert (see FromRisk).
+const haltSuffix = "/risk.halted"
+
+// haltedLedgers returns the sorted ledgers of the halt alerts in groups.
+func haltedLedgers(groups ...[]Entry) []string {
+	seen := map[string]bool{}
+	var out []string
+	for _, g := range groups {
+		for _, e := range g {
+			if l, ok := strings.CutSuffix(e.Key, haltSuffix); ok && !seen[l] {
+				seen[l] = true
+				out = append(out, l)
+			}
+		}
+	}
+	sort.Strings(out)
+	return out
 }
 
 // Empty reports whether there is nothing to send.
@@ -197,7 +220,11 @@ func Diff(prev State, cur []Alert, now time.Time, repeat time.Duration) (Notice,
 			e.FirstSeen, e.LastSent = old.FirstSeen, old.LastSent
 		}
 		next.Open[a.Key] = e
+		if l, ok := strings.CutSuffix(a.Key, haltSuffix); ok {
+			n.Halted = append(n.Halted, l)
+		}
 	}
+	sort.Strings(n.Halted)
 	for k, e := range prev.Open {
 		if !seen[k] {
 			n.Resolved = append(n.Resolved, e)
@@ -231,14 +258,7 @@ func Render(n Notice, uiURL string) (subject, body string) {
 	if len(n.Resolved) > 0 {
 		parts = append(parts, fmt.Sprintf("%d resolved", len(n.Resolved)))
 	}
-	first := ""
-	for _, g := range [][]Entry{n.Escalated, n.New, n.Reminder, n.Resolved} {
-		if len(g) > 0 {
-			first = g[0].Title
-			break
-		}
-	}
-	subject = asciiLine("[mtb-ops] " + strings.Join(parts, ", ") + ": " + first)
+	subject = asciiLine("[mtb-ops] " + strings.Join(parts, ", ") + ": " + headline(n))
 
 	var b strings.Builder
 	mx := n.At.In(dailyledger.Mexico)
@@ -264,10 +284,49 @@ func Render(n Notice, uiURL string) (subject, body string) {
 	section("STILL OPEN (reminder)", n.Reminder, false)
 	section("RESOLVED", n.Resolved, true)
 	fmt.Fprintf(&b, "\nOpen alerts now: %d\n", n.Open)
+	if len(n.Halted) > 0 {
+		fmt.Fprintf(&b, "Halted ledgers now: %s\n", strings.Join(n.Halted, ", "))
+	}
 	if uiURL != "" {
 		fmt.Fprintf(&b, "Data health: %s/data-health\nRisk: %s/risk\n", strings.TrimRight(uiURL, "/"), strings.TrimRight(uiURL, "/"))
 	}
 	return subject, b.String()
+}
+
+// headline is the subject's "what": the title of the first entry (escalated,
+// new, reminder, resolved, in that order), except that halts are named
+// together as "Trading halted (a, b, c)". When the notice carries an open
+// halt, that lists every halted ledger (Notice.Halted), so a kill switch is
+// readable from the subject alone, and it leads: the 99-character SNS limit
+// then cuts the other title, not the ledger list. Resolved halts alone are
+// listed the same way under the "resolved" count.
+func headline(n Notice) string {
+	var first Entry
+	found := false
+	for _, g := range [][]Entry{n.Escalated, n.New, n.Reminder, n.Resolved} {
+		if len(g) > 0 {
+			first, found = g[0], true
+			break
+		}
+	}
+	if !found {
+		return ""
+	}
+	halts := func(ls []string) string { return "Trading halted (" + strings.Join(ls, ", ") + ")" }
+	open := haltedLedgers(n.Escalated, n.New, n.Reminder)
+	if len(open) > 0 && len(n.Halted) > 0 {
+		open = n.Halted
+	}
+	firstIsHalt := strings.HasSuffix(first.Key, haltSuffix)
+	switch {
+	case len(open) == 0 && firstIsHalt: // only resolved entries
+		return halts(haltedLedgers(n.Resolved))
+	case len(open) == 0:
+		return first.Title
+	case firstIsHalt:
+		return halts(open)
+	}
+	return halts(open) + "; " + first.Title
 }
 
 // asciiLine keeps printable ASCII (· and → become - and >), one line, ≤ 99.

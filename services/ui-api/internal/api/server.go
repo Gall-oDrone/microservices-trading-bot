@@ -240,6 +240,12 @@ func (s *Server) middleware(next http.Handler) http.Handler {
 			writeErr(w, http.StatusMethodNotAllowed, "read-only API")
 			return
 		}
+		if r.Method != http.MethodPost && isControlPath(r.URL.Path) {
+			// A control exists but only as POST: 405, not the catch-all 404.
+			h.Set("Allow", http.MethodPost)
+			writeErr(w, http.StatusMethodNotAllowed, "operator control: POST only")
+			return
+		}
 		next.ServeHTTP(w, r)
 		if strings.HasPrefix(r.URL.Path, "/api/") {
 			s.Log.Printf("%s %s %s", r.Method, r.URL.RequestURI(), time.Since(start).Round(time.Microsecond))

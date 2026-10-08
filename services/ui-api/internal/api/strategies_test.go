@@ -311,6 +311,18 @@ func TestStrategyControlErrors(t *testing.T) {
 	if code != http.StatusMethodNotAllowed {
 		t.Fatalf("POST delete = %d", code)
 	}
+
+	// A control path is POST only: GET is 405 with Allow, not 404.
+	for _, p := range []string{"/api/ui/risk/halt-all", "/api/ui/risk/halt", "/api/ui/risk/resume", "/api/ui/strategies/mom_eth/stop"} {
+		res, err := http.Get(ts.URL + p)
+		if err != nil {
+			t.Fatal(err)
+		}
+		res.Body.Close()
+		if res.StatusCode != http.StatusMethodNotAllowed || res.Header.Get("Allow") != http.MethodPost {
+			t.Fatalf("GET %s = %d (Allow %q)", p, res.StatusCode, res.Header.Get("Allow"))
+		}
+	}
 }
 
 func TestStrategiesExecutorDown(t *testing.T) {

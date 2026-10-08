@@ -22,6 +22,7 @@ on:
       - 'services/strategy-executor/internal/bitsodaily/**'
       - 'services/strategy-executor/internal/bitsostage/**'
       - 'services/ui-api/**'
+      - 'scripts/kill-switch-drill.sh'
       - 'web/**'
   workflow_dispatch: {}
 
@@ -73,6 +74,41 @@ jobs:
         run: |
           go vet ./...
           go test -race -count=1 ./...
+
+  drill:
+    name: Kill-switch drill (drill-only ui-api, fixture ledger, offline)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.22.x'
+          cache-dependency-path: |
+            shared/go.sum
+            services/strategy-executor/go.sum
+            services/ui-api/go.sum
+
+      # Plan §8.14. Copies the checked-in fixture ledger into three scratch
+      # ledgers, starts a throwaway ui-api on them (own token, live data off)
+      # and runs the 9-step drill: gates, halt-all, the executor's HALTED and
+      # fail-closed paths, the ui-alerts subject, the double press, a corrupt
+      # halt file, resume. --offline: the executor never reaches Bitso.
+      - name: kill-switch drill
+        env:
+          DRILL_DIR: ${{ runner.temp }}/kill-switch-drill
+        run: scripts/kill-switch-drill.sh --offline --keep --source services/ui-api/internal/api/testdata
+
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: kill-switch-drill
+          path: |
+            ${{ runner.temp }}/kill-switch-drill/ui-api.log
+            ${{ runner.temp }}/kill-switch-drill/*/ui-audit.jsonl
+            ${{ runner.temp }}/kill-switch-drill/*/risk-state.json
+          retention-days: 7
 
   web:
     name: Web (typecheck, lint, format, test, build)

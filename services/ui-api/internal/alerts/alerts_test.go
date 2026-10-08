@@ -187,6 +187,46 @@ func TestRender(t *testing.T) {
 	}
 }
 
+func TestRenderHaltSubject(t *testing.T) {
+	t0 := time.Date(2026, 10, 8, 12, 0, 0, 0, time.UTC)
+	halt := func(l string) Alert {
+		return Alert{Key: l + haltSuffix, Severity: Warning, Title: "Trading halted (" + l + ")", Message: "drill"}
+	}
+	// gamma was halted (and announced) before the kill switch.
+	_, s := Diff(State{}, []Alert{halt("gamma")}, t0, 12*time.Hour)
+
+	// The kill switch halts alpha and beta: the subject names all three.
+	n, s := Diff(s, Merge([]Alert{halt("beta"), halt("alpha"), halt("gamma")}), t0.Add(time.Minute), 12*time.Hour)
+	subj, body := Render(n, "")
+	if subj != "[mtb-ops] 2 warning: Trading halted (alpha, beta, gamma)" {
+		t.Fatalf("kill switch subject %q", subj)
+	}
+	if !strings.Contains(body, "Halted ledgers now: alpha, beta, gamma\n") {
+		t.Fatalf("body lacks the halted ledgers:\n%s", body)
+	}
+
+	// With a critical alert, the halts still lead (the SNS limit cuts the
+	// other title, never the halted ledgers).
+	bad := Alert{Key: "delta/risk.halt_file", Severity: Critical, Title: "Halt file invalid (delta)"}
+	n, s = Diff(s, Merge([]Alert{halt("alpha"), halt("beta"), halt("gamma"), bad, halt("epsilon")}), t0.Add(2*time.Minute), 12*time.Hour)
+	if subj, _ = Render(n, ""); subj != "[mtb-ops] 1 critical, 1 warning: Trading halted (alpha, beta, epsilon, gamma); Halt file invalid..." {
+		t.Fatalf("mixed subject %q", subj)
+	}
+
+	// No halt news: halts are not repeated in an unrelated subject.
+	stale := Alert{Key: "archive/stale", Severity: Warning, Title: "Collector flushes - btc_usd"}
+	n, s = Diff(s, Merge([]Alert{halt("alpha"), halt("beta"), halt("gamma"), bad, halt("epsilon"), stale}), t0.Add(3*time.Minute), 12*time.Hour)
+	if subj, _ = Render(n, ""); subj != "[mtb-ops] 1 warning: Collector flushes - btc_usd" {
+		t.Fatalf("unrelated subject %q", subj)
+	}
+
+	// Resume everything: the resolved halts are named together.
+	n, _ = Diff(s, []Alert{stale}, t0.Add(4*time.Minute), 12*time.Hour)
+	if subj, _ = Render(n, ""); subj != "[mtb-ops] 5 resolved: Trading halted (alpha, beta, epsilon, gamma)" {
+		t.Fatalf("resolved subject %q", subj)
+	}
+}
+
 type fakeSNS struct {
 	in   *sns.PublishInput
 	err  error

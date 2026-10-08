@@ -803,12 +803,23 @@ unfinished bar is labelled provisional. The decision path never reads live data.
   - a press over a corrupt halt file replaced it with a valid halt;
   - the stage ledger dir (ledger checksum, no `risk-state.json`) and its S3 copy were unchanged.
 - **Repeatable.** `scripts/kill-switch-drill.sh` does all of the above except the browser part in
-  a temp dir with its own token and port and exits non-zero on any failure (35 checks; `--keep`
-  keeps the work dir, `--source <dir>` copies another ledger dir, `--no-executor` skips the
-  executor step, which fetches public candles). Run it after any change to the controls.
-- **Findings.** None blocking. Notes: a `GET` on a control path is 404 (only POST is routed;
-  other methods are 405), and the alert e-mail subject names only the first halted ledger (the
-  body lists all).
+  a temp dir with its own token and port and exits non-zero on any failure (38 checks; `--keep`
+  keeps the work dir, `--source <dir>` copies another ledger dir, `--offline` points the
+  executor's candle fetch at a closed local port, `--no-executor` skips the executor runs). Run it
+  after any change to the controls.
+- **In CI.** The `drill` job of `.github/workflows/operator-ui.yml` runs it on every push that
+  touches ui-api, the daily-executor, the shared risk/ledger packages or the script:
+  `--offline --source services/ui-api/internal/api/testdata` (the checked-in fixture ledger), so
+  it needs no stage data, no keys, no AWS and no Bitso. On failure it uploads the ui-api log, the
+  audit logs and the halt files.
+- **Findings, fixed (2026-10-08).**
+  - A `GET` on a control path was 404 (it fell through to the `/api/` catch-all). It is now
+    **405 with `Allow: POST`**; the drill checks it.
+  - The alert e-mail subject named only the first halted ledger. It now names **every halted
+    ledger**, halts first (so the 99-character SNS limit cuts the other title, not the list), e.g.
+    `[mtb-ops] 2 warning: Trading halted (alpha, beta, gamma)`, including a ledger halted (and
+    announced) before the kill switch; the body ends with `Halted ledgers now: …`. A subject
+    without halt news does not repeat them; resolved halts are named together the same way.
 
 ---
 
@@ -837,8 +848,9 @@ export PATH=$PWD/.tools/node/bin:$PATH              # portable Node 22
 #   (cd services/strategy-executor && STRATEGY_HOLD_FILE=$HOME/.config/mtb/strategy-holds.json go run ./cmd)
 #   go run ./cmd -operator-token-file ~/.config/mtb/operator-token -strategy-executor-url http://127.0.0.1:8081
 #   the page is http://127.0.0.1:5173/strategies (the kill switch halts every local ledger: rehearse on a drill copy)
-# Kill-switch drill (§8.14): scratch copies, a throwaway ui-api, 35 checks; touches no real ledger:
-#   scripts/kill-switch-drill.sh            # --keep, --source <ledger dir>, --no-executor
+# Kill-switch drill (§8.14): scratch copies, a throwaway ui-api, 38 checks; touches no real ledger:
+#   scripts/kill-switch-drill.sh            # --keep, --source <ledger dir>, --offline, --no-executor
+#   scripts/kill-switch-drill.sh --offline --source services/ui-api/internal/api/testdata   # as CI runs it
 cd web && npm ci && npm run dev                     # http://127.0.0.1:5173
 # or, without the backend:
 npm run dev:mock
