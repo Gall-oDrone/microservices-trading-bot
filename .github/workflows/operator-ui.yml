@@ -84,7 +84,7 @@ jobs:
       - name: gofmt (new packages)
         run: |
           out=$(gofmt -l shared/pkg/risk shared/pkg/dailyledger shared/pkg/dailyrule \
-            shared/pkg/bitsodaily shared/pkg/varmodel \
+            shared/pkg/bitsodaily shared/pkg/varmodel shared/pkg/montecarlo \
             services/strategy-executor/cmd/daily-executor services/ui-api \
             services/strategy-executor/internal/dailyrule \
             services/strategy-executor/internal/bitsodaily \
@@ -92,6 +92,7 @@ jobs:
             services/strategy-executor/internal/server/backtest_deprecation.go \
             services/strategy-executor/internal/server/backtest_deprecation_test.go \
             services/strategy-executor/cmd/daily-reconcile \
+            services/strategy-executor/cmd/daily-montecarlo \
             services/strategy-executor/internal/reconcile \
             services/strategy-executor/internal/stageenv \
             services/strategy-executor/cmd/daily-executor/stage.go \
@@ -101,14 +102,14 @@ jobs:
       - name: shared
         working-directory: shared
         run: |
-          go vet ./pkg/risk ./pkg/dailyledger ./pkg/dailyrule ./pkg/bitsodaily ./pkg/varmodel
-          go test -race -count=1 ./pkg/risk ./pkg/dailyledger ./pkg/dailyrule ./pkg/bitsodaily ./pkg/varmodel
+          go vet ./pkg/risk ./pkg/dailyledger ./pkg/dailyrule ./pkg/bitsodaily ./pkg/varmodel ./pkg/montecarlo
+          go test -race -count=1 ./pkg/risk ./pkg/dailyledger ./pkg/dailyrule ./pkg/bitsodaily ./pkg/varmodel ./pkg/montecarlo
 
       - name: daily-executor, daily-research, deprecated backtest routes, daily-reconcile
         working-directory: services/strategy-executor
         run: |
-          go vet ./cmd/daily-executor ./internal/dailyexec ./internal/dailyrule ./internal/bitsodaily ./cmd/daily-research ./internal/server ./cmd/daily-reconcile ./internal/reconcile ./internal/stageenv
-          go test -race -count=1 ./cmd/daily-executor ./internal/dailyexec ./internal/dailyrule ./cmd/daily-research ./internal/server ./cmd/daily-reconcile ./internal/reconcile
+          go vet ./cmd/daily-executor ./internal/dailyexec ./internal/dailyrule ./internal/bitsodaily ./cmd/daily-research ./internal/server ./cmd/daily-reconcile ./internal/reconcile ./internal/stageenv ./cmd/daily-montecarlo
+          go test -race -count=1 ./cmd/daily-executor ./internal/dailyexec ./internal/dailyrule ./cmd/daily-research ./internal/server ./cmd/daily-reconcile ./internal/reconcile ./cmd/daily-montecarlo
 
       # Plan §6.4.10: scripts/daily-executor-run.sh reconciles after each stage
       # run without changing the exit code (fake binaries, no network).

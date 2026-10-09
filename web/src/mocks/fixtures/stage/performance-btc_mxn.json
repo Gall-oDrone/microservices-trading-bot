@@ -1,0 +1,205 @@
+{
+  "ledger": "stage",
+  "book": "btc_mxn",
+  "quote": "mxn",
+  "generated_at": "2026-10-09T20:08:35Z",
+  "candles_file": "btc_mxn_daily_2026-10-04.csv",
+  "pnl": {
+    "since": "2026-09-30",
+    "legs": 1,
+    "position_btc": 0.00099999,
+    "avg_cost": 1522875.0187501872,
+    "cost_basis": 1522.85979,
+    "invested": 1522.85979,
+    "mark": 1562180,
+    "mark_date": "2026-10-04",
+    "realized": 0,
+    "unrealized": 39.304588200000126,
+    "total": 39.304588200000126,
+    "fees": 11.876447833903853,
+    "slippage": 6.150911919314218,
+    "market_pnl": 57.3319479532182,
+    "return_on_invested": 0.025809722246327174,
+    "paper_return": 0.03641634987295084,
+    "shortfall_bps": -106.06627626623663,
+    "break_even_primary": 1533610.290785687,
+    "break_even_pessimistic": 1536395.297367017
+  },
+  "open_trade": {
+    "entry": "2026-08-20",
+    "entry_price": 1176270,
+    "days": 45,
+    "return": 0.3280794375441012,
+    "best_close": 1570090,
+    "worst_close": 1275000,
+    "max_favorable": 0.33480408409633844,
+    "max_adverse": 0.083934810885256,
+    "exit_below": 1364552.2000000002,
+    "exit_distance": -0.12650770077711904
+  },
+  "paper": {
+    "days": 4,
+    "meaningful": false,
+    "return": 0.03903971975136633,
+    "hold_return": 0.03903971975136633,
+    "ann_vol": 0.2993181155308685,
+    "sharpe": 11.841788637404111,
+    "sortino": 73.65155744817356,
+    "max_dd": 0.005037927762102878,
+    "hold_max_dd": 0.005037927762102878,
+    "calmar": 6339.307243823955,
+    "hold_sharpe": 11.841788637404111
+  },
+  "history": {
+    "from": "2018-01-01",
+    "leg_bps": 70,
+    "trips": {
+      "count": 103,
+      "win_rate": 0.17475728155339806,
+      "mean": 0.04117022197040423,
+      "median": -0.03055953948196699,
+      "avg_win": 0.4480601833948664,
+      "avg_loss": -0.04499471103712895,
+      "payoff": 9.958063360494391,
+      "best": {
+        "entry": "2020-10-10",
+        "exit": "2021-04-19",
+        "days": 191,
+        "return": 3.653493365199493
+      },
+      "worst": {
+        "entry": "2021-05-12",
+        "exit": "2021-05-13",
+        "days": 1,
+        "return": -0.12575969827255262
+      },
+      "compounded": 1.6777064780881021,
+      "compounded_ex_best": -0.4245814342160752,
+      "compounded_ex_best_three": -0.8579186843960531,
+      "mean_days": 15.601941747572816,
+      "open": {
+        "entry": "2026-08-20",
+        "exit": "2026-10-04",
+        "days": 45,
+        "return": 0.3187828814812925
+      },
+      "window": "2018-01-01..2026-10-04"
+    },
+    "calendar": {
+      "years": [
+        {
+          "year": 2018,
+          "from": "2018-01-01",
+          "to": "2018-12-31",
+          "trend_return": -0.45519087168424677,
+          "hold_return": -0.7702808175880775,
+          "trend_max_dd": 0.5215083740100945,
+          "hold_max_dd": 0.8177047374868452,
+          "round_trips": 11,
+          "beats_hold": true,
+          "shallower_dd": true
+        },
+        {
+          "year": 2019,
+          "from": "2019-01-01",
+          "to": "2019-12-31",
+          "trend_return": 0.47204487010225193,
+          "hold_return": 0.8930516498164277,
+          "trend_max_dd": 0.5319425875133392,
+          "hold_max_dd": 0.4971681671259423,
+          "round_trips": 9,
+          "beats_hold": false,
+          "shallower_dd": false
+        },
+        {
+          "year": 2020,
+          "from": "2020-01-01",
+          "to": "2020-12-31",
+          "trend_return": 1.8101592010365977,
+          "hold_return": 3.1799650598994624,
+          "trend_max_dd": 0.249646863420096,
+          "hold_max_dd": 0.42465581658078777,
+          "round_trips": 11,
+          "beats_hold": false,
+          "shallower_dd": true
+        },
+        {
+          "year": 2021,
+          "from": "2021-01-01",
+          "to": "2021-12-31",
+          "trend_return": 0.7031909046254918,
+          "hold_return": 0.655088071512206,
+          "trend_max_dd": 0.38002316817416315,
+          "hold_max_dd": 0.5369811832216411,
+          "round_trips": 11,
+          "beats_hold": true,
+          "shallower_dd": true
+        },
+        {
+          "year": 2022,
+          "from": "2022-01-01",
+          "to": "2022-12-31",
+          "trend_return": -0.5106131628717414,
+          "hold_return": -0.659599023662651,
+          "trend_max_dd": 0.5277642079685899,
+          "hold_max_dd": 0.6880324742041961,
+          "round_trips": 14,
+          "beats_hold": true,
+          "shallower_dd": true
+        },
+        {
+          "year": 2023,
+          "from": "2023-01-01",
+          "to": "2023-12-31",
+          "trend_return": 0.6091429028433313,
+          "hold_return": 1.1099864349895863,
+          "trend_max_dd": 0.25228664580767335,
+          "hold_max_dd": 0.2296189791516894,
+          "round_trips": 9,
+          "beats_hold": false,
+          "shallower_dd": false
+        },
+        {
+          "year": 2024,
+          "from": "2024-01-01",
+          "to": "2024-12-31",
+          "trend_return": 0.3105887738231947,
+          "hold_return": 1.6840332572772962,
+          "trend_max_dd": 0.43862190007013013,
+          "hold_max_dd": 0.22282476475989416,
+          "round_trips": 17,
+          "beats_hold": false,
+          "shallower_dd": false
+        },
+        {
+          "year": 2025,
+          "from": "2025-01-01",
+          "to": "2025-12-31",
+          "trend_return": -0.18953615576241856,
+          "hold_return": -0.20392799907952874,
+          "trend_max_dd": 0.2859525491163484,
+          "hold_max_dd": 0.3228253275109169,
+          "round_trips": 16,
+          "beats_hold": true,
+          "shallower_dd": true
+        },
+        {
+          "year": 2026,
+          "from": "2026-01-01",
+          "to": "2026-10-04",
+          "trend_return": 0.052483265688094916,
+          "hold_return": -0.02368799638728325,
+          "trend_max_dd": 0.2269873471249072,
+          "hold_max_dd": 0.397170844204249,
+          "round_trips": 9,
+          "beats_hold": true,
+          "shallower_dd": true
+        }
+      ],
+      "beats_hold": 5,
+      "shallower_dd": 6,
+      "rate_beats_hold": 0.5555555555555556,
+      "rate_shallower_dd": 0.6666666666666666
+    }
+  }
+}

@@ -65,6 +65,8 @@ type Server struct {
 	// StrategyAuditPath is the strategy start/stop audit log; empty means
 	// ui-strategy-audit.jsonl next to the first local ledger.
 	StrategyAuditPath string
+	// mc caches Monte Carlo runs per candle file and parameters (§6.4.11).
+	mc mcCache
 }
 
 var (
@@ -202,6 +204,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/ui/forward-tests/{book}", s.forwardTest)
 	mux.HandleFunc("GET /api/ui/forward-tests/{book}/ledger", s.ledger)
 	mux.HandleFunc("GET /api/ui/forward-tests/{book}/candles", s.candles)
+	mux.HandleFunc("GET /api/ui/forward-tests/{book}/performance", s.performance)
+	mux.HandleFunc("GET /api/ui/forward-tests/{book}/montecarlo", s.monteCarlo)
 	mux.HandleFunc("GET /api/ui/risk", s.riskStatus)
 	mux.HandleFunc("GET /api/ui/live", s.liveSnapshot)
 	mux.HandleFunc("GET /api/ui/stream", s.stream)

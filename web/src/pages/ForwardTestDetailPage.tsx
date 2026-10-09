@@ -1,10 +1,17 @@
 import { useState } from 'react'
 import { Link, useParams } from 'react-router'
-import { useCandles, useForwardTests, useLedger, useLedgerSearch } from '../api/client'
+import { useCandles, useForwardTests, useLedger, useLedgerSearch, usePerformance } from '../api/client'
 import { useLiveStream } from '../api/live'
 import type { Fill, LedgerRecord } from '../api/schemas'
 import { EquityChart, PriceChart } from '../components/charts'
 import { LiveStrip } from '../components/live'
+import {
+  MonteCarloSection,
+  OpenTradeSection,
+  PaperStatsSection,
+  PnLSection,
+  TradeDistributionSection,
+} from '../components/performance'
 import { Badge, Banner, CardSkeleton, Empty, ErrorState, LedgerBadge, SignalPill, Stat } from '../components/ui'
 import {
   bookLabel,
@@ -179,6 +186,7 @@ export function ForwardTestDetailPage() {
   const summary = useForwardTests()
   const ledger = useLedger(book)
   const candles = useCandles(book, days)
+  const perf = usePerformance(book)
   const ft = summary.data?.books.find((b) => b.book === book)
   const search = useLedgerSearch()
   const live = useLiveStream(ft ? [book] : [])
@@ -346,6 +354,67 @@ export function ForwardTestDetailPage() {
           )}
         </section>
       </div>
+
+      <section className="card" style={{ marginBottom: 16 }} aria-labelledby="pnl-h" id="pnl">
+        <div className="card-head">
+          <div>
+            <h2 id="pnl-h">Stage profit and loss</h2>
+            <div className="sub">
+              What the stage position made, split into the market move, fees and slippage, and compared with the paper
+              account over the same days.
+            </div>
+          </div>
+        </div>
+        {perf.isLoading && <CardSkeleton lines={3} />}
+        {perf.isError && <ErrorState error={perf.error} onRetry={() => perf.refetch()} />}
+        {perf.data && <PnLSection perf={perf.data} />}
+      </section>
+
+      <div className="grid grid-2" style={{ marginBottom: 16 }}>
+        <section className="card" aria-labelledby="open-trade-h">
+          <div className="card-head">
+            <div>
+              <h2 id="open-trade-h">The rule&apos;s trade in progress</h2>
+              <div className="sub">Backtest view from the full candle history: entry at the open after the flip.</div>
+            </div>
+          </div>
+          {perf.data && <OpenTradeSection perf={perf.data} />}
+        </section>
+        <section className="card" aria-labelledby="paper-stats-h">
+          <div className="card-head">
+            <div>
+              <h2 id="paper-stats-h">Forward-test statistics</h2>
+              <div className="sub">Daily, 365-day year, no risk-free rate.</div>
+            </div>
+          </div>
+          {perf.data && <PaperStatsSection perf={perf.data} />}
+        </section>
+      </div>
+
+      <section className="card" style={{ marginBottom: 16 }} aria-labelledby="trades-h" id="trade-distribution">
+        <div className="card-head">
+          <div>
+            <h2 id="trades-h">Expected profit per trade (backtest)</h2>
+            <div className="sub">
+              The frozen rule&apos;s closed round trips on Bitso&apos;s daily history at the pre-registered primary
+              cost, and the rule against buy-and-hold per calendar year (the pre-registration&apos;s base rates).
+            </div>
+          </div>
+        </div>
+        {perf.data && <TradeDistributionSection perf={perf.data} />}
+      </section>
+
+      <section className="card" style={{ marginBottom: 16 }} aria-labelledby="mc-h" id="monte-carlo">
+        <div className="card-head">
+          <div>
+            <h2 id="mc-h">Monte Carlo: the next 12 months</h2>
+            <div className="sub">
+              The rule against buy-and-hold on resampled price paths that continue from the last close.
+            </div>
+          </div>
+        </div>
+        {ft ? <MonteCarloSection book={book} /> : <CardSkeleton lines={4} />}
+      </section>
 
       <section className="card" style={{ marginBottom: 16 }} aria-labelledby="fills-h">
         <div className="card-head">

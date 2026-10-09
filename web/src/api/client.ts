@@ -9,6 +9,8 @@ import {
   healthSchema,
   ledgerResponseSchema,
   ledgersResponseSchema,
+  monteCarloResponseSchema,
+  performanceResponseSchema,
   riskResponseSchema,
   runDocSchema,
   runsResponseSchema,
@@ -105,6 +107,8 @@ export const queryKeys = {
   dataHealth: (ledger: string) => ['data-health', ledger] as const,
   controls: (ledger: string) => ['controls', ledger] as const,
   strategies: ['strategies'] as const,
+  performance: (ledger: string, book: string) => ['performance', ledger, book] as const,
+  monteCarlo: (ledger: string, book: string, q: string) => ['montecarlo', ledger, book, q] as const,
 }
 
 export function useForwardTests() {
@@ -137,6 +141,39 @@ export function useCandles(book: string, days: number) {
         signal,
       ),
     staleTime: 5 * 60_000,
+  })
+}
+
+/** Stage P&L, paper statistics and the rule's trade distribution (plan §6.4.11). */
+export function usePerformance(book: string) {
+  const ledger = useLedgerName()
+  return useQuery({
+    queryKey: queryKeys.performance(ledger, book),
+    queryFn: ({ signal }) =>
+      fetchJSON(
+        withLedger(`/forward-tests/${encodeURIComponent(book)}/performance`, ledger),
+        performanceResponseSchema,
+        signal,
+      ),
+    refetchInterval: REFRESH_MS,
+  })
+}
+
+export type MonteCarloParams = { cost: 'primary' | 'pessimistic' | 'realized'; block: number; paths: number }
+
+/** The Monte Carlo of the rule vs buy-and-hold; ui-api caches runs per candle file. */
+export function useMonteCarlo(book: string, p: MonteCarloParams) {
+  const ledger = useLedgerName()
+  const q = `cost=${p.cost}&block=${p.block}&paths=${p.paths}`
+  return useQuery({
+    queryKey: queryKeys.monteCarlo(ledger, book, q),
+    queryFn: ({ signal }) =>
+      fetchJSON(
+        withLedger(`/forward-tests/${encodeURIComponent(book)}/montecarlo?${q}`, ledger),
+        monteCarloResponseSchema,
+        signal,
+      ),
+    staleTime: 10 * 60_000,
   })
 }
 

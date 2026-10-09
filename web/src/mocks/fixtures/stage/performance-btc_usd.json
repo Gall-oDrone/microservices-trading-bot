@@ -1,0 +1,169 @@
+{
+  "ledger": "stage",
+  "book": "btc_usd",
+  "quote": "usd",
+  "generated_at": "2026-10-09T20:08:35Z",
+  "candles_file": "btc_usd_daily_2026-10-04.csv",
+  "pnl": {
+    "since": "2026-09-30",
+    "legs": 1,
+    "position_btc": 0.0009975,
+    "avg_cost": 83690.22556390977,
+    "cost_basis": 83.481,
+    "invested": 83.481,
+    "mark": 85760,
+    "mark_date": "2026-10-04",
+    "realized": 0,
+    "unrealized": 2.0645999999999987,
+    "total": 2.0645999999999987,
+    "fees": 0.2087025,
+    "slippage": 0.1352186667626478,
+    "market_pnl": 2.4085211667626467,
+    "return_on_invested": 0.02473137600172493,
+    "paper_return": 0.029457662113173244,
+    "shortfall_bps": -47.26286111448316,
+    "break_even_primary": 84026.33088745961,
+    "break_even_pessimistic": 84076.97967039359
+  },
+  "open_trade": {
+    "entry": "2026-08-18",
+    "entry_price": 64157,
+    "days": 47,
+    "return": 0.336720856648534,
+    "best_close": 86432,
+    "worst_close": 64224,
+    "max_favorable": 0.34719516186854116,
+    "max_adverse": 0.0010443131692565721,
+    "exit_below": 79068.84000000007,
+    "exit_distance": -0.07802192164179023
+  },
+  "paper": {
+    "days": 4,
+    "meaningful": false,
+    "return": 0.024306991245952814,
+    "hold_return": 0.024306991245952814,
+    "ann_vol": 0.22668680806960548,
+    "sharpe": 9.7808763778914,
+    "sortino": 42.650204180925684,
+    "max_dd": 0.005003285765679322,
+    "hold_max_dd": 0.005003285765679322,
+    "calmar": 1588.6549923240182,
+    "hold_sharpe": 9.7808763778914
+  },
+  "history": {
+    "from": "2021-01-01",
+    "leg_bps": 40,
+    "trips": {
+      "count": 55,
+      "win_rate": 0.2,
+      "mean": 0.03454062252192988,
+      "median": -0.024005327008101207,
+      "avg_win": 0.3344000815225759,
+      "avg_loss": -0.04042424222823163,
+      "payoff": 8.2722659248523,
+      "best": {
+        "entry": "2021-01-01",
+        "exit": "2021-04-18",
+        "days": 107,
+        "return": 0.8643040729121259
+      },
+      "worst": {
+        "entry": "2021-05-12",
+        "exit": "2021-05-13",
+        "days": 1,
+        "return": -0.12741964610632328
+      },
+      "compounded": 2.23392463511322,
+      "compounded_ex_best": 0.7346551359841669,
+      "compounded_ex_best_three": -0.2625588308562232,
+      "mean_days": 19.30909090909091,
+      "open": {
+        "entry": "2026-08-18",
+        "exit": "2026-10-04",
+        "days": 47,
+        "return": 0.33137397322193984
+      },
+      "window": "2021-01-01..2026-10-04"
+    },
+    "calendar": {
+      "years": [
+        {
+          "year": 2021,
+          "from": "2021-01-01",
+          "to": "2021-12-31",
+          "trend_return": 1.023027353810884,
+          "hold_return": 0.5982965384149714,
+          "trend_max_dd": 0.3698423975848699,
+          "hold_max_dd": 0.5381792556318891,
+          "round_trips": 9,
+          "beats_hold": true,
+          "shallower_dd": true
+        },
+        {
+          "year": 2022,
+          "from": "2022-01-01",
+          "to": "2022-12-31",
+          "trend_return": -0.5128342249924734,
+          "hold_return": -0.6522591576151435,
+          "trend_max_dd": 0.5334740420338115,
+          "hold_max_dd": 0.6687198359478309,
+          "round_trips": 10,
+          "beats_hold": true,
+          "shallower_dd": true
+        },
+        {
+          "year": 2023,
+          "from": "2023-01-01",
+          "to": "2023-12-31",
+          "trend_return": 1.1485708651908393,
+          "hold_return": 1.5333787095681624,
+          "trend_max_dd": 0.1581127520110021,
+          "hold_max_dd": 0.1985011221545366,
+          "round_trips": 8,
+          "beats_hold": false,
+          "shallower_dd": true
+        },
+        {
+          "year": 2024,
+          "from": "2024-01-01",
+          "to": "2024-12-31",
+          "trend_return": 0.725995845721328,
+          "hold_return": 1.19834992030684,
+          "trend_max_dd": 0.2839347442111369,
+          "hold_max_dd": 0.2746048039416958,
+          "round_trips": 10,
+          "beats_hold": false,
+          "shallower_dd": false
+        },
+        {
+          "year": 2025,
+          "from": "2025-01-01",
+          "to": "2025-12-31",
+          "trend_return": 0.06646547700175898,
+          "hold_return": -0.07151185717796127,
+          "trend_max_dd": 0.1465588621523815,
+          "hold_max_dd": 0.3268781969309462,
+          "round_trips": 9,
+          "beats_hold": true,
+          "shallower_dd": true
+        },
+        {
+          "year": 2026,
+          "from": "2026-01-01",
+          "to": "2026-10-04",
+          "trend_return": 0.09108736632626258,
+          "hold_return": -0.029075788776919298,
+          "trend_max_dd": 0.23088324803273033,
+          "hold_max_dd": 0.38695688259949373,
+          "round_trips": 11,
+          "beats_hold": true,
+          "shallower_dd": true
+        }
+      ],
+      "beats_hold": 4,
+      "shallower_dd": 5,
+      "rate_beats_hold": 0.6666666666666666,
+      "rate_shallower_dd": 0.8333333333333334
+    }
+  }
+}

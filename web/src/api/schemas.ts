@@ -898,3 +898,162 @@ export const dataHealthSchema = z.object({
   thresholds: z.record(z.string(), z.string()),
 })
 export type DataHealth = z.infer<typeof dataHealthSchema>
+
+/* ---------- Plan §6.4.11: P&L, statistics and Monte Carlo ---------- */
+
+/** api.StagePnL: average-cost P&L of the stage position, quote currency. */
+const stagePnlSchema = z.object({
+  since: z.string(),
+  legs: z.number(),
+  position_btc: z.number(),
+  avg_cost: z.number(),
+  cost_basis: z.number(),
+  invested: z.number(),
+  mark: z.number(),
+  mark_date: z.string(),
+  realized: z.number(),
+  unrealized: z.number(),
+  total: z.number(),
+  fees: z.number(),
+  slippage: z.number(),
+  market_pnl: z.number(),
+  return_on_invested: z.number(),
+  paper_return: z.number(),
+  shortfall_bps: z.number(),
+  break_even_primary: z.number(),
+  break_even_pessimistic: z.number(),
+})
+export type StagePnL = z.infer<typeof stagePnlSchema>
+
+const tripSchema = z.object({ entry: z.string(), exit: z.string(), days: z.number(), return: z.number() })
+
+/** montecarlo.Trips: the rule's closed round trips, net of costs. */
+const tripsSchema = z.object({
+  count: z.number(),
+  win_rate: z.number(),
+  mean: z.number(),
+  median: z.number(),
+  avg_win: z.number(),
+  avg_loss: z.number(),
+  payoff: z.number(),
+  best: tripSchema,
+  worst: tripSchema,
+  compounded: z.number(),
+  compounded_ex_best: z.number(),
+  compounded_ex_best_three: z.number(),
+  mean_days: z.number(),
+  open: tripSchema.nullable(),
+  window: z.string(),
+})
+export type Trips = z.infer<typeof tripsSchema>
+
+/** montecarlo.Calendar: the rule against buy-and-hold per calendar year. */
+const calendarSchema = z.object({
+  years: z.array(
+    z.object({
+      year: z.number(),
+      from: z.string(),
+      to: z.string(),
+      trend_return: z.number(),
+      hold_return: z.number(),
+      trend_max_dd: z.number(),
+      hold_max_dd: z.number(),
+      round_trips: z.number(),
+      beats_hold: z.boolean(),
+      shallower_dd: z.boolean(),
+    }),
+  ),
+  beats_hold: z.number(),
+  shallower_dd: z.number(),
+  rate_beats_hold: z.number(),
+  rate_shallower_dd: z.number(),
+})
+export type Calendar = z.infer<typeof calendarSchema>
+
+export const performanceResponseSchema = z.object({
+  ledger: z.string(),
+  book: z.string(),
+  quote: z.string(),
+  generated_at: z.string(),
+  candles_file: z.string(),
+  pnl: stagePnlSchema.nullable(),
+  open_trade: z
+    .object({
+      entry: z.string(),
+      entry_price: z.number(),
+      days: z.number(),
+      return: z.number(),
+      best_close: z.number(),
+      worst_close: z.number(),
+      max_favorable: z.number(),
+      max_adverse: z.number(),
+      exit_below: z.number(),
+      exit_distance: z.number(),
+    })
+    .nullable(),
+  paper: z.object({
+    days: z.number(),
+    meaningful: z.boolean(),
+    return: z.number(),
+    hold_return: z.number(),
+    ann_vol: z.number(),
+    sharpe: z.number(),
+    sortino: z.number(),
+    max_dd: z.number(),
+    hold_max_dd: z.number(),
+    calmar: z.number(),
+    hold_sharpe: z.number(),
+  }),
+  history: z.object({ from: z.string(), leg_bps: z.number(), trips: tripsSchema, calendar: calendarSchema }).nullable(),
+})
+export type PerformanceResponse = z.infer<typeof performanceResponseSchema>
+
+const distSchema = z.object({
+  mean: z.number(),
+  p5: z.number(),
+  p25: z.number(),
+  p50: z.number(),
+  p75: z.number(),
+  p95: z.number(),
+})
+export type Dist = z.infer<typeof distSchema>
+const probSchema = z.object({ p: z.number(), lo: z.number(), hi: z.number() })
+export type Prob = z.infer<typeof probSchema>
+
+/** GET /forward-tests/{book}/montecarlo: the rule vs buy-and-hold on resampled paths. */
+export const monteCarloResponseSchema = z.object({
+  ledger: z.string(),
+  book: z.string(),
+  cost: z.enum(['primary', 'pessimistic', 'realized']),
+  leg_bps: z.number(),
+  candles_file: z.string(),
+  summary: z.object({
+    config: z.object({
+      paths: z.number(),
+      horizon_days: z.number(),
+      mean_block_days: z.number(),
+      seed: z.number(),
+      sma: z.number(),
+    }),
+    sample_from: z.string(),
+    sample_to: z.string(),
+    sample_days: z.number(),
+    start_close: z.number(),
+    start_long: z.boolean(),
+    trend_return: distSchema,
+    hold_return: distSchema,
+    excess: distSchema,
+    trend_max_dd: distSchema,
+    hold_max_dd: distSchema,
+    trend_round_trips: distSchema,
+    p_trend_loss: probSchema,
+    p_hold_loss: probSchema,
+    p_beats_hold: probSchema,
+    p_shallower_dd: probSchema,
+    histogram: z.array(z.object({ lo: z.number(), hi: z.number(), trend: z.number(), hold: z.number() })),
+  }),
+  calibration: calendarSchema,
+  elapsed_ms: z.number(),
+  cached: z.boolean(),
+})
+export type MonteCarloResponse = z.infer<typeof monteCarloResponseSchema>

@@ -256,6 +256,7 @@ returns the executor's last recorded check. The Risk page shows all of it.
 | **R6c (done 2026-10-08)** Estimated VaR vol and model backtest, §6.4.8 | The VaR's daily vol estimated per book from Bitso daily closes (max of RiskMetrics EWMA and 365-day), a historical-simulation VaR beside it, and a daily 250-day backtest (exceptions, Kupiec, Basel zone) | No configured vol unless the estimate is unavailable (and then it says so); model failure alerts with a runbook |
 | **R6d (done 2026-10-09)** Expected shortfall and stress scenarios, §6.4.9 | ES 97.5 % per quote currency (historical and normal), hypothetical spot shocks, and 8 historical crypto episodes replayed on today's exposure, with optional stress limits | Tail loss beyond VaR is visible per scenario; limit breach and incomplete-scenario alerts with a runbook |
 | **R6e (done 2026-10-09)** Cost budget, capital and reconciliation, §6.4.10 | Realized execution cost in money against the frozen pre-registered costs; risk as a share of `RISK_CAPITAL` with a reverse stress test; a read-only daily reconciliation of the stage ledger against Bitso; crash paths embedded instead of refetched | The forward test's cost assumption, the capital at risk and the ledger's truth are each checked, with alerts and a runbook |
+| **R6f (done 2026-10-09)** P&L, expected profit per trade and Monte Carlo, §6.4.11 | Stage P&L split into market move, fees and slippage and compared with paper; forward-test ratios; the rule's trade distribution and calendar-year base rates; a block-bootstrap Monte Carlo of the rule against hold, all on the forward-test page | "What did we make, what should a trade make, what could the next year look like" answered from the same frozen rule, with the uncertainty shown |
 
 #### 6.4.1 R1 as built
 
@@ -639,6 +640,62 @@ roles. Additive only: the SMA50 rule, its costs and the paper account are unchan
   **not applied to any cluster**.
 - **Open:** apply the dev overlay when the next order-management image rolls out (operator step).
   Revisit the figures if the policy's sizes change. Alertmanager receivers are still a template.
+
+#### 6.4.11 R6f P&L, expected profit per trade and Monte Carlo as built (2026-10-09)
+
+Reporting only, on the forward-test detail page (`/forward-tests/{book}`). The rule and the
+registered simulator are called unchanged (`dailyrule.Trend`, `dailyrule.Simulate`); nothing here
+feeds the executor or the pre-registered evaluation.
+
+- **Stage profit and loss** (`GET /api/ui/forward-tests/{book}/performance`, `pnl`):
+  - Average cost: realized, unrealized at the last close, and the break-even sell price at the
+    primary and taker exit cost.
+  - Attribution: total = market move at the fill days' opens − fees − slippage.
+  - The stage return on the money invested against the paper account's return over the same days.
+    The gap, in bps, is the implementation shortfall.
+  - As of the 2026-10-04 capture, btc_mxn was +39.30 MXN (+2.58 % on 1,522.86): market +57.33,
+    fees −11.88, slippage −6.15. That was 106 bps behind paper (+3.64 %), the cost of the 118 bps
+    leg.
+- **The rule's trade in progress** (`open_trade`): the flip date and entry from the full history
+  (2026-08-20 at 1,176,270 MXN), the trade's return, its best and worst close, and the SMA50 level
+  whose breach exits it.
+- **Forward-test statistics** (`paper`): Sharpe, Sortino, Calmar, annualized vol and max drawdown
+  against hold (daily, 365-day year). Flagged as not meaningful below 90 days.
+- **Expected profit per trade** (`history`, `shared/pkg/montecarlo`): closed round trips at the
+  primary cost from the pre-registrations' base-rate windows.
+  - btc_mxn since 2018: 103 trades, 17 % winners, mean +4.1 %, median −3.1 %, payoff 10×.
+  - Chaining every trade gives a positive result; without the best one (2020-10-10 → 2021-04-19,
+    +365 % net) it is −42 %.
+  - The page says this outright: the expectancy is a mean over a skewed distribution, not a
+    typical trade.
+  - The calendar-year table reproduces the pre-registrations exactly (tested on the committed
+    CSVs): btc_mxn H2 5/9 and H1 6/9; btc_usd H1 5/6, including 2024's 28.4 % vs 27.5 %.
+- **Monte Carlo** (`GET /api/ui/forward-tests/{book}/montecarlo?cost=primary|pessimistic|realized&block=&paths=&horizon=`).
+  - Method: a stationary block bootstrap of real days, each day an (overnight gap, intraday move)
+    pair so fills at the next open stay realistic. Paths continue from the last real close, with
+    50 real bars as warm-up. The rule and hold run on each path through the registered simulator.
+  - Output: quantiles of return, rule minus hold, drawdown and round trips; probabilities with 95 %
+    Wilson intervals for H2, H1 and a loss; a histogram; and the same costs' calendar years for
+    calibration.
+  - Fixed seed, cached per candle file and parameters; about 50 ms for 2,000 paths.
+  - The page offers primary, taker and realized costs, 5/20/60-day blocks and 2,000/10,000 paths.
+  - btc_mxn, 10,000 paths, 70 bps:
+
+  | Mean block | Rule median | Hold median | P(H2 beats hold) | P(H1 shallower DD) |
+  |---|---|---|---|---|
+  | 5 days | −6.6 % | +17.3 % | 29 % | 61 % |
+  | 20 days (default) | +1.3 % | +18.4 % | 37 % | 68 % |
+  | 60 days | +2.8 % | +15.0 % | 42 % | 71 % |
+
+  History: 5/9 and 6/9. H1 is reproduced. H2 rises with block length because longer blocks keep
+  the long trends the rule lives on, and 42 % is within the uncertainty of 5 observed wins in 9
+  years. Read the simulated H2 as a lower bound.
+
+  `strategy-executor/cmd/daily-montecarlo` writes the same result as JSON for evidence files
+  (schema `montecarlo-run/v1`).
+- **Open:** a capacity and market-impact study before any production sizing; daily NAV and P&L
+  history (today's P&L is a snapshot); MXN-terms P&L for btc_usd (the pre-registration's H2 is in
+  MXN after conversions; the page compares against hold `btc_usd`).
 
 ### 6.5 First findings from the real stage ledger
 - **btc_mxn's first stage leg cost 118 bps against 70 assumed.** The post-only order rested 60 min, filled 0.1%, and fell back to market: taker fee 78 bps + 40 bps above the fill-day open. A stage leg is small and stage liquidity is thin, so this is not yet evidence about production costs. But it is the cost signal to watch: the pre-registration's secondary (taker) scenario is 88 bps per leg, and this leg exceeded both.

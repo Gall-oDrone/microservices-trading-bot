@@ -1,0 +1,23 @@
+{
+  "ledger": "dry-run",
+  "book": "btc_mxn",
+  "quote": "mxn",
+  "generated_at": "2026-10-09T20:08:35Z",
+  "candles_file": "",
+  "pnl": null,
+  "open_trade": null,
+  "paper": {
+    "days": 0,
+    "meaningful": false,
+    "return": 0,
+    "hold_return": 0,
+    "ann_vol": 0,
+    "sharpe": 0,
+    "sortino": 0,
+    "max_dd": 0,
+    "hold_max_dd": 0,
+    "calmar": 0,
+    "hold_sharpe": 0
+  },
+  "history": null
+}
