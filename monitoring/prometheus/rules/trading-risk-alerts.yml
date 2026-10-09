@@ -354,3 +354,29 @@ groups:
           summary: "{{ $labels.currency }} historical-simulation VaR is {{ $value | printf \"%.1f\" }}x the parametric VaR"
           description: "The last year's actual returns imply a much larger 99% loss than the normal model. The limit applies to the parametric VaR; the desk should judge exposure on the larger number."
           runbook_url: "docs/runbooks/TRADING-RISK-ALERTS.md#portfoliovarmodeldivergence"
+
+      # Stress scenarios (plan §6.4.9): hypothetical spot shocks and past
+      # crypto crises replayed on today's exposure.
+      - alert: PortfolioStressLimitBreached
+        expr: |
+          max by (job, currency) (portfolio_stress_worst_loss_quote{job=~"order-management.*"})
+            / max by (job, currency) (portfolio_stress_limit_quote{job=~"order-management.*"}) >= 1
+        for: 15m
+        labels:
+          severity: warning
+          team: risk
+        annotations:
+          summary: "{{ $labels.currency }} worst stress loss at {{ $value | humanizePercentage }} of its stress limit"
+          description: "In at least one stress scenario today's exposure would lose more than RISK_STRESS_LIMITS allows (see portfolio_stress_loss_quote by scenario). Nothing is blocked; the risk owner decides whether to reduce."
+          runbook_url: "docs/runbooks/TRADING-RISK-ALERTS.md#portfoliostresslimitbreached"
+
+      - alert: PortfolioStressScenarioIncomplete
+        expr: max by (job, currency, scenario) (portfolio_stress_incomplete{job=~"order-management.*"}) == 1
+        for: 2h
+        labels:
+          severity: warning
+          team: risk
+        annotations:
+          summary: "{{ $labels.currency }} stress scenario {{ $labels.scenario }} cannot be computed"
+          description: "An exposed book has no Bitso closes for the episode and no book on the same asset does (or the episode fetch keeps failing). The worst stress loss omits this scenario."
+          runbook_url: "docs/runbooks/TRADING-RISK-ALERTS.md#portfoliostressscenarioincomplete"

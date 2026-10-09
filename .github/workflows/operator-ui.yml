@@ -150,8 +150,10 @@ jobs:
             services/order-management/internal/risk/portfolio.go \
             services/order-management/internal/risk/portfolio_test.go \
             services/order-management/internal/risk/portfolio_vol_test.go \
+            services/order-management/internal/risk/portfolio_stress_test.go \
             services/order-management/internal/risk/volatility.go \
             services/order-management/internal/risk/volatility_test.go \
+            services/order-management/internal/risk/volatility_episodes_test.go \
             services/order-management/internal/metrics/risk_series.go \
             services/order-management/internal/metrics/risk_series_test.go \
             services/order-management/internal/manager/slippage.go \

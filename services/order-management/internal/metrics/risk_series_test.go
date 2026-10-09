@@ -140,3 +140,54 @@ func TestSetPortfolioPublishesVaRModel(t *testing.T) {
 		t.Errorf("historical scenario series %d after history was lost, want 0", n)
 	}
 }
+
+func TestSetPortfolioPublishesESAndStress(t *testing.T) {
+	reg := prometheus.NewRegistry()
+	m := NewRiskSeries(reg)
+	at := time.Unix(1_790_000_000, 0)
+	stress := []StressResult{
+		{Scenario: "spot-50%", Type: StressHypothetical, Loss: 50_000, OK: true},
+		{Scenario: "2020-03-covid", Type: StressHistorical, Loss: 36_000, OK: true, Proxied: true},
+		{Scenario: "2018-01-crash", Type: StressHistorical, OK: false},
+	}
+	books := []BookExposure{{Book: "btc_mxn", Currency: "MXN", EpisodeTroughs: map[string]float64{"2020-03-covid": -0.358}}}
+	m.SetPortfolio(books, nil, map[string]CurrencyRisk{
+		"MXN": {ESParam: 4700, HistES: 6900, HistOK: true, Stress: stress, StressLimit: 40_000},
+	}, at)
+
+	for _, c := range []struct {
+		g    *prometheus.GaugeVec
+		lv   []string
+		want float64
+	}{
+		{m.esQuote, []string{"MXN", ESParametric}, 4700},
+		{m.esQuote, []string{"MXN", ESHistorical}, 6900},
+		{m.stressLoss, []string{"MXN", "spot-50%", StressHypothetical}, 50_000},
+		{m.stressLoss, []string{"MXN", "2020-03-covid", StressHistorical}, 36_000},
+		{m.stressWorst, []string{"MXN"}, 50_000},
+		{m.stressLimit, []string{"MXN"}, 40_000},
+		{m.stressProxied, []string{"MXN", "2020-03-covid"}, 1},
+		{m.stressIncomplete, []string{"MXN", "2020-03-covid"}, 0},
+		{m.stressIncomplete, []string{"MXN", "2018-01-crash"}, 1},
+		{m.episodeTrough, []string{"btc_mxn", "2020-03-covid"}, -0.358},
+	} {
+		if v := testutil.ToFloat64(c.g.WithLabelValues(c.lv...)); v != c.want {
+			t.Errorf("%v = %v, want %v", c.lv, v, c.want)
+		}
+	}
+	// The incomplete scenario has no loss series (2 of 3 published).
+	if n := testutil.CollectAndCount(reg, "portfolio_stress_loss_quote"); n != 2 {
+		t.Errorf("stress loss series %d, want 2", n)
+	}
+
+	// A scenario that loses its data, and history that goes missing, drop
+	// their series instead of freezing.
+	stress[1].OK = false
+	m.SetPortfolio(books, nil, map[string]CurrencyRisk{"MXN": {ESParam: 4700, Stress: stress}}, at)
+	if n := testutil.CollectAndCount(reg, "portfolio_stress_loss_quote"); n != 1 {
+		t.Errorf("stress loss series %d after covid lost data, want 1", n)
+	}
+	if n := testutil.CollectAndCount(reg, "portfolio_es_quote"); n != 1 {
+		t.Errorf("ES series %d without history, want 1 (parametric)", n)
+	}
+}

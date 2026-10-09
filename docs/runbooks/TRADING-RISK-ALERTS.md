@@ -195,3 +195,31 @@ so the VaR errs high.
 the last year held larger losses than a normal distribution with today's vol implies (fat tails,
 or a calm spell since a crash). The limit still applies to the parametric number; the desk should
 size against the larger one and the risk owner should review whether the limit is still adequate.
+
+## Expected shortfall and stress (§6.4.9)
+
+Per quote currency, every portfolio run. **Expected shortfall** `portfolio_es_quote{method}`: 1 day,
+97.5 % (Basel FRTB), the average loss on the worst 2.5 % of days. `historical` uses the same days as
+the historical VaR; `parametric` is normal with the VaR's vol (2.338 σ, about the 99 % VaR). The
+gap between them is the fat tail the normal model misses. **Stress** `portfolio_stress_loss_quote{scenario,type}`:
+what today's exposure loses if `hypothetical`, every book's spot moves by the scenario's ratio
+(`RISK_STRESS_SHOCKS`, default −50/−30/−20/−10/+20 %); or if `historical`, a past crypto crisis
+replays from Bitso's own closes (8 episodes from 2018-01, −62 %, to 2024-08), measured at the
+episode's worst close with the position held throughout. A book that did not trade during an
+episode (btc_usd before 2020-04) uses a book on the same asset (`portfolio_stress_proxied`).
+`portfolio_stress_worst_loss_quote` is the largest; `risk_stress_episode_trough_ratio{book}` shows
+each book's own move per episode. Stress losses are many times the VaR by design (2018-01 is about
+13× the 99 % VaR for a BTC long): set `RISK_STRESS_LIMITS` to what the firm can survive losing,
+not to a VaR multiple.
+
+### PortfolioStressLimitBreached
+*warning, after 15 min.* In some scenario today's exposure would lose more than the currency's
+`RISK_STRESS_LIMITS`. Check which scenario (dashboard "Stress loss by scenario"). The risk owner
+decides the same day whether to reduce exposure; record the decision. Do not drop a scenario or
+raise the limit to clear it.
+
+### PortfolioStressScenarioIncomplete
+*warning, after 2 h.* A historical scenario cannot be computed for a currency with exposure: an
+exposed book has no Bitso closes for the episode and no book on the same base asset does, or the
+episode fetch keeps failing (order-management log "stress episode ... "). The worst stress loss
+omits that scenario. Episodes are fetched once per book and cached; a restart refetches them.

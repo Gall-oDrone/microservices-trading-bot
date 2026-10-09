@@ -50,6 +50,8 @@ Quick reference for env vars used by the trading bot, especially for **intraday*
 | `RISK_VAR_VOL_STALE` | `72h` | An estimate whose last daily close is older than this is not used (at least 1h). |
 | `RISK_VAR_VOL_SOURCE_URL` | `https://api.bitso.com` | Bitso public OHLC base (`/api/v3/ohlc`, no credentials). The pod needs egress to it; without it every book is on the fallback. |
 | `RISK_VAR_LIMITS` | - | VaR limit per quote currency, e.g. `MXN=20000,USD=1000`. Alerts at 80 % / 100 %; nothing is blocked. Any `RISK_*` value that does not parse stops start-up. |
+| `RISK_STRESS_SHOCKS` | `-0.5,-0.3,-0.2,-0.1,0.2` | Hypothetical uniform spot moves applied to each currency's net exposure (`portfolio_stress_loss_quote{type="hypothetical"}`). Distinct, non-zero, above −1, at most 10. The 8 historical episodes (plan §6.4.9) always run as well. |
+| `RISK_STRESS_LIMITS` | - | Worst-stress-loss limit per quote currency, e.g. `MXN=150000,USD=5000`. `PortfolioStressLimitBreached` fires at 100 % for 15 min; nothing is blocked. Unset: no limit series, alert inactive. |
 
 ---
 

@@ -254,6 +254,7 @@ returns the executor's last recorded check. The Risk page shows all of it.
 | **R5d (done 2026-10-08)** OMS limits in the shared policy, §6.4.6 | Order-management's position, order-value, open-order and orders-per-minute limits become one `shared/pkg/risk` policy (per book and firm-wide); the env limits are only its fallback | One limit set per service in one format; a policy file can tighten any book without a redeploy of code |
 | **R6b (done 2026-10-08)** Realized execution and portfolio risk, §6.4.7 | Realized slippage per closed order vs its decision price; exposure per book marked to market; 1-day 99 % parametric VaR per quote currency against a limit; Alertmanager routing by severity and team | Implementation shortfall, exposure and VaR are on the dashboard and alert with a runbook; every route is pinned in CI; nothing is sent until receivers are configured |
 | **R6c (done 2026-10-08)** Estimated VaR vol and model backtest, §6.4.8 | The VaR's daily vol estimated per book from Bitso daily closes (max of RiskMetrics EWMA and 365-day), a historical-simulation VaR beside it, and a daily 250-day backtest (exceptions, Kupiec, Basel zone) | No configured vol unless the estimate is unavailable (and then it says so); model failure alerts with a runbook |
+| **R6d (done 2026-10-09)** Expected shortfall and stress scenarios, §6.4.9 | ES 97.5 % per quote currency (historical and normal), hypothetical spot shocks, and 8 historical crypto episodes replayed on today's exposure, with optional stress limits | Tail loss beyond VaR is visible per scenario; limit breach and incomplete-scenario alerts with a runbook |
 
 #### 6.4.1 R1 as built
 
@@ -517,7 +518,48 @@ function does, and checks the model against what happened.
   `PortfolioVaRModelDivergence` (historical > 1.5 × parametric, warning, 1 h); promtool tests,
   runbook entries, and a "VaR model" row on the Trading Risk Operations dashboard.
 - **Open:** the order-management pod needs egress to `api.bitso.com`; without it every book reports
-  `fallback` and the alert fires. Stress scenarios and expected shortfall are not built.
+  `fallback` and the alert fires. *(Stress scenarios and expected shortfall: built in §6.4.9.)*
+
+#### 6.4.9 R6d expected shortfall and stress as built (2026-10-09)
+
+VaR says how bad a normal bad day is; it says nothing about the days past it. FRTB replaced the
+99 % VaR with 97.5 % expected shortfall for that reason, and every bank or fund risk report pairs
+it with stress losses. Both are now published beside the VaR. Reporting only: nothing is blocked,
+and the VaR limit is unchanged.
+
+- **Expected shortfall 97.5 %, 1 day** (`portfolio_es_quote{currency,method}`).
+  `historical`: the mean of the worst ceil(2.5 % · n) losses over the same aligned days (and the same
+  completeness rules) as the historical VaR. `parametric`: 2.338 × |Σ exposure × vol| (normal ES,
+  which is almost exactly the 99 % VaR: 2.338σ against 2.326σ). The gap between the two is the fat
+  tail the normal model misses.
+- **Hypothetical shocks** (`type="hypothetical"`): a uniform spot move on the currency's net
+  exposure, loss = −net × shock. `RISK_STRESS_SHOCKS`, default −50, −30, −20, −10, +20 %
+  (scenario ids `spot-50%` … `spot+20%`), so a short book is stressed too.
+- **Historical episodes** (`type="historical"`, `shared/pkg/varmodel/stress.go`): 2018-01 post-peak
+  crash, 2018-11 hash war, 2020-03 COVID, 2021-05 China ban, 2022-05 Terra/LUNA, 2022-06
+  Celsius/3AC, 2022-11 FTX, 2024-08 carry unwind. Each book's own Bitso closes give its path relative
+  to the close the day before the episode; the loss is today's exposure revalued on the episode's
+  worst common day (position held throughout, no hedging, no liquidation). order-management fetches
+  each episode once per book in the background (paced 1.1 s; results, including "no data", are kept
+  until restart). A book without data for an episode is proxied by a book on the same base asset
+  (`portfolio_stress_proxied`); with no proxy the scenario is incomplete
+  (`portfolio_stress_incomplete`) and its loss series is absent, never a partial number. Troughs per
+  book: `risk_stress_episode_trough_ratio{book,scenario}`.
+- **Limits** (`RISK_STRESS_LIMITS`, optional): `portfolio_stress_worst_loss_quote` against
+  `portfolio_stress_limit_quote`.
+- **Evidence.** Measured troughs (`stress_real_data_test.go`, pinned on the committed CSVs): btc_mxn
+  −62.0, −41.1, −35.8, −40.8, −29.0, −36.3, −20.9, −12.0 %; btc_usd (history from 2020-04-24 only)
+  −41.1, −30.5, −38.5, −21.2, −17.5 % for 2021-05 onward. Real ES exceeds the normal ES on the same
+  data. Live on 2026-10-09 with 0.01 BTC long per book: MXN VaR 99 % 1 080, historical VaR 1 266,
+  ES normal 1 085, ES historical 1 249, worst stress 13 961 (2018-01 crash, about 13 × VaR); USD worst
+  stress 757, with the three pre-2020 episodes proxied from btc_mxn.
+- **Alerts** (2 new, 29 total, `team: risk`): `PortfolioStressLimitBreached` (worst / limit ≥ 1,
+  warning, 15 min) and `PortfolioStressScenarioIncomplete` (warning, 2 h); promtool tests, runbook
+  section, and an "Expected shortfall and stress" row on the Trading Risk Operations dashboard.
+- **Open:** no stress limit is set by default, so the breach alert is inactive until
+  `RISK_STRESS_LIMITS` is configured. Episodes are refetched on every restart (16 requests for two
+  books). Single-asset only: reverse stress (the move that exhausts capital) and multi-asset
+  correlation scenarios are possible extensions.
 
 ### 6.5 First findings from the real stage ledger
 - **btc_mxn's first stage leg cost 118 bps against 70 assumed.** The post-only order rested 60 min, filled 0.1%, and fell back to market: taker fee 78 bps + 40 bps above the fill-day open. A stage leg is small and stage liquidity is thin, so this is not yet evidence about production costs. But it is the cost signal to watch: the pre-registration's secondary (taker) scenario is 88 bps per leg, and this leg exceeded both.

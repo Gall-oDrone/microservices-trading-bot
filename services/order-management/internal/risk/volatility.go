@@ -31,6 +31,7 @@ const (
 	DefaultVolRetryAfter = 10 * time.Minute
 	DefaultVolStale      = 72 * time.Hour
 	DefaultVolHistory    = 800 // calendar days: 250 backtest days + 365 window + EWMA warm-up
+	DefaultEpisodePause  = 1100 * time.Millisecond
 	volFetchTimeout      = 2 * time.Minute
 	volChunk             = 300 * bitsodaily.Day // under the endpoint's per-response cap
 )
@@ -69,18 +70,25 @@ type VolView struct {
 	Have     bool          // an estimate was computed at least once
 	DataAge  time.Duration // now minus the last close used
 	Err      error         // the last refresh error, if any
+
+	// Episodes holds the book's path through each historical stress
+	// episode it traded in, by episode ID (§6.4.9). Read-only.
+	Episodes map[string][]varmodel.PathPoint
 }
 
-// VolEstimator keeps one estimate per book.
+// VolEstimator keeps one estimate per book, and the book's paths through
+// the historical stress episodes (fetched once: the past does not change).
 type VolEstimator struct {
-	Fetch       ClosesFetcher
-	Lambda      float64
-	Refresh     time.Duration
-	RetryAfter  time.Duration
-	Stale       time.Duration
-	HistoryDays int
-	Now         func() time.Time
-	OnError     func(book string, err error)
+	Fetch        ClosesFetcher
+	Lambda       float64
+	Refresh      time.Duration
+	RetryAfter   time.Duration
+	Stale        time.Duration
+	HistoryDays  int
+	Episodes     []varmodel.Episode
+	EpisodePause time.Duration // between episode requests (public rate limit)
+	Now          func() time.Time
+	OnError      func(book string, err error)
 
 	mu    sync.Mutex
 	books map[string]*volEntry
@@ -92,17 +100,23 @@ type volEntry struct {
 	have                 bool
 	fetchedAt, attemptAt time.Time
 	err                  error
+
+	episodes  map[string][]varmodel.PathPoint // replaced, never mutated
+	epDone    map[string]bool                 // fetched: a path, or no data then
+	epAttempt time.Time                       // last failed episode fetch
 }
 
 // NewVolEstimator returns an estimator with the defaults.
 func NewVolEstimator(fetch ClosesFetcher) *VolEstimator {
 	return &VolEstimator{
-		Fetch:       fetch,
-		Lambda:      varmodel.Lambda,
-		Refresh:     DefaultVolRefresh,
-		RetryAfter:  DefaultVolRetryAfter,
-		Stale:       DefaultVolStale,
-		HistoryDays: DefaultVolHistory,
+		Fetch:        fetch,
+		Lambda:       varmodel.Lambda,
+		Refresh:      DefaultVolRefresh,
+		RetryAfter:   DefaultVolRetryAfter,
+		Stale:        DefaultVolStale,
+		HistoryDays:  DefaultVolHistory,
+		Episodes:     varmodel.Episodes,
+		EpisodePause: DefaultEpisodePause,
 	}
 }
 
@@ -140,7 +154,7 @@ func (v *VolEstimator) Lookup(book string) (VolView, bool) {
 			}
 		}
 	}
-	view := VolView{Estimate: e.est, Have: e.have, Err: e.err}
+	view := VolView{Estimate: e.est, Have: e.have, Err: e.err, Episodes: e.episodes}
 	v.mu.Unlock()
 	if !view.Have {
 		return view, false
@@ -170,7 +184,8 @@ func (v *VolEstimator) due(e *volEntry, now time.Time) bool {
 }
 
 // RefreshDue fetches every registered book whose estimate is missing or
-// older than Refresh, at most once per RetryAfter after a failure.
+// older than Refresh, at most once per RetryAfter after a failure; then
+// the stress episodes each book has not fetched yet.
 func (v *VolEstimator) RefreshDue(ctx context.Context) {
 	for _, book := range v.Books() {
 		now := v.now()
@@ -199,6 +214,71 @@ func (v *VolEstimator) RefreshDue(ctx context.Context) {
 			return
 		}
 	}
+	for _, book := range v.Books() {
+		if !v.refreshEpisodes(ctx, book) {
+			return
+		}
+	}
+}
+
+// refreshEpisodes fetches book's missing episodes, stopping at the first
+// failure (retried after RetryAfter). It returns false when ctx ended.
+func (v *VolEstimator) refreshEpisodes(ctx context.Context, book string) bool {
+	now := v.now()
+	v.mu.Lock()
+	e := v.books[book]
+	if !e.epAttempt.IsZero() && now.Sub(e.epAttempt) < v.RetryAfter {
+		v.mu.Unlock()
+		return true
+	}
+	var todo []varmodel.Episode
+	for _, ep := range v.Episodes {
+		if !e.epDone[ep.ID] {
+			todo = append(todo, ep)
+		}
+	}
+	v.mu.Unlock()
+	for i, ep := range todo {
+		if i > 0 && v.EpisodePause > 0 {
+			t := time.NewTimer(v.EpisodePause)
+			select {
+			case <-ctx.Done():
+				t.Stop()
+				return false
+			case <-t.C:
+			}
+		}
+		c, cancel := context.WithTimeout(ctx, volFetchTimeout)
+		// From the day before the base close to the day after the end, so
+		// the Mexico-labelled buckets at both edges are inside.
+		closes, err := v.Fetch(c, book, ep.Base().AddDate(0, 0, -1), ep.End.AddDate(0, 0, 2))
+		cancel()
+		if err != nil {
+			v.mu.Lock()
+			e.epAttempt = now
+			v.mu.Unlock()
+			if v.OnError != nil {
+				v.OnError(book, fmt.Errorf("stress episode %s: %w", ep.ID, err))
+			}
+			return ctx.Err() == nil
+		}
+		path, ok := varmodel.EpisodePath(closes, ep)
+		v.mu.Lock()
+		if e.epDone == nil {
+			e.epDone = map[string]bool{}
+		}
+		e.epDone[ep.ID] = true
+		if ok {
+			next := make(map[string][]varmodel.PathPoint, len(e.episodes)+1)
+			for k, p := range e.episodes {
+				next[k] = p
+			}
+			next[ep.ID] = path
+			e.episodes = next
+		}
+		v.mu.Unlock()
+	}
+	return ctx.Err() == nil
 }
 
 func (v *VolEstimator) fetch(ctx context.Context, book string, now time.Time) (varmodel.Estimate, error) {

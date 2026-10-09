@@ -35,6 +35,12 @@ import (
 // RISK_VAR_VOL_MODEL=fixed restores the configured-parameter behaviour. A
 // historical-simulation VaR over the same 365 days is published alongside;
 // the limit applies to the parametric VaR.
+//
+// Since §6.4.9 each currency also gets a 97.5 % expected shortfall
+// (historical over the same days, and normal) and stress losses: uniform
+// spot shocks (RISK_STRESS_SHOCKS) and the historical crypto crises in
+// varmodel.Episodes replayed on today's exposure, against an optional
+// RISK_STRESS_LIMITS. Reporting only, like VaR.
 const (
 	EnvPortfolioInterval = "RISK_PORTFOLIO_INTERVAL"
 	EnvVaRDailyVol       = "RISK_VAR_DAILY_VOL"
@@ -46,6 +52,8 @@ const (
 	EnvVaRVolRefresh     = "RISK_VAR_VOL_REFRESH"
 	EnvVaRVolStale       = "RISK_VAR_VOL_STALE"
 	EnvVaRVolSourceURL   = "RISK_VAR_VOL_SOURCE_URL"
+	EnvStressShocks      = "RISK_STRESS_SHOCKS"
+	EnvStressLimits      = "RISK_STRESS_LIMITS"
 
 	// DefaultVaRDailyVol is deliberately above BTC's typical realized daily
 	// vol (~2.5-3.5 %), so an unconfigured VaR errs high.
@@ -66,6 +74,11 @@ const (
 	MinHistScenarios = 250
 )
 
+// DefaultStressShocks are the hypothetical spot moves applied to every
+// book at once: crashes the size of the worst Bitso episodes, and a rally
+// for short positions.
+var DefaultStressShocks = []float64{-0.5, -0.3, -0.2, -0.1, 0.2}
+
 // PortfolioConfig parameterises the monitor.
 type PortfolioConfig struct {
 	Interval        time.Duration
@@ -79,6 +92,9 @@ type PortfolioConfig struct {
 	VolRefresh   time.Duration
 	VolStale     time.Duration
 	VolSourceURL string
+
+	StressShocks []float64          // spot moves, e.g. -0.3
+	StressLimits map[string]float64 // per quote currency (upper case)
 }
 
 // VolFor is the configured daily vol for book: its override, else the
@@ -104,6 +120,20 @@ func LoadPortfolioConfig(getenv func(string) string) (PortfolioConfig, error) {
 		VolRefresh:      DefaultVolRefresh,
 		VolStale:        DefaultVolStale,
 		VolSourceURL:    bitsodaily.DefaultBaseURL,
+		StressShocks:    append([]float64(nil), DefaultStressShocks...),
+		StressLimits:    map[string]float64{},
+	}
+	if s := strings.TrimSpace(getenv(EnvStressShocks)); s != "" {
+		c.StressShocks = nil
+		seen := map[float64]bool{}
+		for _, part := range strings.Split(s, ",") {
+			v, err := strconv.ParseFloat(strings.TrimSpace(part), 64)
+			if err != nil || !(v > -1) || v == 0 || v > 10 || seen[v] {
+				return c, fmt.Errorf("%s=%q: want distinct non-zero spot moves above -1, e.g. -0.5,-0.3,0.2", EnvStressShocks, s)
+			}
+			seen[v] = true
+			c.StressShocks = append(c.StressShocks, v)
+		}
 	}
 	switch s := strings.ToLower(strings.TrimSpace(getenv(EnvVaRVolModel))); s {
 	case "", VolModelEstimated:
@@ -157,17 +187,21 @@ func LoadPortfolioConfig(getenv func(string) string) (PortfolioConfig, error) {
 		return c, fmt.Errorf("%s: %w", EnvVaRDailyVolBooks, err)
 	}
 	c.DailyVol = books
-	limits, err := parsePairs(getenv(EnvVaRLimits), strings.ToUpper, func(s string) (float64, error) {
+	positive := func(s string) (float64, error) {
 		v, err := strconv.ParseFloat(s, 64)
 		if err != nil || !(v > 0) || math.IsInf(v, 0) {
 			return 0, fmt.Errorf("limit %q: want a positive number", s)
 		}
 		return v, nil
-	})
+	}
+	limits, err := parsePairs(getenv(EnvVaRLimits), strings.ToUpper, positive)
 	if err != nil {
 		return c, fmt.Errorf("%s: %w", EnvVaRLimits, err)
 	}
 	c.VaRLimits = limits
+	if c.StressLimits, err = parsePairs(getenv(EnvStressLimits), strings.ToUpper, positive); err != nil {
+		return c, fmt.Errorf("%s: %w", EnvStressLimits, err)
+	}
 	if c.MarketDataURL != "" {
 		if u, err := url.Parse(c.MarketDataURL); err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
 			return c, fmt.Errorf("%s=%q: want http(s)://host[:port]", EnvMarketDataURL, c.MarketDataURL)
@@ -304,28 +338,30 @@ type PortfolioMonitor struct {
 }
 
 // bookVol picks the daily vol for book and fills the model fields of be.
-// It returns the book's historical returns when the estimate is used.
-func (pm *PortfolioMonitor) bookVol(be *metrics.BookExposure) []varmodel.Return {
+// It returns the book's historical returns when the estimate is used, and
+// its stress-episode paths whenever known (they do not go stale).
+func (pm *PortfolioMonitor) bookVol(be *metrics.BookExposure) ([]varmodel.Return, map[string][]varmodel.PathPoint) {
 	be.VolDataAgeSeconds = -1
 	if v, ok := pm.Config.DailyVol[be.Book]; ok {
 		be.DailyVol, be.VolSource = v, VolSourceOverride
-		if view, fresh := pm.attachModel(be); fresh {
-			return view.Estimate.HistReturns // historical VaR does not use the vol
+		view, fresh := pm.attachModel(be)
+		if fresh {
+			return view.Estimate.HistReturns, view.Episodes // historical VaR does not use the vol
 		}
-		return nil
+		return nil, view.Episodes
 	}
 	be.DailyVol = pm.Config.DefaultDailyVol
 	if pm.Vol == nil {
 		be.VolSource = VolSourceFixed
-		return nil
+		return nil, nil
 	}
 	view, fresh := pm.attachModel(be)
 	if !fresh {
 		be.VolSource = VolSourceFallback
-		return nil
+		return nil, view.Episodes
 	}
 	be.DailyVol, be.VolSource = view.Estimate.Vol, VolSourceEstimated
-	return view.Estimate.HistReturns
+	return view.Estimate.HistReturns, view.Episodes
 }
 
 // attachModel copies the estimator's view of be.Book into be (published
@@ -340,21 +376,28 @@ func (pm *PortfolioMonitor) attachModel(be *metrics.BookExposure) (VolView, bool
 		be.Model = &metrics.VolModel{EWMA: e.EWMA, Long: e.Long, Estimate: e.Vol, Backtest: e.Backtest}
 		be.VolDataAgeSeconds = view.DataAge.Seconds()
 	}
+	if len(view.Episodes) > 0 {
+		be.EpisodeTroughs = map[string]float64{}
+		for id, p := range view.Episodes {
+			be.EpisodeTroughs[id] = varmodel.Trough(p)
+		}
+	}
 	return view, fresh
 }
 
-// historicalVaR revalues the currency's exposures over the days on which
-// every exposed book has a return: P&L_d = sum(exposure x (e^r - 1)).
-func historicalVaR(exposed map[string]float64, rets map[string][]varmodel.Return) (float64, int, bool) {
+// historicalRisk revalues the currency's exposures over the days on which
+// every exposed book has a return, P&L_d = sum(exposure x (e^r - 1)), and
+// returns the 99 % VaR and 97.5 % ES of those P&Ls.
+func historicalRisk(exposed map[string]float64, rets map[string][]varmodel.Return) (hvar, es float64, n int, ok bool) {
 	if len(exposed) == 0 {
-		return 0, 0, true
+		return 0, 0, 0, true
 	}
 	pnl := map[time.Time]float64{}
 	count := map[time.Time]int{}
 	for book, q := range exposed {
 		rs, ok := rets[book]
 		if !ok {
-			return 0, 0, false // an exposed book without history
+			return 0, 0, 0, false // an exposed book without history
 		}
 		for _, r := range rs {
 			pnl[r.Date] += q * math.Expm1(r.R)
@@ -362,13 +405,59 @@ func historicalVaR(exposed map[string]float64, rets map[string][]varmodel.Return
 		}
 	}
 	var scen []float64
-	for d, n := range count {
-		if n == len(exposed) {
+	for d, c := range count {
+		if c == len(exposed) {
 			scen = append(scen, pnl[d])
 		}
 	}
-	v, ok := varmodel.HistoricalVaR(scen, varmodel.Confidence, MinHistScenarios)
-	return v, len(scen), ok
+	hvar, ok = varmodel.HistoricalVaR(scen, varmodel.Confidence, MinHistScenarios)
+	es, _ = varmodel.ExpectedShortfall(scen, varmodel.ESConfidence, MinHistScenarios)
+	return hvar, es, len(scen), ok
+}
+
+// shockID names a hypothetical scenario, e.g. "spot-30%".
+func shockID(s float64) string { return fmt.Sprintf("spot%+g%%", math.Round(s*1000)/10) }
+
+// stressScenarios runs the hypothetical shocks and, when episodes are
+// known (estimated model), the historical episodes on one currency's
+// exposures. episodes holds every snapshot book's paths, so a book with no
+// data for an episode (it did not trade then) can be proxied by another
+// book on the same base asset, in book-name order.
+func (pm *PortfolioMonitor) stressScenarios(net float64, exposed map[string]float64, episodes map[string]map[string][]varmodel.PathPoint) []metrics.StressResult {
+	out := make([]metrics.StressResult, 0, len(pm.Config.StressShocks)+len(varmodel.Episodes))
+	for _, s := range pm.Config.StressShocks {
+		out = append(out, metrics.StressResult{Scenario: shockID(s), Type: metrics.StressHypothetical, Loss: varmodel.ShockLoss(net, s), OK: true})
+	}
+	if pm.Vol == nil {
+		return out
+	}
+	donors := make([]string, 0, len(episodes))
+	for b := range episodes {
+		donors = append(donors, b)
+	}
+	sort.Strings(donors)
+	for _, ep := range varmodel.Episodes {
+		res := metrics.StressResult{Scenario: ep.ID, Type: metrics.StressHistorical, OK: true}
+		paths := map[string][]varmodel.PathPoint{}
+		for book := range exposed {
+			if p, ok := episodes[book][ep.ID]; ok {
+				paths[book] = p
+				continue
+			}
+			asset, _ := splitBook(book)
+			for _, d := range donors {
+				if a, _ := splitBook(d); a == asset && d != book {
+					if p, ok := episodes[d][ep.ID]; ok {
+						paths[book], res.Proxied = p, true
+						break
+					}
+				}
+			}
+		}
+		res.Loss, res.OK = varmodel.EpisodeLoss(exposed, paths)
+		out = append(out, res)
+	}
+	return out
 }
 
 // Snapshot marks every position and aggregates. Books seen once stay in the
@@ -402,14 +491,18 @@ func (pm *PortfolioMonitor) Snapshot(ctx context.Context, known map[string]bool)
 	sort.Strings(names)
 
 	snap := PortfolioSnapshot{NetBase: map[string]float64{}, Currencies: map[string]metrics.CurrencyRisk{}, At: now()}
-	volSum := map[string]float64{}                    // currency -> sum(exposure x vol)
-	exposed := map[string]map[string]float64{}        // currency -> book -> exposure
-	hist := map[string]map[string][]varmodel.Return{} // currency -> book -> returns
+	volSum := map[string]float64{}                           // currency -> sum(exposure x vol)
+	exposed := map[string]map[string]float64{}               // currency -> book -> exposure
+	hist := map[string]map[string][]varmodel.Return{}        // currency -> book -> returns
+	episodes := map[string]map[string][]varmodel.PathPoint{} // book -> episode -> path
 	for _, book := range names {
 		p := byBook[book]
 		asset, ccy := splitBook(book)
 		be := metrics.BookExposure{Book: book, Asset: asset, Currency: ccy, Base: SignedPositionBTC(p)}
-		rets := pm.bookVol(&be)
+		rets, eps := pm.bookVol(&be)
+		if eps != nil {
+			episodes[book] = eps
+		}
 		if pm.Marks != nil {
 			if m, err := pm.Marks.Mark(ctx, book); err == nil && m > 0 {
 				be.Mark = m
@@ -443,19 +536,36 @@ func (pm *PortfolioMonitor) Snapshot(ctx context.Context, known map[string]bool)
 	}
 	for ccy, r := range snap.Currencies {
 		r.VaR = metrics.VaRZ * math.Abs(volSum[ccy])
+		r.ESParam = varmodel.ZES * math.Abs(volSum[ccy])
 		if pm.Vol != nil {
-			r.HistVaR, r.HistScenarios, r.HistOK = historicalVaR(exposed[ccy], hist[ccy])
+			r.HistVaR, r.HistES, r.HistScenarios, r.HistOK = historicalRisk(exposed[ccy], hist[ccy])
 		}
 		r.Limit = pm.Config.VaRLimits[ccy]
+		r.Stress = pm.stressScenarios(r.Net, exposed[ccy], episodes)
+		r.StressLimit = pm.Config.StressLimits[ccy]
 		snap.Currencies[ccy] = r
 	}
 	// A configured limit is published even before any position exists.
-	for ccy, lim := range pm.Config.VaRLimits {
+	for ccy := range unionKeys(pm.Config.VaRLimits, pm.Config.StressLimits) {
 		if _, ok := snap.Currencies[ccy]; !ok {
-			snap.Currencies[ccy] = metrics.CurrencyRisk{Limit: lim}
+			snap.Currencies[ccy] = metrics.CurrencyRisk{
+				Limit:       pm.Config.VaRLimits[ccy],
+				StressLimit: pm.Config.StressLimits[ccy],
+				Stress:      pm.stressScenarios(0, nil, nil),
+			}
 		}
 	}
 	return snap, nil
+}
+
+func unionKeys(ms ...map[string]float64) map[string]bool {
+	out := map[string]bool{}
+	for _, m := range ms {
+		for k := range m {
+			out[k] = true
+		}
+	}
+	return out
 }
 
 // Run publishes a snapshot every Config.Interval until ctx ends.

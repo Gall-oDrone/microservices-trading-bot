@@ -1638,6 +1638,242 @@
           ]
         }
       }
+    },
+    {
+      "id": 40,
+      "title": "Expected shortfall and stress scenarios (plan §6.4.9)",
+      "type": "row",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 76
+      },
+      "panels": []
+    },
+    {
+      "id": 41,
+      "title": "VaR 99% vs ES 97.5% (1 day)",
+      "type": "timeseries",
+      "description": "Expected shortfall (Basel FRTB): the average loss on the worst 2.5% of days. Historical ES above parametric = fat tails the normal VaR misses.",
+      "gridPos": {
+        "h": 9,
+        "w": 8,
+        "x": 0,
+        "y": 77
+      },
+      "targets": [
+        {
+          "expr": "max by (currency) (portfolio_var_quote{job=~\"order-management.*\"})",
+          "legendFormat": "VaR 99% {{currency}}",
+          "refId": "A"
+        },
+        {
+          "expr": "max by (currency) (portfolio_es_quote{job=~\"order-management.*\",method=\"parametric\"})",
+          "legendFormat": "ES parametric {{currency}}",
+          "refId": "B"
+        },
+        {
+          "expr": "max by (currency) (portfolio_es_quote{job=~\"order-management.*\",method=\"historical\"})",
+          "legendFormat": "ES historical {{currency}}",
+          "refId": "C"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          }
+        },
+        "overrides": []
+      },
+      "options": {}
+    },
+    {
+      "id": 42,
+      "title": "Stress loss by scenario (today's exposure)",
+      "type": "bargauge",
+      "description": "Loss if each scenario happened now: hypothetical = every book's spot moved by the ratio; historical = a past crisis replayed from Bitso closes, worst point of the episode. Missing bar = scenario incomplete.",
+      "gridPos": {
+        "h": 9,
+        "w": 10,
+        "x": 8,
+        "y": 77
+      },
+      "targets": [
+        {
+          "expr": "max by (currency, scenario) (portfolio_stress_loss_quote{job=~\"order-management.*\"})",
+          "legendFormat": "{{currency}} {{scenario}}",
+          "refId": "A",
+          "instant": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "continuous-YlRd"
+          },
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "orientation": "horizontal",
+        "displayMode": "gradient",
+        "showUnfilled": true,
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        }
+      }
+    },
+    {
+      "id": 43,
+      "title": "Worst stress loss / limit",
+      "type": "stat",
+      "description": "Largest stress loss per currency as a share of RISK_STRESS_LIMITS (PortfolioStressLimitBreached at 100%), and the count of incomplete or proxied historical scenarios.",
+      "gridPos": {
+        "h": 9,
+        "w": 6,
+        "x": 18,
+        "y": 77
+      },
+      "targets": [
+        {
+          "expr": "max by (currency) (portfolio_stress_worst_loss_quote{job=~\"order-management.*\"}) / max by (currency) (portfolio_stress_limit_quote{job=~\"order-management.*\"})",
+          "legendFormat": "{{currency}} worst / limit",
+          "refId": "A"
+        },
+        {
+          "expr": "sum by (currency) (portfolio_stress_incomplete{job=~\"order-management.*\"})",
+          "legendFormat": "{{currency}} incomplete",
+          "refId": "B"
+        },
+        {
+          "expr": "sum by (currency) (portfolio_stress_proxied{job=~\"order-management.*\"})",
+          "legendFormat": "{{currency}} proxied",
+          "refId": "C"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byFrameRefID",
+              "options": "A"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "percentunit"
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "green",
+                      "value": null
+                    },
+                    {
+                      "color": "orange",
+                      "value": 0.8
+                    },
+                    {
+                      "color": "red",
+                      "value": 1
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byFrameRefID",
+              "options": "B"
+            },
+            "properties": [
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "green",
+                      "value": null
+                    },
+                    {
+                      "color": "orange",
+                      "value": 1
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "value_and_name",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        }
+      }
+    },
+    {
+      "id": 44,
+      "title": "Worst stress loss vs limit over time",
+      "type": "timeseries",
+      "description": "portfolio_stress_worst_loss_quote and RISK_STRESS_LIMITS per currency.",
+      "gridPos": {
+        "h": 7,
+        "w": 24,
+        "x": 0,
+        "y": 86
+      },
+      "targets": [
+        {
+          "expr": "max by (currency) (portfolio_stress_worst_loss_quote{job=~\"order-management.*\"})",
+          "legendFormat": "worst {{currency}}",
+          "refId": "A"
+        },
+        {
+          "expr": "max by (currency) (portfolio_stress_limit_quote{job=~\"order-management.*\"})",
+          "legendFormat": "limit {{currency}}",
+          "refId": "B"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          }
+        },
+        "overrides": []
+      },
+      "options": {}
     }
   ],
   "links": [

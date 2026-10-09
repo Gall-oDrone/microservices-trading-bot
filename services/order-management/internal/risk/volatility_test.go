@@ -73,6 +73,7 @@ var volDay = time.Date(2026, 10, 7, 0, 0, 0, 0, time.UTC) // last closed bar
 func newTestEstimator(f *fakeFetch, c *clock) *VolEstimator {
 	est := NewVolEstimator(f.fetch)
 	est.Now = c.now
+	est.Episodes = nil // the vol tests count fetches; episodes have their own tests
 	return est
 }
 
@@ -176,6 +177,7 @@ func TestVolEstimatorShortHistoryIsAnError(t *testing.T) {
 func TestVolEstimatorRunWakesOnNewBook(t *testing.T) {
 	f := &fakeFetch{closes: map[string][]varmodel.Close{}, called: make(chan string, 4)}
 	est := NewVolEstimator(f.fetch)
+	est.Episodes = nil
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	done := make(chan struct{})

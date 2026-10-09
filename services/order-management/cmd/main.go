@@ -28,6 +28,7 @@ import (
 	"bitso-trading-platform/shared/pkg/health"
 	"bitso-trading-platform/shared/pkg/kafka"
 	sharedModels "bitso-trading-platform/shared/pkg/models"
+	"bitso-trading-platform/shared/pkg/varmodel"
 )
 
 const (
@@ -207,6 +208,10 @@ func NewApplication() (*Application, error) {
 		"daily_vol_books":   portfolioCfg.DailyVol,
 		"var_limits":        portfolioCfg.VaRLimits,
 		"marks":             markSource,
+		// §6.4.9: ES 97.5 % and stress losses per currency.
+		"stress_shocks":   portfolioCfg.StressShocks,
+		"stress_limits":   portfolioCfg.StressLimits,
+		"stress_episodes": len(varmodel.Episodes),
 	})
 
 	var fillLedger repository.FillLedger

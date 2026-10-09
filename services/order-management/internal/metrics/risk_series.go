@@ -18,7 +18,8 @@ import (
 // RiskSeries registers on the Registerer it is given (prometheus.Default-
 // Registerer in main, a fresh registry in tests), so it is independent of
 // MetricsCollector's promauto series. All labels are bounded: book, side,
-// direction, currency, asset.
+// direction, currency, asset, and (plan §6.4.9) scenario (the configured
+// shocks plus varmodel.Episodes), type and method.
 
 // Slippage directions for order_slippage_cost_quote_total.
 const (
@@ -62,10 +63,31 @@ type RiskSeries struct {
 	btZone      *prometheus.GaugeVec
 	histVaR     *prometheus.GaugeVec
 	histScen    *prometheus.GaugeVec
+
+	// Expected shortfall and stress (plan §6.4.9).
+	esQuote          *prometheus.GaugeVec
+	stressLoss       *prometheus.GaugeVec
+	stressWorst      *prometheus.GaugeVec
+	stressLimit      *prometheus.GaugeVec
+	stressIncomplete *prometheus.GaugeVec
+	stressProxied    *prometheus.GaugeVec
+	episodeTrough    *prometheus.GaugeVec
 }
 
 // VolSources are the values of risk_var_vol_source's source label.
 var VolSources = []string{"estimated", "fallback", "override", "fixed"}
+
+// Stress scenario types (portfolio_stress_loss_quote's type label).
+const (
+	StressHypothetical = "hypothetical" // uniform spot shock
+	StressHistorical   = "historical"   // a past crisis replayed
+)
+
+// ES methods (portfolio_es_quote's method label).
+const (
+	ESHistorical = "historical"
+	ESParametric = "parametric"
+)
 
 // NewRiskSeries creates and registers the series on reg.
 func NewRiskSeries(reg prometheus.Registerer) *RiskSeries {
@@ -167,11 +189,40 @@ func NewRiskSeries(reg prometheus.Registerer) *RiskSeries {
 			Name: "portfolio_var_historical_scenarios",
 			Help: "Days used for portfolio_var_historical_quote",
 		}, []string{"currency"}),
+		esQuote: prometheus.NewGaugeVec(prometheus.GaugeOpts{
+			Name: "portfolio_es_quote",
+			Help: "1-day 97.5 % expected shortfall per quote currency (Basel FRTB): method=historical, the mean of the worst 2.5 % of the historical-VaR days (absent without history); method=parametric, normal with the VaR's vol (2.338 sigma)",
+		}, []string{"currency", "method"}),
+		stressLoss: prometheus.NewGaugeVec(prometheus.GaugeOpts{
+			Name: "portfolio_stress_loss_quote",
+			Help: "Loss of today's exposure in a stress scenario: type=hypothetical, every book's spot moved by the scenario's ratio; type=historical, a past crisis replayed from Bitso closes, worst point of the episode. 0 when the scenario gains; absent when a historical scenario lacks data for an exposed book",
+		}, []string{"currency", "scenario", "type"}),
+		stressWorst: prometheus.NewGaugeVec(prometheus.GaugeOpts{
+			Name: "portfolio_stress_worst_loss_quote",
+			Help: "Largest loss over the currency's computed stress scenarios",
+		}, []string{"currency"}),
+		stressLimit: prometheus.NewGaugeVec(prometheus.GaugeOpts{
+			Name: "portfolio_stress_limit_quote",
+			Help: "Stress loss limit per quote currency (RISK_STRESS_LIMITS); absent when none",
+		}, []string{"currency"}),
+		stressIncomplete: prometheus.NewGaugeVec(prometheus.GaugeOpts{
+			Name: "portfolio_stress_incomplete",
+			Help: "1 when a historical scenario cannot be computed: an exposed book has no data for the episode and no book on the same asset does",
+		}, []string{"currency", "scenario"}),
+		stressProxied: prometheus.NewGaugeVec(prometheus.GaugeOpts{
+			Name: "portfolio_stress_proxied",
+			Help: "1 when a historical scenario uses another book on the same base asset for a book that did not trade during the episode",
+		}, []string{"currency", "scenario"}),
+		episodeTrough: prometheus.NewGaugeVec(prometheus.GaugeOpts{
+			Name: "risk_stress_episode_trough_ratio",
+			Help: "The book's own worst cumulative move during a historical stress episode, from the close before it (Bitso daily closes)",
+		}, []string{"book", "scenario"}),
 	}
 	reg.MustRegister(m.slippageBps, m.slippageCost, m.filledNotional, m.exposureBase, m.exposureQuote,
 		m.markPrice, m.markFallback, m.dailyVol, m.netBase, m.grossQuote, m.netQuote, m.varQuote,
 		m.varLimit, m.lastRun, m.runErrors,
-		m.volEstimate, m.volSource, m.volDataAge, m.btObs, m.btExc, m.btKupiec, m.btZone, m.histVaR, m.histScen)
+		m.volEstimate, m.volSource, m.volDataAge, m.btObs, m.btExc, m.btKupiec, m.btZone, m.histVaR, m.histScen,
+		m.esQuote, m.stressLoss, m.stressWorst, m.stressLimit, m.stressIncomplete, m.stressProxied, m.episodeTrough)
 	return m
 }
 
@@ -226,6 +277,8 @@ type BookExposure struct {
 	VolSource         string    // estimated | fallback | override | fixed
 	VolDataAgeSeconds float64   // -1: no estimate
 	Model             *VolModel // nil: no estimate yet
+
+	EpisodeTroughs map[string]float64 // episode ID -> the book's worst move
 }
 
 // VolModel is the estimator's view of a book.
@@ -234,14 +287,39 @@ type VolModel struct {
 	Backtest             varmodel.Backtest
 }
 
+// StressResult is one scenario's loss for a currency.
+type StressResult struct {
+	Scenario string
+	Type     string  // StressHypothetical | StressHistorical
+	Loss     float64 // >= 0
+	OK       bool    // false: an exposed book has no data (historical)
+	Proxied  bool
+}
+
 // CurrencyRisk is the aggregate for one quote currency.
 type CurrencyRisk struct {
 	Gross, Net, VaR float64
 	Limit           float64 // 0: none
 
 	HistVaR       float64 // historical-simulation VaR
+	HistES        float64 // historical ES 97.5 % (valid with HistOK)
 	HistScenarios int
 	HistOK        bool
+	ESParam       float64 // normal ES 97.5 %
+
+	Stress      []StressResult
+	StressLimit float64 // 0: none
+}
+
+// WorstStress is the largest computed stress loss and its scenario.
+func (r CurrencyRisk) WorstStress() (float64, string) {
+	worst, name := 0.0, ""
+	for _, s := range r.Stress {
+		if s.OK && (name == "" || s.Loss > worst) {
+			worst, name = s.Loss, s.Scenario
+		}
+	}
+	return worst, name
 }
 
 // SetPortfolio publishes one portfolio run.
@@ -260,6 +338,9 @@ func (m *RiskSeries) SetPortfolio(books []BookExposure, netBase map[string]float
 		}
 		m.markFallback.WithLabelValues(b.Book).Set(fb)
 		m.setModel(b)
+		for id, t := range b.EpisodeTroughs {
+			m.episodeTrough.WithLabelValues(b.Book, id).Set(t)
+		}
 	}
 	for a, v := range netBase {
 		m.netBase.WithLabelValues(a).Set(v)
@@ -274,13 +355,44 @@ func (m *RiskSeries) SetPortfolio(books []BookExposure, netBase map[string]float
 		if r.HistOK {
 			m.histVaR.WithLabelValues(c).Set(r.HistVaR)
 			m.histScen.WithLabelValues(c).Set(float64(r.HistScenarios))
+			m.esQuote.WithLabelValues(c, ESHistorical).Set(r.HistES)
 		} else {
 			// Never leave a stale number behind when history is missing.
 			m.histVaR.DeleteLabelValues(c)
 			m.histScen.DeleteLabelValues(c)
+			m.esQuote.DeleteLabelValues(c, ESHistorical)
 		}
+		m.esQuote.WithLabelValues(c, ESParametric).Set(r.ESParam)
+		m.setStress(c, r)
 	}
 	m.lastRun.Set(float64(at.Unix()))
+}
+
+func (m *RiskSeries) setStress(c string, r CurrencyRisk) {
+	flag := func(b bool) float64 {
+		if b {
+			return 1
+		}
+		return 0
+	}
+	for _, s := range r.Stress {
+		if s.OK {
+			m.stressLoss.WithLabelValues(c, s.Scenario, s.Type).Set(s.Loss)
+		} else {
+			m.stressLoss.DeleteLabelValues(c, s.Scenario, s.Type)
+		}
+		if s.Type == StressHistorical {
+			m.stressIncomplete.WithLabelValues(c, s.Scenario).Set(flag(!s.OK))
+			m.stressProxied.WithLabelValues(c, s.Scenario).Set(flag(s.OK && s.Proxied))
+		}
+	}
+	if len(r.Stress) > 0 {
+		worst, _ := r.WorstStress()
+		m.stressWorst.WithLabelValues(c).Set(worst)
+	}
+	if r.StressLimit > 0 {
+		m.stressLimit.WithLabelValues(c).Set(r.StressLimit)
+	}
 }
 
 func (m *RiskSeries) setModel(b BookExposure) {

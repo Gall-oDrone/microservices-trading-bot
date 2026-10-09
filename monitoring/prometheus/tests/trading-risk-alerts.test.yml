@@ -309,3 +309,41 @@ tests:
               summary: "MXN historical-simulation VaR is 1.8x the parametric VaR"
               description: "The last year's actual returns imply a much larger 99% loss than the normal model. The limit applies to the parametric VaR; the desk should judge exposure on the larger number."
               runbook_url: "docs/runbooks/TRADING-RISK-ALERTS.md#portfoliovarmodeldivergence"
+
+  # Stress (plan §6.4.9): MXN worst stress loss 50k against a 40k limit;
+  # USD has no stress limit. One MXN historical scenario stays incomplete.
+  - interval: 1m
+    input_series:
+      - series: 'portfolio_stress_worst_loss_quote{job="order-management",instance="om-0",currency="MXN"}'
+        values: '50000x150'
+      - series: 'portfolio_stress_limit_quote{job="order-management",instance="om-0",currency="MXN"}'
+        values: '40000x150'
+      - series: 'portfolio_stress_worst_loss_quote{job="order-management",instance="om-0",currency="USD"}'
+        values: '600x150'
+      - series: 'portfolio_stress_incomplete{job="order-management",instance="om-0",currency="MXN",scenario="2018-01-crash"}'
+        values: '1x150'
+      - series: 'portfolio_stress_incomplete{job="order-management",instance="om-0",currency="MXN",scenario="2020-03-covid"}'
+        values: '0x150'
+    alert_rule_test:
+      - eval_time: 14m
+        alertname: PortfolioStressLimitBreached
+        exp_alerts: []
+      - eval_time: 15m
+        alertname: PortfolioStressLimitBreached
+        exp_alerts:
+          - exp_labels: {severity: warning, team: risk, job: order-management, currency: MXN}
+            exp_annotations:
+              summary: "MXN worst stress loss at 125% of its stress limit"
+              description: "In at least one stress scenario today's exposure would lose more than RISK_STRESS_LIMITS allows (see portfolio_stress_loss_quote by scenario). Nothing is blocked; the risk owner decides whether to reduce."
+              runbook_url: "docs/runbooks/TRADING-RISK-ALERTS.md#portfoliostresslimitbreached"
+      - eval_time: 119m
+        alertname: PortfolioStressScenarioIncomplete
+        exp_alerts: []
+      - eval_time: 120m
+        alertname: PortfolioStressScenarioIncomplete
+        exp_alerts:
+          - exp_labels: {severity: warning, team: risk, job: order-management, currency: MXN, scenario: 2018-01-crash}
+            exp_annotations:
+              summary: "MXN stress scenario 2018-01-crash cannot be computed"
+              description: "An exposed book has no Bitso closes for the episode and no book on the same asset does (or the episode fetch keeps failing). The worst stress loss omits this scenario."
+              runbook_url: "docs/runbooks/TRADING-RISK-ALERTS.md#portfoliostressscenarioincomplete"
