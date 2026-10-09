@@ -1,0 +1,37 @@
+# Stage risk capital and limits for order-management's portfolio risk (plan
+# §6.4.10). Reporting only: nothing is blocked; the alerts go to team risk.
+#
+# Capital per quote currency = the policy's maximum order notional for the
+# one book quoted in it (shared/pkg/risk DefaultPolicy: btc_mxn 25,000 MXN,
+# btc_usd 1,500 USD). With one leg per day and max position = max order
+# (0.01 BTC), that is the most a book can deploy; at the 2026-10-08 closes
+# (1,494,500 MXN, 82,318 USD) a full position is 60 % / 55 % of it.
+#
+# Limits as a share of capital, sized on that full position:
+#   VaR 99 % 1 d   5 %  -> MXN 1,250 / USD 75.  Full position: 716 MXN /
+#                        41.9 USD at 2.06 % / 2.19 % daily vol = 57 % / 56 %
+#                        used; the 80 % warning needs vol near 2.9 % or a
+#                        40 % price rise. Today's 0.001 BTC uses about 6 %.
+#   Worst stress  50 %  -> MXN 12,500 / USD 750. Full position in a 2018-01
+#                        replay (-62 %): 9,266 MXN / 510 USD = 74 % / 68 %.
+# An unlevered long capped below capital cannot lose all of it, so
+# PortfolioStressExceedsCapital and the reverse-stress move stay quiet unless
+# exposure exceeds capital (a policy or position error).
+#
+# Change these together with the policy's max_order_notional.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: order-management
+spec:
+  template:
+    spec:
+      containers:
+      - name: order-management
+        env:
+        - name: RISK_CAPITAL
+          value: "MXN=25000,USD=1500"
+        - name: RISK_VAR_LIMITS
+          value: "MXN=1250,USD=75"
+        - name: RISK_STRESS_LIMITS
+          value: "MXN=12500,USD=750"

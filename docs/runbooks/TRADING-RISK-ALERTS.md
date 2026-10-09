@@ -234,7 +234,10 @@ VaR and ES, the worst stress loss, and net and gross exposure, each divided by c
 `portfolio_reverse_stress_move_ratio` is the reverse stress test: the uniform spot move that loses
 exactly the capital on today's net exposure (−0.40 means a 40 % fall). Compare it with the replayed
 crises (2018-01 −62 %, 2020-03 −36 %). It is absent when a long cannot lose that much (capital above
-its exposure). Unset capital: no series, alert inactive.
+its exposure). Unset capital: no series, alert inactive. Stage (dev overlay
+`order-management-risk-capital.yaml`): capital MXN 25,000 / USD 1,500 (the policy's max order
+notional), VaR limit 5 % and stress limit 50 % of it; sizing in plan §6.4.10. Change the policy's
+`max_order_notional` and these together (`stage_capital_test.go` fails otherwise).
 
 ### PortfolioStressExceedsCapital
 *warning, after 15 min.* A stress scenario (dashboard "Risk as a share of capital", `stress_worst`)
@@ -254,8 +257,9 @@ separately registered decision.
 
 ### Reconciliation breaks (daily-reconcile)
 `go run ./cmd/daily-reconcile -ledger <stage ledger> [-out reconcile.json]` (strategy-executor),
-after the day's executor run has finished. It only reads (stage keys, chmod 600 env file) and
-exits 3 on any break:
+after the day's executor run has finished; `scripts/daily-executor-run.sh` already runs it after every
+stage run (run log `reconcile=ok|breaks|error`, Data health "Reconcile" column, emailed as a Last run
+warning). It only reads (stage keys, chmod 600 env file) and exits 3 on any break:
 - **leg mismatch**: Bitso's trades under the leg's client ids do not sum to the ledger's
   quantity, notional, fees or base change, or include an order the ledger does not list. Treat the
   exchange as the source of truth. Halt the book (Risk page) before correcting the ledger line by

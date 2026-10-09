@@ -322,6 +322,7 @@ function RunsTable({ runs }: { runs: RunLog[] }) {
             {books.map((b) => (
               <th key={b}>{bookLabel(b)}</th>
             ))}
+            <th>Reconcile</th>
             <th>S3 copy</th>
           </tr>
         </thead>
@@ -343,6 +344,17 @@ function RunsTable({ runs }: { runs: RunLog[] }) {
                   </td>
                 )
               })}
+              <td title={r.reconcile_detail || undefined}>
+                {r.reconcile === 'ok' ? (
+                  <Badge tone="ok">matched</Badge>
+                ) : r.reconcile === 'breaks' ? (
+                  <Badge tone="block">breaks</Badge>
+                ) : r.reconcile === 'error' ? (
+                  <Badge tone="warn">error</Badge>
+                ) : (
+                  <span className="faint">—</span>
+                )}
+              </td>
               <td>
                 {r.upload === 'ok' ? (
                   <Badge tone="ok">uploaded</Badge>

@@ -7,7 +7,9 @@
 #                                               02:30 UTC = after the compactor's 2 h settle)
 #
 # It builds services/ui-api/bin/ui-alerts (and the executor binary only when it is
-# missing, or with --rebuild-executor), writes the jobs' settings to
+# missing, or with --rebuild-executor), and services/strategy-executor/daily-executor-data/
+# daily-reconcile (the read-only stage reconciliation daily-executor-run.sh runs after each
+# stage run, plan §6.4.10), writes the jobs' settings to
 # ~/.config/microservices-trading-bot/ops.env (chmod 600), and replaces its own block
 # in your crontab (between "# BEGIN mtb-ops" and "# END mtb-ops"); other entries are
 # kept.
@@ -132,6 +134,10 @@ trap 'rm -rf ${tmps[@]+"${tmps[@]}"}' EXIT
 
 echo "building services/ui-api/bin/ui-alerts"
 (cd "$ROOT/services/ui-api" && go build -o bin/ui-alerts ./cmd/ui-alerts)
+if [ "$executor" = 1 ]; then
+  echo "building services/strategy-executor/daily-executor-data/daily-reconcile"
+  (cd "$ROOT/services/strategy-executor" && mkdir -p daily-executor-data && go build -o daily-executor-data/daily-reconcile ./cmd/daily-reconcile)
+fi
 exe="$ROOT/services/strategy-executor/daily-executor-data/daily-executor"
 if [ "$executor" = 1 ] && { [ "$rebuild" = 1 ] || [ ! -x "$exe" ]; }; then
   head="$(git -C "$ROOT" rev-parse HEAD)"

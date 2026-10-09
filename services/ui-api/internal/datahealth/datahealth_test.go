@@ -192,3 +192,32 @@ func TestRunUploadFailedIsWarn(t *testing.T) {
 		t.Fatalf("exit 2 %+v", r)
 	}
 }
+
+// The stage reconciliation's line (scripts/daily-executor-run.sh, §6.4.10):
+// breaks or a failed run downgrade an exit-0 run to a warning; ok keeps it OK.
+func TestRunReconcileOutcome(t *testing.T) {
+	dir := t.TempDir()
+	recon := "leg   btc_mxn  2026-09-30 buy  matched\nreconcile: 2 legs, 8 leg-less days checked, 0 breaks\n"
+	for name, c := range map[string]struct {
+		tail, want, status string
+	}{
+		"run-20261009T061500Z.log": {"reconcile=ok\n", "ok", OK},
+		"run-20261009T061501Z.log": {"reconcile=breaks ./daily-executor-data/stage/reconcile.json\n", "breaks", Warn},
+		"run-20261009T061502Z.log": {"reconcile=error\n", "error", Warn},
+		"run-20261009T061503Z.log": {"", "", OK}, // dry run or before §6.4.10
+	} {
+		writeLog(t, dir, name, sampleLog+recon+c.tail+"exit=0\n", now.Add(-time.Hour))
+		r, err := ParseRunLog(filepath.Join(dir, name), now)
+		if err != nil || r.Reconcile != c.want || r.Status != c.status {
+			t.Errorf("%s: reconcile %q status %s (%s), want %q %s; %v", name, r.Reconcile, r.Status, r.Message, c.want, c.status, err)
+		}
+		if c.want == "breaks" && (r.ReconcileDetail != "./daily-executor-data/stage/reconcile.json" || !strings.Contains(r.Message, "reconciliation found breaks")) {
+			t.Errorf("breaks detail %q message %q", r.ReconcileDetail, r.Message)
+		}
+	}
+	// A failed executor run stays a failure whatever the reconciliation says.
+	writeLog(t, dir, "run-20261009T061504Z.log", sampleLog+"reconcile=ok\nexit=1\n", now.Add(-time.Hour))
+	if r, _ := ParseRunLog(filepath.Join(dir, "run-20261009T061504Z.log"), now); r.Status != Fail {
+		t.Errorf("exit 1 with reconcile ok: %+v", r)
+	}
+}

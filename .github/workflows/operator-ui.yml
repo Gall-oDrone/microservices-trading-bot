@@ -110,6 +110,11 @@ jobs:
           go vet ./cmd/daily-executor ./internal/dailyexec ./internal/dailyrule ./internal/bitsodaily ./cmd/daily-research ./internal/server ./cmd/daily-reconcile ./internal/reconcile ./internal/stageenv
           go test -race -count=1 ./cmd/daily-executor ./internal/dailyexec ./internal/dailyrule ./cmd/daily-research ./internal/server ./cmd/daily-reconcile ./internal/reconcile
 
+      # Plan §6.4.10: scripts/daily-executor-run.sh reconciles after each stage
+      # run without changing the exit code (fake binaries, no network).
+      - name: daily-executor-run.sh reconciliation step
+        run: bash scripts/tests/daily-executor-run-test.sh
+
       - name: ui-api
         working-directory: services/ui-api
         run: |
@@ -157,6 +162,7 @@ jobs:
             services/order-management/internal/risk/portfolio_vol_test.go \
             services/order-management/internal/risk/portfolio_stress_test.go \
             services/order-management/internal/risk/portfolio_capital_test.go \
+            services/order-management/internal/risk/stage_capital_test.go \
             services/order-management/internal/risk/volatility.go \
             services/order-management/internal/risk/volatility_test.go \
             services/order-management/internal/risk/volatility_episodes_test.go \

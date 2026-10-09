@@ -15,6 +15,12 @@
 # The upload never changes the run's exit code; a failed upload is recorded in
 # the log and shown as a failure on the Data health page.
 #
+# After a -stage run it also reconciles the ledger against Bitso stage
+# (cmd/daily-reconcile, read-only; plan §6.4.10): its output goes into the run
+# log, then "reconcile=ok|breaks|error"; the JSON report is
+# <ledger dir>/reconcile.json (uploaded with the rest). Like the upload, it
+# never changes the exit code. DAILY_RECONCILE=0 skips it.
+#
 # Usage (from anywhere; extra flags go to the executor):
 #   scripts/daily-executor-run.sh -stage
 #   DAILY_EXECUTOR_S3_URI=s3://bucket/daily-executor/stage scripts/daily-executor-run.sh -stage
@@ -24,6 +30,9 @@
 #                                             relative to services/strategy-executor)
 #   DAILY_EXECUTOR_LEDGER  ledger path       (default ./daily-executor-data/stage/ledger.jsonl)
 #   DAILY_EXECUTOR_S3_URI  upload target     (default: no upload)
+#   DAILY_RECONCILE_BIN    reconcile binary  (default ./daily-executor-data/daily-reconcile;
+#                                             missing: "reconcile=error" with the build command)
+#   DAILY_RECONCILE        0 to skip the reconciliation
 set -uo pipefail
 
 cd "$(dirname "$0")/../services/strategy-executor" || exit 2
@@ -42,6 +51,24 @@ fi
 "$BIN" -ledger "$LEDGER" "$@" 2>&1 | tee "$LOG"
 code=${PIPESTATUS[0]}
 
+stage=0
+for a in "$@"; do
+  case "$a" in -stage | --stage | -stage=true | --stage=true) stage=1 ;; esac
+done
+if [ "$stage" = 1 ] && [ "${DAILY_RECONCILE:-1}" != 0 ]; then
+  RBIN="${DAILY_RECONCILE_BIN:-./daily-executor-data/daily-reconcile}"
+  if [ -x "$RBIN" ]; then
+    "$RBIN" -ledger "$LEDGER" -out "$DIR/reconcile.json" 2>&1 | tee -a "$LOG"
+    case "${PIPESTATUS[0]}" in
+      0) echo "reconcile=ok" | tee -a "$LOG" ;;
+      3) echo "reconcile=breaks $DIR/reconcile.json" | tee -a "$LOG" ;;
+      *) echo "reconcile=error" | tee -a "$LOG" ;;
+    esac
+  else
+    echo "reconcile=error $RBIN not found (go build -o $RBIN ./cmd/daily-reconcile)" | tee -a "$LOG"
+  fi
+fi
+
 if [ -n "${DAILY_EXECUTOR_S3_URI:-}" ]; then
   dest="${DAILY_EXECUTOR_S3_URI%/}"
   ok=1
@@ -56,6 +83,9 @@ if [ -n "${DAILY_EXECUTOR_S3_URI:-}" ]; then
   fi
   if [ -d "$DIR/candles" ]; then
     aws s3 sync "$DIR/candles" "$dest/candles" --exclude '*' --include '*.csv' --only-show-errors || ok=0
+  fi
+  if [ -f "$DIR/reconcile.json" ]; then
+    aws s3 cp "$DIR/reconcile.json" "$dest/reconcile.json" --only-show-errors || ok=0
   fi
   if [ "$ok" = 1 ]; then
     echo "upload=ok $dest" | tee -a "$LOG"

@@ -863,6 +863,9 @@ export const runLogSchema = z.object({
   upload_target: z.string(),
   books: z.array(z.object({ book: z.string(), stage: z.string(), ledger: z.string() })),
   errors: z.array(z.string()),
+  /** Stage reconciliation after the run (plan §6.4.10); '' when not run or before it existed. */
+  reconcile: z.enum(['ok', 'breaks', 'error', '']).default(''),
+  reconcile_detail: z.string().default(''),
 })
 export type RunLog = z.infer<typeof runLogSchema>
 

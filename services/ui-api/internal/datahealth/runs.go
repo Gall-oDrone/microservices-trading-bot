@@ -22,7 +22,8 @@ type RunBook struct {
 
 // RunLog is one daily-executor run log (run-<UTC>.log next to the ledger),
 // as written by scripts/daily-executor-run.sh: the executor's output, then
-// "upload=ok|failed <dest>" when uploading, then "exit=<code>".
+// (after -stage) the reconciliation's output and "reconcile=ok|breaks|error",
+// then "upload=ok|failed <dest>" when uploading, then "exit=<code>".
 type RunLog struct {
 	File         string    `json:"file"`
 	StartedAt    string    `json:"started_at"`
@@ -36,6 +37,10 @@ type RunLog struct {
 	UploadTarget string    `json:"upload_target"`
 	Books        []RunBook `json:"books"`
 	Errors       []string  `json:"errors"`
+	// Reconcile is the stage reconciliation's outcome (plan §6.4.10):
+	// ok | breaks | error | "" (not run: dry run, or before it existed).
+	Reconcile       string `json:"reconcile"`
+	ReconcileDetail string `json:"reconcile_detail"`
 }
 
 // RunningFor is how long a log without an exit line counts as a run still in
@@ -49,6 +54,7 @@ var (
 	bookHead  = regexp.MustCompile(`^\[([a-z]{2,6}_[a-z]{2,6})\] \S+\.md$`)
 	exitLine  = regexp.MustCompile(`^exit=(-?\d+)$`)
 	uploadRe  = regexp.MustCompile(`^upload=(ok|failed)(?: (.*))?$`)
+	reconRe   = regexp.MustCompile(`^reconcile=(ok|breaks|error)(?: (.*))?$`)
 	errLine   = regexp.MustCompile(`(?i)\b(error|refus|panic|fatal|blocked)`)
 )
 
@@ -138,6 +144,9 @@ func ParseRun(name string, modified time.Time, body io.Reader, now time.Time) (R
 		case uploadRe.MatchString(line):
 			m := uploadRe.FindStringSubmatch(line)
 			r.Upload, r.UploadTarget = m[1], m[2]
+		case reconRe.MatchString(line):
+			m := reconRe.FindStringSubmatch(line)
+			r.Reconcile, r.ReconcileDetail = m[1], m[2]
 		case bookHead.MatchString(line):
 			current = bookHead.FindStringSubmatch(line)[1]
 			book(current)
@@ -182,6 +191,12 @@ func ParseRun(name string, modified time.Time, body io.Reader, now time.Time) (R
 	}
 	if r.Upload == "failed" && r.Status == OK {
 		r.Status, r.Message = Warn, "exit 0, but the S3 upload failed"
+	}
+	switch {
+	case r.Reconcile == "breaks" && r.Status == OK:
+		r.Status, r.Message = Warn, "exit 0, but the stage reconciliation found breaks (reconcile.json; runbook: Reconciliation breaks)"
+	case r.Reconcile == "error" && r.Status == OK:
+		r.Status, r.Message = Warn, "exit 0, but the stage reconciliation could not run: read the log"
 	}
 	return r, nil
 }

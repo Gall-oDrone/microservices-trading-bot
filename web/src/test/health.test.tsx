@@ -111,6 +111,22 @@ describe('Data health page', () => {
     if (fails > 0) expect(document.getElementById('nav-data-health')).toHaveTextContent(String(fails))
   })
 
+  it('shows the stage reconciliation outcome per run', async () => {
+    const d = stage()
+    expect(d.executor.runs.length).toBeGreaterThanOrEqual(2)
+    // Captured runs predate the reconciliation: the field defaults to ''.
+    expect(d.executor.runs.every((r) => r.reconcile === '')).toBe(true)
+    d.executor.runs[0] = { ...d.executor.runs[0], reconcile: 'breaks', reconcile_detail: 'stage/reconcile.json' }
+    d.executor.runs[1] = { ...d.executor.runs[1], reconcile: 'ok' }
+    server.use(http.get('/api/ui/health/data', () => HttpResponse.json(d)))
+    renderAt('/data-health')
+    const table = within(await screen.findByTestId('executor')).getByRole('table')
+    expect(within(table).getByRole('columnheader', { name: 'Reconcile' })).toBeInTheDocument()
+    const body = within(table).getAllByRole('row').slice(1)
+    expect(within(body[0]).getByText('breaks').closest('td')).toHaveAttribute('title', 'stage/reconcile.json')
+    expect(within(body[1]).getByText('matched')).toBeInTheDocument()
+  })
+
   it('explains how to turn the archive on when it is off', async () => {
     const d = stage()
     d.archive = { status: 'off', source: '', checked_at: d.generated_at, books: [] }

@@ -607,13 +607,38 @@ roles. Additive only: the SMA50 rule, its costs and the paper account are unchan
   - that the account's BTC covers both books (not equality: the account holds other BTC).
 
   Exit 3 on any break; `-out` writes the JSON report. The env-file loader moved to
-  `internal/stageenv`, and the executor delegates to it unchanged. Tested only against fakes,
-  anchored on the two real stage legs. **It has not been run against Bitso stage**; that waits for
-  operator approval.
-- **Open:** run `daily-reconcile` on stage once approved, then schedule it after each executor run
-  and surface its report in ui-api data health. Set `RISK_CAPITAL`, `RISK_VAR_LIMITS` and
-  `RISK_STRESS_LIMITS` once the stage capital is agreed. Alertmanager receivers are still a
-  template.
+  `internal/stageenv`, and the executor delegates to it unchanged. Tested against fakes anchored on
+  the two real stage legs, then run on stage once approved (next bullet).
+- **First stage run (2026-10-09, approved).** 0 breaks:
+  - both legs matched: btc_mxn 2 trades (1 maker, 1 market fallback), btc_usd 1;
+  - 8 leg-less days (2026-10-02/03/05/06, both books) had no trades;
+  - positions equal the sum of the legs;
+  - the account's 0.4159 BTC covers the books' 0.0020.
+- **Nightly.** `scripts/daily-executor-run.sh` now reconciles after every `-stage` run (the
+  06:15 UTC cron). It writes the output and `reconcile=ok|breaks|error` into the run log, and
+  `reconcile.json` next to the ledger, uploaded with it. The exit code is unchanged;
+  `DAILY_RECONCILE=0` skips it. ui-api parses the line: breaks or an error turn an exit-0 run into
+  a warning on Data health, which ui-alerts emails. The runs table has a Reconcile column.
+  `scripts/install-ops-cron.sh` builds `daily-executor-data/daily-reconcile`.
+  `scripts/tests/daily-executor-run-test.sh` (CI) pins all of this with fake binaries.
+- **Stage capital and limits** (`k8s/overlays/development/order-management-risk-capital.yaml`; the
+  dev cluster is the one on Bitso stage). Capital = the policy's max order notional per book,
+  `RISK_CAPITAL=MXN=25000,USD=1500`: with max position = max order = 0.01 BTC and one leg a day,
+  it is the most a book can deploy. A full position at the 2026-10-08 closes is 60 % / 55 % of it.
+
+  | | Limit | Share of capital | Full position (0.01 BTC) | Today (0.001 BTC) |
+  |---|---|---|---|---|
+  | `RISK_VAR_LIMITS` | MXN 1,250 / USD 75 | 5 % | 716 MXN / 41.9 USD: 57 % / 56 % used | about 6 % used |
+  | `RISK_STRESS_LIMITS` | MXN 12,500 / USD 750 | 50 % | 2018-01 replay 9,266 MXN / 510 USD: 74 % / 68 % used | about 7 % used |
+
+  The 80 % VaR warning needs vol near 2.9 % (now 2.06 % / 2.19 %) or a 40 % price rise at full
+  size. An unlevered long held below capital cannot lose all of it, so
+  `PortfolioStressExceedsCapital` only fires on a policy or position error.
+  `stage_capital_test.go` keeps the overlay parseable, capital equal to the policy's
+  `max_order_notional`, and VaR limit < stress limit < capital. Rendered with `kustomize build`;
+  **not applied to any cluster**.
+- **Open:** apply the dev overlay when the next order-management image rolls out (operator step).
+  Revisit the figures if the policy's sizes change. Alertmanager receivers are still a template.
 
 ### 6.5 First findings from the real stage ledger
 - **btc_mxn's first stage leg cost 118 bps against 70 assumed.** The post-only order rested 60 min, filled 0.1%, and fell back to market: taker fee 78 bps + 40 bps above the fill-day open. A stage leg is small and stage liquidity is thin, so this is not yet evidence about production costs. But it is the cost signal to watch: the pre-registration's secondary (taker) scenario is 88 bps per leg, and this leg exceeded both.
