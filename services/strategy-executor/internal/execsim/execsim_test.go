@@ -148,3 +148,29 @@ func TestSummarize(t *testing.T) {
 		t.Fatal("empty")
 	}
 }
+
+func TestCompare(t *testing.T) {
+	leg := func(c float64) Leg { return Leg{Result: Result{CostBps: c}} }
+	base := []Leg{leg(70), leg(60), leg(80), leg(60)}
+	alt := []Leg{leg(65), leg(60), leg(70), leg(61)}
+	p, ok := Compare(base, alt)
+	if !ok || p.N != 4 {
+		t.Fatal("not ok")
+	}
+	near(t, "mean diff", p.MeanDiffBps, (-5+0-10+1)/4.0)
+	near(t, "alt cheaper", p.AltCheaperShare, 0.5)
+	near(t, "ties", p.TieShare, 0.25)
+	near(t, "base mean", p.BaseMeanBps, 67.5)
+	if !(p.T < 0 && p.PAltCheaper < 0.5 && p.PAltCheaper > 0) {
+		t.Fatalf("t %v p %v", p.T, p.PAltCheaper)
+	}
+	// p is the normal CDF at t: t = 0 gives 0.5.
+	q, _ := Compare([]Leg{leg(1), leg(2)}, []Leg{leg(2), leg(1)})
+	near(t, "symmetric p", q.PAltCheaper, 0.5)
+	if _, ok := Compare(base, alt[:2]); ok {
+		t.Fatal("mismatched lengths must not compare")
+	}
+	if c, _ := Compare([]Leg{leg(5), leg(5)}, []Leg{leg(4), leg(4)}); c.PAltCheaper != 0 {
+		t.Fatalf("constant improvement p %v", c.PAltCheaper)
+	}
+}

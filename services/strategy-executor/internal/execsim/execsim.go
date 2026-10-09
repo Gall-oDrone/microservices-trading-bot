@@ -310,3 +310,72 @@ func quantile(xs []float64, q float64) float64 {
 	hi := int(math.Ceil(pos))
 	return xs[lo] + (xs[hi]-xs[lo])*(pos-float64(lo))
 }
+
+// Paired compares two schedules leg by leg on the same days and sides
+// (base[i] and alt[i] must be the same leg). The difference is alt − base,
+// so negative means alt was cheaper. The p-value is one-sided for "alt is
+// cheaper", from the normal approximation to the paired t statistic (fine
+// for the 60+ legs a forward window gives; reported with N so a reader can
+// judge).
+type Paired struct {
+	N               int     `json:"n"`
+	MeanDiffBps     float64 `json:"mean_diff_bps"`
+	StdErrBps       float64 `json:"std_err_bps"`
+	T               float64 `json:"t"`
+	PAltCheaper     float64 `json:"p_alt_cheaper"` // one-sided
+	AltCheaperShare float64 `json:"alt_cheaper_share"`
+	TieShare        float64 `json:"tie_share"`
+	BaseMeanBps     float64 `json:"base_mean_bps"`
+	AltMeanBps      float64 `json:"alt_mean_bps"`
+	BaseP90Bps      float64 `json:"base_p90_bps"`
+	AltP90Bps       float64 `json:"alt_p90_bps"`
+}
+
+// Compare pairs base and alt; ok is false when they are not the same length
+// or empty.
+func Compare(base, alt []Leg) (Paired, bool) {
+	if len(base) == 0 || len(base) != len(alt) {
+		return Paired{}, false
+	}
+	n := float64(len(base))
+	p := Paired{N: len(base)}
+	diffs := make([]float64, len(base))
+	bc, ac := make([]float64, len(base)), make([]float64, len(base))
+	var sum float64
+	for i := range base {
+		d := alt[i].CostBps - base[i].CostBps
+		diffs[i], bc[i], ac[i] = d, base[i].CostBps, alt[i].CostBps
+		sum += d
+		p.BaseMeanBps += bc[i] / n
+		p.AltMeanBps += ac[i] / n
+		switch {
+		case math.Abs(d) < 1e-9:
+			p.TieShare++
+		case d < 0:
+			p.AltCheaperShare++
+		}
+	}
+	p.AltCheaperShare /= n
+	p.TieShare /= n
+	p.MeanDiffBps = sum / n
+	if len(base) > 1 {
+		var v float64
+		for _, d := range diffs {
+			v += (d - p.MeanDiffBps) * (d - p.MeanDiffBps)
+		}
+		p.StdErrBps = math.Sqrt(v/(n-1)) / math.Sqrt(n)
+	}
+	switch {
+	case p.StdErrBps > 0:
+		p.T = p.MeanDiffBps / p.StdErrBps
+		p.PAltCheaper = 0.5 * math.Erfc(-p.T/math.Sqrt2) // P(Z <= t)
+	case p.MeanDiffBps < 0:
+		p.PAltCheaper = 0
+	default:
+		p.PAltCheaper = 1
+	}
+	sort.Float64s(bc)
+	sort.Float64s(ac)
+	p.BaseP90Bps, p.AltP90Bps = quantile(bc, 0.9), quantile(ac, 0.9)
+	return p, true
+}

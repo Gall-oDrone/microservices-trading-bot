@@ -63,21 +63,37 @@ type Row struct {
 
 // BookReport is one book's study.
 type BookReport struct {
-	Book            string  `json:"book"`
-	From            string  `json:"from"`
-	To              string  `json:"to"`
-	Trades          int     `json:"trades"`
-	Days            int     `json:"days"`      // days with trades
-	DaysUsed        int     `json:"days_used"` // days whose coverage passed, at the first start
-	DaysSkipped     int     `json:"days_skipped"`
-	ADVBTC          float64 `json:"adv_btc"`
-	DailyVol        float64 `json:"daily_vol"`
-	HalfSpreadBps   float64 `json:"half_spread_bps"`
-	MakerFeeBps     float64 `json:"maker_fee_bps"`
-	TakerFeeBps     float64 `json:"taker_fee_bps"`
-	PrimaryLegBps   float64 `json:"primary_leg_bps"`
-	SecondaryLegBps float64 `json:"secondary_leg_bps"`
-	Rows            []Row   `json:"rows"`
+	Book          string  `json:"book"`
+	From          string  `json:"from"`
+	To            string  `json:"to"`
+	Trades        int     `json:"trades"`
+	Days          int     `json:"days"`      // days with trades
+	DaysUsed      int     `json:"days_used"` // days whose coverage passed, at the first start
+	DaysSkipped   int     `json:"days_skipped"`
+	ADVBTC        float64 `json:"adv_btc"`
+	DailyVol      float64 `json:"daily_vol"`
+	HalfSpreadBps float64 `json:"half_spread_bps"`
+	// HalfSpreadSource is "flag" or "book-samples (n=…)": the measured
+	// median spread / 2 from the hourly sampler when -book-samples is set.
+	HalfSpreadSource string  `json:"half_spread_source"`
+	MakerFeeBps      float64 `json:"maker_fee_bps"`
+	TakerFeeBps      float64 `json:"taker_fee_bps"`
+	PrimaryLegBps    float64 `json:"primary_leg_bps"`
+	SecondaryLegBps  float64 `json:"secondary_leg_bps"`
+	Rows             []Row   `json:"rows"`
+	// Comparisons pair -compare-base and -compare-alt leg by leg (same day,
+	// side, start, size and fill model); negative is alt cheaper.
+	Comparisons []Comparison `json:"comparisons"`
+}
+
+// Comparison is one paired comparison.
+type Comparison struct {
+	Base   string  `json:"base"`
+	Alt    string  `json:"alt"`
+	Model  string  `json:"model"`
+	QtyBTC float64 `json:"qty_btc"`
+	Start  string  `json:"start"`
+	execsim.Paired
 }
 
 // Report is the JSON written.
@@ -101,6 +117,8 @@ type config struct {
 	quoteMaxAge time.Duration
 	impactY     float64
 	reportSize  float64
+	keep        map[string]bool // -schedules; empty keeps all
+	base, alt   string          // -compare-base, -compare-alt
 }
 
 func main() {
@@ -119,6 +137,10 @@ func main() {
 	maxGap := flag.Duration("max-gap", 30*time.Minute, "skip a day when the archive has a longer stretch without trades between the day's open and the end of the longest window")
 	impactY := flag.Float64("impact-y", 1.0, "square-root impact coefficient for market orders (1.0: the conservative end)")
 	reportSize := flag.Float64("report-size", 0.001, "leg size of the detailed markdown tables")
+	schedulesS := flag.String("schedules", "", "only these schedules, comma-separated names as in the report (default: all)")
+	compareBase := flag.String("compare-base", "maker 1h", "paired comparison: the baseline schedule (today's)")
+	compareAlt := flag.String("compare-alt", "maker 1h repriced 5m", "paired comparison: the alternative schedule")
+	bookSamples := flag.String("book-samples", "", "hourly book samples dir (cmd/book-sampler): the fallback half-spread becomes the measured median spread / 2 when it has at least 24 samples in the window")
 	outJSON := flag.String("out-json", "", "write the JSON here")
 	outMD := flag.String("out-md", "", "write the markdown here (default stdout)")
 	flag.Parse()
@@ -133,6 +155,13 @@ func main() {
 		os.Exit(2)
 	}
 	cfg.maxGap, cfg.impactY, cfg.reportSize, cfg.quoteMaxAge = *maxGap, *impactY, *reportSize, *quoteMaxAge
+	cfg.base, cfg.alt = *compareBase, *compareAlt
+	if names := splitList(*schedulesS); len(names) > 0 {
+		cfg.keep = map[string]bool{}
+		for _, n := range names {
+			cfg.keep[n] = true
+		}
+	}
 	from, err := time.Parse("2006-01-02", *fromS)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "exec-research: -from:", err)
@@ -162,7 +191,11 @@ func main() {
 	src := loader.NewS3Archive(store, loader.ArchiveConfig{Bucket: *bucket, Prefix: *prefix, Concurrency: 32})
 
 	rep := Report{Schema: schema, GeneratedAt: time.Now().UTC().Format(time.RFC3339), Source: source,
-		MaxGap: cfg.maxGap.String(), ImpactY: cfg.impactY, Schedules: schedules(cfg.windows), Note: note}
+		MaxGap: cfg.maxGap.String(), ImpactY: cfg.impactY, Schedules: filterSchedules(schedules(cfg.windows), cfg.keep), Note: note}
+	if len(rep.Schedules) == 0 {
+		fmt.Fprintln(os.Stderr, "exec-research: -schedules matches no schedule")
+		os.Exit(2)
+	}
 	for _, b := range strings.Split(*books, ",") {
 		b = strings.TrimSpace(b)
 		rows, st, err := src.LoadTrades(ctx, b, from, to.Add(24*time.Hour-time.Nanosecond))
@@ -177,7 +210,17 @@ func main() {
 		for i, r := range rows {
 			trades[i] = execsim.Trade{At: r.ExchangeTS.UTC(), Price: r.Price, Amount: r.Amount, MakerSide: makerSide(r.MakerSide)}
 		}
-		rep.Books = append(rep.Books, study(b, trades, cfg, rep.Schedules))
+		bc := cfg
+		bc.halfSpread = map[string]float64{b: cfg.halfSpread[b]}
+		src := "flag"
+		if *bookSamples != "" {
+			if hs, n := sampledHalfSpread(*bookSamples, b, from, to.Add(24*time.Hour)); n >= minSamples {
+				bc.halfSpread[b], src = hs, fmt.Sprintf("book-samples (n=%d)", n)
+			}
+		}
+		br := study(b, trades, bc, rep.Schedules)
+		br.HalfSpreadSource = src
+		rep.Books = append(rep.Books, br)
 	}
 	if *outJSON != "" {
 		data, _ := json.MarshalIndent(rep, "", "  ")
@@ -204,6 +247,39 @@ const note = "Research only. Trades are Bitso production public prints; stage fi
 	"Through/Touch bracket the unknown queue position. " +
 	"Market orders take the ask/bid plus square-root impact. The live executor and the pre-registered costs are unchanged; " +
 	"any execution change needs its own pre-registration."
+
+// minSamples is the number of hourly book samples (a day) before the
+// measured spread replaces the flag's half-spread.
+const minSamples = 24
+
+// sampledHalfSpread is half the median spread of book's samples in [from, to).
+func sampledHalfSpread(dir, book string, from, to time.Time) (float64, int) {
+	samples, _, err := execcost.ReadSamples(execcost.SamplePath(dir, book))
+	if err != nil {
+		return 0, 0
+	}
+	var in []execcost.Sample
+	for _, s := range samples {
+		if at, err := time.Parse(time.RFC3339, s.At); err == nil && at.Before(to) {
+			in = append(in, s)
+		}
+	}
+	sum := execcost.SummarizeSamples(in, from)
+	return sum.SpreadBps.P50 / 2, sum.Samples
+}
+
+func filterSchedules(all []Schedule, keep map[string]bool) []Schedule {
+	if len(keep) == 0 {
+		return all
+	}
+	var out []Schedule
+	for _, s := range all {
+		if keep[s.Name] {
+			out = append(out, s)
+		}
+	}
+	return out
+}
 
 // makerSide maps the archive's maker_side to execsim's convention.
 func makerSide(s string) int {
@@ -338,7 +414,7 @@ func dayStats(trades []execsim.Trade) (adv, vol float64, days int) {
 }
 
 func study(book string, trades []execsim.Trade, cfg config, scheds []Schedule) BookReport {
-	br := BookReport{Book: book, Trades: len(trades), HalfSpreadBps: cfg.halfSpread[book], Rows: []Row{}}
+	br := BookReport{Book: book, Trades: len(trades), HalfSpreadBps: cfg.halfSpread[book], Rows: []Row{}, Comparisons: []Comparison{}}
 	if pc, ok := dailyledger.PreregCosts[book]; ok {
 		br.PrimaryLegBps, br.SecondaryLegBps = pc.PrimaryLegBps, pc.SecondaryLegBps
 		br.MakerFeeBps, br.TakerFeeBps = pc.PrimaryLegBps-10, pc.SecondaryLegBps-10
@@ -424,6 +500,13 @@ func study(book string, trades []execsim.Trade, cfg config, scheds []Schedule) B
 						Summary: sum, VsPrimaryBps: sum.MeanBps - br.PrimaryLegBps})
 				}
 			}
+			for _, m := range []string{"through", "touch"} {
+				// Legs are appended in the same day/side order for every
+				// schedule, so index i is the same leg in both slices.
+				if p, ok := execsim.Compare(legs[key{cfg.base, m, q, start}], legs[key{cfg.alt, m, q, start}]); ok {
+					br.Comparisons = append(br.Comparisons, Comparison{Base: cfg.base, Alt: cfg.alt, Model: m, QtyBTC: q, Start: clock(start), Paired: p})
+				}
+			}
 		}
 	}
 	return br
@@ -457,8 +540,8 @@ func writeMarkdown(w io.Writer, rep Report, cfg config) {
 	todayName := "maker " + short(todayWindow)
 	for _, b := range rep.Books {
 		fmt.Fprintf(w, "## %s\n\n", b.Book)
-		fmt.Fprintf(w, "%s → %s: %d trades over %d days; %d days used, %d skipped. ADV %.2f BTC, daily vol %.2f %%. Half-spread %.1f bps. Fees: maker %.0f, taker %.0f bps; pre-registered legs: primary %.0f, secondary %.0f bps.\n\n",
-			b.From, b.To, b.Trades, b.Days, b.DaysUsed, b.DaysSkipped, b.ADVBTC, b.DailyVol*100, b.HalfSpreadBps, b.MakerFeeBps, b.TakerFeeBps, b.PrimaryLegBps, b.SecondaryLegBps)
+		fmt.Fprintf(w, "%s → %s: %d trades over %d days; %d days used, %d skipped. ADV %.2f BTC, daily vol %.2f %%. Half-spread %.1f bps (%s). Fees: maker %.0f, taker %.0f bps; pre-registered legs: primary %.0f, secondary %.0f bps.\n\n",
+			b.From, b.To, b.Trades, b.Days, b.DaysUsed, b.DaysSkipped, b.ADVBTC, b.DailyVol*100, b.HalfSpreadBps, b.HalfSpreadSource, b.MakerFeeBps, b.TakerFeeBps, b.PrimaryLegBps, b.SecondaryLegBps)
 		if len(b.Rows) == 0 {
 			fmt.Fprintf(w, "No usable days.\n\n")
 			continue
@@ -499,5 +582,15 @@ func writeMarkdown(w io.Writer, rep Report, cfg config) {
 			fmt.Fprintf(w, "| %g | %.1f | %.1f | %s | %.1f | %.1f |\n", q, mk.MeanBps, td.MeanBps, best.Schedule, best.MeanBps, best.P90Bps)
 		}
 		fmt.Fprintln(w)
+		if len(b.Comparisons) > 0 {
+			c0 := b.Comparisons[0]
+			fmt.Fprintf(w, "### Paired: %s against %s (alt − base, bps per leg; negative = alt cheaper)\n\n", c0.Alt, c0.Base)
+			fmt.Fprintf(w, "| Start | Size BTC | Model | Legs | Base mean | Alt mean | Diff | SE | p (alt cheaper) | Alt cheaper / tie | Base p90 | Alt p90 |\n|---|---|---|---|---|---|---|---|---|---|---|---|\n")
+			for _, c := range b.Comparisons {
+				fmt.Fprintf(w, "| %s | %g | %s | %d | %.1f | %.1f | %+.2f | %.2f | %.3f | %.0f %% / %.0f %% | %.1f | %.1f |\n",
+					c.Start, c.QtyBTC, c.Model, c.N, c.BaseMeanBps, c.AltMeanBps, c.MeanDiffBps, c.StdErrBps, c.PAltCheaper, c.AltCheaperShare*100, c.TieShare*100, c.BaseP90Bps, c.AltP90Bps)
+			}
+			fmt.Fprintln(w)
+		}
 	}
 }
