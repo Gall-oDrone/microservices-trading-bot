@@ -1,0 +1,85 @@
+{
+  "book": "btc_mxn",
+  "generated_at": "2026-10-09T23:12:26Z",
+  "found": true,
+  "source": "evidence-2026-10-09/prereg-as-of/report.json",
+  "phase": "as-of",
+  "as_of": "2026-10-08",
+  "report_generated_at": "2026-10-09T21:32:32Z",
+  "decides": false,
+  "note": "As of 2026-10-08: a progress report on an incomplete window. Nothing is decided before 2027-09-26.",
+  "verdict": {
+    "book": "btc_mxn",
+    "prereg": "FORWARD-TEST-PREREGISTRATION-SMA50-2026-09-27.md",
+    "scenarios": [
+      {
+        "name": "primary",
+        "leg_bps": 70,
+        "from": "2026-09-27",
+        "to": "2027-09-26",
+        "bars": 12,
+        "round_trips": 1,
+        "hypotheses": [
+          {
+            "id": "H1",
+            "criteria": "trend max drawdown \u003c hold max drawdown (%)",
+            "trend": 5.143017279264248,
+            "benchmark": 5.143017279264248,
+            "pass": false
+          },
+          {
+            "id": "H2",
+            "criteria": "trend return \u003e hold return (%)",
+            "trend": -1.2933882689422305,
+            "benchmark": -1.2933882689422305,
+            "pass": false
+          },
+          {
+            "id": "H3",
+            "criteria": "trend beats \u003e= 95% of 2,000 random same-trade-count strategies (btc_mxn, seed 1)",
+            "trend": 34.55,
+            "benchmark": 95,
+            "pass": false
+          }
+        ]
+      },
+      {
+        "name": "secondary",
+        "leg_bps": 88,
+        "from": "2026-09-27",
+        "to": "2027-09-26",
+        "bars": 12,
+        "round_trips": 1,
+        "hypotheses": [
+          {
+            "id": "H1",
+            "criteria": "trend max drawdown \u003c hold max drawdown (%)",
+            "trend": 5.143017279264256,
+            "benchmark": 5.143017279264256,
+            "pass": false
+          },
+          {
+            "id": "H2",
+            "criteria": "trend return \u003e hold return (%)",
+            "trend": -1.6509126781695471,
+            "benchmark": -1.6509126781695471,
+            "pass": false
+          },
+          {
+            "id": "H3",
+            "criteria": "trend beats \u003e= 95% of 2,000 random same-trade-count strategies (btc_mxn, seed 1)",
+            "trend": 34.55,
+            "benchmark": 95,
+            "pass": false
+          }
+        ]
+      }
+    ],
+    "reading": "None pass, or only H3: close the line of work."
+  },
+  "interim_date": "2027-03-26",
+  "final_date": "2027-09-26",
+  "days_to_interim": 168,
+  "days_to_final": 352,
+  "skipped_files": 0
+}

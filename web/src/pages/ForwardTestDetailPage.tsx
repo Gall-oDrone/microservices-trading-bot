@@ -12,6 +12,8 @@ import {
   OpenTradeSection,
   PaperStatsSection,
   PnLHistorySection,
+  PreregSection,
+  TaxLotsSection,
   PnLSection,
   TradeDistributionSection,
 } from '../components/performance'
@@ -373,6 +375,19 @@ export function ForwardTestDetailPage() {
         {perf.data && <PnLSection perf={perf.data} />}
       </section>
 
+      <section className="card" style={{ marginBottom: 16 }} aria-labelledby="prereg-h" id="prereg">
+        <div className="card-head">
+          <div>
+            <h2 id="prereg-h">Pre-registered verdicts so far</h2>
+            <div className="sub">
+              H1 / H2 / H3 from the frozen procedure (scripts/prereg-evaluation.sh). Nothing is decided before the
+              evaluation date.
+            </div>
+          </div>
+        </div>
+        <PreregSection book={book} />
+      </section>
+
       <section className="card" style={{ marginBottom: 16 }} aria-labelledby="pnl-history-h" id="pnl-history">
         <div className="card-head">
           <div>
@@ -453,6 +468,16 @@ export function ForwardTestDetailPage() {
           </div>
         </div>
         <CapacitySection book={book} />
+      </section>
+
+      <section className="card" style={{ marginBottom: 16 }} aria-labelledby="tax-h" id="tax-lots">
+        <div className="card-head">
+          <div>
+            <h2 id="tax-h">Tax lots (FIFO)</h2>
+            <div className="sub">The stage fills as first-in, first-out lots: realized gains per sale and year.</div>
+          </div>
+        </div>
+        {perf.data && <TaxLotsSection perf={perf.data} />}
       </section>
 
       <section className="card" style={{ marginBottom: 16 }} aria-labelledby="fills-h">

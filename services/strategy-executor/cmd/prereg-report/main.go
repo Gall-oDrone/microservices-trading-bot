@@ -39,14 +39,15 @@ import (
 	"time"
 
 	"bitso-trading-platform/shared/pkg/bitsodaily"
+	"bitso-trading-platform/shared/pkg/prereg"
 )
 
-const schema = "prereg-report/v1"
+const schema = prereg.Schema
 
 // The frozen evaluation dates (both pre-registrations).
 const (
-	interimDate = "2027-03-26"
-	finalDate   = "2027-09-26"
+	interimDate = prereg.InterimDate
+	finalDate   = prereg.FinalDate
 	h3Threshold = 95.0
 )
 
@@ -82,45 +83,13 @@ type ruleResult struct {
 	} `json:"random"`
 }
 
-// Hypothesis is one verdict.
-type Hypothesis struct {
-	ID       string  `json:"id"`
-	Criteria string  `json:"criteria"`
-	Trend    float64 `json:"trend"`
-	Bench    float64 `json:"benchmark"` // hold value, or the 95% threshold for H3
-	Pass     bool    `json:"pass"`
-	Note     string  `json:"note,omitempty"`
-}
-
-// Scenario is one cost scenario's verdicts for a book.
-type Scenario struct {
-	Name       string       `json:"name"` // primary | secondary
-	LegBps     float64      `json:"leg_bps"`
-	From       string       `json:"from"`
-	To         string       `json:"to"`
-	Bars       int          `json:"bars"`
-	RoundTrips int          `json:"round_trips"`
-	Hyp        []Hypothesis `json:"hypotheses"`
-}
-
-// BookVerdict is one forward test.
-type BookVerdict struct {
-	Book      string     `json:"book"`
-	Prereg    string     `json:"prereg"`
-	Scenarios []Scenario `json:"scenarios"`
-	Reading   string     `json:"reading"` // the pre-registration's reading of the primary outcome
-}
-
-// Report is the JSON written.
-type Report struct {
-	Schema      string        `json:"schema"`
-	GeneratedAt string        `json:"generated_at"`
-	Phase       string        `json:"phase"` // as-of | interim | final
-	AsOf        string        `json:"as_of"` // last bar used
-	Decides     bool          `json:"decides"`
-	Books       []BookVerdict `json:"books"`
-	Note        string        `json:"note"`
-}
+// The report types live in shared/pkg/prereg so ui-api reads the same schema.
+type (
+	Hypothesis  = prereg.Hypothesis
+	Scenario    = prereg.Scenario
+	BookVerdict = prereg.BookVerdict
+	Report      = prereg.Report
+)
 
 func main() {
 	phase := flag.String("phase", "as-of", "as-of (before a frozen date: report only), interim ("+interimDate+", report only) or final ("+finalDate+")")

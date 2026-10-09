@@ -4,7 +4,7 @@
  * Carlo of the rule against buy-and-hold. Reporting only.
  */
 import { useState } from 'react'
-import { useCapacity, useMonteCarlo, type MonteCarloParams } from '../api/client'
+import { useCapacity, useMonteCarlo, usePrereg, type MonteCarloParams } from '../api/client'
 import type {
   BookSampleSummary,
   Calendar,
@@ -13,6 +13,7 @@ import type {
   PerformanceResponse,
   Prob,
   StagePnL,
+  TaxLots,
   Trips,
 } from '../api/schemas'
 import { fmtBps, fmtDate, fmtFrac, fmtMoney, fmtPrice, fmtUTC } from '../lib/format'
@@ -829,6 +830,219 @@ function BookHistory({ h, days, btc }: { h: BookSampleSummary | null; days: numb
           </tbody>
         </table>
       </div>
+    </div>
+  )
+}
+
+/** The latest pre-registered verdicts (plan §6.4.14): H1/H2/H3 so far, never a decision before the end date. */
+export function PreregSection({ book }: { book: string }) {
+  const q = usePrereg(book)
+  if (q.isLoading) return <CardSkeleton lines={4} />
+  if (q.isError) return <ErrorState error={q.error} onRetry={() => q.refetch()} />
+  const p = q.data
+  if (!p) return null
+  if (!p.found || !p.verdict)
+    return (
+      <Empty title="No verdict report yet">
+        scripts/prereg-evaluation.sh writes one (weekly via scripts/ops-run.sh prereg). Interim look {p.interim_date},
+        evaluation {p.final_date}.
+      </Empty>
+    )
+  const v = p.verdict
+  const num = (x: number) => x.toFixed(2)
+  return (
+    <div className="stack" style={{ gap: 14 }} data-testid="prereg">
+      <div className="grid grid-4">
+        <Stat
+          label="Report"
+          value={p.phase === 'as-of' ? 'progress' : p.phase}
+          hint={`data through ${fmtDate(p.as_of)}`}
+          large
+        />
+        <Stat
+          label="Decides?"
+          value={p.decides ? 'yes' : 'no'}
+          tone={p.decides ? 'warn' : undefined}
+          hint={p.decides ? 'primary costs decide' : 'reported only'}
+          large
+        />
+        <Stat
+          label="Interim look"
+          value={p.days_to_interim > 0 ? `${p.days_to_interim} days` : 'due'}
+          hint={`${fmtDate(p.interim_date)} · report only`}
+          large
+        />
+        <Stat
+          label="Evaluation"
+          value={p.days_to_final > 0 ? `${p.days_to_final} days` : 'due'}
+          hint={fmtDate(p.final_date)}
+          large
+        />
+      </div>
+      {v.scenarios.map((sc) => (
+        <div key={sc.name} className="table-wrap">
+          <table className="data compact" id={`prereg-${sc.name}`}>
+            <caption className="faint" style={{ textAlign: 'left', fontSize: 12, paddingBottom: 6 }}>
+              {sc.name === 'primary' ? 'Primary' : 'Secondary'} costs, {sc.leg_bps} bps each leg (
+              {sc.name === 'primary' ? 'decides' : 'reported'}) · {sc.bars} bars since {fmtDate(sc.from)} ·{' '}
+              {sc.round_trips} round trips
+            </caption>
+            <thead>
+              <tr>
+                <th scope="col">Hypothesis</th>
+                <th scope="col">Criterion</th>
+                <th scope="col" className="r">
+                  Rule
+                </th>
+                <th scope="col" className="r">
+                  Benchmark
+                </th>
+                <th scope="col">So far</th>
+              </tr>
+            </thead>
+            <tbody>
+              {sc.hypotheses.map((h) => (
+                <tr key={h.id}>
+                  <td className="mono">{h.id}</td>
+                  <td>
+                    {h.criteria}
+                    {h.note ? (
+                      <div className="faint" style={{ fontSize: 12 }}>
+                        {h.note}
+                      </div>
+                    ) : null}
+                  </td>
+                  <td className="r num">{num(h.trend)}</td>
+                  <td className="r num">{num(h.benchmark)}</td>
+                  <td>{h.pass ? <Badge tone="ok">pass</Badge> : <Badge tone="warn">not yet</Badge>}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ))}
+      <p className="faint" style={{ fontSize: 12, margin: 0 }}>
+        As registered ({v.prereg}): {v.reading} {p.note} Source: {p.source}.
+      </p>
+    </div>
+  )
+}
+
+/** FIFO tax lots of the stage fills (plan §6.4.14). Reporting only, not tax advice. */
+export function TaxLotsSection({ perf }: { perf: PerformanceResponse }) {
+  const t: TaxLots | null | undefined = perf.tax_lots
+  if (!t) return <Empty title="No stage fills yet">Tax lots appear with the first filled leg.</Empty>
+  const q = t.quote
+  const mxn = (v: number | null) => (v == null ? '—' : fmtMoney(v, 'mxn'))
+  return (
+    <div className="stack" style={{ gap: 14 }} data-testid="tax-lots">
+      <div className="grid grid-4">
+        <Stat label="Method" value={t.method} hint="oldest lot sold first" large />
+        <Stat
+          label="Realized"
+          value={smoney(t.realized, q)}
+          tone={tone(t.realized)}
+          hint={`${t.sales.length} matched sales`}
+          large
+        />
+        <Stat
+          label="Unrealized"
+          value={smoney(t.unrealized, q)}
+          tone={tone(t.unrealized)}
+          hint={`${t.open.length} open lots at ${fmtPrice(t.mark, q)} (${fmtDate(t.mark_date)})`}
+          large
+        />
+        <Stat
+          label="Unmatched sales"
+          value={`${t.unmatched_btc} BTC`}
+          tone={t.unmatched_btc > 0 ? 'warn' : undefined}
+          hint="sold with no open lot (should be 0)"
+          large
+        />
+      </div>
+      <div className="table-wrap">
+        <table className="data compact" id="tax-open-lots">
+          <caption className="faint" style={{ textAlign: 'left', fontSize: 12, paddingBottom: 6 }}>
+            Open lots
+          </caption>
+          <thead>
+            <tr>
+              <th scope="col">Bought</th>
+              <th scope="col" className="r">
+                Remaining BTC
+              </th>
+              <th scope="col" className="r">
+                Cost per BTC
+              </th>
+              <th scope="col" className="r">
+                Unrealized
+              </th>
+              <th scope="col" className="r">
+                Held
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {t.open.map((l, i) => (
+              <tr key={`${l.buy_date}-${i}`}>
+                <td>{fmtDate(l.buy_date)}</td>
+                <td className="r num">{l.remaining_btc.toFixed(8)}</td>
+                <td className="r num">{fmtPrice(l.cost_per_btc, q)}</td>
+                <td className={`r num ${tone(l.unrealized) ?? ''}`}>{smoney(l.unrealized, q)}</td>
+                <td className="r num">{l.holding_days} d</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {t.years.length > 0 ? (
+        <div className="table-wrap">
+          <table className="data compact" id="tax-years">
+            <caption className="faint" style={{ textAlign: 'left', fontSize: 12, paddingBottom: 6 }}>
+              Realized by calendar year (sale date)
+            </caption>
+            <thead>
+              <tr>
+                <th scope="col">Year</th>
+                <th scope="col" className="r">
+                  Sales
+                </th>
+                <th scope="col" className="r">
+                  Proceeds
+                </th>
+                <th scope="col" className="r">
+                  Cost
+                </th>
+                <th scope="col" className="r">
+                  Gain
+                </th>
+                <th scope="col" className="r">
+                  Gain (MXN)
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {t.years.map((y) => (
+                <tr key={y.year}>
+                  <td className="num">{y.year}</td>
+                  <td className="r num">{y.sales}</td>
+                  <td className="r num">{fmtMoney(y.proceeds, q)}</td>
+                  <td className="r num">{fmtMoney(y.cost, q)}</td>
+                  <td className={`r num ${tone(y.gain) ?? ''}`}>{smoney(y.gain, q)}</td>
+                  <td className="r num">{mxn(y.gain_mxn)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        <p className="faint" style={{ fontSize: 12, margin: 0 }} data-testid="tax-no-sales">
+          No sales yet: nothing realized.
+        </p>
+      )}
+      <p className="faint" style={{ fontSize: 12, margin: 0 }}>
+        {t.note}
+      </p>
     </div>
   )
 }

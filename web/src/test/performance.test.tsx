@@ -4,7 +4,12 @@ import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
 import { createMemoryRouter, RouterProvider } from 'react-router'
 import { describe, expect, it } from 'vitest'
-import { capacityResponseSchema, monteCarloResponseSchema, performanceResponseSchema } from '../api/schemas'
+import {
+  capacityResponseSchema,
+  monteCarloResponseSchema,
+  performanceResponseSchema,
+  preregResponseSchema,
+} from '../api/schemas'
 import capDry from '../mocks/fixtures/dry-run/capacity-btc_mxn.json'
 import dryPerfMxn from '../mocks/fixtures/dry-run/performance-btc_mxn.json'
 import capMxn from '../mocks/fixtures/stage/capacity-btc_mxn.json'
@@ -13,6 +18,8 @@ import mcMxn from '../mocks/fixtures/stage/montecarlo-btc_mxn.json'
 import mcUsd from '../mocks/fixtures/stage/montecarlo-btc_usd.json'
 import perfMxn from '../mocks/fixtures/stage/performance-btc_mxn.json'
 import perfUsd from '../mocks/fixtures/stage/performance-btc_usd.json'
+import preregMxn from '../mocks/fixtures/prereg-btc_mxn.json'
+import preregUsd from '../mocks/fixtures/prereg-btc_usd.json'
 import { makeQueryClient, routes } from '../router'
 import { server } from './setup'
 
@@ -168,5 +175,47 @@ describe('Capacity over time: hourly book samples (plan §6.4.13)', () => {
     expect(rows).toHaveLength(3 + h.sizes.length)
     expect(rows[0]).toHaveTextContent(h.spread_bps.p50.toFixed(1))
     expect(rows[2]).toHaveTextContent(`Capacity at ${h.budget_bps} bps`)
+  })
+})
+
+describe('Pre-registered verdicts and tax lots (plan §6.4.14)', () => {
+  it('parses the verdict fixtures', () => {
+    for (const d of [preregMxn, preregUsd]) expect(preregResponseSchema.safeParse(d).success).toBe(true)
+    expect(performanceResponseSchema.parse(perfMxn).tax_lots?.method).toBe('FIFO')
+    expect(performanceResponseSchema.parse(dryPerfMxn).tax_lots ?? null).toBeNull() // older capture
+  })
+
+  it('shows H1/H2/H3 so far, without a decision', async () => {
+    renderAt('/forward-tests/btc_usd')
+    const sec = await screen.findByTestId('prereg')
+    const p = preregResponseSchema.parse(preregUsd)
+    expect(sec).toHaveTextContent('progress')
+    expect(sec).toHaveTextContent('reported only')
+    const rows = within(document.getElementById('prereg-primary')!).getAllByRole('row').slice(1)
+    expect(rows).toHaveLength(p.verdict!.scenarios[0].hypotheses.length)
+    expect(rows[1]).toHaveTextContent('in MXN after two 60 bps conversions')
+    expect(sec).toHaveTextContent(p.source)
+  })
+
+  it('says when there is no report yet', async () => {
+    server.use(
+      http.get('/api/ui/forward-tests/:book/prereg', () =>
+        HttpResponse.json({ ...preregMxn, found: false, verdict: null, source: '' }),
+      ),
+    )
+    renderAt('/forward-tests/btc_mxn')
+    expect(await screen.findByText('No verdict report yet')).toBeInTheDocument()
+  })
+
+  it('lists the open FIFO lots and the realized years', async () => {
+    renderAt('/forward-tests/btc_mxn')
+    const sec = await screen.findByTestId('tax-lots')
+    const t = performanceResponseSchema.parse(perfMxn).tax_lots!
+    const rows = within(document.getElementById('tax-open-lots')!).getAllByRole('row').slice(1)
+    expect(rows).toHaveLength(t.open.length)
+    expect(rows[0]).toHaveTextContent(t.open[0].remaining_btc.toFixed(8))
+    expect(sec).toHaveTextContent('FIFO')
+    if (t.years.length === 0) expect(screen.getByTestId('tax-no-sales')).toBeInTheDocument()
+    expect(sec).toHaveTextContent('not tax advice')
   })
 })

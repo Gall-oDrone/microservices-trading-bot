@@ -71,6 +71,9 @@ type Server struct {
 	// strategy-executor cmd/book-sampler) behind the capacity page's
 	// distribution (§6.4.13); empty or missing means none.
 	BookSamplesDir string
+	// PreregDirs are searched for the latest pre-registered verdict report
+	// (prereg.Patterns) behind /forward-tests/{book}/prereg (§6.4.14).
+	PreregDirs []string
 }
 
 var (
@@ -211,6 +214,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/ui/forward-tests/{book}/performance", s.performance)
 	mux.HandleFunc("GET /api/ui/forward-tests/{book}/montecarlo", s.monteCarlo)
 	mux.HandleFunc("GET /api/ui/forward-tests/{book}/capacity", s.capacity)
+	mux.HandleFunc("GET /api/ui/forward-tests/{book}/prereg", s.preregReport)
 	mux.HandleFunc("GET /api/ui/risk", s.riskStatus)
 	mux.HandleFunc("GET /api/ui/live", s.liveSnapshot)
 	mux.HandleFunc("GET /api/ui/stream", s.stream)

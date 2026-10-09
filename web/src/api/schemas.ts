@@ -984,6 +984,51 @@ const pnlDaySchema = z.object({
 })
 export type PnLDay = z.infer<typeof pnlDaySchema>
 
+/** Plan §6.4.14: FIFO tax lots (ui-api tax.go). */
+export const taxLotsSchema = z.object({
+  method: z.string(),
+  quote: z.string(),
+  mark_date: z.string(),
+  mark: z.number(),
+  open: z.array(
+    z.object({
+      buy_date: z.string(),
+      qty_btc: z.number(),
+      remaining_btc: z.number(),
+      cost_per_btc: z.number(),
+      unrealized: z.number(),
+      holding_days: z.number(),
+    }),
+  ),
+  sales: z.array(
+    z.object({
+      sell_date: z.string(),
+      buy_date: z.string(),
+      qty_btc: z.number(),
+      proceeds: z.number(),
+      cost: z.number(),
+      gain: z.number(),
+      holding_days: z.number(),
+      gain_mxn: z.number().nullable(),
+    }),
+  ),
+  years: z.array(
+    z.object({
+      year: z.number(),
+      sales: z.number(),
+      proceeds: z.number(),
+      cost: z.number(),
+      gain: z.number(),
+      gain_mxn: z.number().nullable(),
+    }),
+  ),
+  realized: z.number(),
+  unrealized: z.number(),
+  unmatched_btc: z.number(),
+  note: z.string(),
+})
+export type TaxLots = z.infer<typeof taxLotsSchema>
+
 export const performanceResponseSchema = z.object({
   ledger: z.string(),
   book: z.string(),
@@ -1039,6 +1084,8 @@ export const performanceResponseSchema = z.object({
       stage_invested_mxn: z.number(),
     })
     .nullable(),
+  /** Plan §6.4.14: FIFO tax lots of the stage fills; null without fills, absent in older responses. */
+  tax_lots: taxLotsSchema.nullable().optional(),
 })
 export type PerformanceResponse = z.infer<typeof performanceResponseSchema>
 
@@ -1154,3 +1201,49 @@ export const capacityResponseSchema = z.object({
   history_days: z.number().optional(),
 })
 export type CapacityResponse = z.infer<typeof capacityResponseSchema>
+
+/** GET /forward-tests/{book}/prereg: the latest pre-registered verdict report (plan §6.4.14). */
+export const preregResponseSchema = z.object({
+  book: z.string(),
+  generated_at: z.string(),
+  found: z.boolean(),
+  source: z.string(),
+  phase: z.string(),
+  as_of: z.string(),
+  report_generated_at: z.string(),
+  decides: z.boolean(),
+  note: z.string(),
+  verdict: z
+    .object({
+      book: z.string(),
+      prereg: z.string(),
+      reading: z.string(),
+      scenarios: z.array(
+        z.object({
+          name: z.string(),
+          leg_bps: z.number(),
+          from: z.string(),
+          to: z.string(),
+          bars: z.number(),
+          round_trips: z.number(),
+          hypotheses: z.array(
+            z.object({
+              id: z.string(),
+              criteria: z.string(),
+              trend: z.number(),
+              benchmark: z.number(),
+              pass: z.boolean(),
+              note: z.string().optional(),
+            }),
+          ),
+        }),
+      ),
+    })
+    .nullable(),
+  interim_date: z.string(),
+  final_date: z.string(),
+  days_to_interim: z.number(),
+  days_to_final: z.number(),
+  skipped_files: z.number(),
+})
+export type PreregResponse = z.infer<typeof preregResponseSchema>

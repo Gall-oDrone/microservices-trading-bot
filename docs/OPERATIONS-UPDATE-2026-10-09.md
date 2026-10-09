@@ -18,7 +18,8 @@ reconciliation.
 | R6e | `c2ad29b`, `69c2ca8` | Cost budget against the pre-registration; `RISK_CAPITAL` and reverse stress; embedded crash paths; read-only daily reconciliation, run nightly after the stage run; stage capital and limits overlay | §6.4.10 |
 | R6f | `3221990` | Stage P&L attribution against paper; forward-test ratios; expected profit per trade; block-bootstrap Monte Carlo on the forward-test page | §6.4.11 |
 | R6g | `34871c3` | Capacity and market impact (live book walk, square-root law); daily P&L and NAV; btc_usd in MXN terms | §6.4.12 |
-| **R6h** | this update | Execution research on the trade archive; hourly order-book sampler and the capacity distribution; automated pre-registered evaluation report; model-risk validation; MXN-terms alignment fix | §6.4.13 |
+| R6h | `fd44903` | Execution research on the trade archive; hourly order-book sampler and the capacity distribution; automated pre-registered evaluation report; model-risk validation; MXN-terms alignment fix | §6.4.13 |
+| **R6i** | `13915df` and the next commit | Re-peg pre-registration (frozen before its window); monthly execution study and weekly verdicts on cron; latest verdicts and FIFO tax lots on the forward-test page | §6.4.14 |
 
 ### R6h in detail
 
@@ -60,17 +61,45 @@ reconciliation.
 - **CI.** The Go job covers the new packages (gofmt, vet, race tests) and checks the syntax of the
   ops scripts.
 
+### R6i in detail (later on 2026-10-09)
+
+- **Re-peg pre-registration.** [EXECUTION-PREREGISTRATION-REPEG-2026-10-09.md](backtest-readiness/EXECUTION-PREREGISTRATION-REPEG-2026-10-09.md),
+  committed before its window opened.
+  - It compares today's schedule against "maker 1h, re-peg every 5 minutes" on production trades
+    for 2026-10-10 → 2027-01-09.
+  - It passes only if the mean btc_mxn stage-leg cost is lower (paired, p < 0.05), the p90 is
+    lower, and 0.01 BTC is no worse.
+  - In-sample it was −1.84 bps with p = 0.069, not significant, so the unseen forward data
+    decide.
+  - The run command is frozen in the file. The executor is untouched unless all three pass.
+- **Scheduled research and verdicts.** These are local only and read only public or archive data.
+  - `ops-run.sh research`, monthly: the execution study with the sampler's spreads. It leaves out
+    the repriced schedules until 2027-01-10, so the test stays blind.
+  - `ops-run.sh prereg`, weekly: the verdict report. On 2027-03-26 and 2027-09-26 it runs the
+    interim and the final evaluation by itself.
+  - Both ran once on 2026-10-09.
+- **On the forward-test page:**
+  - **Pre-registered verdicts so far.** H1/H2/H3 per cost scenario, the days left to each date,
+    and "decides? no".
+  - **Tax lots (FIFO).** Open lots, matched sales and realized gains per year, in the quote
+    currency and MXN. Not tax advice: Mexican ISR uses INPC-adjusted cost and Banxico FIX, which
+    this does not apply.
+- **Not done:** a second asset. It needs your decision and its own pre-registration.
+
 ## 2. What runs on its own (local cron, UTC)
 
 | When | Job | Output |
 |---|---|---|
 | 06:15 daily | `ops-run.sh executor`: stage run, then reconciliation | Ledger, `reconcile.json`, `reconcile=` line, S3 copy |
 | :07 hourly | `ops-run.sh sampler` (new) | `book-samples/<book>.jsonl` |
+| 08:00 on the 1st | `ops-run.sh research` (R6i) | `exec-studies/<date>/exec-research.{md,json}` (repriced schedules blind until 2027-01-10) |
+| 07:30 Mondays | `ops-run.sh prereg` (R6i) | `prereg/<date>-<phase>/report.{md,json}`; the interim and final runs happen on their dates |
 | every 15 min | `ops-run.sh alerts` (ui-alerts) | Email on findings, reconcile breaks, stale data |
 | 02:30 daily | `ops-run.sh compact` | `trades_compacted/` (non-destructive) |
 
-The sampler line was added to the installed crontab block in the same form
-`scripts/install-ops-cron.sh` now writes. A re-install keeps it, and `--no-sampler` leaves it out.
+The sampler, research and prereg lines were added to the installed crontab block in the same form
+`scripts/install-ops-cron.sh` now writes. A re-install keeps them; `--no-sampler` and
+`--no-research` leave them out.
 
 ## 3. Operator rollout checklist (not done; needs the operator)
 
@@ -105,20 +134,17 @@ The sampler line was added to the installed crontab block in the same form
    about 24 samples. Check `~/.local/state/mtb-ops/sampler.log` for errors.
 5. **Model validation sign-off.** An independent reviewer fills in §8 of the validation document.
 
-## 4. Recommended next steps
+## 4. Recommended next steps (updated after R6i)
 
-1. **Pre-register the re-peg** ("maker 60 minutes, re-peg every 5 minutes, then market"), if the
-   cost tail is worth attacking.
-   - Hypothesis: mean cost per leg not above today's schedule on the stage ledger.
-   - Only after it is committed should the executor gain the option. The SMA50 tests keep their
-     costs.
-2. **Re-run the execution study monthly.** Feed it the sampler's measured spreads instead of the
-   assumed half-spread.
-3. **Interim look on 2027-03-26:** `scripts/prereg-evaluation.sh --phase interim`, committed with
-   a short results note. It is report only.
-4. **Later:**
-   - tax lots (FIFO cost basis per lot for Mexican tax reporting);
-   - a second asset (multi-asset correlation stress);
-   - a fatter-tailed limit VaR if trigger T1 or T2 fires.
+1. **2027-01-10: re-peg forward run.** Run the frozen command in the pre-registration, commit the
+   output and write the results note. Only a full pass (E1–E3) leads to an executor option.
+2. **2027-03-26: interim look.** The weekly job writes `prereg/<date>-interim/`. Commit it under
+   `docs/backtest-readiness/evidence-<date>/` with a short note. It is report only.
+3. **2027-09-26: primary evaluation.** The weekly job writes the final verdicts; the pre-registered
+   readings apply.
+4. **Operator items from §3:** the overlay and order-management image, the Alertmanager receivers,
+   the first nightly reconcile, and the validation sign-off.
+5. **Your decision:** a second asset (needs its own pre-registration). Also an accountant's review
+   of the tax-lot method before any filing.
 
 Main UI: http://127.0.0.1:5173/. Drill UI: http://127.0.0.1:5174/strategies.

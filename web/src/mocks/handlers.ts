@@ -24,6 +24,12 @@ const runFiles = import.meta.glob<Record<string, unknown>>('./research/run-*.jso
   import: 'default',
 })
 
+// fixtures/prereg-<book>.json: the latest verdict report, not ledger-specific
+const preregFiles = import.meta.glob<Record<string, unknown>>('./fixtures/prereg-*.json', {
+  eager: true,
+  import: 'default',
+})
+
 type Json = Record<string, unknown>
 
 // fixtures/<ledger>/<name>.json, e.g. fixtures/stage/forward-tests.json
@@ -152,6 +158,11 @@ export const handlers = [
   http.get('/api/ui/forward-tests/:book/capacity', ({ params, request }) =>
     fixture(request, `capacity-${String(params.book)}`),
   ),
+  // Not ledger-specific: the report comes from public data (plan §6.4.14).
+  http.get('/api/ui/forward-tests/:book/prereg', ({ params }) => {
+    const doc = preregFiles[`./fixtures/prereg-${String(params.book)}.json`]
+    return doc ? HttpResponse.json(doc) : HttpResponse.json({ error: 'no fixture' }, { status: 404 })
+  }),
   // One capture at the defaults; the cost / block / paths query is ignored.
   http.get('/api/ui/forward-tests/:book/montecarlo', ({ params, request }) =>
     fixture(request, `montecarlo-${String(params.book)}`),

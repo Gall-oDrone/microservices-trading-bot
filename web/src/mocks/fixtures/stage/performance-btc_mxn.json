@@ -2,7 +2,7 @@
   "ledger": "stage",
   "book": "btc_mxn",
   "quote": "mxn",
-  "generated_at": "2026-10-09T20:37:41Z",
+  "generated_at": "2026-10-09T23:12:26Z",
   "candles_file": "btc_mxn_daily_2026-10-04.csv",
   "pnl": {
     "since": "2026-09-30",
@@ -260,5 +260,27 @@
       "paper_pnl": 55.45699492008844
     }
   ],
-  "mxn_terms": null
+  "mxn_terms": null,
+  "tax_lots": {
+    "method": "FIFO",
+    "quote": "mxn",
+    "mark_date": "2026-10-04",
+    "mark": 1562180,
+    "open": [
+      {
+        "buy_date": "2026-09-30",
+        "qty_btc": 0.00099999,
+        "remaining_btc": 0.00099999,
+        "cost_per_btc": 1522875.0187501872,
+        "unrealized": 39.30458820000026,
+        "holding_days": 4
+      }
+    ],
+    "sales": [],
+    "years": [],
+    "realized": 0,
+    "unrealized": 39.30458820000026,
+    "unmatched_btc": 0,
+    "note": "FIFO on the stage fills; buy cost includes the fee, sale proceeds are net of it. Reporting only, not tax advice: Mexican ISR measures a sale of crypto assets in MXN with the cost adjusted for inflation (INPC) and USD at the Banxico FIX rate; these figures use the Bitso-implied USD/MXN and no inflation adjustment."
+  }
 }

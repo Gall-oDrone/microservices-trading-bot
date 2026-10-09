@@ -259,6 +259,7 @@ returns the executor's last recorded check. The Risk page shows all of it.
 | **R6f (done 2026-10-09)** P&L, expected profit per trade and Monte Carlo, §6.4.11 | Stage P&L split into market move, fees and slippage and compared with paper; forward-test ratios; the rule's trade distribution and calendar-year base rates; a block-bootstrap Monte Carlo of the rule against hold, all on the forward-test page | "What did we make, what should a trade make, what could the next year look like" answered from the same frozen rule, with the uncertainty shown |
 | **R6g (done 2026-10-09)** Capacity, daily P&L/NAV and MXN terms, §6.4.12 | Order sizes against the registered 10 bps slippage on the live production book and by the square-root law; the stage P&L day by day with NAV and paper on the same money; btc_usd measured in pesos against holding btc_mxn, as its pre-registration defines H2 | A sizing ceiling backed by measurements before any production size; P&L over time instead of a snapshot; the btc_usd test read the way it will be judged |
 | **R6h (done 2026-10-09)** Execution research, book sampler, evaluation report, model validation, §6.4.13 | Execution schedules replayed on the trade archive; an hourly public order-book sampler with the capacity distribution on the forward-test page; the frozen evaluation procedure and its H1/H2/H3 verdicts in one command; a model-risk validation with review triggers | Execution cost explained (the schedule is fine, stage's book is thin) and capacity measured as a distribution; the 2027 evaluations made mechanical; the models documented the way a risk function reviews them |
+| **R6i (done 2026-10-09)** Re-peg pre-registration, scheduled research and verdicts, tax lots, §6.4.14 | A frozen forward test of the 5-minute re-peg on archive data (blind until 2027-01-10); monthly execution study and weekly verdict reports on cron, with the interim and final runs on their dates; the latest verdicts and FIFO tax lots on the forward-test page | Any execution change is decided on unseen data; the 2027 evaluations run by themselves and are visible as they approach; gains are traceable lot by lot |
 
 #### 6.4.1 R1 as built
 
@@ -799,6 +800,56 @@ and operator checklist: [OPERATIONS-UPDATE-2026-10-09.md](../OPERATIONS-UPDATE-2
 - **Open (operator):** apply the dev overlay with a new order-management image; configure the
   Alertmanager receivers; check the first nightly reconciliation (2026-10-10 06:15 UTC); sign off
   the validation. Later: tax lots, a second asset.
+
+#### 6.4.14 R6i re-peg pre-registration, scheduled research and verdicts, tax lots as built (2026-10-09)
+
+Reporting only. The executor, the SMA50 rule, its costs and its dates are unchanged.
+
+- **Pre-registration of the re-peg** ([EXECUTION-PREREGISTRATION-REPEG-2026-10-09.md](../backtest-readiness/EXECUTION-PREREGISTRATION-REPEG-2026-10-09.md),
+  commit `13915df`, before the window opened).
+  - Today's schedule against "maker 1h, re-peg every 5 minutes", on production trades for Bitso
+    days 2026-10-10 → 2027-01-09, starting at 06:15 UTC.
+  - E1: lower mean cost per btc_mxn stage leg (paired, one-sided p < 0.05). E2: lower p90. E3: no
+    worse at 0.01 BTC.
+  - Minimum 60 btc_mxn days, or one extension to 2027-02-08.
+  - In-sample (the data that suggested it): −1.84 bps, p = 0.069. That is not significant, which
+    is why the forward data decide.
+  - Only a full pass adds the executor option, off by default.
+- **exec-research.**
+  - `-schedules` (a subset).
+  - A paired comparison (`-compare-base`, `-compare-alt`; `execsim.Compare`): mean difference,
+    SE, one-sided p (normal approximation), share cheaper and tied, and p90s.
+  - `-book-samples`: the sampler's median spread / 2 replaces the fallback half-spread once a day
+    of samples exists.
+- **Scheduled.** `scripts/ops-run.sh` gains two jobs; `install-ops-cron.sh` schedules them and
+  builds `daily-executor-data/exec-research`, and `--no-research` skips them.
+  - `research`, monthly (`0 8 1 * *`): the last 90 days with the sampler's spreads, into
+    `daily-executor-data/exec-studies/<date>/`. Until 2027-01-10 it leaves out every repriced
+    schedule and the comparison, so the forward window stays blind.
+  - `prereg`, weekly (`30 7 * * 1`): `scripts/prereg-evaluation.sh` into
+    `daily-executor-data/prereg/<date>-<phase>/`. The phase follows the calendar: interim once on
+    or after 2027-03-26, final once on or after 2027-09-26, as-of otherwise. The 8 newest as-of
+    runs are kept.
+  - Both ran once on 2026-10-09, and both lines are in the installed crontab.
+- **Verdicts on the page** (`GET /api/ui/forward-tests/{book}/prereg`, `shared/pkg/prereg`).
+  - The report types moved to a shared package that `cmd/prereg-report` and ui-api both use.
+  - `prereg.Latest` picks the newest report under `-prereg-dirs` (the weekly output and committed
+    evidence): latest data, then final > interim > as-of.
+  - The forward-test page shows "Pre-registered verdicts so far": phase, data date, "decides?",
+    days to the interim look and the evaluation, and H1/H2/H3 per cost scenario with the
+    registered reading.
+- **Tax lots** (`performance.tax_lots`, ui-api `tax.go`).
+  - The stage fills as FIFO lots: open lots with cost per BTC and unrealized; each sale matched to
+    the oldest lot with holding days; realized by calendar year.
+  - In the quote currency, and in MXN (a USD book at the Bitso-implied USD/MXN of the buy and sale
+    days).
+  - A test pins the open lots to the average-cost position and realized + unrealized to the P&L
+    total.
+  - Stated on the page: not tax advice. Mexican ISR uses INPC-adjusted cost and Banxico's FIX
+    rate, which this does not apply.
+- **Not done: a second asset.** It needs a decision and its own pre-registration (a new book, rule
+  and costs), so it stays with the operator. The stress code already supports other books via
+  proxies.
 
 ### 6.5 First findings from the real stage ledger
 - **btc_mxn's first stage leg cost 118 bps against 70 assumed.** The post-only order rested 60 min, filled 0.1%, and fell back to market: taker fee 78 bps + 40 bps above the fill-day open. A stage leg is small and stage liquidity is thin, so this is not yet evidence about production costs. But it is the cost signal to watch: the pre-registration's secondary (taker) scenario is 88 bps per leg, and this leg exceeded both.

@@ -33,6 +33,7 @@ needs its own dated pre-registration.
 | M6 | Expected profit per trade (closed round trips) | `montecarlo/history.go` | Distribution, calendar base rates | Expectation setting | 3 |
 | M7 | Execution cost: cost budget (TCA), capacity (book walk, square-root law), replay simulator | `dailyledger/costs.go`, `shared/pkg/execcost`, `strategy-executor/internal/execsim` | Budget used, capacity, cost per schedule | Sizing and execution research | 2 |
 | M8 | Pre-registered verdicts (H1/H2/H3, btc_usd in MXN terms) | `strategy-executor/cmd/prereg-report`, `scripts/prereg-evaluation.sh` | `report.md` / `report.json` | The 2027 evaluations | 1 |
+| M9 | FIFO tax lots (added in R6i) | ui-api `internal/api/tax.go` | `performance.tax_lots` | Records (not a filing) | 2 |
 | C1 | Daily stage reconciliation (a control, not a model) | `strategy-executor/internal/reconcile` | Breaks, exit 3 | Books and records | 1 |
 
 Tier 1 means a wrong answer misstates a decision or the books. Tier 2 misstates a limit or a

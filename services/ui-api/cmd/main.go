@@ -51,6 +51,7 @@ import (
 	"path/filepath"
 	"runtime/debug"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -87,6 +88,7 @@ func main() {
 	executorURL := flag.String("strategy-executor-url", env("UI_API_STRATEGY_EXECUTOR_URL", ""), "intraday strategy-executor base URL (loopback) for the Strategies page; start/stop also needs -operator-token-file (default: off)")
 	strategyAudit := flag.String("strategy-audit-file", env("UI_API_STRATEGY_AUDIT_FILE", ""), "strategy start/stop audit log (default: "+api.StrategyAuditFile+" next to the first local ledger)")
 	bookSamples := flag.String("book-samples", env("UI_API_BOOK_SAMPLES", "../strategy-executor/daily-executor-data/book-samples"), "hourly order-book samples dir (<dir>/<book>.jsonl, cmd/book-sampler) for the capacity distribution; missing means none")
+	preregDirs := flag.String("prereg-dirs", env("UI_API_PREREG_DIRS", "../strategy-executor/daily-executor-data/prereg,../../docs/backtest-readiness"), "where to look for the latest pre-registered verdict report (scripts/prereg-evaluation.sh output), comma-separated")
 	flag.Parse()
 
 	if *printPolicy {
@@ -125,7 +127,8 @@ func main() {
 	}
 	srv := &api.Server{Ledgers: ledgers, Policy: pol, PolicySrc: src, StageSize: *stageSize, StaticDir: *static,
 		Version: version(), Log: logger, BookSamplesDir: *bookSamples,
-		Research: &research.Index{Dir: *studiesDir, RepoRel: repoRel(*studiesDir)}}
+		PreregDirs: splitDirs(*preregDirs),
+		Research:   &research.Index{Dir: *studiesDir, RepoRel: repoRel(*studiesDir)}}
 	if srv.Archive, err = api.NewArchive(context.Background(), *archiveURI); err != nil {
 		logger.Fatal("-archive: ", err)
 	}
@@ -291,4 +294,14 @@ func version() string {
 		}
 	}
 	return "dev"
+}
+
+func splitDirs(s string) []string {
+	var out []string
+	for _, p := range strings.Split(s, ",") {
+		if p = strings.TrimSpace(p); p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
 }

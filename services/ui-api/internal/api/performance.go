@@ -121,6 +121,8 @@ type PerformanceResponse struct {
 	Capital    float64   `json:"capital"` // the policy's max order notional (the stage capital, §6.4.10)
 	PnLHistory []PnLDay  `json:"pnl_history"`
 	MXNTerms   *MXNTerms `json:"mxn_terms"` // null unless the book is quoted in USD and btc_mxn candles exist
+	// Plan §6.4.14: FIFO tax lots of the stage fills (null without fills).
+	TaxLots *TaxLots `json:"tax_lots"`
 }
 
 // PnLDay is one day of the stage position, marked at the close, fills
@@ -487,11 +489,16 @@ func (s *Server) performance(w http.ResponseWriter, r *http.Request) {
 	resp.PnL = buildStagePnL(b, recs, fills, mark, markDate)
 	resp.Capital = s.Policy.For(b).MaxOrderNotional
 	resp.PnLHistory = buildPnLHistory(recs, fills, bars, resp.Capital)
+	fx := func(string) (float64, bool) { return 1, true }
 	if quote == "usd" {
+		fx = func(string) (float64, bool) { return 0, false }
 		if mrows, _, err := l.Store.Candles("btc_mxn"); err == nil {
-			resp.MXNTerms = buildMXNTerms(recs, bars, toBars(mrows), resp.PnL)
+			mbars := toBars(mrows)
+			resp.MXNTerms = buildMXNTerms(recs, bars, mbars, resp.PnL)
+			fx = impliedFX(bars, mbars)
 		}
 	}
+	resp.TaxLots = buildTaxLots(quote, fills, mark, markDate, fx)
 	if len(bars) > smaDays {
 		from, ok := historyFrom[b]
 		if !ok {

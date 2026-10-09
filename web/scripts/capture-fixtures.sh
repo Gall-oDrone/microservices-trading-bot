@@ -38,6 +38,8 @@ for l in $LEDGERS; do
     curl -fsS "$API/api/ui/forward-tests/$b/montecarlo?ledger=$l" > "$D/montecarlo-$b.json" || rm -f "$D/montecarlo-$b.json"
     # Plan §6.4.12: capacity (the live book when ui-api runs with -live).
     curl -fsS "$API/api/ui/forward-tests/$b/capacity?ledger=$l" > "$D/capacity-$b.json"
+    # Plan §6.4.14: the latest verdict report is not ledger-specific: one file per book.
+    curl -fsS "$API/api/ui/forward-tests/$b/prereg" > "$(dirname "$D")/prereg-$b.json"
   done
 done
 echo "fixtures written to $OUT from $API (ledgers: $LEDGERS)"

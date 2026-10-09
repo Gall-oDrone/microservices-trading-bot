@@ -4,6 +4,7 @@ import type { z } from 'zod'
 import {
   candlesResponseSchema,
   capacityResponseSchema,
+  preregResponseSchema,
   controlsInfoSchema,
   dataHealthSchema,
   forwardTestsResponseSchema,
@@ -111,6 +112,7 @@ export const queryKeys = {
   performance: (ledger: string, book: string) => ['performance', ledger, book] as const,
   monteCarlo: (ledger: string, book: string, q: string) => ['montecarlo', ledger, book, q] as const,
   capacity: (ledger: string, book: string) => ['capacity', ledger, book] as const,
+  prereg: (book: string) => ['prereg', book] as const,
 }
 
 export function useForwardTests() {
@@ -191,6 +193,16 @@ export function useCapacity(book: string) {
         signal,
       ),
     refetchInterval: REFRESH_MS,
+  })
+}
+
+/** The latest pre-registered verdict report for a book (plan §6.4.14); not ledger-specific. */
+export function usePrereg(book: string) {
+  return useQuery({
+    queryKey: queryKeys.prereg(book),
+    queryFn: ({ signal }) =>
+      fetchJSON(`/forward-tests/${encodeURIComponent(book)}/prereg`, preregResponseSchema, signal),
+    staleTime: 10 * 60_000,
   })
 }
 
