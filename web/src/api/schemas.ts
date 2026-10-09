@@ -1092,6 +1092,23 @@ export const monteCarloResponseSchema = z.object({
 })
 export type MonteCarloResponse = z.infer<typeof monteCarloResponseSchema>
 
+const pctSchema = z.object({ p10: z.number(), p50: z.number(), p90: z.number() })
+
+/** shared/pkg/execcost.SampleSummary: the distribution of the hourly book samples. */
+export const bookSampleSummarySchema = z.object({
+  samples: z.number(),
+  bad_lines: z.number(),
+  from: z.string(),
+  to: z.string(),
+  spread_bps: pctSchema,
+  bid_depth_btc: pctSchema,
+  ask_depth_btc: pctSchema,
+  walk_capacity_btc: pctSchema,
+  budget_bps: z.number(),
+  sizes: z.array(z.object({ qty_btc: z.number(), worse_side_bps: pctSchema, covered_share: z.number() })),
+})
+export type BookSampleSummary = z.infer<typeof bookSampleSummarySchema>
+
 /** GET /forward-tests/{book}/capacity: order sizes against the 10 bps slippage budget (plan §6.4.12). */
 export const capacityResponseSchema = z.object({
   ledger: z.string(),
@@ -1132,5 +1149,8 @@ export const capacityResponseSchema = z.object({
     }),
   ),
   note: z.string(),
+  /** Hourly book samples (cmd/book-sampler) over the last history_days (plan §6.4.13); null without samples. */
+  history: bookSampleSummarySchema.nullable().optional(),
+  history_days: z.number().optional(),
 })
 export type CapacityResponse = z.infer<typeof capacityResponseSchema>

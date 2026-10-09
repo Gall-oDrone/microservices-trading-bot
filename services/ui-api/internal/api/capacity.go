@@ -24,6 +24,7 @@ const (
 	advDays           = 30
 	volDays           = 90
 	bookMaxAge        = 5 * time.Minute
+	historyDays       = 30 // book-sample window
 )
 
 // CapacityRow is one order size.
@@ -76,6 +77,10 @@ type CapacityResponse struct {
 	PolicyMaxBTC float64       `json:"policy_max_order_btc"`
 	Rows         []CapacityRow `json:"rows"`
 	Note         string        `json:"note"`
+	// History is the distribution of the hourly book samples over the last
+	// HistoryDays (§6.4.13); null without samples.
+	History     *execcost.SampleSummary `json:"history"`
+	HistoryDays int                     `json:"history_days"`
 }
 
 func (s *Server) capacity(w http.ResponseWriter, r *http.Request) {
@@ -162,6 +167,17 @@ func (s *Server) capacity(w http.ResponseWriter, r *http.Request) {
 		row.TakerTotalBps = resp.TakerFeeBps + slip
 		row.WithinBudget = slip <= slippageBudgetBps
 		resp.Rows = append(resp.Rows, row)
+	}
+	resp.HistoryDays = historyDays
+	if s.BookSamplesDir != "" {
+		samples, bad, err := execcost.ReadSamples(execcost.SamplePath(s.BookSamplesDir, b))
+		if err != nil {
+			s.Log.Printf("capacity: book samples for %s: %v", b, err)
+		}
+		if sum := execcost.SummarizeSamples(samples, now.AddDate(0, 0, -historyDays)); sum.Samples > 0 {
+			sum.Bad = bad
+			resp.History = &sum
+		}
 	}
 	switch resp.BookStatus {
 	case "live":

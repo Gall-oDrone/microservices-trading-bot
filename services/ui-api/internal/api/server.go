@@ -67,6 +67,10 @@ type Server struct {
 	StrategyAuditPath string
 	// mc caches Monte Carlo runs per candle file and parameters (§6.4.11).
 	mc mcCache
+	// BookSamplesDir holds the hourly book samples (<dir>/<book>.jsonl,
+	// strategy-executor cmd/book-sampler) behind the capacity page's
+	// distribution (§6.4.13); empty or missing means none.
+	BookSamplesDir string
 }
 
 var (

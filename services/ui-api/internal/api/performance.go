@@ -152,7 +152,7 @@ type MXNTerms struct {
 	FXEnd         float64 `json:"fx_end"`
 	FXChange      float64 `json:"fx_change"`
 	ConvBps       float64 `json:"conversion_bps"`
-	PaperUSD      float64 `json:"paper_return_usd"`
+	PaperUSD      float64 `json:"paper_return_usd"` // as if closed at the last close (exit leg paid)
 	PaperMXN      float64 `json:"paper_return_mxn"` // after both conversions
 	HoldBTCMXN    float64 `json:"hold_btc_mxn"`     // the H2 benchmark
 	Excess        float64 `json:"excess"`           // paper MXN - hold btc_mxn
@@ -264,7 +264,14 @@ func buildMXNTerms(recs []dailyledger.Record, usdBars, mxnBars []dailyrule.Bar, 
 	conv := usdConvBps / 1e4
 	m := &MXNTerms{From: start, To: end, FXStart: fx(before), FXEnd: fx(end), ConvBps: usdConvBps}
 	m.FXChange = m.FXEnd/m.FXStart - 1
+	// As the registered evaluation does (daily-research closes an open
+	// position at the window's last close, with its cost), the rule's return
+	// is taken as if closed; hold btc_mxn below pays both legs too.
+	// Mark-to-market equity would leave out one leg and flatter H2 by it.
 	m.PaperUSD = last.Paper.Equity - 1
+	if last.Paper.EquityClosed > 0 {
+		m.PaperUSD = last.Paper.EquityClosed - 1
+	}
 	m.PaperMXN = (1+m.PaperUSD)*m.FXEnd/m.FXStart*(1-conv)*(1-conv) - 1
 	leg := dailyledger.PreregCosts["btc_mxn"].PrimaryLegBps / 1e4
 	m.HoldBTCMXN = mxn[end].Close/startBar.Open*(1-leg)*(1-leg) - 1

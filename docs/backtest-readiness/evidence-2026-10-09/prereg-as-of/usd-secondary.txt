@@ -1,0 +1,14 @@
+DATA   : 2359 daily bars 2020-04-24 .. 2026-10-08; 0 news days
+COSTS  : buy 36 + sell 36 bps commission, 10 bps slippage per leg -> 92 bps round trip
+RULES  : trend = close > SMA(50); news = trailing 3-day score > 0.00; fixed a priori, not tuned
+TIMING : decide at day t close, fill at day t+1 open; long-only
+
+========================================================================================================
+IN-SAMPLE  2026-09-29 .. 2027-09-26  (10 bars)
+========================================================================================================
+RULE                  RETURN%    TRIPS  EXPOSURE%    MAX DD%     COSTS%  vs B&H (pp)   RANDOM, SAME TRIPS
+--------------------------------------------------------------------------------------------------------
+buy_and_hold            -2.19        1      100.0       4.22       0.91         0.00   
+trend_sma50             -2.19        1      100.0       4.22       0.91         0.00   beats  24.9% of 2000
+news_sentiment           0.00        0        0.0       0.00       0.00         2.19   
+trend_and_news           0.00        0        0.0       0.00       0.00         2.19   

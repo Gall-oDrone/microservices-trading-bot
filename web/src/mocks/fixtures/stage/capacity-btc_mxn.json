@@ -2,13 +2,13 @@
   "ledger": "stage",
   "book": "btc_mxn",
   "quote": "mxn",
-  "generated_at": "2026-10-09T20:37:41Z",
+  "generated_at": "2026-10-09T21:33:24Z",
   "book_status": "live",
-  "depth_at": "2026-10-09T20:37:37.211Z",
-  "mid": 1515365,
-  "spread_bps": 2.1776931630333287,
-  "bid_depth_btc": 1.31965373,
-  "ask_depth_btc": 2.3166343300000003,
+  "depth_at": "2026-10-09T21:33:23.564Z",
+  "mid": 1518250,
+  "spread_bps": 1.5807673308084966,
+  "bid_depth_btc": 0.5672414499999999,
+  "ask_depth_btc": 1.45940572,
   "last_close": 1494500,
   "adv_btc": 8.521054475666666,
   "adv_median_btc": 7.409196815,
@@ -17,7 +17,7 @@
   "maker_fee_bps": 60,
   "taker_fee_bps": 78,
   "slippage_budget_bps": 10,
-  "walk_capacity_btc": 0.06713811144759997,
+  "walk_capacity_btc": 0.1267499762641796,
   "sqrt_capacity_lo_btc": 0.022427599394885166,
   "sqrt_capacity_hi_btc": 0.08971039757954066,
   "stage_size_btc": 0.001,
@@ -25,106 +25,106 @@
   "rows": [
     {
       "qty_btc": 0.001,
-      "notional": 1515.365,
+      "notional": 1518.25,
       "pct_adv": 0.00011735636743734847,
-      "buy_walk_bps": 1.0888465815162007,
-      "sell_walk_bps": 1.0888465815162007,
+      "buy_walk_bps": 0.7903836654032936,
+      "sell_walk_bps": 0.7903836654044039,
       "book_fills": true,
       "sqrt_lo_bps": 1.0557925892502864,
       "sqrt_hi_bps": 2.111585178500573,
-      "taker_total_bps": 79.08884658151621,
+      "taker_total_bps": 78.7903836654044,
       "within_budget": true
     },
     {
       "qty_btc": 0.005,
-      "notional": 7576.825,
+      "notional": 7591.25,
       "pct_adv": 0.0005867818371867423,
-      "buy_walk_bps": 1.2905267047869096,
-      "sell_walk_bps": 1.1159340488930969,
+      "buy_walk_bps": 1.2606835501416391,
+      "sell_walk_bps": 0.7903836654044039,
       "book_fills": true,
       "sqrt_lo_bps": 2.360823999704154,
       "sqrt_hi_bps": 4.721647999408308,
-      "taker_total_bps": 79.29052670478691,
+      "taker_total_bps": 79.26068355014164,
       "within_budget": true
     },
     {
       "qty_btc": 0.01,
-      "notional": 15153.65,
+      "notional": 15182.5,
       "pct_adv": 0.0011735636743734847,
-      "buy_walk_bps": 1.4946788397507405,
-      "sell_walk_bps": 1.135385666161115,
+      "buy_walk_bps": 1.517282660958852,
+      "sell_walk_bps": 0.7903836654044039,
       "book_fills": true,
       "sqrt_lo_bps": 3.3387093187575103,
       "sqrt_hi_bps": 6.677418637515021,
-      "taker_total_bps": 79.49467883975075,
+      "taker_total_bps": 79.51728266095886,
       "within_budget": true
     },
     {
       "qty_btc": 0.05,
-      "notional": 75768.25,
+      "notional": 75912.5,
       "pct_adv": 0.0058678183718674235,
-      "buy_walk_bps": 2.1096165874223693,
-      "sell_walk_bps": 1.2737411910634933,
+      "buy_walk_bps": 2.298462782805988,
+      "sell_walk_bps": 0.7903836654044039,
       "book_fills": true,
       "sqrt_lo_bps": 7.465580993853808,
       "sqrt_hi_bps": 14.931161987707616,
-      "taker_total_bps": 80.10961658742237,
+      "taker_total_bps": 80.29846278280598,
       "within_budget": true
     },
     {
       "qty_btc": 0.1,
-      "notional": 151536.5,
+      "notional": 151825,
       "pct_adv": 0.011735636743734847,
-      "buy_walk_bps": 20.51681706387587,
-      "sell_walk_bps": 2.331300736124753,
+      "buy_walk_bps": 8.657876212745386,
+      "sell_walk_bps": 1.3305236094185435,
       "book_fills": true,
       "sqrt_lo_bps": 10.557925892502864,
       "sqrt_hi_bps": 21.115851785005727,
-      "taker_total_bps": 98.51681706387586,
-      "within_budget": false
+      "taker_total_bps": 86.65787621274538,
+      "within_budget": true
     },
     {
       "qty_btc": 0.25,
-      "notional": 378841.25,
+      "notional": 379562.5,
       "pct_adv": 0.029339091859337117,
-      "buy_walk_bps": 33.40857588501667,
-      "sell_walk_bps": 4.661153203351365,
+      "buy_walk_bps": 12.47352427070858,
+      "sell_walk_bps": 4.0053228809477925,
       "book_fills": true,
       "sqrt_lo_bps": 16.693546593787556,
       "sqrt_hi_bps": 33.38709318757511,
-      "taker_total_bps": 111.40857588501666,
+      "taker_total_bps": 90.47352427070858,
       "within_budget": false
     },
     {
       "qty_btc": 0.5,
-      "notional": 757682.5,
+      "notional": 759125,
       "pct_adv": 0.05867818371867423,
-      "buy_walk_bps": 37.72518861528296,
-      "sell_walk_bps": 23.992591965630304,
+      "buy_walk_bps": 27.475144309565547,
+      "sell_walk_bps": 12.09776373983229,
       "book_fills": true,
       "sqrt_lo_bps": 23.608239997041544,
       "sqrt_hi_bps": 47.21647999408309,
-      "taker_total_bps": 115.72518861528296,
+      "taker_total_bps": 105.47514430956555,
       "within_budget": false
     },
     {
       "qty_btc": 1,
-      "notional": 1515365,
+      "notional": 1518250,
       "pct_adv": 0.11735636743734847,
-      "buy_walk_bps": 39.93012589244227,
-      "sell_walk_bps": 62.627662023340136,
-      "book_fills": true,
+      "buy_walk_bps": 45.023592243700335,
+      "sell_walk_bps": 17.683925101590336,
+      "book_fills": false,
       "sqrt_lo_bps": 33.38709318757511,
       "sqrt_hi_bps": 66.77418637515022,
-      "taker_total_bps": 140.62766202334012,
+      "taker_total_bps": 144.77418637515024,
       "within_budget": false
     },
     {
       "qty_btc": 2,
-      "notional": 3030730,
+      "notional": 3036500,
       "pct_adv": 0.23471273487469693,
-      "buy_walk_bps": 53.775222552980836,
-      "sell_walk_bps": 71.98605958779636,
+      "buy_walk_bps": 52.01479928793829,
+      "sell_walk_bps": 17.683925101590336,
       "book_fills": false,
       "sqrt_lo_bps": 47.21647999408309,
       "sqrt_hi_bps": 94.43295998816617,
@@ -133,10 +133,10 @@
     },
     {
       "qty_btc": 5,
-      "notional": 7576825,
+      "notional": 7591250,
       "pct_adv": 0.5867818371867424,
-      "buy_walk_bps": 58.33918533396209,
-      "sell_walk_bps": 71.98605958779636,
+      "buy_walk_bps": 52.01479928793829,
+      "sell_walk_bps": 17.683925101590336,
       "book_fills": false,
       "sqrt_lo_bps": 74.65580993853807,
       "sqrt_hi_bps": 149.31161987707614,
@@ -144,5 +144,80 @@
       "within_budget": false
     }
   ],
-  "note": "Book: Bitso production public feed (top 20 levels per side), mid-priced. Stage fills are thinner."
+  "note": "Book: Bitso production public feed (top 20 levels per side), mid-priced. Stage fills are thinner.",
+  "history": {
+    "samples": 2,
+    "bad_lines": 0,
+    "from": "2026-10-09T21:26:02Z",
+    "to": "2026-10-09T21:26:39Z",
+    "spread_bps": {
+      "p10": 2.324926924478124,
+      "p50": 2.6672480716430718,
+      "p90": 3.00956921880802
+    },
+    "bid_depth_btc": {
+      "p10": 0.6126030720000002,
+      "p50": 0.6142107600000001,
+      "p90": 0.615818448
+    },
+    "ask_depth_btc": {
+      "p10": 1.882897842,
+      "p50": 2.17604021,
+      "p90": 2.4691825780000003
+    },
+    "walk_capacity_btc": {
+      "p10": 0.06471214762496322,
+      "p50": 0.06610715890168822,
+      "p90": 0.06750217017841323
+    },
+    "budget_bps": 10,
+    "sizes": [
+      {
+        "qty_btc": 0.001,
+        "worse_side_bps": {
+          "p10": 1.1624634622391383,
+          "p50": 1.3336240358219342,
+          "p90": 1.5047846094047301
+        },
+        "covered_share": 1
+      },
+      {
+        "qty_btc": 0.01,
+        "worse_side_bps": {
+          "p10": 1.4500913166008988,
+          "p50": 1.6655305473023407,
+          "p90": 1.8809697780037826
+        },
+        "covered_share": 1
+      },
+      {
+        "qty_btc": 0.1,
+        "worse_side_bps": {
+          "p10": 17.793672913504643,
+          "p50": 18.03935593945649,
+          "p90": 18.28503896540834
+        },
+        "covered_share": 1
+      },
+      {
+        "qty_btc": 0.5,
+        "worse_side_bps": {
+          "p10": 30.899873785762423,
+          "p50": 32.874907596113225,
+          "p90": 34.849941406464026
+        },
+        "covered_share": 1
+      },
+      {
+        "qty_btc": 1,
+        "worse_side_bps": {
+          "p10": 0,
+          "p50": 0,
+          "p90": 0
+        },
+        "covered_share": 0
+      }
+    ]
+  },
+  "history_days": 30
 }

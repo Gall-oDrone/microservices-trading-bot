@@ -2,13 +2,13 @@
   "ledger": "stage",
   "book": "btc_usd",
   "quote": "usd",
-  "generated_at": "2026-10-09T20:37:41Z",
+  "generated_at": "2026-10-09T21:33:25Z",
   "book_status": "live",
-  "depth_at": "2026-10-09T20:37:41.318Z",
-  "mid": 82348.5,
-  "spread_bps": 2.3072672847714286,
-  "bid_depth_btc": 0.69417182,
-  "ask_depth_btc": 0.90730906,
+  "depth_at": "2026-10-09T21:33:24.969Z",
+  "mid": 82520.5,
+  "spread_bps": 2.060094158421241,
+  "bid_depth_btc": 0.7786085100000002,
+  "ask_depth_btc": 0.93797636,
   "last_close": 82318,
   "adv_btc": 14.170243195333333,
   "adv_median_btc": 14.23917263,
@@ -17,7 +17,7 @@
   "maker_fee_bps": 30,
   "taker_fee_bps": 36,
   "slippage_budget_bps": 10,
-  "walk_capacity_btc": 0.69417182,
+  "walk_capacity_btc": 0.7786085100000002,
   "sqrt_capacity_lo_btc": 0.03587240989775826,
   "sqrt_capacity_hi_btc": 0.14348963959103303,
   "stage_size_btc": 0.001,
@@ -25,94 +25,94 @@
   "rows": [
     {
       "qty_btc": 0.001,
-      "notional": 82.3485,
+      "notional": 82.5205,
       "pct_adv": 0.00007057041902635296,
-      "buy_walk_bps": 1.4795509329257328,
-      "sell_walk_bps": 1.153633642385632,
+      "buy_walk_bps": 1.0300470792112826,
+      "sell_walk_bps": 1.0300470792101724,
       "book_fills": true,
       "sqrt_lo_bps": 0.83481400761277,
       "sqrt_hi_bps": 1.66962801522554,
-      "taker_total_bps": 37.47955093292573,
+      "taker_total_bps": 37.030047079211286,
       "within_budget": true
     },
     {
       "qty_btc": 0.005,
-      "notional": 411.7425,
+      "notional": 412.6025,
       "pct_adv": 0.0003528520951317648,
-      "buy_walk_bps": 1.647809978324588,
-      "sell_walk_bps": 1.153633642385632,
+      "buy_walk_bps": 1.1073449627674314,
+      "sell_walk_bps": 1.0300470792101724,
       "book_fills": true,
       "sqrt_lo_bps": 1.8667008695911804,
       "sqrt_hi_bps": 3.733401739182361,
-      "taker_total_bps": 37.64780997832459,
+      "taker_total_bps": 37.10734496276743,
       "within_budget": true
     },
     {
       "qty_btc": 0.01,
-      "notional": 823.485,
+      "notional": 825.205,
       "pct_adv": 0.0007057041902635296,
-      "buy_walk_bps": 1.704309610981447,
-      "sell_walk_bps": 1.209241212650758,
+      "buy_walk_bps": 1.1292870256474075,
+      "sell_walk_bps": 1.0300470792101724,
       "book_fills": true,
       "sqrt_lo_bps": 2.6399136866694977,
       "sqrt_hi_bps": 5.279827373338995,
-      "taker_total_bps": 37.70430961098145,
+      "taker_total_bps": 37.12928702564741,
       "within_budget": true
     },
     {
       "qty_btc": 0.05,
-      "notional": 4117.425,
+      "notional": 4126.025000000001,
       "pct_adv": 0.003528520951317648,
-      "buy_walk_bps": 1.8344888127908021,
-      "sell_walk_bps": 1.3000883319091994,
+      "buy_walk_bps": 1.7035635024020834,
+      "sell_walk_bps": 1.0300470792101724,
       "book_fills": true,
       "sqrt_lo_bps": 5.903026458125078,
       "sqrt_hi_bps": 11.806052916250156,
-      "taker_total_bps": 37.8344888127908,
+      "taker_total_bps": 37.70356350240208,
       "within_budget": true
     },
     {
       "qty_btc": 0.1,
-      "notional": 8234.85,
+      "notional": 8252.050000000001,
       "pct_adv": 0.007057041902635296,
-      "buy_walk_bps": 1.8583665883409317,
-      "sell_walk_bps": 1.9000717924433363,
+      "buy_walk_bps": 1.8515333280810786,
+      "sell_walk_bps": 1.9521505807640338,
       "book_fills": true,
       "sqrt_lo_bps": 8.3481400761277,
       "sqrt_hi_bps": 16.6962801522554,
-      "taker_total_bps": 37.900071792443335,
+      "taker_total_bps": 37.952150580764034,
       "within_budget": true
     },
     {
       "qty_btc": 0.25,
-      "notional": 20587.125,
+      "notional": 20630.125,
       "pct_adv": 0.01764260475658824,
-      "buy_walk_bps": 2.5780708428224663,
-      "sell_walk_bps": 2.617986056818733,
+      "buy_walk_bps": 2.1889773959204994,
+      "sell_walk_bps": 2.5622357692944853,
       "book_fills": true,
       "sqrt_lo_bps": 13.199568433347487,
       "sqrt_hi_bps": 26.399136866694974,
-      "taker_total_bps": 38.61798605681874,
+      "taker_total_bps": 38.56223576929449,
       "within_budget": true
     },
     {
       "qty_btc": 0.5,
-      "notional": 41174.25,
+      "notional": 41260.25,
       "pct_adv": 0.03528520951317648,
-      "buy_walk_bps": 4.112401967248935,
-      "sell_walk_bps": 3.4365561607074824,
+      "buy_walk_bps": 4.901977940026114,
+      "sell_walk_bps": 2.8771438830343943,
       "book_fills": true,
       "sqrt_lo_bps": 18.667008695911804,
       "sqrt_hi_bps": 37.33401739182361,
-      "taker_total_bps": 40.112401967248935,
+      "taker_total_bps": 40.901977940026114,
       "within_budget": true
     },
     {
       "qty_btc": 1,
-      "notional": 82348.5,
+      "notional": 82520.5,
       "pct_adv": 0.07057041902635296,
-      "buy_walk_bps": 8.758365291663406,
-      "sell_walk_bps": 3.8518078655469523,
+      "buy_walk_bps": 13.35146821421107,
+      "sell_walk_bps": 6.700180251504317,
       "book_fills": false,
       "sqrt_lo_bps": 26.399136866694974,
       "sqrt_hi_bps": 52.79827373338995,
@@ -121,10 +121,10 @@
     },
     {
       "qty_btc": 2,
-      "notional": 164697,
+      "notional": 165041,
       "pct_adv": 0.1411408380527059,
-      "buy_walk_bps": 8.758365291663406,
-      "sell_walk_bps": 3.8518078655469523,
+      "buy_walk_bps": 13.35146821421107,
+      "sell_walk_bps": 6.700180251504317,
       "book_fills": false,
       "sqrt_lo_bps": 37.33401739182361,
       "sqrt_hi_bps": 74.66803478364722,
@@ -133,10 +133,10 @@
     },
     {
       "qty_btc": 5,
-      "notional": 411742.5,
+      "notional": 412602.5,
       "pct_adv": 0.3528520951317648,
-      "buy_walk_bps": 8.758365291663406,
-      "sell_walk_bps": 3.8518078655469523,
+      "buy_walk_bps": 13.35146821421107,
+      "sell_walk_bps": 6.700180251504317,
       "book_fills": false,
       "sqrt_lo_bps": 59.03026458125078,
       "sqrt_hi_bps": 118.06052916250157,
@@ -144,5 +144,80 @@
       "within_budget": false
     }
   ],
-  "note": "Book: Bitso production public feed (top 20 levels per side), mid-priced. Stage fills are thinner."
+  "note": "Book: Bitso production public feed (top 20 levels per side), mid-priced. Stage fills are thinner.",
+  "history": {
+    "samples": 2,
+    "bad_lines": 0,
+    "from": "2026-10-09T21:26:02Z",
+    "to": "2026-10-09T21:26:39Z",
+    "spread_bps": {
+      "p10": 1.2482247741599248,
+      "p50": 1.393637898212157,
+      "p90": 1.539051022264389
+    },
+    "bid_depth_btc": {
+      "p10": 0.5695163690000001,
+      "p50": 0.644798965,
+      "p90": 0.720081561
+    },
+    "ask_depth_btc": {
+      "p10": 0.8221626789999998,
+      "p50": 0.9842829949999999,
+      "p90": 1.146403311
+    },
+    "walk_capacity_btc": {
+      "p10": 0.5695163690000001,
+      "p50": 0.644798965,
+      "p90": 0.720081561
+    },
+    "budget_bps": 10,
+    "sizes": [
+      {
+        "qty_btc": 0.001,
+        "worse_side_bps": {
+          "p10": 1.9867666318013066,
+          "p50": 2.177259784557628,
+          "p90": 2.3677529373139494
+        },
+        "covered_share": 1
+      },
+      {
+        "qty_btc": 0.01,
+        "worse_side_bps": {
+          "p10": 2.5272085527215937,
+          "p50": 2.820176018576981,
+          "p90": 3.113143484432368
+        },
+        "covered_share": 1
+      },
+      {
+        "qty_btc": 0.1,
+        "worse_side_bps": {
+          "p10": 3.4610666736126783,
+          "p50": 4.251388314314153,
+          "p90": 5.0417099550156275
+        },
+        "covered_share": 1
+      },
+      {
+        "qty_btc": 0.5,
+        "worse_side_bps": {
+          "p10": 5.226488211809821,
+          "p50": 6.106051936812795,
+          "p90": 6.985615661815769
+        },
+        "covered_share": 1
+      },
+      {
+        "qty_btc": 1,
+        "worse_side_bps": {
+          "p10": 0,
+          "p50": 0,
+          "p90": 0
+        },
+        "covered_share": 0
+      }
+    ]
+  },
+  "history_days": 30
 }

@@ -86,6 +86,7 @@ func main() {
 	tokenFile := flag.String("operator-token-file", env("UI_API_OPERATOR_TOKEN_FILE", ""), "enable operator controls (halt/resume, audited) with the token in this 0600 file (default: off, read-only)")
 	executorURL := flag.String("strategy-executor-url", env("UI_API_STRATEGY_EXECUTOR_URL", ""), "intraday strategy-executor base URL (loopback) for the Strategies page; start/stop also needs -operator-token-file (default: off)")
 	strategyAudit := flag.String("strategy-audit-file", env("UI_API_STRATEGY_AUDIT_FILE", ""), "strategy start/stop audit log (default: "+api.StrategyAuditFile+" next to the first local ledger)")
+	bookSamples := flag.String("book-samples", env("UI_API_BOOK_SAMPLES", "../strategy-executor/daily-executor-data/book-samples"), "hourly order-book samples dir (<dir>/<book>.jsonl, cmd/book-sampler) for the capacity distribution; missing means none")
 	flag.Parse()
 
 	if *printPolicy {
@@ -123,7 +124,7 @@ func main() {
 		}
 	}
 	srv := &api.Server{Ledgers: ledgers, Policy: pol, PolicySrc: src, StageSize: *stageSize, StaticDir: *static,
-		Version: version(), Log: logger,
+		Version: version(), Log: logger, BookSamplesDir: *bookSamples,
 		Research: &research.Index{Dir: *studiesDir, RepoRel: repoRel(*studiesDir)}}
 	if srv.Archive, err = api.NewArchive(context.Background(), *archiveURI); err != nil {
 		logger.Fatal("-archive: ", err)

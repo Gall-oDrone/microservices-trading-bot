@@ -258,6 +258,7 @@ returns the executor's last recorded check. The Risk page shows all of it.
 | **R6e (done 2026-10-09)** Cost budget, capital and reconciliation, §6.4.10 | Realized execution cost in money against the frozen pre-registered costs; risk as a share of `RISK_CAPITAL` with a reverse stress test; a read-only daily reconciliation of the stage ledger against Bitso; crash paths embedded instead of refetched | The forward test's cost assumption, the capital at risk and the ledger's truth are each checked, with alerts and a runbook |
 | **R6f (done 2026-10-09)** P&L, expected profit per trade and Monte Carlo, §6.4.11 | Stage P&L split into market move, fees and slippage and compared with paper; forward-test ratios; the rule's trade distribution and calendar-year base rates; a block-bootstrap Monte Carlo of the rule against hold, all on the forward-test page | "What did we make, what should a trade make, what could the next year look like" answered from the same frozen rule, with the uncertainty shown |
 | **R6g (done 2026-10-09)** Capacity, daily P&L/NAV and MXN terms, §6.4.12 | Order sizes against the registered 10 bps slippage on the live production book and by the square-root law; the stage P&L day by day with NAV and paper on the same money; btc_usd measured in pesos against holding btc_mxn, as its pre-registration defines H2 | A sizing ceiling backed by measurements before any production size; P&L over time instead of a snapshot; the btc_usd test read the way it will be judged |
+| **R6h (done 2026-10-09)** Execution research, book sampler, evaluation report, model validation, §6.4.13 | Execution schedules replayed on the trade archive; an hourly public order-book sampler with the capacity distribution on the forward-test page; the frozen evaluation procedure and its H1/H2/H3 verdicts in one command; a model-risk validation with review triggers | Execution cost explained (the schedule is fine, stage's book is thin) and capacity measured as a distribution; the 2027 evaluations made mechanical; the models documented the way a risk function reviews them |
 
 #### 6.4.1 R1 as built
 
@@ -737,9 +738,67 @@ Reporting only; nothing changes the rule, its costs or the executor.
   - 60 bps MXN→USD to enter and USD→MXN to leave.
   - Compared against holding btc_mxn from the forward start, at 70 bps per leg.
   - On 2026-10-08: the rule −2.08 % in MXN (−1.68 % in USD; USD/MXN +0.80 %), hold btc_mxn
-    −1.88 %, so H2 is 0.20 pp behind. Reported, not a decision.
+    −1.88 %, so H2 is 0.20 pp behind. Reported, not a decision. *(Corrected in §6.4.13: the rule
+    now pays its exit leg, as the registered evaluation does: −2.47 % against −1.88 %, 0.59 pp
+    behind.)*
 - **Open:** nothing from §6.4.11 remains. Capacity uses one book snapshot; a time series of
-  snapshots, from the data collector's archive or a sampler, would turn it into a distribution.
+  snapshots, from the data collector's archive or a sampler, would turn it into a distribution. *(Built in
+  §6.4.13: the hourly book sampler and the execution replay.)*
+
+#### 6.4.13 R6h execution research, book sampler, evaluation report and model validation as built (2026-10-09)
+
+Reporting only. The executor, the rule, its costs and the evaluation dates are unchanged. Summary
+and operator checklist: [OPERATIONS-UPDATE-2026-10-09.md](../OPERATIONS-UPDATE-2026-10-09.md).
+
+- **Execution research** (`strategy-executor/cmd/exec-research`, `internal/execsim`;
+  [EXECUTION-RESEARCH-2026-10-09.md](../backtest-readiness/EXECUTION-RESEARCH-2026-10-09.md)).
+  - Replays schedules over the collector's production trades (`trades_compacted/`, read-only):
+    btc_mxn 41 days, btc_usd 7.
+  - Schedules: market now; maker for 15m–8h, then market; the same re-pegged every 5 minutes; TWAP
+    in 4 child orders.
+  - The best bid and ask come from maker-side prints. The Through and Touch fill models bracket
+    queue position. Market orders pay square-root impact with Y = 1.
+  - Results at stage size and 06:15 UTC:
+    - today's schedule: 66.5 bps per leg (btc_mxn) and 32.7 bps (btc_usd), inside 70 / 40, so the
+      118 bps stage leg is the stage book;
+    - re-pegging within the same hour: 64.1 bps, p90 77.7 against 89.7, maker share 98 %;
+    - capacity under today's schedule: about 0.01 BTC per btc_mxn leg (0.1 BTC averages 90 bps).
+  - Any execution change needs its own pre-registration.
+- **Order-book sampler** (`strategy-executor/cmd/book-sampler`, `shared/pkg/execcost/samples.go`).
+  - Hourly at :07 (`scripts/ops-run.sh sampler`; `install-ops-cron.sh` schedules and builds it,
+    and `--no-sampler` skips it).
+  - Reads the public REST book (no keys) and appends to `daily-executor-data/book-samples/<book>.jsonl`:
+    spread, top-20 depth, walk cost at 0.001–1 BTC and walk capacity at 10 bps.
+  - ui-api's `-book-samples` (default `../strategy-executor/daily-executor-data/book-samples`) adds
+    `history` (30-day p10/p50/p90, coverage per size) and `history_days` to `/capacity`.
+  - The forward-test page shows a "Book over time" table under the capacity table, or says the
+    sampler has not run yet. A torn last line is skipped and counted.
+- **Pre-registered evaluation report** (`scripts/prereg-evaluation.sh`, `strategy-executor/cmd/prereg-report`).
+  - The script runs each pre-registration's frozen procedure: `bitso-daily`, then
+    `daily-research -json` for each book's window at primary and secondary costs, plus btc_mxn over
+    the btc_usd window as the H2 benchmark.
+  - It cross-checks btc_usd with the registered `mxn-terms.py`.
+  - `prereg-report` applies the strict pass criteria and quotes each pre-registration's reading of
+    the outcome; a combination the pre-registration does not name is reported as such.
+  - Phases: `as-of`, `interim` and `final`. Only `final` with data through 2027-09-26 decides.
+  - Output: `report.md`, `report.json` and SHA256SUMS under
+    `docs/backtest-readiness/evidence-<date>/prereg-<phase>/`.
+  - As of 2026-10-08:
+    - both rules have been long since the start, so they tie with hold on H1 and on btc_mxn's H2;
+    - btc_usd in MXN is −2.47 % against holding btc_mxn's −1.88 %;
+    - the Go figures equal `mxn-terms.py`'s.
+- **Model-risk validation** ([MODEL-VALIDATION-2026-10-09.md](../risk/MODEL-VALIDATION-2026-10-09.md)).
+  - Inventory M1–M8 plus C1, with assumptions, outcomes evidence (Basel/Kupiec, ES against normal,
+    stress troughs, Monte Carlo calibration, execution replay, reconciliation) and limitations.
+  - Ten operational review triggers; none may change the rule, its costs or its dates.
+  - Independent sign-off pending.
+- **Fix found by the validation.** btc_usd MXN terms valued the rule at mark-to-market, without
+  the exit leg, while hold btc_mxn paid both legs. The page showed −0.20 pp; the registered
+  measure gives −0.59 pp. It now uses `equity_if_closed`, and a test pins it.
+- **CI:** gofmt, vet and race tests for the four new packages; `bash -n` on the ops scripts.
+- **Open (operator):** apply the dev overlay with a new order-management image; configure the
+  Alertmanager receivers; check the first nightly reconciliation (2026-10-10 06:15 UTC); sign off
+  the validation. Later: tax lots, a second asset.
 
 ### 6.5 First findings from the real stage ledger
 - **btc_mxn's first stage leg cost 118 bps against 70 assumed.** The post-only order rested 60 min, filled 0.1%, and fell back to market: taker fee 78 bps + 40 bps above the fill-day open. A stage leg is small and stage liquidity is thin, so this is not yet evidence about production costs. But it is the cost signal to watch: the pre-registration's secondary (taker) scenario is 88 bps per leg, and this leg exceeded both.

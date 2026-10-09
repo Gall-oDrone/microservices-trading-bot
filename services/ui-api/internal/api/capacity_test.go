@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"bitso-trading-platform/shared/pkg/execcost"
 	"bitso-trading-platform/ui-api/internal/live"
 )
 
@@ -83,5 +84,33 @@ func TestCapacityWithoutBook(t *testing.T) {
 	ts := newTestServer(t, fixedNow.Add(10*time.Minute), func(s *Server) { s.Live = h })
 	if st := get[CapacityResponse](t, ts, "/api/ui/forward-tests/btc_mxn/capacity", 200); st.BookStatus != "stale" || st.WalkCapacityBTC != nil {
 		t.Fatalf("stale %+v", st.BookStatus)
+	}
+}
+
+func TestCapacityHistoryFromBookSamples(t *testing.T) {
+	dir := t.TempDir()
+	path := execcost.SamplePath(dir, "btc_mxn")
+	for i, spread := range []float64{2, 3, 4} {
+		s := execcost.Sample{At: fixedNow.Add(-time.Duration(i+1) * time.Hour).Format(time.RFC3339), Book: "btc_mxn", Mid: 1_500_000,
+			SpreadBps: spread, BidDepthBTC: 1, AskDepthBTC: 2, WalkCapacityBTC: 0.1 * float64(i+1), BudgetBps: 10,
+			Sizes: []execcost.SizeCost{{QtyBTC: 0.1, BuyBps: spread, SellBps: 1, Complete: true}}}
+		if err := execcost.AppendSample(path, s); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// One sample older than the 30-day window is left out.
+	old := execcost.Sample{At: fixedNow.AddDate(0, 0, -31).Format(time.RFC3339), Book: "btc_mxn", Mid: 1, SpreadBps: 99}
+	if err := execcost.AppendSample(path, old); err != nil {
+		t.Fatal(err)
+	}
+	ts := newTestServer(t, fixedNow, func(s *Server) { s.BookSamplesDir = dir })
+	c := get[CapacityResponse](t, ts, "/api/ui/forward-tests/btc_mxn/capacity", 200)
+	h := c.History
+	if h == nil || h.Samples != 3 || c.HistoryDays != 30 || h.SpreadBps.P50 != 3 || !near(h.WalkCapacityBTC.P50, 0.2, 1e-9) || len(h.Sizes) != 1 {
+		t.Fatalf("history %+v", h)
+	}
+	// No samples for btc_usd: history is null.
+	if u := get[CapacityResponse](t, ts, "/api/ui/forward-tests/btc_usd/capacity", 200); u.History != nil {
+		t.Fatalf("btc_usd history %+v", u.History)
 	}
 }

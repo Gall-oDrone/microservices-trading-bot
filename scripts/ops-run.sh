@@ -11,6 +11,9 @@
 #                                 trades_compacted/ + manifests, never deletes. -cutover
 #                                 is refused here; it stays a manual, reviewed step
 #                                 (docs/data-collector/S3-COMPACTION-2026-09-22.md).
+#   scripts/ops-run.sh sampler    hourly public order-book snapshot (read-only, no keys;
+#                                 plan §6.4.13): services/strategy-executor/daily-executor-data/
+#                                 book-sampler appends to daily-executor-data/book-samples/<book>.jsonl
 #
 # Settings come from $MTB_OPS_ENV (default ~/.config/microservices-trading-bot/ops.env),
 # written by the installer: PATH (cron's is minimal), UI_ALERTS_NOTIFY, UI_API_ARCHIVE,
@@ -32,9 +35,9 @@ mkdir -p "$STATE"
 job="${1:-}"
 shift || true
 case "$job" in
-  executor | alerts | compact) ;;
+  executor | alerts | compact | sampler) ;;
   *)
-    echo "usage: $0 executor|alerts|compact [flags…]" >&2
+    echo "usage: $0 executor|alerts|compact|sampler [flags…]" >&2
     exit 2
     ;;
 esac
@@ -56,6 +59,10 @@ case "$job" in
   alerts)
     cd "$ROOT/services/ui-api" || exit 2
     exec "${UI_ALERTS_BIN:-./bin/ui-alerts}" "$@"
+    ;;
+  sampler)
+    cd "$ROOT/services/strategy-executor" || exit 2
+    exec "${BOOK_SAMPLER_BIN:-./daily-executor-data/book-sampler}" -dir ./daily-executor-data/book-samples "$@"
     ;;
   compact)
     echo "== $(date -u +%Y-%m-%dT%H:%M:%SZ) ops-run compact"

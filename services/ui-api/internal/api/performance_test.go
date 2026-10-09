@@ -203,6 +203,17 @@ func TestPerformanceMXNTerms(t *testing.T) {
 		m.H2SoFar != (m.Excess > 0) {
 		t.Fatalf("returns %+v", m)
 	}
+	// The rule is valued as if closed, like the registered evaluation: the exit leg is paid.
+	var eq float64
+	recs, _ := store.New("testdata/ledger.jsonl", "").Records()
+	for _, r := range recs {
+		if r.Book == "btc_usd" {
+			eq = r.Paper.EquityClosed // the last btc_usd record wins
+		}
+	}
+	if eq <= 0 || !near(m.PaperUSD, eq-1, 1e-12) {
+		t.Fatalf("paper usd %v, want equity_if_closed %v - 1", m.PaperUSD, eq)
+	}
 	if !near(m.StagePnLMXN, p.PnL.Total*m.FXEnd, 1e-9) || !near(m.StageInvested, 83.481*m.FXEnd, 1e-6) {
 		t.Fatalf("stage %+v", m)
 	}

@@ -93,6 +93,10 @@ jobs:
             services/strategy-executor/internal/server/backtest_deprecation_test.go \
             services/strategy-executor/cmd/daily-reconcile \
             services/strategy-executor/cmd/daily-montecarlo \
+            services/strategy-executor/cmd/exec-research \
+            services/strategy-executor/cmd/book-sampler \
+            services/strategy-executor/cmd/prereg-report \
+            services/strategy-executor/internal/execsim \
             services/strategy-executor/internal/reconcile \
             services/strategy-executor/internal/stageenv \
             services/strategy-executor/cmd/daily-executor/stage.go \
@@ -111,10 +115,20 @@ jobs:
           go vet ./cmd/daily-executor ./internal/dailyexec ./internal/dailyrule ./internal/bitsodaily ./cmd/daily-research ./internal/server ./cmd/daily-reconcile ./internal/reconcile ./internal/stageenv ./cmd/daily-montecarlo
           go test -race -count=1 ./cmd/daily-executor ./internal/dailyexec ./internal/dailyrule ./cmd/daily-research ./internal/server ./cmd/daily-reconcile ./internal/reconcile ./cmd/daily-montecarlo
 
+      # Plan §6.4.13: execution research over the trade archive, the hourly
+      # book sampler and the pre-registered verdict report (no network).
+      - name: exec-research, book-sampler, prereg-report
+        working-directory: services/strategy-executor
+        run: |
+          go vet ./cmd/exec-research ./internal/execsim ./cmd/book-sampler ./cmd/prereg-report
+          go test -race -count=1 ./cmd/exec-research ./internal/execsim ./cmd/book-sampler ./cmd/prereg-report
+
       # Plan §6.4.10: scripts/daily-executor-run.sh reconciles after each stage
       # run without changing the exit code (fake binaries, no network).
       - name: daily-executor-run.sh reconciliation step
-        run: bash scripts/tests/daily-executor-run-test.sh
+        run: |
+          bash scripts/tests/daily-executor-run-test.sh
+          bash -n scripts/ops-run.sh scripts/install-ops-cron.sh scripts/prereg-evaluation.sh
 
       - name: ui-api
         working-directory: services/ui-api

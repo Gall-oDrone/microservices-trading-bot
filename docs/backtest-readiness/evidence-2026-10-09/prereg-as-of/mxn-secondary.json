@@ -1,0 +1,86 @@
+{
+  "schema": "research-run/v1",
+  "tool": "daily-research",
+  "generated_at": "2026-10-09T21:32:32Z",
+  "commit": "34871c34eb588138f95df7f6a9cdbbe76c34c799-dirty",
+  "flags": {
+    "buy-bps": "78",
+    "prices": "mxn",
+    "sell-bps": "78",
+    "slippage-bps": "10",
+    "windows": "2026-09-27:2027-09-26"
+  },
+  "data": {
+    "prices": "mxn",
+    "bars": 3418,
+    "first": "2017-05-31",
+    "last": "2026-10-08",
+    "news_days": 0
+  },
+  "costs": {
+    "buy_bps": 78,
+    "sell_bps": 78,
+    "slippage_bps": 10,
+    "round_trip_bps": 176
+  },
+  "params": {
+    "sma": 50,
+    "news_window": 3,
+    "news_threshold": 0,
+    "sims": 2000,
+    "seed": 1
+  },
+  "windows": [
+    {
+      "label": "IN-SAMPLE",
+      "from": "2026-09-27",
+      "to": "2027-09-26",
+      "bars": 12,
+      "results": [
+        {
+          "rule": "buy_and_hold",
+          "return_pct": -1.6509126781695471,
+          "round_trips": 1,
+          "exposure_pct": 100,
+          "max_dd_pct": 5.143017279264256,
+          "cost_pct": 1.7531557389347339,
+          "vs_hold_pp": 0,
+          "random": null
+        },
+        {
+          "rule": "trend_sma50",
+          "return_pct": -1.6509126781695471,
+          "round_trips": 1,
+          "exposure_pct": 100,
+          "max_dd_pct": 5.143017279264256,
+          "cost_pct": 1.7531557389347339,
+          "vs_hold_pp": 0,
+          "random": {
+            "sims": 2000,
+            "beat_pct": 34.55
+          }
+        },
+        {
+          "rule": "news_sentiment",
+          "return_pct": 0,
+          "round_trips": 0,
+          "exposure_pct": 0,
+          "max_dd_pct": 0,
+          "cost_pct": 0,
+          "vs_hold_pp": 1.6509126781695471,
+          "random": null
+        },
+        {
+          "rule": "trend_and_news",
+          "return_pct": 0,
+          "round_trips": 0,
+          "exposure_pct": 0,
+          "max_dd_pct": 0,
+          "cost_pct": 0,
+          "vs_hold_pp": 1.6509126781695471,
+          "random": null
+        }
+      ]
+    }
+  ]
+}

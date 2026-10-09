@@ -1,0 +1,86 @@
+{
+  "schema": "research-run/v1",
+  "tool": "daily-research",
+  "generated_at": "2026-10-09T21:32:32Z",
+  "commit": "34871c34eb588138f95df7f6a9cdbbe76c34c799-dirty",
+  "flags": {
+    "buy-bps": "60",
+    "prices": "mxn-on-usd",
+    "sell-bps": "60",
+    "slippage-bps": "10",
+    "windows": "2026-09-29:2027-09-26"
+  },
+  "data": {
+    "prices": "mxn-on-usd",
+    "bars": 3418,
+    "first": "2017-05-31",
+    "last": "2026-10-08",
+    "news_days": 0
+  },
+  "costs": {
+    "buy_bps": 60,
+    "sell_bps": 60,
+    "slippage_bps": 10,
+    "round_trip_bps": 140
+  },
+  "params": {
+    "sma": 50,
+    "news_window": 3,
+    "news_threshold": 0,
+    "sims": 2000,
+    "seed": 1
+  },
+  "windows": [
+    {
+      "label": "IN-SAMPLE",
+      "from": "2026-09-29",
+      "to": "2027-09-26",
+      "bars": 10,
+      "results": [
+        {
+          "rule": "buy_and_hold",
+          "return_pct": -1.8783221804961836,
+          "round_trips": 1,
+          "exposure_pct": 100,
+          "max_dd_pct": 5.14301727926425,
+          "cost_pct": 1.3916935999360793,
+          "vs_hold_pp": 0,
+          "random": null
+        },
+        {
+          "rule": "trend_sma50",
+          "return_pct": -1.8783221804961836,
+          "round_trips": 1,
+          "exposure_pct": 100,
+          "max_dd_pct": 5.14301727926425,
+          "cost_pct": 1.3916935999360793,
+          "vs_hold_pp": 0,
+          "random": {
+            "sims": 2000,
+            "beat_pct": 43.1
+          }
+        },
+        {
+          "rule": "news_sentiment",
+          "return_pct": 0,
+          "round_trips": 0,
+          "exposure_pct": 0,
+          "max_dd_pct": 0,
+          "cost_pct": 0,
+          "vs_hold_pp": 1.8783221804961836,
+          "random": null
+        },
+        {
+          "rule": "trend_and_news",
+          "return_pct": 0,
+          "round_trips": 0,
+          "exposure_pct": 0,
+          "max_dd_pct": 0,
+          "cost_pct": 0,
+          "vs_hold_pp": 1.8783221804961836,
+          "random": null
+        }
+      ]
+    }
+  ]
+}

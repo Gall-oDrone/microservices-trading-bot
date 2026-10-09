@@ -152,3 +152,21 @@ describe('Forward test detail: daily P&L, MXN terms and capacity (plan §6.4.12)
     expect(cap).toHaveTextContent('0.001 / 0.01 BTC')
   })
 })
+
+describe('Capacity over time: hourly book samples (plan §6.4.13)', () => {
+  it('parses the history, absent in older responses', () => {
+    expect(capacityResponseSchema.parse(capMxn).history?.samples).toBeGreaterThan(0)
+    expect(capacityResponseSchema.parse(capDry).history ?? null).toBeNull()
+  })
+
+  it('shows spread, depth, capacity and walk costs as percentiles', async () => {
+    renderAt('/forward-tests/btc_mxn')
+    const hist = await screen.findByTestId('book-history')
+    const h = capacityResponseSchema.parse(capMxn).history!
+    expect(hist).toHaveTextContent(`${h.samples} hourly samples`)
+    const rows = within(document.getElementById('book-history-table')!).getAllByRole('row').slice(1)
+    expect(rows).toHaveLength(3 + h.sizes.length)
+    expect(rows[0]).toHaveTextContent(h.spread_bps.p50.toFixed(1))
+    expect(rows[2]).toHaveTextContent(`Capacity at ${h.budget_bps} bps`)
+  })
+})

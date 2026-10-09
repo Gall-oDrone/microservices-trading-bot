@@ -5,8 +5,17 @@
  */
 import { useState } from 'react'
 import { useCapacity, useMonteCarlo, type MonteCarloParams } from '../api/client'
-import type { Calendar, Dist, MonteCarloResponse, PerformanceResponse, Prob, StagePnL, Trips } from '../api/schemas'
-import { fmtBps, fmtDate, fmtFrac, fmtMoney, fmtPrice } from '../lib/format'
+import type {
+  BookSampleSummary,
+  Calendar,
+  Dist,
+  MonteCarloResponse,
+  PerformanceResponse,
+  Prob,
+  StagePnL,
+  Trips,
+} from '../api/schemas'
+import { fmtBps, fmtDate, fmtFrac, fmtMoney, fmtPrice, fmtUTC } from '../lib/format'
 import { PnLHistoryChart } from './charts'
 import { Badge, CardSkeleton, Empty, ErrorState, Stat } from './ui'
 
@@ -600,7 +609,7 @@ export function MXNTermsSection({ perf }: { perf: PerformanceResponse }) {
           label="Rule in MXN, after conversions"
           value={sfrac(m.paper_return_mxn, 2)}
           tone={tone(m.paper_return_mxn)}
-          hint={`${sfrac(m.paper_return_usd, 2)} in USD · ${m.conversion_bps} bps each way`}
+          hint={`${sfrac(m.paper_return_usd, 2)} in USD if closed · ${m.conversion_bps} bps each way`}
           large
         />
         <Stat
@@ -727,12 +736,99 @@ export function CapacitySection({ book }: { book: string }) {
           </tbody>
         </table>
       </div>
+      <BookHistory h={c.history ?? null} days={c.history_days ?? 30} btc={btc} />
       <p className="faint" style={{ fontSize: 12, margin: 0 }}>
         The pre-registered costs are a fee ({c.maker_fee_bps} maker / {c.taker_fee_bps} taker bps) plus{' '}
         {c.slippage_budget_bps} bps of slippage per leg; this measures order sizes against that slippage. Walk: a market
         order through the visible book, mid-priced (* past its depth). Square-root law: Y·σ·√(size / daily volume), Y =
         0.5–1. {c.note} The book moves second to second: read the capacity as an order of magnitude.
       </p>
+    </div>
+  )
+}
+
+/** The hourly book samples as percentiles (plan §6.4.13): capacity as a distribution, not one snapshot. */
+function BookHistory({ h, days, btc }: { h: BookSampleSummary | null; days: number; btc: (v: number) => string }) {
+  if (!h)
+    return (
+      <p className="faint" style={{ fontSize: 12, margin: 0 }} data-testid="book-history-empty">
+        No hourly book samples yet: the sampler (scripts/ops-run.sh sampler, cron at :07) builds the distribution of
+        spread, depth and capacity over the last {days} days.
+      </p>
+    )
+  const p = (x: { p10: number; p50: number; p90: number }, f: (v: number) => string) => (
+    <>
+      <td className="r num">{f(x.p10)}</td>
+      <td className="r num">
+        <strong>{f(x.p50)}</strong>
+      </td>
+      <td className="r num">{f(x.p90)}</td>
+    </>
+  )
+  const b1 = (v: number) => v.toFixed(1)
+  return (
+    <div className="stack" style={{ gap: 6 }} data-testid="book-history">
+      <div className="faint" style={{ fontSize: 12 }}>
+        Over time: {h.samples} hourly samples of the public book, {fmtUTC(h.from)} → {fmtUTC(h.to)} (last {days} days)
+      </div>
+      <div className="table-wrap">
+        <table className="data compact" id="book-history-table">
+          <thead>
+            <tr>
+              <th scope="col">Measure</th>
+              <th scope="col" className="r">
+                p10
+              </th>
+              <th scope="col" className="r">
+                median
+              </th>
+              <th scope="col" className="r">
+                p90
+              </th>
+              <th scope="col" className="r">
+                Book covered
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Spread (bps)</td>
+              {p(h.spread_bps, b1)}
+              <td />
+            </tr>
+            <tr>
+              <td>Bid / ask depth, top 20 (BTC)</td>
+              {p(
+                {
+                  p10: Math.min(h.bid_depth_btc.p10, h.ask_depth_btc.p10),
+                  p50: Math.min(h.bid_depth_btc.p50, h.ask_depth_btc.p50),
+                  p90: Math.min(h.bid_depth_btc.p90, h.ask_depth_btc.p90),
+                },
+                (v) => v.toFixed(2),
+              )}
+              <td className="r faint">thinner side</td>
+            </tr>
+            <tr>
+              <td>Capacity at {h.budget_bps} bps (BTC)</td>
+              {p(h.walk_capacity_btc, btc)}
+              <td />
+            </tr>
+            {h.sizes.map((z) => (
+              <tr key={z.qty_btc}>
+                <td>Walk cost, {z.qty_btc} BTC (worse side, bps)</td>
+                {z.covered_share > 0 ? (
+                  p(z.worse_side_bps, b1)
+                ) : (
+                  <td className="r faint" colSpan={3} title="no sample's visible depth covered this size">
+                    past the visible book
+                  </td>
+                )}
+                <td className="r num">{fmtFrac(z.covered_share, 0)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   )
 }

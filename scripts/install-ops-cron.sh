@@ -5,11 +5,13 @@
 #   */15 * * * *  scripts/ops-run.sh alerts     R3 alerts every 15 minutes
 #   30 2 * * *    scripts/ops-run.sh compact    archive compaction refresh (non-destructive;
 #                                               02:30 UTC = after the compactor's 2 h settle)
+#   7 * * * *     scripts/ops-run.sh sampler    hourly public order-book snapshot (read-only,
+#                                               no keys; plan §6.4.13)
 #
 # It builds services/ui-api/bin/ui-alerts (and the executor binary only when it is
 # missing, or with --rebuild-executor), and services/strategy-executor/daily-executor-data/
 # daily-reconcile (the read-only stage reconciliation daily-executor-run.sh runs after each
-# stage run, plan §6.4.10), writes the jobs' settings to
+# stage run, plan §6.4.10) and daily-executor-data/book-sampler, writes the jobs' settings to
 # ~/.config/microservices-trading-bot/ops.env (chmod 600), and replaces its own block
 # in your crontab (between "# BEGIN mtb-ops" and "# END mtb-ops"); other entries are
 # kept.
@@ -31,6 +33,7 @@
 #                         to s3://NAME/daily-executor/stage, and the compaction job runs on it
 #   --no-executor         install the alerts job only (plus compaction with --bucket)
 #   --no-compact          do not schedule the compaction refresh
+#   --no-sampler          do not schedule the hourly order-book sampler
 #   --rebuild-executor    rebuild services/strategy-executor/daily-executor-data/daily-executor
 #                         from the committed HEAD in a throwaway clone, so the code version it
 #                         records is the plain commit (never "+dirty" from untracked files;
@@ -43,7 +46,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 ENV_FILE="${MTB_OPS_ENV:-$HOME/.config/microservices-trading-bot/ops.env}"
 topic="" bucket="" print=0 uninstall=0 executor=1 rebuild=0
-compact=1 compactor_ref="origin/feat/intraday-data-collector" rebuild_compactor=0
+sampler=1 compact=1 compactor_ref="origin/feat/intraday-data-collector" rebuild_compactor=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --topic-arn) topic="$2"; shift 2 ;;
@@ -52,10 +55,11 @@ while [ $# -gt 0 ]; do
     --uninstall) uninstall=1; shift ;;
     --no-executor) executor=0; shift ;;
     --no-compact) compact=0; shift ;;
+    --no-sampler) sampler=0; shift ;;
     --rebuild-executor) rebuild=1; shift ;;
     --compactor-ref) compactor_ref="$2"; shift 2 ;;
     --rebuild-compactor) rebuild_compactor=1; shift ;;
-    -h | --help) sed -n '2,38p' "$0"; exit 0 ;;
+    -h | --help) sed -n '2,43p' "$0"; exit 0 ;;
     *) echo "unknown option $1" >&2; exit 2 ;;
   esac
 done
@@ -117,6 +121,10 @@ if [ "$compact" = 1 ]; then
   block="$block
 30 2 * * * $ROOT/scripts/ops-run.sh compact"
 fi
+if [ "$sampler" = 1 ]; then
+  block="$block
+7 * * * * $ROOT/scripts/ops-run.sh sampler"
+fi
 block="$block
 */15 * * * * $ROOT/scripts/ops-run.sh alerts
 # END mtb-ops"
@@ -137,6 +145,10 @@ echo "building services/ui-api/bin/ui-alerts"
 if [ "$executor" = 1 ]; then
   echo "building services/strategy-executor/daily-executor-data/daily-reconcile"
   (cd "$ROOT/services/strategy-executor" && mkdir -p daily-executor-data && go build -o daily-executor-data/daily-reconcile ./cmd/daily-reconcile)
+fi
+if [ "$sampler" = 1 ]; then
+  echo "building services/strategy-executor/daily-executor-data/book-sampler"
+  (cd "$ROOT/services/strategy-executor" && mkdir -p daily-executor-data && go build -o daily-executor-data/book-sampler ./cmd/book-sampler)
 fi
 exe="$ROOT/services/strategy-executor/daily-executor-data/daily-executor"
 if [ "$executor" = 1 ] && { [ "$rebuild" = 1 ] || [ ! -x "$exe" ]; }; then

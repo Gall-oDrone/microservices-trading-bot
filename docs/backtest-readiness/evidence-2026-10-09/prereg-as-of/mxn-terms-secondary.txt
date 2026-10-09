@@ -1,0 +1,3 @@
+conversion MXN<->USD: 78 bps per leg (paid twice)
+window                    USD/MXN chg  hold btc_mxn  trend btc_usd in MXN  diff pp  trips
+2026-09-29..2027-09-26           0.8%         -2.2%                 -2.9%     -0.7      1
