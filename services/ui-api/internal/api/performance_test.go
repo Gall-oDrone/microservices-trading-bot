@@ -169,3 +169,41 @@ func TestBuildPaperStats(t *testing.T) {
 		t.Fatalf("%+v", z)
 	}
 }
+
+func TestPerformancePnLHistoryAndNAV(t *testing.T) {
+	p := get[PerformanceResponse](t, newTestServer(t, fixedNow, nil), "/api/ui/forward-tests/btc_mxn/performance", 200)
+	// Capital = the policy's max order notional (25,000 MXN, §6.4.10).
+	if p.Capital != 25000 || len(p.PnLHistory) != 2 || p.PnLHistory[0].Date != "2026-09-30" || p.PnLHistory[1].Date != "2026-10-01" {
+		t.Fatalf("history %+v capital %v", p.PnLHistory, p.Capital)
+	}
+	last := p.PnLHistory[len(p.PnLHistory)-1]
+	if !near(last.Total, p.PnL.Total, 1e-9) || last.PositionBTC != 0.00099999 || !near(last.NAV, 25000+last.Total, 1e-9) {
+		t.Fatalf("last %+v pnl %+v", last, p.PnL)
+	}
+	if !near(p.PnLHistory[0].Daily+last.Daily, last.Total, 1e-9) || last.PaperPnL == 0 {
+		t.Fatalf("daily %+v", p.PnLHistory)
+	}
+	if p.MXNTerms != nil {
+		t.Fatal("btc_mxn has no MXN terms")
+	}
+}
+
+// btc_usd in MXN terms (BTCUSD pre-registration H2): forward start
+// 2026-09-29, FX from the 09-28 close to the last common close.
+func TestPerformanceMXNTerms(t *testing.T) {
+	p := get[PerformanceResponse](t, newTestServer(t, fixedNow, nil), "/api/ui/forward-tests/btc_usd/performance", 200)
+	m := p.MXNTerms
+	if m == nil || m.From != "2026-09-29" || m.To != "2026-10-01" || m.ConvBps != 60 || p.Capital != 1500 {
+		t.Fatalf("mxn terms %+v", m)
+	}
+	if !(m.FXStart > 15 && m.FXStart < 25) || !near(m.FXChange, m.FXEnd/m.FXStart-1, 1e-12) {
+		t.Fatalf("fx %+v", m)
+	}
+	if !near(m.PaperMXN, (1+m.PaperUSD)*m.FXEnd/m.FXStart*0.994*0.994-1, 1e-12) || !near(m.Excess, m.PaperMXN-m.HoldBTCMXN, 1e-12) ||
+		m.H2SoFar != (m.Excess > 0) {
+		t.Fatalf("returns %+v", m)
+	}
+	if !near(m.StagePnLMXN, p.PnL.Total*m.FXEnd, 1e-9) || !near(m.StageInvested, 83.481*m.FXEnd, 1e-6) {
+		t.Fatalf("stage %+v", m)
+	}
+}

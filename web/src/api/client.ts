@@ -3,6 +3,7 @@ import { useSearchParams } from 'react-router'
 import type { z } from 'zod'
 import {
   candlesResponseSchema,
+  capacityResponseSchema,
   controlsInfoSchema,
   dataHealthSchema,
   forwardTestsResponseSchema,
@@ -109,6 +110,7 @@ export const queryKeys = {
   strategies: ['strategies'] as const,
   performance: (ledger: string, book: string) => ['performance', ledger, book] as const,
   monteCarlo: (ledger: string, book: string, q: string) => ['montecarlo', ledger, book, q] as const,
+  capacity: (ledger: string, book: string) => ['capacity', ledger, book] as const,
 }
 
 export function useForwardTests() {
@@ -174,6 +176,21 @@ export function useMonteCarlo(book: string, p: MonteCarloParams) {
         signal,
       ),
     staleTime: 10 * 60_000,
+  })
+}
+
+/** Order sizes against the slippage budget: the live book walk and the square-root law (plan §6.4.12). */
+export function useCapacity(book: string) {
+  const ledger = useLedgerName()
+  return useQuery({
+    queryKey: queryKeys.capacity(ledger, book),
+    queryFn: ({ signal }) =>
+      fetchJSON(
+        withLedger(`/forward-tests/${encodeURIComponent(book)}/capacity`, ledger),
+        capacityResponseSchema,
+        signal,
+      ),
+    refetchInterval: REFRESH_MS,
   })
 }
 

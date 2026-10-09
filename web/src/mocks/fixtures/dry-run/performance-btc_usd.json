@@ -2,7 +2,7 @@
   "ledger": "dry-run",
   "book": "btc_usd",
   "quote": "usd",
-  "generated_at": "2026-10-09T20:08:35Z",
+  "generated_at": "2026-10-09T20:37:41Z",
   "candles_file": "",
   "pnl": null,
   "open_trade": null,
@@ -19,5 +19,8 @@
     "calmar": 0,
     "hold_sharpe": 0
   },
-  "history": null
+  "history": null,
+  "capital": 1500,
+  "pnl_history": [],
+  "mxn_terms": null
 }

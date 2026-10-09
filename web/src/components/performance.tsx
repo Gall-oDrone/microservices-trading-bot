@@ -4,9 +4,10 @@
  * Carlo of the rule against buy-and-hold. Reporting only.
  */
 import { useState } from 'react'
-import { useMonteCarlo, type MonteCarloParams } from '../api/client'
+import { useCapacity, useMonteCarlo, type MonteCarloParams } from '../api/client'
 import type { Calendar, Dist, MonteCarloResponse, PerformanceResponse, Prob, StagePnL, Trips } from '../api/schemas'
 import { fmtBps, fmtDate, fmtFrac, fmtMoney, fmtPrice } from '../lib/format'
+import { PnLHistoryChart } from './charts'
 import { Badge, CardSkeleton, Empty, ErrorState, Stat } from './ui'
 
 /** Signed fraction: 0.0123 -> "+1.23%"; never "-0%". */
@@ -537,6 +538,200 @@ function MonteCarloResult({ m }: { m: MonteCarloResponse }) {
         Stationary block bootstrap of real days (overnight gap and intraday move), run through the frozen rule and the
         registered simulator. Blocks cut long trends, so the rule&apos;s upside is understated: longer blocks raise its
         odds against holding. Reporting only. It never changes the pre-registered rule or its evaluation.
+      </p>
+    </div>
+  )
+}
+
+/* ---------------- Plan §6.4.12: daily P&L, MXN terms, capacity ---------------- */
+
+export function PnLHistorySection({ perf }: { perf: PerformanceResponse }) {
+  const days = perf.pnl_history
+  const q = perf.quote
+  if (days.length === 0)
+    return <Empty title="No stage fills yet">The daily P&amp;L starts on the first fill day.</Empty>
+  const last = days[days.length - 1]
+  const best = days.reduce((a, d) => (d.daily > a.daily ? d : a), days[0])
+  const worst = days.reduce((a, d) => (d.daily < a.daily ? d : a), days[0])
+  return (
+    <div className="stack" style={{ gap: 12 }}>
+      <div className="legend">
+        <span className="key" style={{ color: 'var(--info)' }}>
+          <span className="swatch" /> stage P&amp;L
+        </span>
+        <span className="key" style={{ color: 'var(--bench)' }}>
+          <span className="swatch dashed" /> paper on the same money
+        </span>
+        <span className="key" style={{ color: 'var(--long)' }}>
+          <span className="swatch" /> daily change
+        </span>
+      </div>
+      <PnLHistoryChart days={days} label={`Stage P&L by day since ${days[0].date}`} />
+      <div className="grid grid-4" data-testid="nav-stats">
+        <Stat
+          label="NAV"
+          value={perf.capital > 0 ? fmtMoney(last.nav, q) : '—'}
+          hint={perf.capital > 0 ? `capital ${fmtMoney(perf.capital, q, 0)} + P&L` : 'no capital in the policy'}
+        />
+        <Stat
+          label="Stage vs paper (same money)"
+          value={smoney(last.total - last.paper_pnl, q)}
+          tone={tone(last.total - last.paper_pnl)}
+          hint={`paper ${smoney(last.paper_pnl, q)}`}
+        />
+        <Stat label="Best day" value={smoney(best.daily, q)} tone={tone(best.daily)} hint={fmtDate(best.date)} />
+        <Stat label="Worst day" value={smoney(worst.daily, q)} tone={tone(worst.daily)} hint={fmtDate(worst.date)} />
+      </div>
+      <div className="faint" style={{ fontSize: 12 }}>
+        {days.length} day{days.length === 1 ? '' : 's'} since the first fill, marked at each close; capital is the
+        policy&apos;s maximum order notional (the stage capital).
+      </div>
+    </div>
+  )
+}
+
+export function MXNTermsSection({ perf }: { perf: PerformanceResponse }) {
+  const m = perf.mxn_terms
+  if (!m) return null
+  return (
+    <div className="stack" style={{ gap: 12 }} data-testid="mxn-terms">
+      <div className="grid grid-4">
+        <Stat
+          label="Rule in MXN, after conversions"
+          value={sfrac(m.paper_return_mxn, 2)}
+          tone={tone(m.paper_return_mxn)}
+          hint={`${sfrac(m.paper_return_usd, 2)} in USD · ${m.conversion_bps} bps each way`}
+          large
+        />
+        <Stat
+          label="Hold btc_mxn (the H2 benchmark)"
+          value={sfrac(m.hold_btc_mxn, 2)}
+          tone={tone(m.hold_btc_mxn)}
+          hint="one round trip at 70 bps per leg"
+          large
+        />
+        <Stat
+          label="H2 so far"
+          value={
+            <>
+              {sfrac(m.excess, 2)} <Badge tone={m.h2_so_far ? 'ok' : 'warn'}>{m.h2_so_far ? 'ahead' : 'behind'}</Badge>
+            </>
+          }
+          hint={`evaluated on ${fmtDate('2027-09-26')}; reported, not a decision`}
+          large
+        />
+        <Stat
+          label="Implied USD/MXN"
+          value={m.fx_end.toFixed(4)}
+          hint={`${sfrac(m.fx_change, 2)} since ${m.fx_start.toFixed(4)} (close before ${fmtDate(m.from)})`}
+          large
+        />
+      </div>
+      <div className="faint" style={{ fontSize: 12 }}>
+        Stage position in pesos: {smoney(m.stage_pnl_mxn, 'mxn')} on {fmtMoney(m.stage_invested_mxn, 'mxn')} at
+        today&apos;s implied rate. USD/MXN is btc_mxn&apos;s close over btc_usd&apos;s on the same Mexico City day, as
+        the pre-registration defines it.
+      </div>
+    </div>
+  )
+}
+
+export function CapacitySection({ book }: { book: string }) {
+  const cap = useCapacity(book)
+  const c = cap.data
+  if (cap.isLoading) return <CardSkeleton lines={5} />
+  if (cap.isError) return <ErrorState error={cap.error} onRetry={() => cap.refetch()} />
+  if (!c) return null
+  const btc = (v: number) => (v >= 1 ? v.toFixed(2) : v >= 0.1 ? v.toFixed(3) : v.toFixed(4))
+  const bps = (v: number | null) => (v == null ? '—' : v.toFixed(1))
+  return (
+    <div className="stack" style={{ gap: 14 }} data-testid="capacity">
+      <div className="grid grid-4">
+        <Stat
+          label={`Capacity at ${c.slippage_budget_bps} bps slippage`}
+          value={c.walk_capacity_btc != null ? `${btc(c.walk_capacity_btc)} BTC` : '—'}
+          hint={c.walk_capacity_btc != null ? 'visible book, both sides, now' : 'needs the live book'}
+          large
+        />
+        <Stat
+          label="Square-root law"
+          value={`${btc(c.sqrt_capacity_lo_btc)}–${btc(c.sqrt_capacity_hi_btc)} BTC`}
+          hint={`Y = 1.0–0.5 · ADV ${c.adv_btc.toFixed(1)} BTC · σ ${fmtFrac(c.daily_vol, 2)}/day`}
+          large
+        />
+        <Stat
+          label="Today's order vs policy cap"
+          value={`${c.stage_size_btc} / ${c.policy_max_order_btc} BTC`}
+          hint="stage leg / max order"
+          large
+        />
+        <Stat
+          label="Book"
+          value={
+            c.book_status === 'live' ? (
+              <>
+                {fmtBps(c.spread_bps)} <span className="faint">spread</span>
+              </>
+            ) : (
+              c.book_status
+            )
+          }
+          hint={
+            c.book_status === 'none'
+              ? 'no live feed'
+              : `depth ${c.bid_depth_btc.toFixed(2)} / ${c.ask_depth_btc.toFixed(2)} BTC (top 20)`
+          }
+          large
+        />
+      </div>
+      <div className="table-wrap">
+        <table className="data compact" id="capacity-table">
+          <thead>
+            <tr>
+              <th scope="col">Order</th>
+              <th scope="col" className="r">
+                Notional
+              </th>
+              <th scope="col" className="r">
+                % of daily volume
+              </th>
+              <th scope="col" className="r">
+                Walk buy / sell (bps)
+              </th>
+              <th scope="col" className="r">
+                Square-root (bps)
+              </th>
+              <th scope="col" className="r">
+                Taker all-in (bps)
+              </th>
+              <th scope="col">Within {c.slippage_budget_bps} bps</th>
+            </tr>
+          </thead>
+          <tbody>
+            {c.rows.map((r) => (
+              <tr key={r.qty_btc} className={r.qty_btc === c.stage_size_btc ? 'current' : undefined}>
+                <td className="num">{r.qty_btc} BTC</td>
+                <td className="r num">{fmtMoney(r.notional, c.quote, 0)}</td>
+                <td className="r num">{fmtFrac(r.pct_adv, r.pct_adv < 0.01 ? 2 : 1)}</td>
+                <td className="r num" title={r.book_fills ? undefined : 'larger than the visible book'}>
+                  {bps(r.buy_walk_bps)} / {bps(r.sell_walk_bps)}
+                  {r.buy_walk_bps != null && !r.book_fills ? ' *' : ''}
+                </td>
+                <td className="r num">
+                  {r.sqrt_lo_bps.toFixed(1)}–{r.sqrt_hi_bps.toFixed(1)}
+                </td>
+                <td className="r num">{r.taker_total_bps.toFixed(0)}</td>
+                <td>{r.within_budget ? <Badge tone="ok">yes</Badge> : <Badge tone="warn">no</Badge>}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <p className="faint" style={{ fontSize: 12, margin: 0 }}>
+        The pre-registered costs are a fee ({c.maker_fee_bps} maker / {c.taker_fee_bps} taker bps) plus{' '}
+        {c.slippage_budget_bps} bps of slippage per leg; this measures order sizes against that slippage. Walk: a market
+        order through the visible book, mid-priced (* past its depth). Square-root law: Y·σ·√(size / daily volume), Y =
+        0.5–1. {c.note} The book moves second to second: read the capacity as an order of magnitude.
       </p>
     </div>
   )

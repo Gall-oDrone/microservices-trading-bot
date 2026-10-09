@@ -116,6 +116,165 @@ type PerformanceResponse struct {
 	OpenTrade   *OpenTrade    `json:"open_trade"`
 	Paper       PaperStats    `json:"paper"`
 	History     *HistoryStats `json:"history"` // null without candles
+	// Plan §6.4.12: the daily P&L and NAV since the first stage fill, and
+	// for USD books the forward test in MXN terms.
+	Capital    float64   `json:"capital"` // the policy's max order notional (the stage capital, §6.4.10)
+	PnLHistory []PnLDay  `json:"pnl_history"`
+	MXNTerms   *MXNTerms `json:"mxn_terms"` // null unless the book is quoted in USD and btc_mxn candles exist
+}
+
+// PnLDay is one day of the stage position, marked at the close, fills
+// applied on their fill day (they execute at that day's open).
+type PnLDay struct {
+	Date        string  `json:"date"`
+	Close       float64 `json:"close"`
+	PositionBTC float64 `json:"position_btc"`
+	Realized    float64 `json:"realized"` // cumulative
+	Unrealized  float64 `json:"unrealized"`
+	Total       float64 `json:"total"`
+	Daily       float64 `json:"daily"` // change of Total from the day before
+	NAV         float64 `json:"nav"`   // capital + total (0 without capital)
+	// PaperPnL is what the paper account's growth since the close before
+	// the first fill would have made on the same money invested: the
+	// like-for-like line to compare Total with.
+	PaperPnL float64 `json:"paper_pnl"`
+}
+
+// MXNTerms is a USD book's forward test as a peso investor sees it, the
+// way FORWARD-TEST-PREREGISTRATION-SMA50-BTCUSD defines H2: USD/MXN implied
+// from the two Bitso series (btc_mxn close / btc_usd close, same day),
+// MXN->USD at the start and USD->MXN at the end at 60 bps each (primary),
+// against holding btc_mxn with one round trip at 70 bps per leg.
+type MXNTerms struct {
+	From          string  `json:"from"` // forward start
+	To            string  `json:"to"`   // last day with both closes
+	FXStart       float64 `json:"fx_start"`
+	FXEnd         float64 `json:"fx_end"`
+	FXChange      float64 `json:"fx_change"`
+	ConvBps       float64 `json:"conversion_bps"`
+	PaperUSD      float64 `json:"paper_return_usd"`
+	PaperMXN      float64 `json:"paper_return_mxn"` // after both conversions
+	HoldBTCMXN    float64 `json:"hold_btc_mxn"`     // the H2 benchmark
+	Excess        float64 `json:"excess"`           // paper MXN - hold btc_mxn
+	H2SoFar       bool    `json:"h2_so_far"`        // excess > 0 (reported, not a decision)
+	StagePnLMXN   float64 `json:"stage_pnl_mxn"`    // the stage USD P&L at today's implied rate
+	StageInvested float64 `json:"stage_invested_mxn"`
+}
+
+// USD/MXN conversion cost per leg (BTCUSD pre-registration §3, primary).
+const usdConvBps = 60
+
+// buildPnLHistory replays the fills day by day over the candles.
+func buildPnLHistory(recs []dailyledger.Record, fills []Fill, bars []dailyrule.Bar, capital float64) []PnLDay {
+	out := []PnLDay{}
+	if len(fills) == 0 || len(bars) == 0 {
+		return out
+	}
+	byDay := map[string][]Fill{}
+	for _, f := range fills {
+		byDay[f.FillDate] = append(byDay[f.FillDate], f)
+	}
+	paper := map[string]float64{}
+	for _, r := range recs {
+		if r.Paper.Equity > 0 {
+			paper[r.Decision.BarDate] = r.Paper.Equity
+		}
+	}
+	first := fills[0].FillDate
+	var pos, cost, invested, realized, prevTotal, paperBase, lastPaper float64
+	for _, b := range bars {
+		d := b.Date.Format("2006-01-02")
+		if d < first {
+			if e, ok := paper[d]; ok {
+				paperBase = e // the close before the first fill
+			}
+			continue
+		}
+		for _, f := range byDay[d] {
+			if f.Side == "buy" {
+				pos += f.NetBTC
+				cost += f.Notional
+				invested += f.Notional
+				continue
+			}
+			q := math.Abs(f.NetBTC)
+			if pos > 0 && q > 0 {
+				avg := cost / pos
+				realized += f.Notional - f.FeeQuote - avg*q
+				cost -= avg * math.Min(q, pos)
+				pos = math.Max(pos-q, 0)
+			}
+		}
+		if pos < btcDust {
+			pos, cost = 0, 0
+		}
+		day := PnLDay{Date: d, Close: b.Close, PositionBTC: pos, Realized: realized, Unrealized: pos*b.Close - cost}
+		day.Total = day.Realized + day.Unrealized
+		day.Daily = day.Total - prevTotal
+		prevTotal = day.Total
+		if e, ok := paper[d]; ok {
+			lastPaper = e
+		}
+		if capital > 0 {
+			day.NAV = capital + day.Total
+		}
+		if paperBase > 0 && lastPaper > 0 {
+			day.PaperPnL = invested * (lastPaper/paperBase - 1)
+		}
+		out = append(out, day)
+	}
+	return out
+}
+
+// buildMXNTerms needs the book's and btc_mxn's candles; nil when either is
+// missing or the window has no common day.
+func buildMXNTerms(recs []dailyledger.Record, usdBars, mxnBars []dailyrule.Bar, pnl *StagePnL) *MXNTerms {
+	if len(recs) == 0 || len(usdBars) == 0 || len(mxnBars) == 0 {
+		return nil
+	}
+	start := recs[0].Paper.ForwardStart
+	usdClose, mxn := map[string]float64{}, map[string]dailyrule.Bar{}
+	for _, b := range usdBars {
+		usdClose[b.Date.Format("2006-01-02")] = b.Close
+	}
+	for _, b := range mxnBars {
+		mxn[b.Date.Format("2006-01-02")] = b
+	}
+	var days []string
+	for d := range usdClose {
+		if m, ok := mxn[d]; ok && m.Close > 0 && usdClose[d] > 0 {
+			days = append(days, d)
+		}
+	}
+	sort.Strings(days)
+	fx := func(d string) float64 { return mxn[d].Close / usdClose[d] }
+	// fx(start): the close before the window; fx(end): the last common close.
+	var before, end string
+	for _, d := range days {
+		if d < start {
+			before = d
+		}
+		end = d
+	}
+	last := recs[len(recs)-1]
+	startBar, ok := mxn[start]
+	if before == "" || end < start || !ok || startBar.Open <= 0 || last.Paper.Equity <= 0 {
+		return nil
+	}
+	conv := usdConvBps / 1e4
+	m := &MXNTerms{From: start, To: end, FXStart: fx(before), FXEnd: fx(end), ConvBps: usdConvBps}
+	m.FXChange = m.FXEnd/m.FXStart - 1
+	m.PaperUSD = last.Paper.Equity - 1
+	m.PaperMXN = (1+m.PaperUSD)*m.FXEnd/m.FXStart*(1-conv)*(1-conv) - 1
+	leg := dailyledger.PreregCosts["btc_mxn"].PrimaryLegBps / 1e4
+	m.HoldBTCMXN = mxn[end].Close/startBar.Open*(1-leg)*(1-leg) - 1
+	m.Excess = m.PaperMXN - m.HoldBTCMXN
+	m.H2SoFar = m.Excess > 0
+	if pnl != nil {
+		m.StagePnLMXN = pnl.Total * m.FXEnd
+		m.StageInvested = pnl.Invested * m.FXEnd
+	}
+	return m
 }
 
 func toBars(rows []store.Candle) []dailyrule.Bar {
@@ -317,7 +476,15 @@ func (s *Server) performance(w http.ResponseWriter, r *http.Request) {
 	} else if len(recs) > 0 {
 		mark, markDate = recs[len(recs)-1].Decision.Close, recs[len(recs)-1].Decision.BarDate
 	}
-	resp.PnL = buildStagePnL(b, recs, buildFills(b, recs, rows), mark, markDate)
+	fills := buildFills(b, recs, rows)
+	resp.PnL = buildStagePnL(b, recs, fills, mark, markDate)
+	resp.Capital = s.Policy.For(b).MaxOrderNotional
+	resp.PnLHistory = buildPnLHistory(recs, fills, bars, resp.Capital)
+	if quote == "usd" {
+		if mrows, _, err := l.Store.Candles("btc_mxn"); err == nil {
+			resp.MXNTerms = buildMXNTerms(recs, bars, toBars(mrows), resp.PnL)
+		}
+	}
 	if len(bars) > smaDays {
 		from, ok := historyFrom[b]
 		if !ok {

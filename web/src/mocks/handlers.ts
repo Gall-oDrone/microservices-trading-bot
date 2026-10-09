@@ -149,6 +149,9 @@ export const handlers = [
   http.get('/api/ui/forward-tests/:book/performance', ({ params, request }) =>
     fixture(request, `performance-${String(params.book)}`),
   ),
+  http.get('/api/ui/forward-tests/:book/capacity', ({ params, request }) =>
+    fixture(request, `capacity-${String(params.book)}`),
+  ),
   // One capture at the defaults; the cost / block / paths query is ignored.
   http.get('/api/ui/forward-tests/:book/montecarlo', ({ params, request }) =>
     fixture(request, `montecarlo-${String(params.book)}`),

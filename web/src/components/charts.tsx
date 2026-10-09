@@ -17,7 +17,7 @@ import {
   type Time,
 } from 'lightweight-charts'
 import { useEffect, useRef } from 'react'
-import type { CandlePoint, EquityPoint, Fill, LiveCandle } from '../api/schemas'
+import type { CandlePoint, EquityPoint, Fill, LiveCandle, PnLDay } from '../api/schemas'
 import { useTheme } from '../lib/theme'
 
 function token(name: string, fallback: string): string {
@@ -276,4 +276,47 @@ export function EquityChart({ points, label }: { points: EquityPoint[]; label: s
     [points],
   )
   return <div ref={ref} className="chart sm" role="img" aria-label={label} />
+}
+
+/** Plan §6.4.12: the stage position's P&L by day (bars) and cumulative (line), and the paper account's P&L on the same money. */
+export function PnLHistoryChart({ days, label }: { days: PnLDay[]; label: string }) {
+  const ref = useChart(
+    (chart) => {
+      chart.applyOptions({ timeScale: { fixLeftEdge: false, fixRightEdge: false } })
+      const up = alpha('--long', '#2ec4a7', 0.55)
+      const down = alpha('--loss', '#e8735a', 0.55)
+      const daily = chart.addSeries(HistogramSeries, {
+        priceLineVisible: false,
+        lastValueVisible: false,
+        title: 'daily',
+      })
+      daily.setData(days.map((d) => ({ time: t(d.date), value: d.daily, color: d.daily >= 0 ? up : down })))
+      const paper = chart.addSeries(LineSeries, {
+        color: token('--bench', '#959aa6'),
+        lineWidth: 2,
+        lineStyle: LineStyle.Dashed,
+        priceLineVisible: false,
+        title: 'paper',
+      })
+      paper.setData(days.map((d) => ({ time: t(d.date), value: d.paper_pnl })))
+      const total = chart.addSeries(LineSeries, {
+        color: token('--info', '#5fb3f0'),
+        lineWidth: 2,
+        priceLineVisible: false,
+        title: 'stage',
+        pointMarkersVisible: days.length < 40,
+      })
+      total.setData(days.map((d) => ({ time: t(d.date), value: d.total })))
+      total.createPriceLine({
+        price: 0,
+        color: alpha('--text-3', '#7a8394', 0.6),
+        lineWidth: 1,
+        lineStyle: LineStyle.Dotted,
+        axisLabelVisible: false,
+        title: '',
+      })
+    },
+    [days],
+  )
+  return <div ref={ref} className="chart sm" role="img" aria-label={label} data-testid="pnl-history-chart" />
 }

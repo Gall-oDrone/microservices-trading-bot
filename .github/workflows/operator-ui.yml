@@ -84,7 +84,7 @@ jobs:
       - name: gofmt (new packages)
         run: |
           out=$(gofmt -l shared/pkg/risk shared/pkg/dailyledger shared/pkg/dailyrule \
-            shared/pkg/bitsodaily shared/pkg/varmodel shared/pkg/montecarlo \
+            shared/pkg/bitsodaily shared/pkg/varmodel shared/pkg/montecarlo shared/pkg/execcost \
             services/strategy-executor/cmd/daily-executor services/ui-api \
             services/strategy-executor/internal/dailyrule \
             services/strategy-executor/internal/bitsodaily \
@@ -102,8 +102,8 @@ jobs:
       - name: shared
         working-directory: shared
         run: |
-          go vet ./pkg/risk ./pkg/dailyledger ./pkg/dailyrule ./pkg/bitsodaily ./pkg/varmodel ./pkg/montecarlo
-          go test -race -count=1 ./pkg/risk ./pkg/dailyledger ./pkg/dailyrule ./pkg/bitsodaily ./pkg/varmodel ./pkg/montecarlo
+          go vet ./pkg/risk ./pkg/dailyledger ./pkg/dailyrule ./pkg/bitsodaily ./pkg/varmodel ./pkg/montecarlo ./pkg/execcost
+          go test -race -count=1 ./pkg/risk ./pkg/dailyledger ./pkg/dailyrule ./pkg/bitsodaily ./pkg/varmodel ./pkg/montecarlo ./pkg/execcost
 
       - name: daily-executor, daily-research, deprecated backtest routes, daily-reconcile
         working-directory: services/strategy-executor

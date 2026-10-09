@@ -4633,3 +4633,6 @@ table.data tfoot td {
     order: 3;
   }
 }
+table.data tr.current td {
+  background: var(--info-soft);
+}

@@ -6,9 +6,12 @@ import type { Fill, LedgerRecord } from '../api/schemas'
 import { EquityChart, PriceChart } from '../components/charts'
 import { LiveStrip } from '../components/live'
 import {
+  CapacitySection,
   MonteCarloSection,
+  MXNTermsSection,
   OpenTradeSection,
   PaperStatsSection,
+  PnLHistorySection,
   PnLSection,
   TradeDistributionSection,
 } from '../components/performance'
@@ -370,6 +373,30 @@ export function ForwardTestDetailPage() {
         {perf.data && <PnLSection perf={perf.data} />}
       </section>
 
+      <section className="card" style={{ marginBottom: 16 }} aria-labelledby="pnl-history-h" id="pnl-history">
+        <div className="card-head">
+          <div>
+            <h2 id="pnl-history-h">Daily P&amp;L and NAV</h2>
+            <div className="sub">The stage position marked at every close since the first fill.</div>
+          </div>
+        </div>
+        {perf.data && <PnLHistorySection perf={perf.data} />}
+      </section>
+
+      {perf.data?.mxn_terms && (
+        <section className="card" style={{ marginBottom: 16 }} aria-labelledby="mxn-h" id="mxn-terms">
+          <div className="card-head">
+            <div>
+              <h2 id="mxn-h">In pesos: the pre-registered H2</h2>
+              <div className="sub">
+                The btc_usd forward test as a peso investor sees it, against holding btc_mxn over the same days.
+              </div>
+            </div>
+          </div>
+          <MXNTermsSection perf={perf.data} />
+        </section>
+      )}
+
       <div className="grid grid-2" style={{ marginBottom: 16 }}>
         <section className="card" aria-labelledby="open-trade-h">
           <div className="card-head">
@@ -414,6 +441,18 @@ export function ForwardTestDetailPage() {
           </div>
         </div>
         {ft ? <MonteCarloSection book={book} /> : <CardSkeleton lines={4} />}
+      </section>
+
+      <section className="card" style={{ marginBottom: 16 }} aria-labelledby="capacity-h" id="capacity">
+        <div className="card-head">
+          <div>
+            <h2 id="capacity-h">Capacity and market impact</h2>
+            <div className="sub">
+              How large an order can get before slippage exceeds the pre-registered 10 bps per leg.
+            </div>
+          </div>
+        </div>
+        <CapacitySection book={book} />
       </section>
 
       <section className="card" style={{ marginBottom: 16 }} aria-labelledby="fills-h">

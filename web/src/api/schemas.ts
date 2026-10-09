@@ -970,6 +970,20 @@ const calendarSchema = z.object({
 })
 export type Calendar = z.infer<typeof calendarSchema>
 
+/** api.PnLDay: one day of the stage position, fills applied on their fill day. */
+const pnlDaySchema = z.object({
+  date: z.string(),
+  close: z.number(),
+  position_btc: z.number(),
+  realized: z.number(),
+  unrealized: z.number(),
+  total: z.number(),
+  daily: z.number(),
+  nav: z.number(),
+  paper_pnl: z.number(),
+})
+export type PnLDay = z.infer<typeof pnlDaySchema>
+
 export const performanceResponseSchema = z.object({
   ledger: z.string(),
   book: z.string(),
@@ -1005,6 +1019,26 @@ export const performanceResponseSchema = z.object({
     hold_sharpe: z.number(),
   }),
   history: z.object({ from: z.string(), leg_bps: z.number(), trips: tripsSchema, calendar: calendarSchema }).nullable(),
+  /* Plan §6.4.12 */
+  capital: z.number(),
+  pnl_history: z.array(pnlDaySchema),
+  mxn_terms: z
+    .object({
+      from: z.string(),
+      to: z.string(),
+      fx_start: z.number(),
+      fx_end: z.number(),
+      fx_change: z.number(),
+      conversion_bps: z.number(),
+      paper_return_usd: z.number(),
+      paper_return_mxn: z.number(),
+      hold_btc_mxn: z.number(),
+      excess: z.number(),
+      h2_so_far: z.boolean(),
+      stage_pnl_mxn: z.number(),
+      stage_invested_mxn: z.number(),
+    })
+    .nullable(),
 })
 export type PerformanceResponse = z.infer<typeof performanceResponseSchema>
 
@@ -1057,3 +1091,46 @@ export const monteCarloResponseSchema = z.object({
   cached: z.boolean(),
 })
 export type MonteCarloResponse = z.infer<typeof monteCarloResponseSchema>
+
+/** GET /forward-tests/{book}/capacity: order sizes against the 10 bps slippage budget (plan §6.4.12). */
+export const capacityResponseSchema = z.object({
+  ledger: z.string(),
+  book: z.string(),
+  quote: z.string(),
+  generated_at: z.string(),
+  book_status: z.enum(['live', 'stale', 'none']),
+  depth_at: z.string(),
+  mid: z.number(),
+  spread_bps: z.number(),
+  bid_depth_btc: z.number(),
+  ask_depth_btc: z.number(),
+  last_close: z.number(),
+  adv_btc: z.number(),
+  adv_median_btc: z.number(),
+  daily_vol: z.number(),
+  candle_date: z.string(),
+  maker_fee_bps: z.number(),
+  taker_fee_bps: z.number(),
+  slippage_budget_bps: z.number(),
+  walk_capacity_btc: z.number().nullable(),
+  sqrt_capacity_lo_btc: z.number(),
+  sqrt_capacity_hi_btc: z.number(),
+  stage_size_btc: z.number(),
+  policy_max_order_btc: z.number(),
+  rows: z.array(
+    z.object({
+      qty_btc: z.number(),
+      notional: z.number(),
+      pct_adv: z.number(),
+      buy_walk_bps: z.number().nullable(),
+      sell_walk_bps: z.number().nullable(),
+      book_fills: z.boolean(),
+      sqrt_lo_bps: z.number(),
+      sqrt_hi_bps: z.number(),
+      taker_total_bps: z.number(),
+      within_budget: z.boolean(),
+    }),
+  ),
+  note: z.string(),
+})
+export type CapacityResponse = z.infer<typeof capacityResponseSchema>

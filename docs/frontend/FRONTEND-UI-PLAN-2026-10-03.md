@@ -257,6 +257,7 @@ returns the executor's last recorded check. The Risk page shows all of it.
 | **R6d (done 2026-10-09)** Expected shortfall and stress scenarios, §6.4.9 | ES 97.5 % per quote currency (historical and normal), hypothetical spot shocks, and 8 historical crypto episodes replayed on today's exposure, with optional stress limits | Tail loss beyond VaR is visible per scenario; limit breach and incomplete-scenario alerts with a runbook |
 | **R6e (done 2026-10-09)** Cost budget, capital and reconciliation, §6.4.10 | Realized execution cost in money against the frozen pre-registered costs; risk as a share of `RISK_CAPITAL` with a reverse stress test; a read-only daily reconciliation of the stage ledger against Bitso; crash paths embedded instead of refetched | The forward test's cost assumption, the capital at risk and the ledger's truth are each checked, with alerts and a runbook |
 | **R6f (done 2026-10-09)** P&L, expected profit per trade and Monte Carlo, §6.4.11 | Stage P&L split into market move, fees and slippage and compared with paper; forward-test ratios; the rule's trade distribution and calendar-year base rates; a block-bootstrap Monte Carlo of the rule against hold, all on the forward-test page | "What did we make, what should a trade make, what could the next year look like" answered from the same frozen rule, with the uncertainty shown |
+| **R6g (done 2026-10-09)** Capacity, daily P&L/NAV and MXN terms, §6.4.12 | Order sizes against the registered 10 bps slippage on the live production book and by the square-root law; the stage P&L day by day with NAV and paper on the same money; btc_usd measured in pesos against holding btc_mxn, as its pre-registration defines H2 | A sizing ceiling backed by measurements before any production size; P&L over time instead of a snapshot; the btc_usd test read the way it will be judged |
 
 #### 6.4.1 R1 as built
 
@@ -695,7 +696,50 @@ feeds the executor or the pre-registered evaluation.
   (schema `montecarlo-run/v1`).
 - **Open:** a capacity and market-impact study before any production sizing; daily NAV and P&L
   history (today's P&L is a snapshot); MXN-terms P&L for btc_usd (the pre-registration's H2 is in
-  MXN after conversions; the page compares against hold `btc_usd`).
+  MXN after conversions; the page compares against hold `btc_usd`). *(All three built in §6.4.12.)*
+
+#### 6.4.12 R6g capacity, daily P&L/NAV and MXN terms as built (2026-10-09)
+
+Reporting only; nothing changes the rule, its costs or the executor.
+
+- **Capacity and market impact** (`GET /api/ui/forward-tests/{book}/capacity`,
+  `shared/pkg/execcost`). The pre-registered cost is a fee plus 10 bps of slippage per leg, so the
+  study asks how large an order can be before slippage passes 10 bps. Two views:
+  - **Book walk:** a market order through ui-api's live Bitso production book (public feed, top
+    20 levels per side), priced against mid, on both sides. The capacity is the largest size whose
+    walk stays within 10 bps.
+  - **Square-root law:** impact = Y · σ_daily · √(size / ADV), with Y = 0.5–1. It uses 30-day mean
+    volume and 90-day vol from the candles, and covers sizes beyond the visible book.
+
+  Rows run from 0.001 to 5 BTC, each with notional, % of ADV, both costs and the taker all-in cost.
+  Measured 2026-10-09 around 20:40 UTC:
+
+  | | btc_mxn | btc_usd |
+  |---|---|---|
+  | Spread | 1.8–4 bps | 2.6 bps |
+  | Visible depth (bid / ask) | 1.3–1.4 / 2.2–2.4 BTC | 0.75 / 0.70 BTC |
+  | ADV (30-day) / daily vol (90-day) | 8.5 BTC / 1.95 % | 14.2 BTC / 1.99 % |
+  | Walk capacity at 10 bps | 0.07–0.15 BTC (moves by the minute) | about 0.70 BTC (the visible depth) |
+  | Square-root capacity at 10 bps | 0.022–0.090 BTC | 0.036–0.143 BTC |
+
+  Today's 0.001 BTC leg and the policy's 0.01 BTC cap are far inside both. **Around 0.02–0.1 BTC per
+  leg (about 30,000–150,000 MXN) is where the registered 10 bps stops holding on btc_mxn.** Beyond
+  that, sizing up means slicing orders over time or accepting costs the forward test does not
+  assume. Stage fills are thinner than the production book (the first btc_mxn leg paid 40 bps).
+- **Daily P&L and NAV** (`performance.pnl_history`): the fills replayed on their fill days and the
+  position marked at every close. The page charts the total, the daily change, and the paper
+  account's growth applied to the same money invested (like for like; an earlier draft scaled paper
+  to the full capital, which overstated it). NAV = capital + P&L, with capital = the policy's
+  `max_order_notional` (the stage capital, §6.4.10). btc_mxn on 2026-10-08: NAV 24,971.63 MXN;
+  stage −28.37 against paper −12.92 on the same money.
+- **btc_usd in MXN terms** (`performance.mxn_terms`), as the BTCUSD pre-registration defines H2:
+  - USD/MXN implied from btc_mxn's close over btc_usd's on the same day.
+  - 60 bps MXN→USD to enter and USD→MXN to leave.
+  - Compared against holding btc_mxn from the forward start, at 70 bps per leg.
+  - On 2026-10-08: the rule −2.08 % in MXN (−1.68 % in USD; USD/MXN +0.80 %), hold btc_mxn
+    −1.88 %, so H2 is 0.20 pp behind. Reported, not a decision.
+- **Open:** nothing from §6.4.11 remains. Capacity uses one book snapshot; a time series of
+  snapshots, from the data collector's archive or a sampler, would turn it into a distribution.
 
 ### 6.5 First findings from the real stage ledger
 - **btc_mxn's first stage leg cost 118 bps against 70 assumed.** The post-only order rested 60 min, filled 0.1%, and fell back to market: taker fee 78 bps + 40 bps above the fill-day open. A stage leg is small and stage liquidity is thin, so this is not yet evidence about production costs. But it is the cost signal to watch: the pre-registration's secondary (taker) scenario is 88 bps per leg, and this leg exceeded both.

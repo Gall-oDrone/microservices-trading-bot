@@ -4,8 +4,11 @@ import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
 import { createMemoryRouter, RouterProvider } from 'react-router'
 import { describe, expect, it } from 'vitest'
-import { monteCarloResponseSchema, performanceResponseSchema } from '../api/schemas'
+import { capacityResponseSchema, monteCarloResponseSchema, performanceResponseSchema } from '../api/schemas'
+import capDry from '../mocks/fixtures/dry-run/capacity-btc_mxn.json'
 import dryPerfMxn from '../mocks/fixtures/dry-run/performance-btc_mxn.json'
+import capMxn from '../mocks/fixtures/stage/capacity-btc_mxn.json'
+import capUsd from '../mocks/fixtures/stage/capacity-btc_usd.json'
 import mcMxn from '../mocks/fixtures/stage/montecarlo-btc_mxn.json'
 import mcUsd from '../mocks/fixtures/stage/montecarlo-btc_usd.json'
 import perfMxn from '../mocks/fixtures/stage/performance-btc_mxn.json'
@@ -104,5 +107,48 @@ describe('Forward test detail: P&L, trades and Monte Carlo', () => {
     server.use(http.get('/api/ui/forward-tests/:book/performance', () => HttpResponse.json({ ...p, pnl: null })))
     renderAt('/forward-tests/btc_mxn')
     expect(await screen.findByText('No stage fills yet', { selector: '*' }, { timeout: 3000 })).toBeInTheDocument()
+  })
+})
+
+describe('Forward test detail: daily P&L, MXN terms and capacity (plan §6.4.12)', () => {
+  it('parses the capacity fixtures', () => {
+    for (const d of [capMxn, capUsd, capDry]) expect(capacityResponseSchema.safeParse(d).success).toBe(true)
+    expect(capacityResponseSchema.parse(capMxn).book_status).toBe('live')
+    expect(capacityResponseSchema.parse(capDry).book_status).toBe('none')
+  })
+
+  it('charts the daily P&L with NAV against capital', async () => {
+    renderAt('/forward-tests/btc_mxn')
+    expect(await screen.findByTestId('pnl-history-chart')).toBeInTheDocument()
+    const p = performanceResponseSchema.parse(perfMxn)
+    const last = p.pnl_history[p.pnl_history.length - 1]
+    const nav = screen.getByTestId('nav-stats')
+    expect(nav).toHaveTextContent(
+      `${last.nav.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} MXN`,
+    )
+    expect(nav).toHaveTextContent('capital 25,000 MXN')
+    expect(screen.queryByTestId('mxn-terms')).not.toBeInTheDocument() // only for USD books
+  })
+
+  it('shows btc_usd in pesos against holding btc_mxn', async () => {
+    renderAt('/forward-tests/btc_usd')
+    const m = await screen.findByTestId('mxn-terms')
+    const t = performanceResponseSchema.parse(perfUsd).mxn_terms!
+    expect(m).toHaveTextContent('60 bps each way')
+    expect(m).toHaveTextContent(t.h2_so_far ? 'ahead' : 'behind')
+    expect(m).toHaveTextContent(t.fx_end.toFixed(4))
+  })
+
+  it('lists order sizes against the 10 bps slippage budget', async () => {
+    renderAt('/forward-tests/btc_mxn')
+    const cap = await screen.findByTestId('capacity')
+    const c = capacityResponseSchema.parse(capMxn)
+    const rows = within(document.getElementById('capacity-table')!).getAllByRole('row').slice(1)
+    expect(rows).toHaveLength(c.rows.length)
+    expect(rows[0]).toHaveClass('current') // today's 0.001 BTC leg
+    expect(within(rows[0]).getByText('yes')).toBeInTheDocument()
+    expect(within(rows[rows.length - 1]).getByText('no')).toBeInTheDocument()
+    expect(cap).toHaveTextContent('Capacity at 10 bps slippage')
+    expect(cap).toHaveTextContent('0.001 / 0.01 BTC')
   })
 })

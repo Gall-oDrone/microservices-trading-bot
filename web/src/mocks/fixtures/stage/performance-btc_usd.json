@@ -2,7 +2,7 @@
   "ledger": "stage",
   "book": "btc_usd",
   "quote": "usd",
-  "generated_at": "2026-10-09T20:08:35Z",
+  "generated_at": "2026-10-09T20:37:41Z",
   "candles_file": "btc_usd_daily_2026-10-04.csv",
   "pnl": {
     "since": "2026-09-30",
@@ -165,5 +165,78 @@
       "rate_beats_hold": 0.6666666666666666,
       "rate_shallower_dd": 0.8333333333333334
     }
+  },
+  "capital": 1500,
+  "pnl_history": [
+    {
+      "date": "2026-09-30",
+      "close": 84216,
+      "position_btc": 0.0009975,
+      "realized": 0,
+      "unrealized": 0.5244599999999906,
+      "total": 0.5244599999999906,
+      "daily": 0.5244599999999906,
+      "nav": 1500.52446,
+      "paper_pnl": 0.9119116270136641
+    },
+    {
+      "date": "2026-10-01",
+      "close": 85944,
+      "position_btc": 0.0009975,
+      "realized": 0,
+      "unrealized": 2.2481399999999923,
+      "total": 2.2481399999999923,
+      "daily": 1.7236800000000017,
+      "nav": 1502.24814,
+      "paper_pnl": 2.643541617650594
+    },
+    {
+      "date": "2026-10-02",
+      "close": 84600,
+      "position_btc": 0.0009975,
+      "realized": 0,
+      "unrealized": 0.9074999999999989,
+      "total": 0.9074999999999989,
+      "daily": -1.3406399999999934,
+      "nav": 1500.9075,
+      "paper_pnl": 2.643541617650594
+    },
+    {
+      "date": "2026-10-03",
+      "close": 84888,
+      "position_btc": 0.0009975,
+      "realized": 0,
+      "unrealized": 1.1947799999999944,
+      "total": 1.1947799999999944,
+      "daily": 0.28727999999999554,
+      "nav": 1501.19478,
+      "paper_pnl": 2.643541617650594
+    },
+    {
+      "date": "2026-10-04",
+      "close": 85760,
+      "position_btc": 0.0009975,
+      "realized": 0,
+      "unrealized": 2.0645999999999987,
+      "total": 2.0645999999999987,
+      "daily": 0.8698200000000043,
+      "nav": 1502.0646,
+      "paper_pnl": 2.4591550908698157
+    }
+  ],
+  "mxn_terms": {
+    "from": "2026-09-29",
+    "to": "2026-10-04",
+    "fx_start": 18.011469293246794,
+    "fx_end": 18.21571828358209,
+    "fx_change": 0.011339940512897329,
+    "conversion_bps": 60,
+    "paper_return_usd": 0.024306991245952814,
+    "paper_return_mxn": 0.023528793947080517,
+    "hold_btc_mxn": 0.025652209140665683,
+    "excess": -0.0021234151935851653,
+    "h2_so_far": false,
+    "stage_pnl_mxn": 37.60817196828356,
+    "stage_invested_mxn": 1520.6663780317162
   }
 }

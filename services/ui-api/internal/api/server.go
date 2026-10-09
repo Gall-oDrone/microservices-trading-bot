@@ -206,6 +206,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/ui/forward-tests/{book}/candles", s.candles)
 	mux.HandleFunc("GET /api/ui/forward-tests/{book}/performance", s.performance)
 	mux.HandleFunc("GET /api/ui/forward-tests/{book}/montecarlo", s.monteCarlo)
+	mux.HandleFunc("GET /api/ui/forward-tests/{book}/capacity", s.capacity)
 	mux.HandleFunc("GET /api/ui/risk", s.riskStatus)
 	mux.HandleFunc("GET /api/ui/live", s.liveSnapshot)
 	mux.HandleFunc("GET /api/ui/stream", s.stream)

@@ -36,6 +36,8 @@ for l in $LEDGERS; do
     # Plan §6.4.11: P&L and statistics; the Monte Carlo at its defaults (404 without candles: skipped).
     curl -fsS "$API/api/ui/forward-tests/$b/performance?ledger=$l" > "$D/performance-$b.json"
     curl -fsS "$API/api/ui/forward-tests/$b/montecarlo?ledger=$l" > "$D/montecarlo-$b.json" || rm -f "$D/montecarlo-$b.json"
+    # Plan §6.4.12: capacity (the live book when ui-api runs with -live).
+    curl -fsS "$API/api/ui/forward-tests/$b/capacity?ledger=$l" > "$D/capacity-$b.json"
   done
 done
 echo "fixtures written to $OUT from $API (ledgers: $LEDGERS)"
