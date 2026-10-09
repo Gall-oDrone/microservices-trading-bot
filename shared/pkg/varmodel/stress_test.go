@@ -107,6 +107,28 @@ func TestShockLoss(t *testing.T) {
 	}
 }
 
+func TestReverseStressMove(t *testing.T) {
+	for _, c := range []struct {
+		net, capital, move float64
+		ok                 bool
+	}{
+		{100_000, 25_000, -0.25, true}, // a 25 % fall wipes out 25k on a 100k long
+		{100_000, 100_000, -1, true},   // only a fall to zero
+		{100_000, 150_000, -1.5, false},
+		{-50_000, 25_000, 0.5, true}, // a short: a 50 % rally
+		{0, 25_000, 0, false},
+		{100_000, 0, 0, false},
+	} {
+		m, ok := ReverseStressMove(c.net, c.capital)
+		if ok != c.ok || (c.net != 0 && c.capital > 0 && math.Abs(m-c.move) > 1e-12) {
+			t.Errorf("%+v: move %v ok %v", c, m, ok)
+		}
+		if ok && math.Abs(ShockLoss(c.net, m)-c.capital) > 1e-9 {
+			t.Errorf("%+v: the move loses %v, not the capital", c, ShockLoss(c.net, m))
+		}
+	}
+}
+
 func TestEpisodesWellFormed(t *testing.T) {
 	seen := map[string]bool{}
 	for _, e := range Episodes {

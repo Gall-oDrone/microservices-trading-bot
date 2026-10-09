@@ -165,6 +165,24 @@ function BookRiskCard({ b }: { b: BookRisk }) {
           ratio={b.utilization.drawdown}
           disabled={l.drawdown_warn === 0}
         />
+        {b.mode === 'stage' && (
+          <div data-testid={`cost-budget-${b.book}`}>
+            <Meter
+              label="Realized cost vs pre-registered budget"
+              value={fmtMoney(c.budget.cost_quote, b.quote, 2)}
+              limitLabel={`${fmtMoney(c.budget.budget_quote, b.quote, 2)} at ${fmtBps(c.budget.primary_leg_bps)}`}
+              ratio={c.budget.budget_used}
+              disabled={c.budget.budget_quote === 0}
+            />
+            {c.budget.legs > 0 && (
+              <div className={c.budget.over_pessimistic ? 'warn-text' : 'faint'} style={{ fontSize: 12, marginTop: 4 }}>
+                {fmtBps(c.budget.weighted_bps)} per leg, notional-weighted over {c.budget.legs} leg
+                {c.budget.legs > 1 ? 's' : ''} · pessimistic scenario {fmtBps(c.budget.secondary_leg_bps)}
+                {c.budget.over_pessimistic ? ' (above it)' : ''}
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       <div className="divider" />

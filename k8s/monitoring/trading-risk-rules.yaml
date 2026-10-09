@@ -378,3 +378,17 @@ spec:
             summary: "{{ $labels.currency }} stress scenario {{ $labels.scenario }} cannot be computed"
             description: "An exposed book has no Bitso closes for the episode and no book on the same asset does (or the episode fetch keeps failing). The worst stress loss omits this scenario."
             runbook_url: "docs/runbooks/TRADING-RISK-ALERTS.md#portfoliostressscenarioincomplete"
+
+        # Plan §6.4.10: with RISK_CAPITAL set, a stress scenario (hypothetical
+        # or a replayed crisis) that would consume all of it. No threshold to
+        # choose: losing the whole capital is the line.
+        - alert: PortfolioStressExceedsCapital
+          expr: max by (job, currency) (portfolio_risk_capital_ratio{job=~"order-management.*",measure="stress_worst"}) >= 1
+          for: 15m
+          labels:
+            severity: warning
+            team: risk
+          annotations:
+            summary: "{{ $labels.currency }} worst stress loss is {{ $value | humanizePercentage }} of risk capital"
+            description: "A stress scenario on today's exposure would lose all of RISK_CAPITAL (portfolio_reverse_stress_move_ratio is the spot move that does it). Nothing is blocked; the risk owner decides whether to reduce or add capital."
+            runbook_url: "docs/runbooks/TRADING-RISK-ALERTS.md#portfoliostressexceedscapital"

@@ -1,8 +1,10 @@
 package api
 
 import (
+	"fmt"
 	"math"
 	"sort"
+	"strings"
 	"time"
 
 	"bitso-trading-platform/shared/pkg/dailyledger"
@@ -272,6 +274,9 @@ type RealizedCost struct {
 	AvgTotalBps    float64 `json:"avg_total_bps"`
 	AssumedLegBps  float64 `json:"assumed_leg_bps"`
 	FallbackLegs   int     `json:"fallback_legs"`
+	// Budget is the notional-weighted cost in money against the
+	// pre-registered primary and pessimistic costs (plan §6.4.10).
+	Budget dailyledger.CostBudget `json:"budget"`
 }
 
 // NextOrder previews the order the next stage run would send, and what the
@@ -326,6 +331,11 @@ const (
 	RuleDataGap        = "data_gap"
 	RuleOrderBlocked   = "order_blocked"   // the executor blocked a stage order (recorded, not retried)
 	RulePolicyMismatch = "policy_mismatch" // the executor's last check used another policy version
+	// RuleCostOverPessimistic: the notional-weighted realized cost of at
+	// least dailyledger.CostBudgetMinLegs legs is above the pre-registered
+	// pessimistic (taker) cost, so even the pessimistic forward-test
+	// scenario understates what stage execution costs.
+	RuleCostOverPessimistic = "cost_over_pessimistic"
 )
 
 const btcDust = 1e-8
@@ -418,6 +428,21 @@ func buildBookRisk(p risk.Policy, book string, recs []dailyledger.Record, fills 
 	}
 	if slipN > 0 {
 		br.Cost.AvgSlippageBps = slip / float64(slipN)
+	}
+	legs := make([]dailyledger.LegCost, 0, len(fills))
+	for _, f := range fills {
+		lc := dailyledger.LegCost{Notional: f.Notional, FeeQuote: f.FeeQuote}
+		if f.SlippageBps != nil {
+			lc.SlippageBps, lc.SlippageKnown = *f.SlippageBps, true
+		}
+		legs = append(legs, lc)
+	}
+	br.Cost.Budget = dailyledger.BudgetFor(book, legs)
+	if bg := br.Cost.Budget; bg.OverPessimistic && bg.Legs >= dailyledger.CostBudgetMinLegs {
+		br.Findings = append(br.Findings, risk.Finding{Rule: RuleCostOverPessimistic, Severity: risk.Warn,
+			Limit: bg.SecondaryLegBps, Value: bg.WeightedBps,
+			Message: fmt.Sprintf("realized cost %.0f bps per leg over %d legs (notional-weighted), above the pre-registered pessimistic %.0f bps; %.2f %s over the primary budget",
+				bg.WeightedBps, bg.Legs, bg.SecondaryLegBps, bg.ExcessQuote, strings.ToUpper(quote))})
 	}
 
 	if rs := runStatus(last.Decision.BarDate, now); rs.Status == "missed" {

@@ -1,16 +1,15 @@
 package main
 
 import (
-	"bufio"
 	"fmt"
 	"math"
 	"os"
 	"path/filepath"
 	"sort"
-	"strings"
 	"syscall"
 
 	"bitso-trading-platform/strategy-executor/internal/dailyexec"
+	"bitso-trading-platform/strategy-executor/internal/stageenv"
 )
 
 // position is what the executor itself holds on stage for one book. It is
@@ -83,43 +82,10 @@ func applyFill(pos position, delta float64) position {
 
 // loadEnvFile sets KEY=VALUE pairs from path for keys not already set in the
 // environment. A missing file is not an error. Values are never printed.
-func loadEnvFile(path string) error {
-	f, err := os.Open(path)
-	if os.IsNotExist(err) {
-		return nil
-	}
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-	if fi, err := f.Stat(); err == nil && fi.Mode().Perm()&0o077 != 0 {
-		return fmt.Errorf("%s is readable by group/others (mode %v); run: chmod 600 %s", path, fi.Mode().Perm(), path)
-	}
-	sc := bufio.NewScanner(f)
-	for sc.Scan() {
-		line := strings.TrimSpace(sc.Text())
-		if line == "" || strings.HasPrefix(line, "#") {
-			continue
-		}
-		k, v, ok := strings.Cut(line, "=")
-		if !ok {
-			continue
-		}
-		k, v = strings.TrimSpace(k), strings.Trim(strings.TrimSpace(v), `"'`)
-		if _, set := os.LookupEnv(k); !set {
-			os.Setenv(k, v)
-		}
-	}
-	return sc.Err()
-}
+// (Shared with daily-reconcile: internal/stageenv.)
+func loadEnvFile(path string) error { return stageenv.LoadFile(path) }
 
-func defaultEnvFile() string {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return ""
-	}
-	return filepath.Join(home, ".config", "microservices-trading-bot", "bitso-stage.env")
-}
+func defaultEnvFile() string { return stageenv.DefaultFile() }
 
 // lockFile takes an exclusive, non-blocking lock so two runs (e.g. a timer
 // and a manual run) can never trade at the same time. Released on exit.

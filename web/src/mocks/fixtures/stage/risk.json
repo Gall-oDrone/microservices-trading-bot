@@ -89,7 +89,21 @@
         "avg_slippage_bps": 40.390533387937296,
         "avg_total_bps": 118.37832919088416,
         "assumed_leg_bps": 70,
-        "fallback_legs": 1
+        "fallback_legs": 1,
+        "budget": {
+          "legs": 1,
+          "legs_without_ref": 0,
+          "notional": 1522.85979,
+          "cost_quote": 18.02735975321807,
+          "weighted_bps": 118.37832919088416,
+          "primary_leg_bps": 70,
+          "secondary_leg_bps": 88,
+          "budget_quote": 10.66001853,
+          "excess_quote": 7.367341223218071,
+          "budget_used": 1.6911189884412021,
+          "prereg": "FORWARD-TEST-PREREGISTRATION-SMA50-2026-09-27.md",
+          "over_pessimistic": true
+        }
       },
       "last_check": null,
       "blocked_days": [],
@@ -134,7 +148,21 @@
         "avg_slippage_bps": 16.197537974227405,
         "avg_total_bps": 41.19753797422741,
         "assumed_leg_bps": 40,
-        "fallback_legs": 0
+        "fallback_legs": 0,
+        "budget": {
+          "legs": 1,
+          "legs_without_ref": 0,
+          "notional": 83.481,
+          "cost_quote": 0.34392116676264783,
+          "weighted_bps": 41.19753797422741,
+          "primary_leg_bps": 40,
+          "secondary_leg_bps": 46,
+          "budget_quote": 0.333924,
+          "excess_quote": 0.009997166762647836,
+          "budget_used": 1.0299384493556851,
+          "prereg": "FORWARD-TEST-PREREGISTRATION-SMA50-BTCUSD-2026-09-29.md",
+          "over_pessimistic": false
+        }
       },
       "last_check": null,
       "blocked_days": [],

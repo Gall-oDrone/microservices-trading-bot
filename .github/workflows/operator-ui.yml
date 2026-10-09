@@ -90,7 +90,12 @@ jobs:
             services/strategy-executor/internal/bitsodaily \
             services/strategy-executor/cmd/daily-research/golden_test.go \
             services/strategy-executor/internal/server/backtest_deprecation.go \
-            services/strategy-executor/internal/server/backtest_deprecation_test.go)
+            services/strategy-executor/internal/server/backtest_deprecation_test.go \
+            services/strategy-executor/cmd/daily-reconcile \
+            services/strategy-executor/internal/reconcile \
+            services/strategy-executor/internal/stageenv \
+            services/strategy-executor/cmd/daily-executor/stage.go \
+            services/strategy-executor/cmd/daily-executor/costs_contract_test.go)
           if [ -n "$out" ]; then echo "gofmt needed:"; echo "$out"; exit 1; fi
 
       - name: shared
@@ -99,11 +104,11 @@ jobs:
           go vet ./pkg/risk ./pkg/dailyledger ./pkg/dailyrule ./pkg/bitsodaily ./pkg/varmodel
           go test -race -count=1 ./pkg/risk ./pkg/dailyledger ./pkg/dailyrule ./pkg/bitsodaily ./pkg/varmodel
 
-      - name: daily-executor, daily-research, deprecated backtest routes
+      - name: daily-executor, daily-research, deprecated backtest routes, daily-reconcile
         working-directory: services/strategy-executor
         run: |
-          go vet ./cmd/daily-executor ./internal/dailyexec ./internal/dailyrule ./internal/bitsodaily ./cmd/daily-research ./internal/server
-          go test -race -count=1 ./cmd/daily-executor ./internal/dailyexec ./internal/dailyrule ./cmd/daily-research ./internal/server
+          go vet ./cmd/daily-executor ./internal/dailyexec ./internal/dailyrule ./internal/bitsodaily ./cmd/daily-research ./internal/server ./cmd/daily-reconcile ./internal/reconcile ./internal/stageenv
+          go test -race -count=1 ./cmd/daily-executor ./internal/dailyexec ./internal/dailyrule ./cmd/daily-research ./internal/server ./cmd/daily-reconcile ./internal/reconcile
 
       - name: ui-api
         working-directory: services/ui-api
@@ -151,6 +156,7 @@ jobs:
             services/order-management/internal/risk/portfolio_test.go \
             services/order-management/internal/risk/portfolio_vol_test.go \
             services/order-management/internal/risk/portfolio_stress_test.go \
+            services/order-management/internal/risk/portfolio_capital_test.go \
             services/order-management/internal/risk/volatility.go \
             services/order-management/internal/risk/volatility_test.go \
             services/order-management/internal/risk/volatility_episodes_test.go \

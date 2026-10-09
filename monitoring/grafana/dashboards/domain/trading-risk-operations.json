@@ -1874,6 +1874,169 @@
         "overrides": []
       },
       "options": {}
+    },
+    {
+      "id": 45,
+      "title": "Capital and reverse stress (plan §6.4.10)",
+      "type": "row",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 93
+      },
+      "panels": []
+    },
+    {
+      "id": 46,
+      "title": "Risk as a share of capital",
+      "type": "bargauge",
+      "description": "Each risk measure divided by RISK_CAPITAL: VaR 99 % and ES 97.5 % (parametric and historical), the worst stress loss (PortfolioStressExceedsCapital at 100 %), and net / gross exposure. Empty until RISK_CAPITAL is set.",
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 0,
+        "y": 94
+      },
+      "targets": [
+        {
+          "expr": "max by (currency, measure) (portfolio_risk_capital_ratio{job=~\"order-management.*\"})",
+          "legendFormat": "{{currency}} {{measure}}",
+          "refId": "A",
+          "instant": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0,
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 0.8
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "orientation": "horizontal",
+        "displayMode": "gradient",
+        "showUnfilled": true,
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        }
+      }
+    },
+    {
+      "id": 47,
+      "title": "Reverse stress: spot move that loses all capital",
+      "type": "stat",
+      "description": "The uniform spot move on today's net exposure whose loss equals RISK_CAPITAL (negative: a fall, for a long). Compare it with the historical troughs (2018-01: -62 %, 2020-03: -36 %). No value: flat, no capital, or a long that cannot lose that much. Colours assume a long: green when it takes a fall larger than the worst replayed crisis (-62 %), orange beyond the COVID crash (-36 %), red when a smaller fall is enough.",
+      "gridPos": {
+        "h": 9,
+        "w": 6,
+        "x": 12,
+        "y": 94
+      },
+      "targets": [
+        {
+          "expr": "max by (currency) (portfolio_reverse_stress_move_ratio{job=~\"order-management.*\"})",
+          "legendFormat": "{{currency}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "decimals": 1,
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": -0.62
+              },
+              {
+                "color": "red",
+                "value": -0.36
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "value",
+        "graphMode": "none"
+      }
+    },
+    {
+      "id": 48,
+      "title": "Risk capital",
+      "type": "stat",
+      "description": "RISK_CAPITAL per quote currency, as configured in order-management.",
+      "gridPos": {
+        "h": 9,
+        "w": 6,
+        "x": 18,
+        "y": 94
+      },
+      "targets": [
+        {
+          "expr": "max by (currency) (portfolio_capital_quote{job=~\"order-management.*\"})",
+          "legendFormat": "{{currency}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "blue"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "value",
+        "graphMode": "none"
+      }
     }
   ],
   "links": [

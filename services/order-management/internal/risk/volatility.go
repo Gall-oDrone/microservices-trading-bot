@@ -87,8 +87,13 @@ type VolEstimator struct {
 	HistoryDays  int
 	Episodes     []varmodel.Episode
 	EpisodePause time.Duration // between episode requests (public rate limit)
-	Now          func() time.Time
-	OnError      func(book string, err error)
+	// Known seeds a newly registered book's episode paths (by book, then
+	// episode ID; a nil path is "no data"), so the known books make no
+	// episode requests after a restart (§6.4.10). Episodes it does not
+	// cover are still fetched.
+	Known   map[string]map[string][]varmodel.PathPoint
+	Now     func() time.Time
+	OnError func(book string, err error)
 
 	mu    sync.Mutex
 	books map[string]*volEntry
@@ -117,6 +122,7 @@ func NewVolEstimator(fetch ClosesFetcher) *VolEstimator {
 		HistoryDays:  DefaultVolHistory,
 		Episodes:     varmodel.Episodes,
 		EpisodePause: DefaultEpisodePause,
+		Known:        varmodel.KnownEpisodePaths,
 	}
 }
 
@@ -145,7 +151,7 @@ func (v *VolEstimator) Lookup(book string) (VolView, bool) {
 	}
 	e, ok := v.books[book]
 	if !ok {
-		e = &volEntry{}
+		e = v.newEntry(book)
 		v.books[book] = e
 		if v.wake != nil {
 			select {
@@ -161,6 +167,21 @@ func (v *VolEstimator) Lookup(book string) (VolView, bool) {
 	}
 	view.DataAge = v.now().Sub(closeTime(view.Estimate.LastDate))
 	return view, view.DataAge <= v.Stale
+}
+
+// newEntry is a fresh entry for book, its episodes seeded from Known.
+func (v *VolEstimator) newEntry(book string) *volEntry {
+	e := &volEntry{}
+	for id, p := range v.Known[book] {
+		if e.epDone == nil {
+			e.epDone, e.episodes = map[string]bool{}, map[string][]varmodel.PathPoint{}
+		}
+		e.epDone[id] = true
+		if p != nil {
+			e.episodes[id] = p
+		}
+	}
+	return e
 }
 
 // Books lists the registered books.

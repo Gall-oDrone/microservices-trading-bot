@@ -222,4 +222,47 @@ raise the limit to clear it.
 *warning, after 2 h.* A historical scenario cannot be computed for a currency with exposure: an
 exposed book has no Bitso closes for the episode and no book on the same base asset does, or the
 episode fetch keeps failing (order-management log "stress episode ... "). The worst stress loss
-omits that scenario. Episodes are fetched once per book and cached; a restart refetches them.
+omits that scenario. btc_mxn and btc_usd start from paths embedded from the committed Bitso history
+(`varmodel.KnownEpisodePaths`, §6.4.10) and make no episode requests; another book fetches each
+episode once and keeps it until restart.
+
+## Capital, cost budget and reconciliation (§6.4.10)
+
+**Capital.** With `RISK_CAPITAL` set (e.g. `MXN=250000,USD=12000`), order-management publishes
+`portfolio_capital_quote` and `portfolio_risk_capital_ratio{measure}`: the parametric and historical
+VaR and ES, the worst stress loss, and net and gross exposure, each divided by capital.
+`portfolio_reverse_stress_move_ratio` is the reverse stress test: the uniform spot move that loses
+exactly the capital on today's net exposure (−0.40 means a 40 % fall). Compare it with the replayed
+crises (2018-01 −62 %, 2020-03 −36 %). It is absent when a long cannot lose that much (capital above
+its exposure). Unset capital: no series, alert inactive.
+
+### PortfolioStressExceedsCapital
+*warning, after 15 min.* A stress scenario (dashboard "Risk as a share of capital", `stress_worst`)
+would lose all of the currency's `RISK_CAPITAL`. The risk owner decides the same day whether to
+reduce exposure or add capital, and records the decision. Do not drop scenarios or raise the capital
+figure to clear it; capital is what the firm can actually lose.
+
+### cost_over_pessimistic (ui-alerts, Risk page)
+*warning, emailed by ui-alerts.* For one book, over at least 3 stage legs, the notional-weighted
+realized cost (fees + slippage against the fill day's open) is above the pre-registration's
+pessimistic (taker) cost: 88 bps per leg for btc_mxn, 46 for btc_usd. Even the pessimistic forward
+test then understates what execution costs. Check the Risk page meter "Realized cost vs
+pre-registered budget" and the fills table: market fallbacks (thin stage book, post-only order not
+filled in 60 min) are the usual cause. The pre-registered rule and costs stay frozen. Report realized
+costs next to the frozen ones at the interim and final evaluation; any change to execution is a new,
+separately registered decision.
+
+### Reconciliation breaks (daily-reconcile)
+`go run ./cmd/daily-reconcile -ledger <stage ledger> [-out reconcile.json]` (strategy-executor),
+after the day's executor run has finished. It only reads (stage keys, chmod 600 env file) and
+exits 3 on any break:
+- **leg mismatch**: Bitso's trades under the leg's client ids do not sum to the ledger's
+  quantity, notional, fees or base change, or include an order the ledger does not list. Treat the
+  exchange as the source of truth. Halt the book (Risk page) before correcting the ledger line by
+  hand with a note, as was done on 2026-10-01.
+- **unrecorded fills**: trades under the client ids of a day with no leg (no record, or a blocked
+  order). Usually a crash between the fill and the ledger write. The executor resumes from those
+  trades on its next run for the same day; for an older day, halt and record the leg by hand.
+- **position**: a book's position no longer equals the sum of its legs (a hand edit went wrong).
+- **balance**: the account's BTC is below what the two books hold. Someone moved stage funds; halt
+  both books until it is explained.

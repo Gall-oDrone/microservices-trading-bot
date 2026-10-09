@@ -255,6 +255,7 @@ returns the executor's last recorded check. The Risk page shows all of it.
 | **R6b (done 2026-10-08)** Realized execution and portfolio risk, §6.4.7 | Realized slippage per closed order vs its decision price; exposure per book marked to market; 1-day 99 % parametric VaR per quote currency against a limit; Alertmanager routing by severity and team | Implementation shortfall, exposure and VaR are on the dashboard and alert with a runbook; every route is pinned in CI; nothing is sent until receivers are configured |
 | **R6c (done 2026-10-08)** Estimated VaR vol and model backtest, §6.4.8 | The VaR's daily vol estimated per book from Bitso daily closes (max of RiskMetrics EWMA and 365-day), a historical-simulation VaR beside it, and a daily 250-day backtest (exceptions, Kupiec, Basel zone) | No configured vol unless the estimate is unavailable (and then it says so); model failure alerts with a runbook |
 | **R6d (done 2026-10-09)** Expected shortfall and stress scenarios, §6.4.9 | ES 97.5 % per quote currency (historical and normal), hypothetical spot shocks, and 8 historical crypto episodes replayed on today's exposure, with optional stress limits | Tail loss beyond VaR is visible per scenario; limit breach and incomplete-scenario alerts with a runbook |
+| **R6e (done 2026-10-09)** Cost budget, capital and reconciliation, §6.4.10 | Realized execution cost in money against the frozen pre-registered costs; risk as a share of `RISK_CAPITAL` with a reverse stress test; a read-only daily reconciliation of the stage ledger against Bitso; crash paths embedded instead of refetched | The forward test's cost assumption, the capital at risk and the ledger's truth are each checked, with alerts and a runbook |
 
 #### 6.4.1 R1 as built
 
@@ -559,7 +560,60 @@ and the VaR limit is unchanged.
 - **Open:** no stress limit is set by default, so the breach alert is inactive until
   `RISK_STRESS_LIMITS` is configured. Episodes are refetched on every restart (16 requests for two
   books). Single-asset only: reverse stress (the move that exhausts capital) and multi-asset
-  correlation scenarios are possible extensions.
+  correlation scenarios are possible extensions. *(§6.4.10: episodes are now embedded, and the
+  reverse stress test is built against `RISK_CAPITAL`.)*
+
+#### 6.4.10 R6e cost budget, capital and reconciliation as built (2026-10-09)
+
+The items left open in §6.4.9, except Alertmanager receivers (skipped on request), OIDC, TLS and
+roles. Additive only: the SMA50 rule, its costs and the paper account are unchanged.
+
+- **Cost budget against the pre-registration** (transaction-cost analysis). The frozen per-leg costs
+  are now in one shared table, `dailyledger.PreregCosts`: primary 70 / 40 bps and pessimistic
+  (taker) 88 / 46 bps for btc_mxn / btc_usd. A contract test in the daily-executor keeps it equal
+  to the paper account's `frozenSpecs`. ui-api's Risk response gains `realized_cost.budget`:
+  - cost in money (fees plus slippage against the fill day's open);
+  - notional-weighted bps;
+  - the primary budget in money, the excess over it and the fraction used.
+
+  The Risk page shows it as a meter. With at least 3 legs, a weighted cost above the pessimistic
+  scenario is the finding `cost_over_pessimistic`, which ui-alerts emails. One leg is too noisy to
+  call a trend, and the per-leg `cost_warn_bps` already covers single legs. Real stage, one leg per
+  book so far:
+  - btc_mxn paid 18.03 MXN against a 10.66 MXN budget (169 %): 118 bps, above the 88 bps
+    pessimistic cost;
+  - btc_usd paid 0.34 USD against 0.33 (103 %): 41 bps, within the 46 bps pessimistic cost.
+- **Capital and reverse stress.** `RISK_CAPITAL` (per quote currency, unset by default) adds:
+  - `portfolio_risk_capital_ratio{measure}`: VaR, ES (both methods), worst stress, net and gross
+    exposure, each divided by capital;
+  - `portfolio_reverse_stress_move_ratio`: the uniform spot move that loses all of it.
+
+  `PortfolioStressExceedsCapital` (warning, 15 min, 30 rules in total) fires when a scenario would
+  lose all of it. No threshold is invented: losing the whole capital is the line. Dashboard row
+  "Capital and reverse stress". For scale: a book fully invested in BTC loses 62 % of itself in a
+  replay of 2018-01, so the alert fires whenever exposure is above 1 / 0.62 = 1.6× capital.
+- **Crash paths embedded.** `varmodel.KnownEpisodePaths` is generated from the committed Bitso
+  CSVs (`go test ./pkg/varmodel -run TestKnownEpisodePathsMatchCSVs -update-episodes`). A test
+  fails if it drifts from them or from `Episodes`. order-management seeds btc_mxn and btc_usd from
+  it and makes no episode requests after a restart. Other books, or episodes added later, are still
+  fetched.
+- **Daily reconciliation** (`strategy-executor/cmd/daily-reconcile`, `internal/reconcile`). Read
+  only: the client is passed as `reconcile.Source`, which has only `Balances` and `TradesByOrigin`,
+  and stage is the only URL `bitsostage.New` accepts. It checks:
+  - every leg's trades, fetched again by its two client ids: quantity, notional, fees, base change,
+    and no order the ledger does not list;
+  - no trades under the client ids of days without a leg (blocked, or no record);
+  - each book's position against the sum of its legs;
+  - that the account's BTC covers both books (not equality: the account holds other BTC).
+
+  Exit 3 on any break; `-out` writes the JSON report. The env-file loader moved to
+  `internal/stageenv`, and the executor delegates to it unchanged. Tested only against fakes,
+  anchored on the two real stage legs. **It has not been run against Bitso stage**; that waits for
+  operator approval.
+- **Open:** run `daily-reconcile` on stage once approved, then schedule it after each executor run
+  and surface its report in ui-api data health. Set `RISK_CAPITAL`, `RISK_VAR_LIMITS` and
+  `RISK_STRESS_LIMITS` once the stage capital is agreed. Alertmanager receivers are still a
+  template.
 
 ### 6.5 First findings from the real stage ledger
 - **btc_mxn's first stage leg cost 118 bps against 70 assumed.** The post-only order rested 60 min, filled 0.1%, and fell back to market: taker fee 78 bps + 40 bps above the fill-day open. A stage leg is small and stage liquidity is thin, so this is not yet evidence about production costs. But it is the cost signal to watch: the pre-registration's secondary (taker) scenario is 88 bps per leg, and this leg exceeded both.

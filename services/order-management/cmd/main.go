@@ -212,6 +212,9 @@ func NewApplication() (*Application, error) {
 		"stress_shocks":   portfolioCfg.StressShocks,
 		"stress_limits":   portfolioCfg.StressLimits,
 		"stress_episodes": len(varmodel.Episodes),
+		// §6.4.10: capital ratios / reverse stress; embedded episode paths.
+		"capital":              portfolioCfg.Capital,
+		"stress_episodes_seed": len(varmodel.KnownEpisodePaths),
 	})
 
 	var fillLedger repository.FillLedger

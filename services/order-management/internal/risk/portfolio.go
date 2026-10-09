@@ -41,6 +41,10 @@ import (
 // spot shocks (RISK_STRESS_SHOCKS) and the historical crypto crises in
 // varmodel.Episodes replayed on today's exposure, against an optional
 // RISK_STRESS_LIMITS. Reporting only, like VaR.
+//
+// Since §6.4.10 an optional RISK_CAPITAL per currency expresses every
+// measure as a fraction of capital and gives the reverse-stress move (the
+// uniform spot move that loses all of it).
 const (
 	EnvPortfolioInterval = "RISK_PORTFOLIO_INTERVAL"
 	EnvVaRDailyVol       = "RISK_VAR_DAILY_VOL"
@@ -54,6 +58,7 @@ const (
 	EnvVaRVolSourceURL   = "RISK_VAR_VOL_SOURCE_URL"
 	EnvStressShocks      = "RISK_STRESS_SHOCKS"
 	EnvStressLimits      = "RISK_STRESS_LIMITS"
+	EnvCapital           = "RISK_CAPITAL"
 
 	// DefaultVaRDailyVol is deliberately above BTC's typical realized daily
 	// vol (~2.5-3.5 %), so an unconfigured VaR errs high.
@@ -95,6 +100,8 @@ type PortfolioConfig struct {
 
 	StressShocks []float64          // spot moves, e.g. -0.3
 	StressLimits map[string]float64 // per quote currency (upper case)
+
+	Capital map[string]float64 // per quote currency (upper case)
 }
 
 // VolFor is the configured daily vol for book: its override, else the
@@ -201,6 +208,9 @@ func LoadPortfolioConfig(getenv func(string) string) (PortfolioConfig, error) {
 	c.VaRLimits = limits
 	if c.StressLimits, err = parsePairs(getenv(EnvStressLimits), strings.ToUpper, positive); err != nil {
 		return c, fmt.Errorf("%s: %w", EnvStressLimits, err)
+	}
+	if c.Capital, err = parsePairs(getenv(EnvCapital), strings.ToUpper, positive); err != nil {
+		return c, fmt.Errorf("%s: %w", EnvCapital, err)
 	}
 	if c.MarketDataURL != "" {
 		if u, err := url.Parse(c.MarketDataURL); err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
@@ -543,15 +553,17 @@ func (pm *PortfolioMonitor) Snapshot(ctx context.Context, known map[string]bool)
 		r.Limit = pm.Config.VaRLimits[ccy]
 		r.Stress = pm.stressScenarios(r.Net, exposed[ccy], episodes)
 		r.StressLimit = pm.Config.StressLimits[ccy]
+		r.Capital = pm.Config.Capital[ccy]
 		snap.Currencies[ccy] = r
 	}
 	// A configured limit is published even before any position exists.
-	for ccy := range unionKeys(pm.Config.VaRLimits, pm.Config.StressLimits) {
+	for ccy := range unionKeys(pm.Config.VaRLimits, pm.Config.StressLimits, pm.Config.Capital) {
 		if _, ok := snap.Currencies[ccy]; !ok {
 			snap.Currencies[ccy] = metrics.CurrencyRisk{
 				Limit:       pm.Config.VaRLimits[ccy],
 				StressLimit: pm.Config.StressLimits[ccy],
 				Stress:      pm.stressScenarios(0, nil, nil),
+				Capital:     pm.Config.Capital[ccy],
 			}
 		}
 	}

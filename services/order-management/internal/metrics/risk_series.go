@@ -72,6 +72,11 @@ type RiskSeries struct {
 	stressIncomplete *prometheus.GaugeVec
 	stressProxied    *prometheus.GaugeVec
 	episodeTrough    *prometheus.GaugeVec
+
+	// Capital and reverse stress (plan §6.4.10).
+	capital       *prometheus.GaugeVec
+	capitalRatio  *prometheus.GaugeVec
+	reverseStress *prometheus.GaugeVec
 }
 
 // VolSources are the values of risk_var_vol_source's source label.
@@ -87,6 +92,17 @@ const (
 const (
 	ESHistorical = "historical"
 	ESParametric = "parametric"
+)
+
+// Measures of portfolio_risk_capital_ratio (each divided by capital).
+const (
+	CapVaRParametric = "var_parametric"
+	CapVaRHistorical = "var_historical"
+	CapESParametric  = "es_parametric"
+	CapESHistorical  = "es_historical"
+	CapStressWorst   = "stress_worst"
+	CapExposureNet   = "exposure_net"   // |net| / capital
+	CapExposureGross = "exposure_gross" // gross / capital
 )
 
 // NewRiskSeries creates and registers the series on reg.
@@ -217,12 +233,25 @@ func NewRiskSeries(reg prometheus.Registerer) *RiskSeries {
 			Name: "risk_stress_episode_trough_ratio",
 			Help: "The book's own worst cumulative move during a historical stress episode, from the close before it (Bitso daily closes)",
 		}, []string{"book", "scenario"}),
+		capital: prometheus.NewGaugeVec(prometheus.GaugeOpts{
+			Name: "portfolio_capital_quote",
+			Help: "Risk capital per quote currency (RISK_CAPITAL); absent when not set",
+		}, []string{"currency"}),
+		capitalRatio: prometheus.NewGaugeVec(prometheus.GaugeOpts{
+			Name: "portfolio_risk_capital_ratio",
+			Help: "Risk measure divided by RISK_CAPITAL: var_parametric, var_historical, es_parametric, es_historical, stress_worst, exposure_net (|net|), exposure_gross. Absent without capital, or when the measure itself is absent",
+		}, []string{"currency", "measure"}),
+		reverseStress: prometheus.NewGaugeVec(prometheus.GaugeOpts{
+			Name: "portfolio_reverse_stress_move_ratio",
+			Help: "Reverse stress: the uniform spot move that loses exactly RISK_CAPITAL on today's net exposure (negative: a fall, for a long). Absent without capital, when flat, or when a long cannot lose that much (capital above its exposure)",
+		}, []string{"currency"}),
 	}
 	reg.MustRegister(m.slippageBps, m.slippageCost, m.filledNotional, m.exposureBase, m.exposureQuote,
 		m.markPrice, m.markFallback, m.dailyVol, m.netBase, m.grossQuote, m.netQuote, m.varQuote,
 		m.varLimit, m.lastRun, m.runErrors,
 		m.volEstimate, m.volSource, m.volDataAge, m.btObs, m.btExc, m.btKupiec, m.btZone, m.histVaR, m.histScen,
-		m.esQuote, m.stressLoss, m.stressWorst, m.stressLimit, m.stressIncomplete, m.stressProxied, m.episodeTrough)
+		m.esQuote, m.stressLoss, m.stressWorst, m.stressLimit, m.stressIncomplete, m.stressProxied, m.episodeTrough,
+		m.capital, m.capitalRatio, m.reverseStress)
 	return m
 }
 
@@ -309,6 +338,8 @@ type CurrencyRisk struct {
 
 	Stress      []StressResult
 	StressLimit float64 // 0: none
+
+	Capital float64 // RISK_CAPITAL; 0: none
 }
 
 // WorstStress is the largest computed stress loss and its scenario.
@@ -364,6 +395,7 @@ func (m *RiskSeries) SetPortfolio(books []BookExposure, netBase map[string]float
 		}
 		m.esQuote.WithLabelValues(c, ESParametric).Set(r.ESParam)
 		m.setStress(c, r)
+		m.setCapital(c, r)
 	}
 	m.lastRun.Set(float64(at.Unix()))
 }
@@ -392,6 +424,41 @@ func (m *RiskSeries) setStress(c string, r CurrencyRisk) {
 	}
 	if r.StressLimit > 0 {
 		m.stressLimit.WithLabelValues(c).Set(r.StressLimit)
+	}
+}
+
+// setCapital publishes the risk measures as fractions of RISK_CAPITAL and
+// the reverse-stress move. A measure that is absent (no history, no stress
+// scenario) has no ratio rather than a stale one.
+func (m *RiskSeries) setCapital(c string, r CurrencyRisk) {
+	if !(r.Capital > 0) {
+		return
+	}
+	m.capital.WithLabelValues(c).Set(r.Capital)
+	worst, _ := r.WorstStress()
+	for _, x := range []struct {
+		measure string
+		value   float64
+		ok      bool
+	}{
+		{CapVaRParametric, r.VaR, true},
+		{CapVaRHistorical, r.HistVaR, r.HistOK},
+		{CapESParametric, r.ESParam, true},
+		{CapESHistorical, r.HistES, r.HistOK},
+		{CapStressWorst, worst, len(r.Stress) > 0},
+		{CapExposureNet, math.Abs(r.Net), true},
+		{CapExposureGross, r.Gross, true},
+	} {
+		if x.ok {
+			m.capitalRatio.WithLabelValues(c, x.measure).Set(x.value / r.Capital)
+		} else {
+			m.capitalRatio.DeleteLabelValues(c, x.measure)
+		}
+	}
+	if mv, ok := varmodel.ReverseStressMove(r.Net, r.Capital); ok {
+		m.reverseStress.WithLabelValues(c).Set(mv)
+	} else {
+		m.reverseStress.DeleteLabelValues(c)
 	}
 }
 

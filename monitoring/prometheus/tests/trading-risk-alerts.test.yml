@@ -347,3 +347,26 @@ tests:
               summary: "MXN stress scenario 2018-01-crash cannot be computed"
               description: "An exposed book has no Bitso closes for the episode and no book on the same asset does (or the episode fetch keeps failing). The worst stress loss omits this scenario."
               runbook_url: "docs/runbooks/TRADING-RISK-ALERTS.md#portfoliostressscenarioincomplete"
+
+  # Capital (plan §6.4.10): MXN's worst stress loss is 124 % of capital;
+  # USD's is 40 %.
+  - interval: 1m
+    input_series:
+      - series: 'portfolio_risk_capital_ratio{job="order-management",instance="om-0",currency="MXN",measure="stress_worst"}'
+        values: '1.24x30'
+      - series: 'portfolio_risk_capital_ratio{job="order-management",instance="om-0",currency="MXN",measure="var_parametric"}'
+        values: '0.09x30'
+      - series: 'portfolio_risk_capital_ratio{job="order-management",instance="om-0",currency="USD",measure="stress_worst"}'
+        values: '0.4x30'
+    alert_rule_test:
+      - eval_time: 14m
+        alertname: PortfolioStressExceedsCapital
+        exp_alerts: []
+      - eval_time: 15m
+        alertname: PortfolioStressExceedsCapital
+        exp_alerts:
+          - exp_labels: {severity: warning, team: risk, job: order-management, currency: MXN}
+            exp_annotations:
+              summary: "MXN worst stress loss is 124% of risk capital"
+              description: "A stress scenario on today's exposure would lose all of RISK_CAPITAL (portfolio_reverse_stress_move_ratio is the spot move that does it). Nothing is blocked; the risk owner decides whether to reduce or add capital."
+              runbook_url: "docs/runbooks/TRADING-RISK-ALERTS.md#portfoliostressexceedscapital"

@@ -153,6 +153,18 @@ describe('Risk page', () => {
     expect(screen.queryByText('Trading halted by policy')).not.toBeInTheDocument()
   })
 
+  it('shows realized cost against the pre-registered budget', async () => {
+    renderAt('/risk')
+    const mxn = await screen.findByTestId('cost-budget-btc_mxn')
+    // 18.03 MXN paid on 1,522.86 MXN notional; budget 70 bps = 10.66 MXN.
+    expect(mxn).toHaveTextContent('18.03 MXN')
+    expect(mxn).toHaveTextContent('10.66 MXN at 70 bps')
+    expect(mxn).toHaveTextContent(/pessimistic scenario 88 bps \(above it\)/)
+    expect(within(mxn).getByRole('meter')).toHaveAttribute('aria-valuenow', '100')
+    const usd = screen.getByTestId('cost-budget-btc_usd')
+    expect(usd).toHaveTextContent(/pessimistic scenario 46 bps$/)
+  })
+
   it('shows an order the executor blocked', async () => {
     const r = riskResponseSchema.parse(structuredClone(risk))
     const b = r.books[1]

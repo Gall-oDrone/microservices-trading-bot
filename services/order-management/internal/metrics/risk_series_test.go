@@ -191,3 +191,52 @@ func TestSetPortfolioPublishesESAndStress(t *testing.T) {
 		t.Errorf("ES series %d without history, want 1 (parametric)", n)
 	}
 }
+
+func TestSetPortfolioPublishesCapitalRatiosAndReverseStress(t *testing.T) {
+	reg := prometheus.NewRegistry()
+	m := NewRiskSeries(reg)
+	at := time.Unix(1_790_000_000, 0)
+	stress := []StressResult{{Scenario: "2018-01-crash", Type: StressHistorical, Loss: 62_000, OK: true}}
+	r := CurrencyRisk{Gross: 100_000, Net: 100_000, VaR: 4_600, ESParam: 4_700, HistVaR: 5_400, HistES: 6_900, HistOK: true,
+		Stress: stress, Capital: 50_000}
+	m.SetPortfolio(nil, nil, map[string]CurrencyRisk{"MXN": r}, at)
+	for _, c := range []struct {
+		measure string
+		want    float64
+	}{
+		{CapVaRParametric, 0.092}, {CapVaRHistorical, 0.108}, {CapESParametric, 0.094}, {CapESHistorical, 0.138},
+		{CapStressWorst, 1.24}, {CapExposureNet, 2}, {CapExposureGross, 2},
+	} {
+		if v := testutil.ToFloat64(m.capitalRatio.WithLabelValues("MXN", c.measure)); math.Abs(v-c.want) > 1e-12 {
+			t.Errorf("%s = %v, want %v", c.measure, v, c.want)
+		}
+	}
+	if v := testutil.ToFloat64(m.capital.WithLabelValues("MXN")); v != 50_000 {
+		t.Errorf("capital %v", v)
+	}
+	// A 50 % fall loses the 50k capital on a 100k long.
+	if v := testutil.ToFloat64(m.reverseStress.WithLabelValues("MXN")); math.Abs(v+0.5) > 1e-12 {
+		t.Errorf("reverse stress %v", v)
+	}
+
+	// History lost and capital above the long's exposure: the historical
+	// ratios and the reverse-stress move disappear instead of freezing.
+	r.HistOK, r.Capital = false, 150_000
+	m.SetPortfolio(nil, nil, map[string]CurrencyRisk{"MXN": r}, at)
+	if n := testutil.CollectAndCount(reg, "portfolio_risk_capital_ratio"); n != 5 {
+		t.Errorf("capital ratio series %d, want 5", n)
+	}
+	if n := testutil.CollectAndCount(reg, "portfolio_reverse_stress_move_ratio"); n != 0 {
+		t.Errorf("reverse stress series %d, want 0 (unreachable for a long)", n)
+	}
+
+	// No capital configured: nothing is published.
+	reg2 := prometheus.NewRegistry()
+	m2 := NewRiskSeries(reg2)
+	m2.SetPortfolio(nil, nil, map[string]CurrencyRisk{"USD": {Net: 1000, VaR: 50}}, at)
+	for _, name := range []string{"portfolio_capital_quote", "portfolio_risk_capital_ratio", "portfolio_reverse_stress_move_ratio"} {
+		if n := testutil.CollectAndCount(reg2, name); n != 0 {
+			t.Errorf("%s: %d series without capital", name, n)
+		}
+	}
+}

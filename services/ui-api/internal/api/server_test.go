@@ -142,6 +142,18 @@ func TestRisk(t *testing.T) {
 	if mxn.Cost.Legs != 1 || mxn.Cost.FallbackLegs != 1 || math.Abs(mxn.Utilization.Position-0.099999) > 1e-6 {
 		t.Fatalf("cost/util: %+v %+v", mxn.Cost, mxn.Utilization)
 	}
+	// The one real leg (118 bps) is over the 88 bps pessimistic cost, but a
+	// single leg is not a trend: no cost_over_pessimistic finding yet.
+	bg := mxn.Cost.Budget
+	if math.Abs(bg.WeightedBps-118.4) > 1.5 || !bg.OverPessimistic || bg.PrimaryLegBps != 70 || bg.SecondaryLegBps != 88 ||
+		bg.ExcessQuote <= 0 || bg.BudgetUsed < 1.6 {
+		t.Fatalf("budget: %+v", bg)
+	}
+	for _, f := range mxn.Findings {
+		if f.Rule == RuleCostOverPessimistic {
+			t.Fatalf("one leg must not raise %s: %+v", f.Rule, f)
+		}
+	}
 	if r.Blocks != 0 {
 		t.Fatalf("no blocks expected today: %+v", r)
 	}

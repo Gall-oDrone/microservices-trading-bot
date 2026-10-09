@@ -80,7 +80,21 @@
         "avg_slippage_bps": 0,
         "avg_total_bps": 0,
         "assumed_leg_bps": 0,
-        "fallback_legs": 0
+        "fallback_legs": 0,
+        "budget": {
+          "legs": 0,
+          "legs_without_ref": 0,
+          "notional": 0,
+          "cost_quote": 0,
+          "weighted_bps": 0,
+          "primary_leg_bps": 70,
+          "secondary_leg_bps": 88,
+          "budget_quote": 0.0,
+          "excess_quote": 0.0,
+          "budget_used": 0,
+          "prereg": "FORWARD-TEST-PREREGISTRATION-SMA50-2026-09-27.md",
+          "over_pessimistic": false
+        }
       },
       "last_check": null,
       "blocked_days": [],
@@ -116,7 +130,21 @@
         "avg_slippage_bps": 0,
         "avg_total_bps": 0,
         "assumed_leg_bps": 0,
-        "fallback_legs": 0
+        "fallback_legs": 0,
+        "budget": {
+          "legs": 0,
+          "legs_without_ref": 0,
+          "notional": 0,
+          "cost_quote": 0,
+          "weighted_bps": 0,
+          "primary_leg_bps": 40,
+          "secondary_leg_bps": 46,
+          "budget_quote": 0.0,
+          "excess_quote": 0.0,
+          "budget_used": 0,
+          "prereg": "FORWARD-TEST-PREREGISTRATION-SMA50-BTCUSD-2026-09-29.md",
+          "over_pessimistic": false
+        }
       },
       "last_check": null,
       "blocked_days": [],

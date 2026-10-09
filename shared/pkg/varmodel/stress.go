@@ -167,3 +167,16 @@ func EpisodeLoss(exposures map[string]float64, paths map[string][]PathPoint) (fl
 func ShockLoss(net, shock float64) float64 {
 	return math.Max(-net*shock, 0)
 }
+
+// ReverseStressMove is the uniform spot move whose loss on net equals
+// capital (reverse stress testing: which move exhausts the capital?). A
+// long needs a fall of capital/net and cannot lose more than net, so ok is
+// false when capital exceeds net; a short is always reachable by a rise.
+// ok is false for a flat position or no capital.
+func ReverseStressMove(net, capital float64) (move float64, ok bool) {
+	if net == 0 || !(capital > 0) {
+		return 0, false
+	}
+	move = -capital / net
+	return move, move >= -1
+}

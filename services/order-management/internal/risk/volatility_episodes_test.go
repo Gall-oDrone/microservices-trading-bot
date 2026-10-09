@@ -64,6 +64,7 @@ func TestVolEstimatorFetchesEpisodesOnce(t *testing.T) {
 	}
 	est := NewVolEstimator(f.fetch)
 	est.Episodes = []varmodel.Episode{epOld, epNew}
+	est.Known = nil // counts fetches; the seed has its own test
 	est.EpisodePause = 0
 	est.Now = func() time.Time { return date0("2026-10-08") }
 	est.Lookup("btc_mxn")
@@ -98,6 +99,7 @@ func TestVolEstimatorEpisodeFailureBacksOff(t *testing.T) {
 	now := date0("2026-10-08")
 	est := NewVolEstimator(f.fetch)
 	est.Episodes = []varmodel.Episode{epOld, epNew}
+	est.Known = nil
 	est.EpisodePause = 0
 	est.Now = func() time.Time { return now }
 	var errs int
@@ -121,6 +123,51 @@ func TestVolEstimatorEpisodeFailureBacksOff(t *testing.T) {
 	est.RefreshDue(context.Background())
 	if v, _ := est.Lookup("btc_mxn"); len(v.Episodes) != 2 {
 		t.Fatalf("no recovery: %v", keys(v.Episodes))
+	}
+}
+
+// After a restart the known books start with every episode from the
+// committed history and make no episode requests; a book the seed does not
+// know fetches all of them.
+func TestVolEstimatorSeedsKnownEpisodes(t *testing.T) {
+	f := &rangeFetch{listed: map[string]time.Time{"eth_mxn": date0("2019-01-01")}, crash: date0("2022-06-13")}
+	est := NewVolEstimator(f.fetch)
+	est.EpisodePause = 0
+	est.Now = func() time.Time { return date0("2026-10-08") }
+
+	mxn, _ := est.Lookup("btc_mxn")
+	usd, _ := est.Lookup("btc_usd")
+	if len(mxn.Episodes) != len(varmodel.Episodes) || len(usd.Episodes) != 5 {
+		t.Fatalf("seeded before any fetch: mxn %v usd %v", keys(mxn.Episodes), keys(usd.Episodes))
+	}
+	if tr := varmodel.Trough(mxn.Episodes["2018-01-crash"]); math.Abs(tr+0.620) > 0.001 {
+		t.Fatalf("btc_mxn 2018-01 trough %v", tr)
+	}
+	est.RefreshDue(context.Background())
+	if f.calls != 2 { // one vol fetch per book, no episode fetches
+		t.Fatalf("calls %d", f.calls)
+	}
+
+	est.Lookup("eth_mxn")
+	est.RefreshDue(context.Background())
+	if f.calls != 2+1+len(varmodel.Episodes) {
+		t.Fatalf("unknown book: calls %d", f.calls)
+	}
+}
+
+// Episodes the seed does not cover (e.g. one added later) are fetched.
+func TestVolEstimatorSeedPartialFetchesTheRest(t *testing.T) {
+	f := &rangeFetch{listed: map[string]time.Time{"btc_mxn": date0("2017-06-01")}, crash: date0("2022-06-13")}
+	est := NewVolEstimator(f.fetch)
+	est.Episodes = []varmodel.Episode{epOld, epNew}
+	est.Known = map[string]map[string][]varmodel.PathPoint{"btc_mxn": {"old": nil}}
+	est.EpisodePause = 0
+	est.Now = func() time.Time { return date0("2026-10-08") }
+	est.Lookup("btc_mxn")
+	est.RefreshDue(context.Background())
+	v, _ := est.Lookup("btc_mxn")
+	if f.calls != 2 || len(v.Episodes) != 1 || v.Episodes["new"] == nil {
+		t.Fatalf("calls %d episodes %v", f.calls, keys(v.Episodes))
 	}
 }
 
