@@ -21,6 +21,7 @@ type Handler struct {
 	marketDataHandler  *MarketDataHandler
 	strategyHandler    *StrategyHandler
 	aggregationHandler *AggregationHandler
+	researchHandler    *ResearchHandler
 }
 
 // NewHandler creates a new main API handler
@@ -32,6 +33,7 @@ func NewHandler(
 	marketDataHandler *MarketDataHandler,
 	strategyHandler *StrategyHandler,
 	aggregationHandler *AggregationHandler,
+	researchHandler *ResearchHandler,
 ) *Handler {
 	return &Handler{
 		config:             cfg,
@@ -41,6 +43,7 @@ func NewHandler(
 		marketDataHandler:  marketDataHandler,
 		strategyHandler:    strategyHandler,
 		aggregationHandler: aggregationHandler,
+		researchHandler:    researchHandler,
 	}
 }
 
@@ -154,6 +157,11 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/v1/strategies", h.strategyHandler.HandleListStrategies)
 	mux.HandleFunc("/api/v1/strategies/", h.handleStrategyRoutes)
 	mux.HandleFunc("/api/v1/strategies/status", h.strategyHandler.HandleGetStatus)
+
+	// Research cold-path (optional; requires RESEARCH_API_ENABLED)
+	if h.researchHandler != nil {
+		mux.HandleFunc("/api/v1/research/", h.researchHandler.HandleResearchRoutes)
+	}
 
 	// Aggregation endpoints
 	mux.HandleFunc("/api/v1/dashboard", h.aggregationHandler.HandleGetDashboard)

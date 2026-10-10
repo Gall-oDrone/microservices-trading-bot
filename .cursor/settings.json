@@ -1,0 +1,7 @@
+{
+  "plugins": {
+    "etoro": {
+      "enabled": true
+    }
+  }
+}

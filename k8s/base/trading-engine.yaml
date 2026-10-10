@@ -81,6 +81,30 @@ spec:
         # Missing in live mode fires TradingKillSwitchUnreachable.
         - name: TRADING_HALT_FILES
           value: "/etc/trading-halt/risk-state.json"
+        - name: BROKER
+          valueFrom:
+            configMapKeyRef:
+              name: trading-config
+              key: broker
+              optional: true
+        - name: ETORO_ENV
+          valueFrom:
+            configMapKeyRef:
+              name: trading-config
+              key: etoro-env
+              optional: true
+        - name: ETORO_PUBLIC_KEY
+          valueFrom:
+            secretKeyRef:
+              name: trading-secrets
+              key: etoro-public-key
+              optional: true
+        - name: ETORO_PRIVATE_KEY
+          valueFrom:
+            secretKeyRef:
+              name: trading-secrets
+              key: etoro-private-key
+              optional: true
         volumeMounts:
         - name: trading-halt
           mountPath: /etc/trading-halt

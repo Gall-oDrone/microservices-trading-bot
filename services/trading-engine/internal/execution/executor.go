@@ -21,12 +21,14 @@ const (
 
 // TradingSignal represents a trading signal received from strategy service
 type TradingSignal struct {
-	Type      SignalType
-	Book      *bitso.Book
-	Amount    float64
-	Price     float64
-	Reason    string
-	Timestamp int64
+	Type         SignalType
+	Book         *bitso.Book
+	Symbol       string // eToro ticker (e.g. AAPL) when Book is not a Bitso pair
+	InstrumentID int64  // optional resolved eToro instrument ID
+	Amount       float64
+	Price        float64
+	Reason       string
+	Timestamp    int64
 }
 
 // SessionRiskProvider returns current session risk metrics (e.g. from order-management).

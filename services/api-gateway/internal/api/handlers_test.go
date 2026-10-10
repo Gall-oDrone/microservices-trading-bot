@@ -17,7 +17,7 @@ func newRouteTestMux(t *testing.T) *http.ServeMux {
 	cfg := &config.Config{}
 	cfg.Service.Name = "api-gateway-test"
 	h := NewHandler(cfg, logger.New(&logger.Config{Level: "error", Format: "json"}),
-		metrics.NewMetricsCollector("api_gateway_route_test"), nil, nil, nil, nil)
+		metrics.NewMetricsCollector("api_gateway_route_test"), nil, nil, nil, nil, nil)
 	mux := http.NewServeMux()
 	h.RegisterRoutes(mux)
 	return mux

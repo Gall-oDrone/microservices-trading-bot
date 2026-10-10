@@ -17,6 +17,7 @@ import (
 	"bitso-trading-platform/shared/pkg/bitso"
 	"bitso-trading-platform/shared/pkg/config"
 	"bitso-trading-platform/shared/pkg/database"
+	"bitso-trading-platform/shared/pkg/etoro"
 	"bitso-trading-platform/shared/pkg/kafka"
 	"bitso-trading-platform/shared/pkg/models"
 	"bitso-trading-platform/trading-engine/internal/execution"
@@ -82,18 +83,20 @@ type TradingEngine struct {
 	appConfig *config.Config
 
 	// External clients
+	broker              config.Broker
 	bitsoClient         *bitso.Client
+	etoroClient         *etoro.Client
 	dbClient            *database.RedisClient
 	kafkaConsumer       *kafka.Consumer
 	orderPlacedProducer *kafka.Producer // optional: publish to trading.orders.placed for order-management
 
 	// Internal components
 	executor            execution.Executor
-	sessionRiskProvider execution.SessionRiskProvider  // optional: for daily loss / drawdown limits
-	preTradeValidator   execution.PreTradeValidator    // optional: validates orders with order-management before execution
-	metricsRecorder     MetricsRecorder                // optional: for Prometheus metrics
-	riskGate            RiskGate                       // optional: shared-format policy + halt files (risk R5b)
-	riskObserver        RiskObserver                   // optional: trading-risk telemetry (plan §6.4.4)
+	sessionRiskProvider execution.SessionRiskProvider // optional: for daily loss / drawdown limits
+	preTradeValidator   execution.PreTradeValidator   // optional: validates orders with order-management before execution
+	metricsRecorder     MetricsRecorder               // optional: for Prometheus metrics
+	riskGate            RiskGate                      // optional: shared-format policy + halt files (risk R5b)
+	riskObserver        RiskObserver                  // optional: trading-risk telemetry (plan §6.4.4)
 	book                *bitso.Book
 
 	// State management
@@ -164,15 +167,23 @@ func signalTime(ts int64) (time.Time, bool) {
 	}
 }
 
+// EngineClients groups broker-specific API clients for the trading engine.
+type EngineClients struct {
+	Broker      config.Broker
+	BitsoClient *bitso.Client
+	EtoroClient *etoro.Client
+	Executor    execution.Executor
+}
+
 // NewTradingEngine creates a new trading engine instance.
 // sessionRiskProvider is optional; if set, used to enforce MaxDailyLoss/MaxDrawdownPct before placing orders.
-// preTradeValidator is optional; if set, orders are validated with order-management before placement on Bitso.
+// preTradeValidator is optional; if set, orders are validated with order-management before placement.
 // orderPlacedProducer is optional; if set, placed orders are published to Kafka for order-management sync.
 // metricsRecorder is optional; if set, order executions and balance updates are recorded for Prometheus.
 func NewTradingEngine(
 	tradingConfig *models.TradingConfig,
 	appConfig *config.Config,
-	bitsoClient *bitso.Client,
+	clients EngineClients,
 	dbClient *database.RedisClient,
 	kafkaConsumer *kafka.Consumer,
 	sessionRiskProvider execution.SessionRiskProvider,
@@ -184,8 +195,19 @@ func NewTradingEngine(
 	if tradingConfig == nil {
 		return nil, fmt.Errorf("trading config cannot be nil")
 	}
-	if bitsoClient == nil {
-		return nil, fmt.Errorf("bitso client cannot be nil")
+	if appConfig == nil {
+		return nil, fmt.Errorf("app config cannot be nil")
+	}
+	broker := clients.Broker
+	if broker == "" {
+		broker = appConfig.Broker
+	}
+	if broker.IsEtoro() {
+		if clients.EtoroClient == nil {
+			return nil, fmt.Errorf("etoro client cannot be nil when BROKER=etoro")
+		}
+	} else if clients.BitsoClient == nil {
+		return nil, fmt.Errorf("bitso client cannot be nil when BROKER=bitso")
 	}
 	if dbClient == nil {
 		return nil, fmt.Errorf("database client cannot be nil")
@@ -200,27 +222,35 @@ func NewTradingEngine(
 	// Initialize logger
 	logger := log.New(log.Writer(), "[ENGINE] ", log.LstdFlags|log.Lshortfile)
 
-	// Create executor (trading config for session limits; dry-run from app config)
-	executor := execution.NewBasicExecutor(bitsoClient, tradingConfig, appConfig.DryRun)
+	executor := clients.Executor
+	if executor == nil {
+		if broker.IsEtoro() {
+			executor = execution.NewEtoroExecutor(clients.EtoroClient, tradingConfig, appConfig.DryRun)
+		} else {
+			executor = execution.NewBasicExecutor(clients.BitsoClient, tradingConfig, appConfig.DryRun)
+		}
+	}
 
 	engine := &TradingEngine{
-		config:        tradingConfig,
-		appConfig:     appConfig,
-		bitsoClient:   bitsoClient,
-		dbClient:      dbClient,
-		kafkaConsumer: kafkaConsumer,
-		executor:              executor,
-		sessionRiskProvider:   sessionRiskProvider,
-		preTradeValidator:     preTradeValidator,
-		orderPlacedProducer:   orderPlacedProducer,
-		metricsRecorder:       metricsRecorder,
-		book:                  tradingConfig.Book,
-		state:                 StateInitializing,
-		ctx:           ctx,
-		cancel:        cancel,
-		signalChan:    make(chan *models.TradeSignalEvent, 100),
-		errorChan:     make(chan error, 10),
-		stopChan:      make(chan struct{}),
+		config:              tradingConfig,
+		appConfig:           appConfig,
+		broker:              broker,
+		bitsoClient:         clients.BitsoClient,
+		etoroClient:         clients.EtoroClient,
+		dbClient:            dbClient,
+		kafkaConsumer:       kafkaConsumer,
+		executor:            executor,
+		sessionRiskProvider: sessionRiskProvider,
+		preTradeValidator:   preTradeValidator,
+		orderPlacedProducer: orderPlacedProducer,
+		metricsRecorder:     metricsRecorder,
+		book:                tradingConfig.Book,
+		state:               StateInitializing,
+		ctx:                 ctx,
+		cancel:              cancel,
+		signalChan:          make(chan *models.TradeSignalEvent, 100),
+		errorChan:           make(chan error, 10),
+		stopChan:            make(chan struct{}),
 		stats: &EngineStatistics{
 			StartTime: time.Now(),
 		},
@@ -261,9 +291,8 @@ func (te *TradingEngine) Initialize() error {
 		return fmt.Errorf("failed to fetch balances: %w", err)
 	}
 
-	// Verify Bitso API connectivity
-	if err := te.verifyBitsoConnection(); err != nil {
-		return fmt.Errorf("bitso connectivity check failed: %w", err)
+	if err := te.verifyBrokerConnection(); err != nil {
+		return fmt.Errorf("%s connectivity check failed: %w", te.broker, err)
 	}
 
 	// Verify Redis connectivity
@@ -499,36 +528,57 @@ func (te *TradingEngine) processTradeSignal(signal *models.TradeSignalEvent) err
 		return fmt.Errorf("engine not in running state")
 	}
 
-	// Parse book from signal
-	book, err := te.parseBook(signal.Book)
-	if err != nil {
-		te.recordOrderFailedIfMetrics(signal, "validation")
-		return fmt.Errorf("invalid book: %w", err)
-	}
+	var book *bitso.Book
+	var symbol string
+	var instrumentID int64
+	// ref is an independent reference price (touch mid) for the risk gate.
+	var ref float64
 
-	// Get current ticker for validation
-	ticker, err := te.bitsoClient.Ticker(book)
-	if err != nil {
-		te.recordOrderFailedIfMetrics(signal, "ticker_fetch")
-		return fmt.Errorf("failed to get ticker: %w", err)
+	if te.broker.IsEtoro() {
+		symbol = strings.TrimSpace(signal.Book)
+		if symbol == "" {
+			te.recordOrderFailedIfMetrics(signal, "validation")
+			return fmt.Errorf("eToro signal requires book field as symbol (e.g. AAPL)")
+		}
+		instrumentID = execution.InstrumentIDFromMetadata(signal.Metadata)
+		mid, err := te.validateEtoroSignalPrice(signal, symbol, instrumentID)
+		if err != nil {
+			te.recordOrderFailedIfMetrics(signal, "validation")
+			return fmt.Errorf("signal validation failed: %w", err)
+		}
+		ref = mid
+	} else {
+		var err error
+		book, err = te.parseBook(signal.Book)
+		if err != nil {
+			te.recordOrderFailedIfMetrics(signal, "validation")
+			return fmt.Errorf("invalid book: %w", err)
+		}
+		ticker, err := te.bitsoClient.Ticker(book)
+		if err != nil {
+			te.recordOrderFailedIfMetrics(signal, "ticker_fetch")
+			return fmt.Errorf("failed to get ticker: %w", err)
+		}
+		if err := te.validateSignalPrice(signal, ticker); err != nil {
+			te.recordOrderFailedIfMetrics(signal, "validation")
+			return fmt.Errorf("signal validation failed: %w", err)
+		}
+		ref = (ticker.Bid.Float64() + ticker.Ask.Float64()) / 2
 	}
-
-	// Validate signal price is reasonable
-	if err := te.validateSignalPrice(signal, ticker); err != nil {
-		te.recordOrderFailedIfMetrics(signal, "validation")
-		return fmt.Errorf("signal validation failed: %w", err)
+	bookStr := signal.Book
+	if book != nil {
+		bookStr = book.String()
 	}
 
 	// Risk policy (shared format) and operator halt files: a halt or a
 	// breached limit blocks here, before anything else is asked.
 	sigAt, sigKnown := signalTime(signal.Timestamp)
 	if te.riskObserver != nil && sigKnown {
-		te.riskObserver.ObserveSignalAge(book.String(), time.Since(sigAt))
+		te.riskObserver.ObserveSignalAge(bookStr, time.Since(sigAt))
 	}
 	if te.riskGate != nil {
-		ref := (ticker.Bid.Float64() + ticker.Ask.Float64()) / 2
 		side := strings.ToLower(strings.TrimSpace(signal.Signal))
-		if err := te.riskGate(te.ctx, book.String(), side, signal.Amount, signal.Price, ref); err != nil {
+		if err := te.riskGate(te.ctx, bookStr, side, signal.Amount, signal.Price, ref); err != nil {
 			te.recordOrderFailedIfMetrics(signal, "risk_policy")
 			return err
 		}
@@ -611,14 +661,14 @@ func (te *TradingEngine) processTradeSignal(signal *models.TradeSignalEvent) err
 
 	// Create trading signal for executor
 	tradeSignal := execution.TradingSignal{
-		Book:      book,
-		Amount:    signal.Amount,
-		Price:     signal.Price,
-		Reason:    fmt.Sprintf("%v", signal.Metadata["reason"]),
-		Timestamp: signal.Timestamp,
+		Book:         book,
+		Symbol:       symbol,
+		InstrumentID: instrumentID,
+		Amount:       signal.Amount,
+		Price:        signal.Price,
+		Reason:       fmt.Sprintf("%v", signal.Metadata["reason"]),
+		Timestamp:    signal.Timestamp,
 	}
-
-	bookStr := book.String()
 
 	// Execute based on signal type
 	var orderID string
@@ -637,7 +687,7 @@ func (te *TradingEngine) processTradeSignal(signal *models.TradeSignalEvent) err
 		} else {
 			te.incrementOrdersFailed()
 			if te.metricsRecorder != nil {
-				te.metricsRecorder.RecordOrderFailed(bookStr, strategy, "bitso_api")
+				te.metricsRecorder.RecordOrderFailed(bookStr, strategy, te.brokerAPIFailureReason())
 			}
 		}
 
@@ -653,7 +703,7 @@ func (te *TradingEngine) processTradeSignal(signal *models.TradeSignalEvent) err
 		} else {
 			te.incrementOrdersFailed()
 			if te.metricsRecorder != nil {
-				te.metricsRecorder.RecordOrderFailed(bookStr, strategy, "bitso_api")
+				te.metricsRecorder.RecordOrderFailed(bookStr, strategy, te.brokerAPIFailureReason())
 			}
 		}
 
@@ -777,8 +827,19 @@ func (te *TradingEngine) statisticsReporter() {
 
 // Helper methods
 
+func (te *TradingEngine) brokerAPIFailureReason() string {
+	if te.broker.IsEtoro() {
+		return "etoro_api"
+	}
+	return "bitso_api"
+}
+
 func (te *TradingEngine) fetchAndCacheBalances() error {
 	te.logger.Println("Fetching account balances...")
+
+	if te.broker.IsEtoro() {
+		return te.fetchAndCacheEtoroBalances()
+	}
 
 	balances, err := te.bitsoClient.Balances(nil)
 	if err != nil {
@@ -832,7 +893,35 @@ func getTestBalancesFromEnv() map[string]float64 {
 	return out
 }
 
-func (te *TradingEngine) verifyBitsoConnection() error {
+func (te *TradingEngine) fetchAndCacheEtoroBalances() error {
+	portfolio, err := te.etoroClient.GetPortfolio(te.ctx)
+	if err != nil {
+		if te.metricsRecorder != nil {
+			te.metricsRecorder.RecordBalanceFetchError()
+		}
+		if testBalances := getTestBalancesFromEnv(); len(testBalances) > 0 {
+			te.logger.Printf("eToro fetch failed (%v); using test balances from env: %v", err, testBalances)
+			if te.metricsRecorder != nil {
+				te.metricsRecorder.RecordBalances(testBalances)
+			}
+			return nil
+		}
+		return fmt.Errorf("failed to fetch eToro portfolio: %w", err)
+	}
+	currencyToAvailable := map[string]float64{"USD": portfolio.Credit}
+	if te.metricsRecorder != nil {
+		te.metricsRecorder.SetBalanceLastSuccessTimestamp(float64(time.Now().Unix()))
+		te.metricsRecorder.RecordBalances(currencyToAvailable)
+	}
+	te.logger.Printf("eToro available credit: %.2f USD, open positions: %d", portfolio.Credit, len(portfolio.Positions))
+	return nil
+}
+
+func (te *TradingEngine) verifyBrokerConnection() error {
+	if te.broker.IsEtoro() {
+		_, err := te.etoroClient.GetPortfolio(te.ctx)
+		return err
+	}
 	_, err := te.bitsoClient.Ticker(te.book)
 	return err
 }
@@ -867,6 +956,43 @@ func (te *TradingEngine) parseBook(bookStr string) (*bitso.Book, error) {
 	}
 
 	return bitso.NewBook(major, minor), nil
+}
+
+// validateEtoroSignalPrice fetches the live eToro quote, checks the signal
+// price against it (when the signal carries one) and returns the mid, the
+// independent reference price for the risk gate. No quote blocks the order.
+func (te *TradingEngine) validateEtoroSignalPrice(signal *models.TradeSignalEvent, symbol string, instrumentID int64) (float64, error) {
+	ctx, cancel := context.WithTimeout(te.ctx, 10*time.Second)
+	defer cancel()
+
+	if instrumentID <= 0 {
+		result, err := te.etoroClient.SearchInstrument(ctx, strings.ToUpper(symbol))
+		if err != nil {
+			return 0, fmt.Errorf("resolve instrument for price check: %w", err)
+		}
+		instrumentID = result.InstrumentID
+	}
+	rates, err := te.etoroClient.GetRates(ctx, instrumentID)
+	if err != nil {
+		return 0, fmt.Errorf("fetch rates: %w", err)
+	}
+	if len(rates) == 0 {
+		return 0, fmt.Errorf("no rates for instrument %d", instrumentID)
+	}
+	bid, ask := rates[0].Bid, rates[0].Ask
+	if bid <= 0 || ask <= 0 {
+		return 0, fmt.Errorf("invalid quote for instrument %d (bid %.4f ask %.4f)", instrumentID, bid, ask)
+	}
+	if signal.Price > 0 {
+		tolerance := 0.05
+		if signal.Signal == "BUY" && signal.Price > ask*(1+tolerance) {
+			return 0, fmt.Errorf("buy price %.2f too high (ask: %.2f)", signal.Price, ask)
+		}
+		if signal.Signal == "SELL" && signal.Price < bid*(1-tolerance) {
+			return 0, fmt.Errorf("sell price %.2f too low (bid: %.2f)", signal.Price, bid)
+		}
+	}
+	return (bid + ask) / 2, nil
 }
 
 func (te *TradingEngine) validateSignalPrice(signal *models.TradeSignalEvent, ticker *bitso.Ticker) error {
@@ -912,20 +1038,28 @@ func (te *TradingEngine) performHealthCheck() error {
 			case <-time.After(delay):
 			}
 		}
-		_, lastErr = te.bitsoClient.Ticker(te.book)
+		lastErr = te.verifyBrokerConnection()
 		if lastErr == nil {
 			return nil
 		}
-		if !bitso.IsRetryable(lastErr) || attempt == maxAttempts-1 {
+		if !te.isRetryableBrokerErr(lastErr) || attempt == maxAttempts-1 {
 			break
 		}
-		te.logger.Printf("Bitso health check attempt %d/%d failed (retryable): %v", attempt+1, maxAttempts, lastErr)
+		te.logger.Printf("%s health check attempt %d/%d failed (retryable): %v", te.broker, attempt+1, maxAttempts, lastErr)
 	}
 
 	if te.metricsRecorder != nil {
 		te.metricsRecorder.RecordHealthCheckFailure()
 	}
-	return fmt.Errorf("bitso health check failed: %w", lastErr)
+	return fmt.Errorf("%s health check failed: %w", te.broker, lastErr)
+}
+
+// isRetryableBrokerErr reports whether a broker API error is transient.
+func (te *TradingEngine) isRetryableBrokerErr(err error) bool {
+	if te.broker.IsEtoro() {
+		return etoro.IsRetryable(err)
+	}
+	return bitso.IsRetryable(err)
 }
 
 func (te *TradingEngine) recordError(err error) {

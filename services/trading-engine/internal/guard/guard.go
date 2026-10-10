@@ -8,7 +8,9 @@
 //     pre-trade validation and the session P&L both come from it, and without
 //     them every order would pass unchecked;
 //   - live mode is limited to Bitso stage unless production is explicitly
-//     allowed (decided 2026-10-08: production later, stage for now).
+//     allowed (decided 2026-10-08: production later, stage for now);
+//   - with BROKER=etoro, live mode is limited to the eToro demo environment
+//     (ETORO_ENV=demo) under the same production switch.
 //
 // It is pure (no I/O beyond the getenv it is given) so main and tests share it.
 package guard
@@ -37,6 +39,9 @@ const (
 
 // StageHost is the only Bitso host live mode may trade on by default.
 const StageHost = "stage.bitso.com"
+
+// EtoroDemoEnv is the only eToro environment live mode may trade on by default.
+const EtoroDemoEnv = "demo"
 
 // Limits are the session limits the executor enforces before every order.
 type Limits struct {
@@ -80,6 +85,10 @@ type Startup struct {
 	OrderManagementURL string
 	BitsoBaseURL       string
 	AllowProduction    bool
+	// Broker is "bitso" (or empty) or "etoro"; EtoroEnv is ETORO_ENV
+	// (empty means demo, the eToro client's default).
+	Broker   string
+	EtoroEnv string
 }
 
 // FromEnv fills the parts of Startup that come straight from the environment.
@@ -89,18 +98,30 @@ func FromEnv(getenv func(string) string, dryRun bool, bitsoBaseURL string) Start
 		OrderManagementURL: strings.TrimSpace(getenv(EnvOrderManagement)),
 		BitsoBaseURL:       bitsoBaseURL,
 		AllowProduction:    strings.TrimSpace(getenv(EnvAllowProduction)) == "1",
+		Broker:             strings.ToLower(strings.TrimSpace(getenv("BROKER"))),
+		EtoroEnv:           strings.ToLower(strings.TrimSpace(getenv("ETORO_ENV"))),
 	}
 }
 
 // CheckStartup refuses a live configuration that would place orders without
-// order-management's checks or outside Bitso stage. Dry run never places an
-// order, so it is always allowed.
+// order-management's checks or outside Bitso stage / eToro demo. Dry run
+// never places an order, so it is always allowed.
 func CheckStartup(s Startup) error {
 	if s.DryRun {
 		return nil
 	}
 	if s.OrderManagementURL == "" {
 		return fmt.Errorf("live mode needs %s: pre-trade validation and the session P&L (daily loss, drawdown) come from order-management; set it, or DRY_RUN=1", EnvOrderManagement)
+	}
+	if s.Broker == "etoro" {
+		env := s.EtoroEnv
+		if env == "" {
+			env = EtoroDemoEnv
+		}
+		if env != EtoroDemoEnv && !s.AllowProduction {
+			return fmt.Errorf("live mode is limited to the eToro demo environment, got ETORO_ENV=%s; set %s=1 only when real-account trading is approved", env, EnvAllowProduction)
+		}
+		return nil
 	}
 	u, err := url.Parse(s.BitsoBaseURL)
 	if err != nil || u.Host == "" {

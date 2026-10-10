@@ -32,8 +32,16 @@ type Config struct {
 	ServiceName string
 	ServicePort string
 
-	// Optional: dry-run mode (no Bitso API calls; log orders only). Env: DRY_RUN=true
+	// Optional: dry-run mode (no live broker API calls; log orders only). Env: DRY_RUN=true
 	DryRun bool
+
+	// Broker selects the exchange API (bitso|etoro). Env: BROKER
+	Broker Broker
+
+	// eToro API keys — ETORO_PUBLIC_KEY (x-api-key), ETORO_PRIVATE_KEY (x-user-key)
+	EtoroPublicKey  string
+	EtoroPrivateKey string
+	EtoroEnv        string // demo|real — ETORO_ENV
 }
 
 // LoadConfig loads the configuration from environment variables
@@ -81,9 +89,18 @@ func LoadConfig() (*Config, error) {
 		ServiceName: os.Getenv("SERVICE_NAME"),
 		ServicePort: os.Getenv("SERVICE_PORT"),
 
-		// Dry-run: if set, trading-engine logs orders but does not call Bitso PlaceOrder
+		// Dry-run: if set, trading-engine logs orders but does not call broker APIs
 		DryRun: os.Getenv("DRY_RUN") == "true" || os.Getenv("DRY_RUN") == "1",
+
+		EtoroPublicKey:  os.Getenv("ETORO_PUBLIC_KEY"),
+		EtoroPrivateKey: os.Getenv("ETORO_PRIVATE_KEY"),
+		EtoroEnv:        os.Getenv("ETORO_ENV"),
 	}
+	broker, err := ParseBroker(os.Getenv("BROKER"))
+	if err != nil {
+		return nil, err
+	}
+	config.Broker = broker
 
 	// Set defaults
 	if config.RedisHost == "" {
@@ -123,6 +140,17 @@ func (c *Config) Validate() error {
 func (c *Config) ValidateStage() error {
 	if c.StageBitsoAPIKey == "" || c.StageBitsoAPISecret == "" {
 		return fmt.Errorf("missing required Stage Bitso API configuration")
+	}
+	return nil
+}
+
+// ValidateEtoro validates eToro API-key credentials when BROKER=etoro.
+func (c *Config) ValidateEtoro() error {
+	if c.EtoroPublicKey == "" || c.EtoroPrivateKey == "" {
+		return fmt.Errorf("missing required eToro API configuration (ETORO_PUBLIC_KEY, ETORO_PRIVATE_KEY)")
+	}
+	if c.EtoroEnv != "" && c.EtoroEnv != "demo" && c.EtoroEnv != "real" {
+		return fmt.Errorf("invalid ETORO_ENV %q: use demo or real", c.EtoroEnv)
 	}
 	return nil
 }

@@ -14,7 +14,11 @@ Introduce agentic AI capabilities safely into the trading platform with:
 
 The primary goal is operational intelligence (incident triage and runbook assistance), not direct autonomous trading decisions in phase 1.
 
-**See also:** `docs/agentic-ai/AGENTIC-AI-PRODUCTION-STRATEGY-2026-05-13.md` — production strategy for reconciliation artifacts, PnL truth versus agent narration, and cold-path research agents.
+**See also:**
+
+- `docs/agentic-ai/AGENTIC-AI-PRODUCTION-STRATEGY-2026-05-13.md` — production strategy for reconciliation artifacts, PnL truth versus agent narration, and cold-path research agents.
+- `docs/agentic-ai/AGENTIC-AI-ETORO-TRADINGAGENTS-INTEGRATION-PLAN-2026-05-22.md` — eToro + TradingAgents + S3 news cold path (`trading-research` namespace).
+- `docs/agentic-ai/AGENTIC-AI-FINANCIAL-NEWS-S3-ETL-2026-05-22.md` — S3 bucket catalog and `news-publisher` consumer contract.
 
 ## 2) Guiding Principles
 
@@ -216,6 +220,7 @@ Two viable options:
 
 - [x] Define interfaces in `shared/pkg/agent`
 - [x] Implement provider adapters skeleton (`anthropic`, `openai`)
+- [x] Wire Anthropic Go SDK in `shared/pkg/agent/providers/anthropic` (2026-05-25)
 - [x] Add policy engine and budget model
 - [x] Add feature flags and kill-switch
 - [ ] Add audit schema

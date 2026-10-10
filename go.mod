@@ -1,6 +1,6 @@
 module kafka-test
 
-go 1.21
+go 1.23.0
 
 replace bitso-trading-platform/shared => ./shared
 
@@ -21,7 +21,7 @@ require (
 	github.com/segmentio/kafka-go v0.4.47 // indirect
 	github.com/shopspring/decimal v1.3.1 // indirect
 	github.com/stretchr/objx v0.5.2 // indirect
-	golang.org/x/net v0.21.0 // indirect
-	golang.org/x/sys v0.17.0 // indirect
+	golang.org/x/net v0.41.0 // indirect
+	golang.org/x/sys v0.35.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )

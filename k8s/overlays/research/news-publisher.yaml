@@ -1,0 +1,86 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: news-publisher
+  labels:
+    app: trading-research
+    service: news-publisher
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: trading-research
+      service: news-publisher
+  template:
+    metadata:
+      labels:
+        app: trading-research
+        service: news-publisher
+    spec:
+      serviceAccountName: news-publisher
+      containers:
+      - name: news-publisher
+        image: news-publisher:latest
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 8090
+          name: http
+        env:
+        - name: NEWS_S3_BUCKET
+          valueFrom:
+            configMapKeyRef:
+              name: research-config
+              key: news-s3-bucket
+        - name: NEWS_S3_PREFIX
+          valueFrom:
+            configMapKeyRef:
+              name: research-config
+              key: news-s3-prefix
+        - name: KAFKA_BROKERS
+          valueFrom:
+            configMapKeyRef:
+              name: research-config
+              key: kafka-brokers
+        - name: KAFKA_TOPIC_NEWS_AGENTIC
+          valueFrom:
+            configMapKeyRef:
+              name: research-config
+              key: kafka-topic-news-agentic
+        - name: NEWS_PUBLISH_INTERVAL
+          value: "10m"
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "50m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8090
+          initialDelaySeconds: 30
+          periodSeconds: 30
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8090
+          initialDelaySeconds: 15
+          periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: news-publisher
+  labels:
+    app: trading-research
+    service: news-publisher
+spec:
+  type: ClusterIP
+  ports:
+  - port: 8090
+    targetPort: 8090
+    name: http
+  selector:
+    app: trading-research
+    service: news-publisher

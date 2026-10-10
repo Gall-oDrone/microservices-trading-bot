@@ -20,6 +20,7 @@ import (
 	"bitso-trading-platform/strategy-executor/internal/indicators"
 	"bitso-trading-platform/strategy-executor/internal/logger"
 	"bitso-trading-platform/strategy-executor/internal/metrics"
+	"bitso-trading-platform/strategy-executor/internal/news"
 	"bitso-trading-platform/strategy-executor/internal/ordermgmt"
 	"bitso-trading-platform/strategy-executor/internal/persistence"
 	"bitso-trading-platform/strategy-executor/internal/server"
@@ -236,6 +237,37 @@ func main() {
 		appLogger.Info("Signal publishing disabled (no Kafka brokers configured)")
 	}
 
+	var newsStore *news.Store
+	var newsFilter *news.Filter
+	var newsConsumer *kafka.Consumer
+	if cfg.News.Enabled && len(cfg.Kafka.Brokers) > 0 && cfg.Kafka.Brokers[0] != "localhost:9092" {
+		newsStore = news.NewStore(cfg.News.SentimentTTL)
+		newsFilter = news.NewFilter(newsStore, news.FilterConfig{
+			MinSentimentForBuy: cfg.News.MinSentimentForBuy,
+			BlockBearishBuy:    cfg.News.BlockBearishBuy,
+			HighImpactCooldown: cfg.News.HighImpactCooldown,
+		})
+		c, err := kafka.NewConsumer(&kafka.ConsumerConfig{
+			Brokers:         cfg.Kafka.Brokers,
+			Topic:           cfg.News.Topic,
+			GroupID:         cfg.Kafka.ConsumerGroup + "-news",
+			AutoOffsetReset: cfg.News.AutoOffsetReset,
+			CommitInterval:  cfg.Kafka.CommitInterval,
+			MaxWait:         cfg.Kafka.MaxWait,
+		})
+		if err != nil {
+			appLogger.Warnf("News Kafka consumer not started: %v", err)
+		} else {
+			newsConsumer = c
+			go news.RunConsumer(ctx, newsConsumer, newsStore, func(format string, args ...interface{}) {
+				appLogger.Warnf(format, args...)
+			})
+			appLogger.Infof("News sentiment consumer enabled (topic=%s)", cfg.News.Topic)
+		}
+	} else if cfg.News.Enabled {
+		appLogger.Warn("NEWS_ENABLED=true but Kafka brokers unavailable; sentiment filter disabled")
+	}
+
 	var orderFillsConsumer *kafka.Consumer
 	if cfg.Kafka.OrderFillsConsumerEnabled && cfg.Kafka.TopicOrderFills != "" {
 		c, err := kafka.NewConsumer(&kafka.ConsumerConfig{
@@ -265,6 +297,12 @@ func main() {
 			strategyName := strings.TrimSpace(signal.Strategy)
 			if strategyName == "" {
 				return fmt.Errorf("refusing to publish signal without strategy for book %s", signal.Book)
+			}
+			if newsFilter != nil {
+				if ok, reason := newsFilter.AllowsSignal(book, signal.Side); !ok {
+					appLogger.Infof("Signal blocked by news filter for %s %s: %s", book, signal.Side, reason)
+					continue
+				}
 			}
 			eventID := uuid.New().String()
 			if signal.Metadata != nil {
@@ -375,9 +413,9 @@ func main() {
 	go func() {
 		ticker := time.NewTicker(cfg.Indicators.UpdateInterval)
 		defer ticker.Stop()
-		
+
 		appLogger.Info("Starting signal processing loop...")
-		
+
 		for {
 			select {
 			case <-ticker.C:
@@ -387,17 +425,17 @@ func main() {
 					if err != nil || len(trades) == 0 {
 						continue
 					}
-					
+
 					// Get the latest trade
 					latestTrade := &trades[0]
-					
+
 					// Process through all running strategies
 					signals, err := strategyRegistry.ProcessTick(latestTrade, book)
 					if err != nil {
 						appLogger.Warnf("Error processing tick for %s: %v", book, err)
 						continue
 					}
-					
+
 					if err := publishTradeSignals(ctx, book, signals); err != nil {
 						appLogger.Errorf("Failed to publish signals: %v", err)
 					} else if len(signals) > 0 && !signalPublishingEnabled {
@@ -459,6 +497,11 @@ func main() {
 	if orderFillsConsumer != nil {
 		if err := orderFillsConsumer.Close(); err != nil {
 			appLogger.Errorf("Error closing order fills Kafka consumer: %v", err)
+		}
+	}
+	if newsConsumer != nil {
+		if err := newsConsumer.Close(); err != nil {
+			appLogger.Errorf("Error closing news Kafka consumer: %v", err)
 		}
 	}
 

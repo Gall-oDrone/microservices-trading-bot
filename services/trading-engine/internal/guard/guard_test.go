@@ -46,6 +46,12 @@ func TestCheckStartup(t *testing.T) {
 		{"live on production, allowed", Startup{OrderManagementURL: "http://om", BitsoBaseURL: prod, AllowProduction: true}, ""},
 		{"live, unparsable URL", Startup{OrderManagementURL: "http://om", BitsoBaseURL: "stage.bitso.com"}, "cannot parse"},
 		{"live, stage-looking host", Startup{OrderManagementURL: "http://om", BitsoBaseURL: "https://stage.bitso.com.evil.example"}, "limited to Bitso stage"},
+		{"etoro live on demo", Startup{OrderManagementURL: "http://om", Broker: "etoro", EtoroEnv: "demo"}, ""},
+		{"etoro live, env unset means demo", Startup{OrderManagementURL: "http://om", Broker: "etoro"}, ""},
+		{"etoro live on real", Startup{OrderManagementURL: "http://om", Broker: "etoro", EtoroEnv: "real"}, "limited to the eToro demo"},
+		{"etoro live on real, allowed", Startup{OrderManagementURL: "http://om", Broker: "etoro", EtoroEnv: "real", AllowProduction: true}, ""},
+		{"etoro live without OM", Startup{Broker: "etoro", EtoroEnv: "demo"}, EnvOrderManagement},
+		{"etoro dry run on real", Startup{DryRun: true, Broker: "etoro", EtoroEnv: "real"}, ""},
 	}
 	for _, tc := range cases {
 		err := CheckStartup(tc.s)
@@ -62,5 +68,9 @@ func TestFromEnv(t *testing.T) {
 	s := FromEnv(env(map[string]string{EnvOrderManagement: " http://om ", EnvAllowProduction: "true"}), false, "x")
 	if s.OrderManagementURL != "http://om" || s.AllowProduction || s.BitsoBaseURL != "x" {
 		t.Fatalf("FromEnv = %+v (only \"1\" allows production)", s)
+	}
+	s = FromEnv(env(map[string]string{"BROKER": " eToro ", "ETORO_ENV": "REAL"}), false, "")
+	if s.Broker != "etoro" || s.EtoroEnv != "real" {
+		t.Fatalf("FromEnv = %+v, want broker etoro and env real (normalized)", s)
 	}
 }

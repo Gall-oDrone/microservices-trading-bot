@@ -1,6 +1,6 @@
 module bitso-trading-platform/order-management
 
-go 1.21
+go 1.23.0
 
 require (
 	bitso-trading-platform/shared v0.0.0
@@ -25,8 +25,8 @@ require (
 	github.com/prometheus/procfs v0.12.0 // indirect
 	github.com/segmentio/kafka-go v0.4.47 // indirect
 	go.uber.org/atomic v1.11.0 // indirect
-	golang.org/x/net v0.21.0 // indirect
-	golang.org/x/sys v0.17.0 // indirect
+	golang.org/x/net v0.41.0 // indirect
+	golang.org/x/sys v0.35.0 // indirect
 	google.golang.org/protobuf v1.32.0 // indirect
 )
 

@@ -64,11 +64,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # ui-api's go.mod needs 1.22; shared and strategy-executor are 1.21
-      # modules and build unchanged on it. (build.yml still pins 1.21.)
+      # shared/go.mod is go 1.23.0 since the eToro merge (Anthropic SDK), so
+      # every module that replaces shared needs 1.23. (build.yml still pins 1.21.)
       - uses: actions/setup-go@v5
         with:
-          go-version: '1.22.x'
+          go-version: '1.23.x'
           cache-dependency-path: |
             shared/go.sum
             services/strategy-executor/go.sum
@@ -340,7 +340,7 @@ jobs:
 
       - uses: actions/setup-go@v5
         with:
-          go-version: '1.22.x'
+          go-version: '1.23.x'
           cache-dependency-path: |
             shared/go.sum
             services/strategy-executor/go.sum

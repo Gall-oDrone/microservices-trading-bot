@@ -9,14 +9,18 @@ import (
 	"syscall"
 	"time"
 
+	"strings"
+
 	"bitso-trading-platform/api-gateway/internal/api"
 	"bitso-trading-platform/api-gateway/internal/client"
 	"bitso-trading-platform/api-gateway/internal/config"
 	"bitso-trading-platform/api-gateway/internal/logger"
 	"bitso-trading-platform/api-gateway/internal/metrics"
+	researchpkg "bitso-trading-platform/api-gateway/internal/research"
 	"bitso-trading-platform/api-gateway/internal/router"
 	"bitso-trading-platform/api-gateway/internal/server"
 	"bitso-trading-platform/shared/pkg/health"
+	"bitso-trading-platform/shared/pkg/kafka"
 )
 
 const (
@@ -40,6 +44,8 @@ type Application struct {
 	marketDataHandler  *api.MarketDataHandler
 	strategyHandler    *api.StrategyHandler
 	aggregationHandler *api.AggregationHandler
+	researchHandler    *api.ResearchHandler
+	signalProducer     *kafka.Producer
 	mainHandler        *api.Handler
 
 	// Router and server
@@ -128,6 +134,42 @@ func NewApplication() (*Application, error) {
 		appLogger,
 		metricsCollector,
 	)
+	var researchHandler *api.ResearchHandler
+	var signalProducer *kafka.Producer
+	if cfg.Research.Enabled {
+		var memoStore *researchpkg.MemoStore
+		if cfg.Research.S3Bucket != "" {
+			ms, err := researchpkg.NewMemoStore(ctx, cfg.Research.S3Bucket, cfg.Research.S3Prefix)
+			if err != nil {
+				cancel()
+				return nil, fmt.Errorf("research memo store: %w", err)
+			}
+			memoStore = ms
+		}
+		researchAgent := client.NewResearchAgentClient(cfg.Backend.ResearchAgentURL, cfg.Client.Timeout)
+		if cfg.Research.KafkaBrokers != "" && cfg.Research.KafkaTopicSignals != "" {
+			brokers := strings.Split(cfg.Research.KafkaBrokers, ",")
+			for i := range brokers {
+				brokers[i] = strings.TrimSpace(brokers[i])
+			}
+			prod, err := kafka.NewProducer(&kafka.ProducerConfig{
+				Brokers: brokers,
+				Topic:   cfg.Research.KafkaTopicSignals,
+			})
+			if err != nil {
+				cancel()
+				return nil, fmt.Errorf("research signal producer: %w", err)
+			}
+			signalProducer = prod
+		}
+		researchHandler = api.NewResearchHandler(cfg, appLogger, metricsCollector, memoStore, researchAgent, signalProducer)
+		appLogger.Info("Research API enabled", map[string]interface{}{
+			"s3_bucket":    cfg.Research.S3Bucket,
+			"kafka_topic":  cfg.Research.KafkaTopicSignals,
+			"research_url": cfg.Backend.ResearchAgentURL,
+		})
+	}
+
 	appLogger.Info("API handlers initialized", nil)
 
 	// Initialize main handler
@@ -139,6 +181,7 @@ func NewApplication() (*Application, error) {
 		marketDataHandler,
 		strategyHandler,
 		aggregationHandler,
+		researchHandler,
 	)
 	appLogger.Info("Main handler initialized", nil)
 
@@ -170,6 +213,8 @@ func NewApplication() (*Application, error) {
 		marketDataHandler:  marketDataHandler,
 		strategyHandler:    strategyHandler,
 		aggregationHandler: aggregationHandler,
+		researchHandler:    researchHandler,
+		signalProducer:     signalProducer,
 		mainHandler:        mainHandler,
 		router:             appRouter,
 		httpServer:         httpServer,
@@ -246,6 +291,16 @@ func (app *Application) Stop() error {
 				"error": err.Error(),
 			})
 			lastErr = err
+		}
+
+		if app.signalProducer != nil {
+			app.logger.Info("Closing research signal producer...", nil)
+			if err := app.signalProducer.Close(); err != nil {
+				app.logger.Error("Error closing signal producer", map[string]interface{}{
+					"error": err.Error(),
+				})
+				lastErr = err
+			}
 		}
 
 		// Close client factory
