@@ -64,6 +64,7 @@ For eToro, set the signal `book` field to the ticker symbol (e.g. `AAPL`, `BTC`)
 - **Consistency:** the pnl portfolio shows new and closed positions 1–3 s late. A position's `unrealizedPnL` is an object.
 - **Order status:** a filled order reads `{id 3, "Filled"}`. Re-closing a closed position gives error 741.
 - **Rate limits:** 60 reads/min and 20 trading writes/min per user key. The client paces at 55/18 and retries reads on 429/5xx (honouring `Retry-After`). It never retries writes.
+- **Daily candles come in two versions:** two reads of the live `OneDay` route about an hour apart returned 13–16 recent closes up to 1.3 bps apart (2026-10-10; opens/highs/lows identical). The executor reads twice and acts only when both agree (see the runbook).
 
 ## eToro MCP server (operators and IDE agents only)
 
@@ -82,6 +83,9 @@ For eToro, set the signal `book` field to the ticker symbol (e.g. `AAPL`, `BTC`)
 - `shared/pkg/mktcal/`: NYSE calendar (holidays, early closes, DST sessions, trading-day arithmetic).
 - `shared/pkg/etorodaily/`: eToro daily candles turned into one bar per NYSE trading day. Written in the research CSV format, with a freshness check.
 - `services/strategy-executor/cmd/etoro-spike/`: demo-only evidence recorder (`docs/etoro/evidence-*`).
+- `services/strategy-executor/cmd/etoro-daily-executor/`: the SMA50 index-CFD executor on the demo account (P3). Runbook: [docs/etoro/ETORO-DAILY-EXECUTOR.md](etoro/ETORO-DAILY-EXECUTOR.md).
+- `services/strategy-executor/cmd/etoro-reconcile/`: read-only reconciliation of its ledger against the demo account.
+- `shared/pkg/etoroledger/`: the executor's ledger schema and intent journal.
 - `services/trading-engine/internal/execution/etoro_executor.go`: Kafka-signal execution (`BROKER=etoro`).
 - `shared/pkg/config/broker.go`: `BROKER` parsing.
 

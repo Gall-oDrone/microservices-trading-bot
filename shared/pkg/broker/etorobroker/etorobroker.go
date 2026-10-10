@@ -40,6 +40,7 @@ type Client interface {
 	GetCloseOrder(ctx context.Context, orderID int64) (etoro.CloseOrderInfo, error)
 	GetPortfolio(ctx context.Context) (*etoro.Portfolio, error)
 	Costs(ctx context.Context, req etoro.OrderRequest) (etoro.CostPreview, error)
+	TradingHistory(ctx context.Context, minDate time.Time, page, pageSize int) ([]etoro.ClosedTrade, error)
 }
 
 // Adapter implements broker.Broker on eToro.
@@ -58,7 +59,10 @@ func New(c Client) *Adapter {
 	return &Adapter{c: c, Wait: 30 * time.Second, Poll: 2 * time.Second, sleep: sleepCtx, now: time.Now}
 }
 
-var _ broker.Broker = (*Adapter)(nil)
+var (
+	_ broker.Broker        = (*Adapter)(nil)
+	_ broker.HistoryReader = (*Adapter)(nil)
+)
 
 // Venue implements broker.Broker.
 func (a *Adapter) Venue() string { return Venue }
@@ -379,9 +383,43 @@ func (a *Adapter) Positions(ctx context.Context) ([]broker.Position, error) {
 			Leverage:      pos.Leverage,
 			OpenedAt:      pos.OpenedAt(),
 			UnrealizedPnL: pos.UnrealizedPnL.PnL,
+			Fees:          pos.TotalFees,
+			Exposure:      pos.UnrealizedPnL.ExposureInAccountCurrency,
 		})
 	}
 	return out, nil
+}
+
+// historyPages bounds ClosedPositions (200 rows per page).
+const historyPages = 50
+
+// ClosedPositions implements broker.HistoryReader from the trading history
+// (closed direct positions since since, which must be under one year ago).
+func (a *Adapter) ClosedPositions(ctx context.Context, since time.Time) ([]broker.ClosedPosition, error) {
+	var out []broker.ClosedPosition
+	for page := 1; page <= historyPages; page++ {
+		rows, err := a.c.TradingHistory(ctx, since, page, 200)
+		if err != nil {
+			return nil, err
+		}
+		for _, r := range rows {
+			side := broker.Long
+			if !r.IsBuy {
+				side = broker.Short
+			}
+			out = append(out, broker.ClosedPosition{
+				ID:         strconv.FormatInt(r.PositionID, 10),
+				Instrument: broker.Instrument{Venue: Venue, ID: r.InstrumentID},
+				Side:       side, Units: r.Units, OpenRate: r.OpenRate, CloseRate: r.CloseRate,
+				OpenedAt: parseTime(r.OpenTimestamp), ClosedAt: parseTime(r.CloseTimestamp),
+				Amount: r.Investment, NetProfit: r.NetProfit, Fees: r.Fees,
+			})
+		}
+		if len(rows) < 200 {
+			return out, nil
+		}
+	}
+	return out, fmt.Errorf("etorobroker: trading history longer than %d pages", historyPages)
 }
 
 // Account implements broker.Broker.

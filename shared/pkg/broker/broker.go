@@ -129,6 +129,34 @@ type Position struct {
 	Leverage      int        `json:"leverage"`
 	OpenedAt      time.Time  `json:"opened_at"`
 	UnrealizedPnL float64    `json:"unrealized_pnl"`
+	// Fees is what the venue has charged the position so far (eToro
+	// totalFees: overnight financing), account currency. Exposure is the
+	// current notional in account currency (0 when the venue does not say).
+	Fees     float64 `json:"fees,omitempty"`
+	Exposure float64 `json:"exposure,omitempty"`
+}
+
+// ClosedPosition is one row of the venue's trading history.
+type ClosedPosition struct {
+	ID         string     `json:"id"`
+	Instrument Instrument `json:"instrument"`
+	Side       Side       `json:"side"`
+	Units      float64    `json:"units"`
+	OpenRate   float64    `json:"open_rate"`
+	CloseRate  float64    `json:"close_rate"`
+	OpenedAt   time.Time  `json:"opened_at"`
+	ClosedAt   time.Time  `json:"closed_at"`
+	Amount     float64    `json:"amount"`
+	// NetProfit is realized P&L before Fees; Fees is everything the venue
+	// charged over the position's life (financing included).
+	NetProfit float64 `json:"net_profit"`
+	Fees      float64 `json:"fees"`
+}
+
+// HistoryReader is implemented by adapters that can list closed positions
+// (reconciliation). since must be less than one year ago on eToro.
+type HistoryReader interface {
+	ClosedPositions(ctx context.Context, since time.Time) ([]ClosedPosition, error)
 }
 
 // Account is the cash and equity of the trading account.

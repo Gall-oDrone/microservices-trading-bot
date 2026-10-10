@@ -136,6 +136,16 @@ go run ./cmd/index-research -fetch -data $E/data -etoro $E/etoro -out $E \
 Record any differences in the report. The result stands only if they do not change the rule's
 position on any forward day.
 
+Expect small differences. On 2026-10-10, eToro's live daily route answered with two versions of
+recent history about an hour apart:
+- 16 NSDQ100 closes and 13 SPX500 closes between 2026-08-26 and 2026-09-25 differed;
+- the largest difference was 1.3 bps, opens, highs and lows were identical, and no SMA50 position changed;
+- the SMA50 in §1 (29,776.03) is from one version; the other gives 29,776.38.
+
+The executor therefore reads the bars twice per run. It does not act if the two reads disagree on the
+signal or differ by more than 5 bps, and it records the size of the difference in its ledger
+(`candles.revised_closes`, `candles.max_revision_bps`).
+
 **Bar-source note:** an eToro daily bar closes at 00:00 UTC, about four hours after the NYSE
 close. The paper fill is at the next bar's open, which the CFD quotes continuously. A demo executor
 that trades inside the cash session fills at a different time and price. That gap is measured and

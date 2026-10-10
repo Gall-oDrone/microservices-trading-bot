@@ -47,6 +47,21 @@ type BookLimits struct {
 	// MaxOrdersPerMinute caps accepted orders in the trailing 60 s (runaway
 	// algorithm guard). Needs State.OrdersLastMinute (order-management).
 	MaxOrdersPerMinute int `json:"max_orders_per_minute,omitempty"`
+
+	// Position-based brokers (eToro CFDs, added 2026-10-10 for the index-CFD
+	// port). On those books Order.QtyBTC carries the instrument's units and
+	// MaxOrderNotional is in the account currency.
+	//
+	// MaxLeverage caps Order.Leverage on orders that add exposure (porting
+	// plan D4: x1).
+	MaxLeverage int `json:"max_leverage,omitempty"`
+	// MaxExposurePctEquity caps the account's total open exposure after the
+	// order (State.Exposure + notional) as a fraction of State.Equity.
+	// Needs State.Equity; a caller that leaves it 0 never trips it.
+	MaxExposurePctEquity float64 `json:"max_exposure_pct_equity,omitempty"`
+	// RequireMarketOpen blocks every order, closes included, while
+	// State.MarketClosed is set (the executor acts in the cash session only).
+	RequireMarketOpen bool `json:"require_market_open,omitempty"`
 }
 
 // PortfolioLimits apply across every book (firm-wide). Zero disables.
@@ -98,6 +113,25 @@ func DefaultPolicy() Policy {
 	}
 }
 
+// EtoroDemoPolicy is the built-in policy of the eToro index-CFD executor
+// (cmd/etoro-daily-executor) on the demo account: x1 only, one leg per
+// instrument per trading day, an order notional cap a little above the
+// 1,100 USD forward-test size, total exposure at most 5 % of equity, the
+// cash session only, and the same 10 % fat-finger guard as the default.
+func EtoroDemoPolicy() Policy {
+	cfd := BookLimits{
+		MaxOrderNotional: 1500, MaxOrdersPerDay: 1, MaxPriceDeviationBps: 1000,
+		DrawdownWarn: 0.20, CostWarnBps: 40,
+		MaxLeverage: 1, MaxExposurePctEquity: 0.05, RequireMarketOpen: true,
+	}
+	return Policy{
+		Version: "etoro-demo-2026-10-10",
+		Books:   map[string]BookLimits{"nsdq100": cfd, "spx500": cfd},
+		// Anything else on the account is refused outright.
+		Default: BookLimits{MaxOrderNotional: 1, MaxOrdersPerDay: 1, MaxLeverage: 1, RequireMarketOpen: true},
+	}
+}
+
 // For returns the limits that apply to book.
 func (p Policy) For(book string) BookLimits {
 	if l, ok := p.Books[strings.ToLower(book)]; ok {
@@ -122,10 +156,12 @@ func (p Policy) Validate() error {
 		switch {
 		case l.MaxOrderBTC < 0, l.MaxPositionBTC < 0, l.MaxOrderNotional < 0,
 			l.MaxOrdersPerDay < 0, l.MaxPriceDeviationBps < 0, l.CostWarnBps < 0,
-			l.MaxOpenOrders < 0, l.MaxOrdersPerMinute < 0:
+			l.MaxOpenOrders < 0, l.MaxOrdersPerMinute < 0, l.MaxLeverage < 0:
 			return fmt.Errorf("%s: limits must be >= 0", name)
 		case l.DrawdownWarn < 0 || l.DrawdownWarn >= 1:
 			return fmt.Errorf("%s: drawdown_warn must be in [0, 1)", name)
+		case l.MaxExposurePctEquity < 0:
+			return fmt.Errorf("%s: max_exposure_pct_equity must be >= 0", name)
 		case l.MaxPositionBTC > 0 && l.MaxOrderBTC > l.MaxPositionBTC:
 			return fmt.Errorf("%s: max_order_btc %v exceeds max_position_btc %v", name, l.MaxOrderBTC, l.MaxPositionBTC)
 		}

@@ -26,6 +26,10 @@ on:
       - 'shared/pkg/yahoodaily/**'
       - 'services/strategy-executor/cmd/etoro-spike/**'
       - 'services/strategy-executor/cmd/index-research/**'
+      - 'shared/pkg/etoroledger/**'
+      - 'services/strategy-executor/cmd/etoro-daily-executor/**'
+      - 'services/strategy-executor/cmd/etoro-reconcile/**'
+      - 'scripts/etoro-daily-executor-run.sh'
       - 'docs/etoro/**'
       - 'scripts/check-no-etoro-secrets.sh'
       - 'services/api-gateway/**'
@@ -114,7 +118,10 @@ jobs:
             shared/pkg/etoro shared/pkg/broker shared/pkg/mktcal shared/pkg/etorodaily \
             services/strategy-executor/cmd/etoro-spike \
             shared/pkg/cfdsim shared/pkg/yahoodaily \
-            services/strategy-executor/cmd/index-research)
+            services/strategy-executor/cmd/index-research \
+            shared/pkg/etoroledger \
+            services/strategy-executor/cmd/etoro-daily-executor \
+            services/strategy-executor/cmd/etoro-reconcile)
           if [ -n "$out" ]; then echo "gofmt needed:"; echo "$out"; exit 1; fi
 
       # eToro index-CFD port (docs/etoro): never commit the demo/real keys.
@@ -149,6 +156,17 @@ jobs:
         run: |
           go vet ./cmd/index-research
           go test -race -count=1 ./cmd/index-research
+
+      # Phase P3: the eToro demo executor, its ledger + intent journal, and
+      # the read-only reconciliation, all driven by a fake broker (no eToro
+      # calls in CI). The kill-switch drill below also runs the executor.
+      - name: eToro executor
+        run: |
+          (cd shared && go vet ./pkg/etoroledger && go test -race -count=1 ./pkg/etoroledger)
+          cd services/strategy-executor
+          go vet ./cmd/etoro-daily-executor ./cmd/etoro-reconcile
+          go test -race -count=1 ./cmd/etoro-daily-executor ./cmd/etoro-reconcile
+          bash -n ../../scripts/etoro-daily-executor-run.sh
 
       - name: shared
         working-directory: shared

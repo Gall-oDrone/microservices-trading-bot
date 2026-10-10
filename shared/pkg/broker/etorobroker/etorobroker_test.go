@@ -32,6 +32,8 @@ type fakeClient struct {
 	// portfolioLag hides positions from the next N GetPortfolio calls (the
 	// demo pnl route shows a fill a few seconds late).
 	portfolioLag int
+	// history pages returned by TradingHistory (page n = history[n-1]).
+	history [][]etoro.ClosedTrade
 }
 
 func newFake(clock *time.Time) *fakeClient {
@@ -131,6 +133,13 @@ func (f *fakeClient) GetPortfolio(ctx context.Context) (*etoro.Portfolio, error)
 
 func (f *fakeClient) Costs(ctx context.Context, req etoro.OrderRequest) (etoro.CostPreview, error) {
 	return f.costs, nil
+}
+
+func (f *fakeClient) TradingHistory(ctx context.Context, minDate time.Time, page, pageSize int) ([]etoro.ClosedTrade, error) {
+	if page < 1 || page > len(f.history) {
+		return nil, nil
+	}
+	return f.history[page-1], nil
 }
 
 // newAdapter uses a fake clock that advances only when the adapter sleeps.
@@ -331,13 +340,14 @@ func TestCloseExecutesAndNotOpen(t *testing.T) {
 func TestPositionsAccountAndPreview(t *testing.T) {
 	a, f, _ := newAdapter(t)
 	f.positions = []etoro.Position{
-		{PositionID: 1010, InstrumentID: 28, IsBuy: true, Units: 0.03, OpenRate: 30950, Amount: 1000, Leverage: 1,
-			OpenDateTime: "2026-10-12T13:35:02Z", UnrealizedPnL: etoro.PositionPnL{PnL: -1.49}},
+		{PositionID: 1010, InstrumentID: 28, IsBuy: true, Units: 0.03, OpenRate: 30950, Amount: 1000, Leverage: 1, TotalFees: 0.69,
+			OpenDateTime: "2026-10-12T13:35:02Z", UnrealizedPnL: etoro.PositionPnL{PnL: -1.49, ExposureInAccountCurrency: 998.51}},
 		{PositionID: 2020, InstrumentID: 27, IsBuy: true, Amount: 500, MirrorID: 9},
 	}
 	f.costs = etoro.CostPreview{InstrumentID: 28, Costs: []etoro.Cost{{Type: "markup", Currency: "USD"}, {Type: "marketSpread", Currency: "USD", Value: 1.52}, {Type: "overnightFee", Currency: "USD", Value: 0.23}}}
 	ps, err := a.Positions(context.Background())
-	if err != nil || len(ps) != 1 || ps[0].ID != "1010" || ps[0].Side != broker.Long || ps[0].OpenedAt.IsZero() || ps[0].UnrealizedPnL != -1.49 {
+	if err != nil || len(ps) != 1 || ps[0].ID != "1010" || ps[0].Side != broker.Long || ps[0].OpenedAt.IsZero() || ps[0].UnrealizedPnL != -1.49 ||
+		ps[0].Fees != 0.69 || ps[0].Exposure != 998.51 {
 		t.Fatalf("positions %+v %v (copy positions excluded)", ps, err)
 	}
 	acct, err := a.Account(context.Background())
@@ -351,5 +361,26 @@ func TestPositionsAccountAndPreview(t *testing.T) {
 	q, err := a.Quote(context.Background(), nsdq)
 	if err != nil || q.Mid() != 100.5 || q.At.IsZero() {
 		t.Fatalf("quote %+v %v", q, err)
+	}
+}
+
+// The row is the demo trading-history response of 2026-10-10 (trimmed).
+func TestClosedPositionsPages(t *testing.T) {
+	a, f, _ := newAdapter(t)
+	full := make([]etoro.ClosedTrade, 200)
+	for i := range full {
+		full[i] = etoro.ClosedTrade{PositionID: int64(5000 + i), InstrumentID: 27, IsBuy: true}
+	}
+	f.history = [][]etoro.ClosedTrade{full, {{PositionID: 3616261792, InstrumentID: 28, IsBuy: true, Leverage: 1,
+		OpenRate: 30963, CloseRate: 30919, OpenTimestamp: "2026-10-10T02:07:34.06Z", CloseTimestamp: "2026-10-10T02:08:16.607Z",
+		Units: 0.032296, Investment: 999.98, NetProfit: -1.42, Fees: 0}}}
+	cps, err := a.ClosedPositions(context.Background(), time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC))
+	if err != nil || len(cps) != 201 {
+		t.Fatalf("closed %d %v, want 201 over two pages", len(cps), err)
+	}
+	last := cps[200]
+	if last.ID != "3616261792" || last.Instrument.ID != 28 || last.Side != broker.Long || last.CloseRate != 30919 ||
+		last.NetProfit != -1.42 || last.Amount != 999.98 || last.ClosedAt != time.Date(2026, 10, 10, 2, 8, 16, 607e6, time.UTC) {
+		t.Fatalf("row %+v", last)
 	}
 }

@@ -30,6 +30,10 @@ const (
 	RuleMaxOrdersPerMinute          = "max_orders_per_minute"
 	RulePortfolioMaxOpenOrders      = "portfolio_max_open_orders"
 	RulePortfolioMaxOrdersPerMinute = "portfolio_max_orders_per_minute"
+
+	RuleMaxLeverage          = "max_leverage"
+	RuleMaxExposurePctEquity = "max_exposure_pct_equity"
+	RuleMarketClosed         = "market_closed"
 )
 
 // Finding is one limit that was hit (or nearly hit, for warnings).
@@ -48,9 +52,11 @@ type Finding struct {
 type Order struct {
 	Book     string  `json:"book"`
 	Side     string  `json:"side"`
-	QtyBTC   float64 `json:"qty_btc"`
+	QtyBTC   float64 `json:"qty_btc"` // base quantity: BTC on Bitso, units on a CFD book
 	Price    float64 `json:"price"`
 	RefPrice float64 `json:"ref_price"`
+	// Leverage of a position-based order (0: not applicable).
+	Leverage int `json:"leverage,omitempty"`
 }
 
 // State is what the executor holds before the order. The fields added on
@@ -67,6 +73,12 @@ type State struct {
 	// every book.
 	PortfolioOpenOrders       int `json:"portfolio_open_orders,omitempty"`
 	PortfolioOrdersLastMinute int `json:"portfolio_orders_last_minute,omitempty"`
+	// Position-based brokers (2026-10-10): account equity and total open
+	// exposure before the order (account currency), and whether the market
+	// the book trades in is closed now.
+	Equity       float64 `json:"equity,omitempty"`
+	Exposure     float64 `json:"exposure,omitempty"`
+	MarketClosed bool    `json:"market_closed,omitempty"`
 }
 
 // Decision is the outcome of Check.
@@ -92,6 +104,9 @@ func Check(p Policy, o Order, s State) Decision {
 			msg += ": " + p.HaltReason
 		}
 		block(RuleHalted, 0, 1, "%s", msg)
+	}
+	if l.RequireMarketOpen && s.MarketClosed {
+		block(RuleMarketClosed, 0, 1, "the market for %s is closed", o.Book)
 	}
 	if (o.Side != "buy" && o.Side != "sell") || o.QtyBTC <= 0 || math.IsNaN(o.QtyBTC) || o.Price < 0 {
 		block(RuleInvalidOrder, 0, o.QtyBTC, "invalid order: side %q qty %v price %v", o.Side, o.QtyBTC, o.Price)
@@ -128,6 +143,20 @@ func Check(p Policy, o Order, s State) Decision {
 		if pf := p.Portfolio; pf != nil {
 			count(RulePortfolioMaxOpenOrders, pf.MaxOpenOrders, s.PortfolioOpenOrders, "open order across all books")
 			count(RulePortfolioMaxOrdersPerMinute, pf.MaxOrdersPerMinute, s.PortfolioOrdersLastMinute, "order in the last minute across all books")
+		}
+		if l.MaxLeverage > 0 && o.Leverage > l.MaxLeverage {
+			block(RuleMaxLeverage, float64(l.MaxLeverage), float64(o.Leverage), "leverage x%d exceeds max x%d", o.Leverage, l.MaxLeverage)
+		}
+		if l.MaxExposurePctEquity > 0 && s.Equity > 0 {
+			lev := float64(o.Leverage)
+			if lev < 1 {
+				lev = 1
+			}
+			after := s.Exposure + o.QtyBTC*o.Price*lev
+			if pct := after / s.Equity; pct > l.MaxExposurePctEquity {
+				block(RuleMaxExposurePctEquity, l.MaxExposurePctEquity, pct, "exposure after the order %.2f is %.1f%% of equity %.2f (max %.1f%%)",
+					after, pct*100, s.Equity, l.MaxExposurePctEquity*100)
+			}
 		}
 	}
 	if dev, ok := DeviationBps(o.Price, o.RefPrice); ok && l.MaxPriceDeviationBps > 0 && dev > l.MaxPriceDeviationBps {

@@ -14,7 +14,8 @@
 #   4. ui-api's /risk reads every halt back (the executor's parser);
 #   5. the daily-executor itself reports HALTED for a halted copy (dry run,
 #      -no-record, no keys; it fetches public candles after printing the halt)
-#      and refuses to run over a corrupt halt file;
+#      and refuses to run over a corrupt halt file; so does the eToro
+#      executor (cmd/etoro-daily-executor; no keys, so no eToro call at all);
 #   6. ui-alerts -dry-run raises "Trading halted" for each halted copy and
 #      names every halted ledger in the subject;
 #   7. a double press is serialised: one press halts, the other reports
@@ -90,7 +91,13 @@ done
 (umask 077; head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n' > "$WORK/operator-token")
 TOK="$(cat "$WORK/operator-token")"
 (cd "$ROOT/services/ui-api" && go build -o "$WORK/bin/ui-api" ./cmd && go build -o "$WORK/bin/ui-alerts" ./cmd/ui-alerts)
-(cd "$ROOT/services/strategy-executor" && go build -o "$WORK/bin/daily-executor" ./cmd/daily-executor)
+(cd "$ROOT/services/strategy-executor" && go build -o "$WORK/bin/daily-executor" ./cmd/daily-executor \
+  && go build -o "$WORK/bin/etoro-daily-executor" ./cmd/etoro-daily-executor)
+# The eToro executor reads <ledger dir>/risk-state.json like the Bitso one; it
+# runs here with no keys, so it stops (exit 1) right after printing the halt,
+# before any eToro request.
+etoro_exec() { env -u ETORO_PUBLIC_KEY -u ETORO_PRIVATE_KEY -u ETORO_ENV timeout 30 "$WORK/bin/etoro-daily-executor" \
+  -ledger "$WORK/$1/etoro-ledger.jsonl" -no-record -env-file "" 2>&1 || true; }
 LEDGERS="alpha=$WORK/alpha/ledger.jsonl,beta=$WORK/beta/ledger.jsonl,gamma=$WORK/gamma/ledger.jsonl"
 "$WORK/bin/ui-api" -addr "127.0.0.1:$PORT" -live=false -ledgers "$LEDGERS" \
   -operator-token-file "$WORK/operator-token" -studies-dir "$WORK/none" > "$WORK/ui-api.log" 2>&1 &
@@ -139,6 +146,9 @@ if [ "$SKIP_EXECUTOR" = 1 ]; then echo "  skipped (--no-executor)"; else
     -ledger "$WORK/beta/ledger.jsonl" -books btc_mxn -no-record -env-file "" ${CANDLES_URL[@]+"${CANDLES_URL[@]}"} 2>&1 || true)"
   echo "$out" | grep -q "^HALTED by $WORK/beta/risk-state.json: Kill switch drill: first press" \
     && ok "beta: HALTED, stage orders would be blocked and recorded" || bad "beta: no HALTED line: $(echo "$out" | head -3)"
+  out="$(etoro_exec beta)"
+  echo "$out" | grep -q "^HALTED by $WORK/beta/risk-state.json: Kill switch drill: first press" \
+    && ok "beta: eToro executor HALTED, demo orders would be blocked and recorded" || bad "beta: eToro executor has no HALTED line: $(echo "$out" | head -3)"
 fi
 
 step "6. ui-alerts (dry run: prints, sends nothing, writes no state)"
@@ -175,6 +185,7 @@ echo '{"halted": "yes"' > "$WORK/alpha/risk-state.json"
 if [ "$SKIP_EXECUTOR" = 0 ]; then
   out="$("$WORK/bin/daily-executor" -ledger "$WORK/alpha/ledger.jsonl" -no-record -env-file "" ${CANDLES_URL[@]+"${CANDLES_URL[@]}"} 2>&1 || true)"
   echo "$out" | grep -q "nothing ran" && ok "daily-executor refuses to run (fails closed)" || bad "daily-executor ran over a corrupt halt file"
+  etoro_exec alpha | grep -q "nothing ran" && ok "eToro executor refuses to run (fails closed)" || bad "eToro executor ran over a corrupt halt file"
 fi
 check "page shows it as not halted with an error" "$(curl -s "$API/strategies" | json "[l for l in d['ledgers'] if l['name']=='alpha'][0]['halt_file'].get('error','') != ''")" True
 check "halt-all over it -> 200" "$(post risk/halt-all '{"reason":"Kill switch drill: over a corrupt file","by":"drill","confirm":"HALT ALL"}' "${auth[@]}")" 200

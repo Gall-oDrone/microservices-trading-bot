@@ -96,3 +96,5 @@ services/*/bitso-daily
 
 # daily-executor default ledger/candles output (evidence is committed deliberately under docs/)
 daily-executor-data/
+# eToro executor ledger, intents, candles, run logs and binaries (P3)
+etoro-daily-data/

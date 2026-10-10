@@ -4,6 +4,11 @@
 #
 #   scripts/ops-run.sh executor   the daily stage run (scripts/daily-executor-run.sh -stage),
 #                                 uploading to $DAILY_EXECUTOR_S3_URI when set
+#   scripts/ops-run.sh etoro      the eToro index-CFD demo run and its reconciliation
+#                                 (scripts/etoro-daily-executor-run.sh -demo; porting plan P3).
+#                                 Schedule at 09:35 New York time on weekdays
+#                                 (CRON_TZ=America/New_York); credentials from
+#                                 ~/.config/microservices-trading-bot/etoro-demo.env
 #   scripts/ops-run.sh alerts     R3: services/ui-api/bin/ui-alerts (notify on new,
 #                                 escalated, reminder or resolved alerts)
 #   scripts/ops-run.sh compact    the archive compactor's non-destructive refresh
@@ -44,9 +49,9 @@ mkdir -p "$STATE"
 job="${1:-}"
 shift || true
 case "$job" in
-  executor | alerts | compact | sampler | research | prereg) ;;
+  executor | etoro | alerts | compact | sampler | research | prereg) ;;
   *)
-    echo "usage: $0 executor|alerts|compact|sampler|research|prereg [flags…]" >&2
+    echo "usage: $0 executor|etoro|alerts|compact|sampler|research|prereg [flags…]" >&2
     exit 2
     ;;
 esac
@@ -61,6 +66,13 @@ case "$job" in
   executor)
     echo "== $(date -u +%Y-%m-%dT%H:%M:%SZ) ops-run executor"
     "$ROOT/scripts/daily-executor-run.sh" -stage "$@"
+    code=$?
+    echo "== exit $code"
+    exit "$code"
+    ;;
+  etoro)
+    echo "== $(date -u +%Y-%m-%dT%H:%M:%SZ) ops-run etoro"
+    "$ROOT/scripts/etoro-daily-executor-run.sh" -demo "$@"
     code=$?
     echo "== exit $code"
     exit "$code"
