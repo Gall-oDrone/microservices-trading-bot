@@ -1,0 +1,22 @@
+{
+ "instrumentId": 28,
+ "symbol": "NSDQ100",
+ "costs": [
+  {
+   "costType": "markup",
+   "currency": "USD",
+   "value": 0.0
+  },
+  {
+   "costType": "marketSpread",
+   "currency": "USD",
+   "value": 1.52
+  },
+  {
+   "costType": "overnightFee",
+   "currency": "USD",
+   "value": 0.23
+  }
+ ],
+ "lastUpdated": "2026-10-10T01:47:06.434405Z"
+}

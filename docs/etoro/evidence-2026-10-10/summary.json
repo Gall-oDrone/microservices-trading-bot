@@ -1,0 +1,149 @@
+{
+  "account": {
+    "account_currency_id": 1,
+    "credit_usd": 99995.51,
+    "equity_usd": 99995.51,
+    "open_positions": 0,
+    "pending_open_orders": 0,
+    "unrealized_pnl_usd": 0
+  },
+  "captured_at": "2026-10-10T02:15:26Z",
+  "costs_x1": {
+    "NSDQ100": {
+      "overnight_bps_per_night": 2.3,
+      "overnight_pct_per_year": 8.4,
+      "spread_bps": 15.5,
+      "transaction_fee_usd": 0
+    },
+    "QQQ": {
+      "overnight_bps_per_night": 0,
+      "overnight_pct_per_year": 0,
+      "spread_bps": 0.1,
+      "transaction_fee_usd": 1.5
+    },
+    "SPX500": {
+      "overnight_bps_per_night": 2.3,
+      "overnight_pct_per_year": 8.4,
+      "spread_bps": 14.8,
+      "transaction_fee_usd": 0
+    },
+    "SPY": {
+      "overnight_bps_per_night": 0,
+      "overnight_pct_per_year": 0,
+      "spread_bps": 0.3,
+      "transaction_fee_usd": 1.5
+    }
+  },
+  "costs_x1_amount_usd": 1000,
+  "daily_NSDQ100": {
+    "first": "2022-12-19",
+    "holiday_dropped": 30,
+    "kept": 955,
+    "last": "2026-10-09",
+    "missing_trading_days": 0,
+    "weekend_dropped": 14
+  },
+  "daily_SPX500": {
+    "first": "2022-12-13",
+    "holiday_dropped": 30,
+    "kept": 959,
+    "last": "2026-10-09",
+    "missing_trading_days": 0,
+    "weekend_dropped": 10
+  },
+  "eligibility": {
+    "NSDQ100": {
+      "long_x1_allowed": true,
+      "long_x1_min_amount_usd": 50,
+      "long_x1_settlement": "cfd",
+      "max_units_per_order": 35,
+      "min_position_exposure_usd": 1000
+    },
+    "QQQ": {
+      "long_x1_allowed": true,
+      "long_x1_min_amount_usd": 10,
+      "long_x1_settlement": "real",
+      "max_units_per_order": 1406,
+      "min_position_exposure_usd": 10
+    },
+    "SPX500": {
+      "long_x1_allowed": true,
+      "long_x1_min_amount_usd": 50,
+      "long_x1_settlement": "cfd",
+      "max_units_per_order": 130,
+      "min_position_exposure_usd": 1000
+    },
+    "SPY": {
+      "long_x1_allowed": true,
+      "long_x1_min_amount_usd": 10,
+      "long_x1_settlement": "real",
+      "max_units_per_order": 1305,
+      "min_position_exposure_usd": 10
+    }
+  },
+  "env": "demo",
+  "history_NSDQ100": {
+    "bar_open_hour_utc_counts": {
+      "21": 1335,
+      "22": 672
+    },
+    "bars": 2007,
+    "first": "2018-12-27T22:00:00Z",
+    "lag_days_at_capture": 12.2,
+    "last": "2026-09-27T21:00:00Z",
+    "route": "GET /api/v1/data/instruments/{id}/candles?interval=1d (DataPlatform)"
+  },
+  "history_SPX500": {
+    "bar_open_hour_utc_counts": {
+      "21": 1332,
+      "22": 675
+    },
+    "bars": 2007,
+    "first": "2018-12-23T22:00:00Z",
+    "lag_days_at_capture": 12.2,
+    "last": "2026-09-27T21:00:00Z",
+    "route": "GET /api/v1/data/instruments/{id}/candles?interval=1d (DataPlatform)"
+  },
+  "hourly_bars_by_weekday_NSDQ100": {
+    "Fri": 161,
+    "Mon": 138,
+    "Sat": 147,
+    "Sun": 139,
+    "Thu": 138,
+    "Tue": 138,
+    "Wed": 139
+  },
+  "hourly_bars_by_weekday_SPX500": {
+    "Fri": 165,
+    "Mon": 138,
+    "Sat": 123,
+    "Sun": 117,
+    "Thu": 161,
+    "Tue": 138,
+    "Wed": 158
+  },
+  "instrument_ids": {
+    "NSDQ100": 28,
+    "QQQ": 3006,
+    "SPX500": 27,
+    "SPY": 3000
+  },
+  "quoted_spread_bps_at_capture": {
+    "NSDQ100": 15.83,
+    "QQQ": 0.13,
+    "SPX500": 14.32,
+    "SPY": 0.26
+  },
+  "roundtrip": {
+    "lookup_by_reference_found": false,
+    "open_amount_usd": 999.99,
+    "open_avg_price": 30970,
+    "open_spread_cost_usd": 1.6400000000000001,
+    "open_status": "executed",
+    "open_units": 0.032289,
+    "positions_added_by_open_and_reopen": 1,
+    "positions_after_vs_before": 1,
+    "reclose_is_position_not_open": true,
+    "reopen_resolved_to_same_position": true
+  }
+}

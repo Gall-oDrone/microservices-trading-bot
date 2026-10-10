@@ -1,0 +1,180 @@
+{
+  "amount_usd": 1000,
+  "client_ref_open": "spike-20261010T021526Z-NSDQ100-roundtrip-open",
+  "close": {
+    "order_id": "387838336",
+    "client_ref": "spike-20261010T021526Z-NSDQ100-roundtrip-close",
+    "status": "executed",
+    "position_ids": [
+      "3616261828"
+    ],
+    "avg_price": 30921,
+    "units": 0.032289,
+    "amount": 999.99,
+    "at": "2026-10-10T02:15:48.613Z"
+  },
+  "close_error": "",
+  "close_order_info": {
+    "orderID": 387838336,
+    "statusID": 3,
+    "referenceID": "",
+    "orderType": 19,
+    "errorCode": 0,
+    "errorMessage": "",
+    "instrumentID": 28,
+    "requestOccurred": "2026-10-10T02:15:48.513Z",
+    "proceeds": 998.41,
+    "positions": [
+      {
+        "positionID": 3616261828,
+        "occurred": "2026-10-10T02:15:48.613Z",
+        "rate": 30921,
+        "units": 0.032289,
+        "conversionRate": 1,
+        "amount": 999.99
+      }
+    ]
+  },
+  "history_rows_for_roundtrip_position": [
+    {
+      "positionId": 3616261828,
+      "instrumentId": 28,
+      "orderId": 387753210,
+      "isBuy": true,
+      "leverage": 1,
+      "openRate": 30970,
+      "closeRate": 30921,
+      "openTimestamp": "2026-10-10T02:15:37.323Z",
+      "closeTimestamp": "2026-10-10T02:15:48.613Z",
+      "units": 0.032289,
+      "investment": 999.99,
+      "initialInvestment": 999.99,
+      "netProfit": -1.58,
+      "fees": 0,
+      "stopLossRate": 0.01,
+      "takeProfitRate": 0,
+      "parentPositionId": 0
+    }
+  ],
+  "instrument": {
+    "venue": "etoro",
+    "symbol": "NSDQ100",
+    "id": 28
+  },
+  "intent_at": "2026-10-10T02:15:36.797003069Z",
+  "leverage": 1,
+  "lookup_by_reference_error": "",
+  "lookup_by_reference_found": false,
+  "open": {
+    "order_id": "387753210",
+    "client_ref": "spike-20261010T021526Z-NSDQ100-roundtrip-open",
+    "status": "executed",
+    "position_ids": [
+      "3616261828"
+    ],
+    "avg_price": 30970,
+    "units": 0.032289,
+    "amount": 999.99,
+    "spread_cost": 1.6400000000000001,
+    "at": "2026-10-10T02:15:37.323Z"
+  },
+  "open_error": "",
+  "open_lookup_by_order_id": {
+    "orderId": 387753210,
+    "action": "open",
+    "transaction": "buy",
+    "type": "mkt",
+    "status": {
+      "id": 3,
+      "name": "Filled",
+      "errorCode": 0,
+      "errorMessage": ""
+    },
+    "asset": {
+      "symbol": "NSDQ100",
+      "instrumentId": 28,
+      "currency": "USD",
+      "settlementType": "CFD",
+      "leverage": 1,
+      "side": "long"
+    },
+    "orderCurrency": "usd",
+    "requestedAmount": 999.99,
+    "requestedUnits": 0.032289,
+    "frozenAmount": 999.99,
+    "totalCosts": 0,
+    "positionsToClose": [],
+    "positionExecutions": [
+      {
+        "positionId": 3616261828,
+        "state": "open",
+        "investedAmountCurrency": 1,
+        "initialExposureAccountCurrency": 999.99033,
+        "initialExposureAssetCurrency": 999.99033,
+        "marginAccountCurrency": 999.99,
+        "remainingUnits": 0.032289,
+        "stopLossRate": 0.01,
+        "takeProfitRate": 0,
+        "openingData": {
+          "openTime": "2026-10-10T02:15:37.197Z",
+          "orderId": 387753210,
+          "executionTime": "2026-10-10T02:15:37.323Z",
+          "units": 0.032289,
+          "contracts": 0.032289,
+          "avgPrice": 30970,
+          "avgConversionRate": 1,
+          "marketSpread": 1.58,
+          "markup": 0.06,
+          "priceId": 0,
+          "fees": 0,
+          "taxes": 0
+        }
+      }
+    ],
+    "requestTime": "2026-10-10T02:15:37.267Z",
+    "lastUpdate": "2026-10-10T02:15:37.36Z",
+    "openActionType": "customer",
+    "requestType": "byAmount"
+  },
+  "positions_added_by_open_and_reopen": 1,
+  "positions_after_vs_before": 1,
+  "quote_before": {
+    "instrument": {
+      "venue": "etoro",
+      "symbol": "NSDQ100",
+      "id": 28
+    },
+    "bid": 30921,
+    "ask": 30970,
+    "at": "2026-10-10T02:14:59.913Z"
+  },
+  "reclose_error": "broker: position is not open: code 741 Order cannot be placed because the requested position is already closed",
+  "reclose_is_position_not_open": true,
+  "reclose_same_position": {
+    "order_id": "387801858",
+    "client_ref": "spike-20261010T021526Z-NSDQ100-roundtrip-close",
+    "status": "rejected",
+    "position_ids": [
+      "3616261828"
+    ],
+    "error": "Order cannot be placed because the requested position is already closed",
+    "error_code": 741,
+    "at": "0001-01-01T00:00:00Z"
+  },
+  "reopen_error": "",
+  "reopen_resolved_to_same_position": true,
+  "reopen_same_ref": {
+    "order_id": "387753210",
+    "client_ref": "spike-20261010T021526Z-NSDQ100-roundtrip-open",
+    "status": "executed",
+    "position_ids": [
+      "3616261828"
+    ],
+    "avg_price": 30970,
+    "units": 0.032289,
+    "amount": 999.99,
+    "spread_cost": 1.6400000000000001,
+    "at": "2026-10-10T02:15:37.323Z"
+  },
+  "request_id_open": "095ccd07-98b8-50fc-9bae-cf38247f6a12"
+}

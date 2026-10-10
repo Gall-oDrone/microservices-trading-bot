@@ -1,0 +1,43 @@
+{
+ "page": 1,
+ "pageSize": 20,
+ "totalItems": 3,
+ "items": [
+  {
+   "internalIndustryId": 0,
+   "internalAssetClassId": 4,
+   "internalInstrumentDisplayName": "NASDAQ100 Index (Non Expiry)",
+   "isInternalInstrument": false,
+   "internalSymbolFull": "NSDQ100",
+   "isHiddenFromClient": false,
+   "internalInstrumentId": 28,
+   "internalExchangeId": 3,
+   "internalExchangeName": "CFD",
+   "internalAssetClassName": "Indices"
+  },
+  {
+   "internalIndustryId": 0,
+   "internalAssetClassId": 4,
+   "internalInstrumentDisplayName": "NASDAQ100 24/7",
+   "isInternalInstrument": false,
+   "internalSymbolFull": "NSDQ100.24-7",
+   "isHiddenFromClient": false,
+   "internalInstrumentId": 686,
+   "internalExchangeId": 3,
+   "internalExchangeName": "CFD",
+   "internalAssetClassName": "Indices"
+  },
+  {
+   "internalIndustryId": 0,
+   "internalAssetClassId": 4,
+   "internalInstrumentDisplayName": "NASDAQ100 Future",
+   "isInternalInstrument": true,
+   "internalSymbolFull": "NSDQ100.FUT",
+   "isHiddenFromClient": false,
+   "internalInstrumentId": 255,
+   "internalExchangeId": 3,
+   "internalExchangeName": "CFD",
+   "internalAssetClassName": "Indices"
+  }
+ ]
+}

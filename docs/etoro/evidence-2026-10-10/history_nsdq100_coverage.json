@@ -1,0 +1,11 @@
+{
+  "bar_open_hour_utc_counts": {
+    "21": 1335,
+    "22": 672
+  },
+  "bars": 2007,
+  "first": "2018-12-27T22:00:00Z",
+  "lag_days_at_capture": 12.2,
+  "last": "2026-09-27T21:00:00Z",
+  "route": "GET /api/v1/data/instruments/{id}/candles?interval=1d (DataPlatform)"
+}

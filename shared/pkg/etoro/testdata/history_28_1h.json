@@ -1,0 +1,49 @@
+{
+ "instrumentId": 28,
+ "symbol": "NSDQ100/USD",
+ "interval": "1h",
+ "side": "bid",
+ "window": {
+  "from": "2026-08-01T00:00:00Z",
+  "to": "2026-10-10T00:00:00Z"
+ },
+ "pagination": {
+  "limit": 2000,
+  "hasNext": false,
+  "nextCursor": null
+ },
+ "results": [
+  {
+   "time": "2026-09-29T09:00:00Z",
+   "open": "30318.7",
+   "high": "30324.5",
+   "low": "30256.3",
+   "close": "30285.8",
+   "volume": null
+  },
+  {
+   "time": "2026-09-29T08:00:00Z",
+   "open": "30297.8",
+   "high": "30352.2",
+   "low": "30287.7",
+   "close": "30318.7",
+   "volume": null
+  },
+  {
+   "time": "2026-09-29T07:00:00Z",
+   "open": "30266.8",
+   "high": "30341.5",
+   "low": "30246.4",
+   "close": "30297.8",
+   "volume": null
+  },
+  {
+   "time": "2026-09-29T06:00:00Z",
+   "open": "30149",
+   "high": "30275.5",
+   "low": "30143.4",
+   "close": "30266.8",
+   "volume": null
+  }
+ ]
+}

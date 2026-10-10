@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "etoro-public-api": {
+      "url": "https://mcp.public-api.etoro.com",
+      "headers": {
+        "x-api-key": "<ETORO_PUBLIC_KEY — from .env.etoro.local, never committed>",
+        "x-user-key": "<ETORO_PRIVATE_KEY (demo key) — from .env.etoro.local, never committed>"
+      }
+    }
+  }
+}

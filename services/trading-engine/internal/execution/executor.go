@@ -29,6 +29,10 @@ type TradingSignal struct {
 	Price        float64
 	Reason       string
 	Timestamp    int64
+	// ClientRef is the signal's event id. The eToro executor derives the
+	// order's x-request-id from it, so a redelivered signal resolves to the
+	// order the first delivery placed instead of opening a second one.
+	ClientRef string
 }
 
 // SessionRiskProvider returns current session risk metrics (e.g. from order-management).

@@ -1,0 +1,164 @@
+[
+  {
+    "symbol": "NSDQ100",
+    "request": {
+      "action": "open",
+      "transaction": "buy",
+      "instrumentId": 28,
+      "orderType": "mkt",
+      "leverage": 1,
+      "amount": 1000,
+      "orderCurrency": "usd"
+    },
+    "preview": {
+      "instrumentId": 28,
+      "symbol": "NSDQ100",
+      "costs": [
+        {
+          "costType": "markup",
+          "currency": "USD",
+          "value": 0
+        },
+        {
+          "costType": "marketSpread",
+          "currency": "USD",
+          "value": 1.55
+        },
+        {
+          "costType": "overnightFee",
+          "currency": "USD",
+          "value": 0.23
+        }
+      ],
+      "lastUpdated": "2026-10-10T02:15:29.4016803Z"
+    },
+    "spread_cost_bps_of_amount": 15.5,
+    "overnight_fee_bps_per_night": 2.3000000000000003,
+    "overnight_fee_pct_per_year_365_nights": 8.395000000000001,
+    "transaction_fee_usd": 0
+  },
+  {
+    "symbol": "SPX500",
+    "request": {
+      "action": "open",
+      "transaction": "buy",
+      "instrumentId": 27,
+      "orderType": "mkt",
+      "leverage": 1,
+      "amount": 1000,
+      "orderCurrency": "usd"
+    },
+    "preview": {
+      "instrumentId": 27,
+      "symbol": "SPX500",
+      "costs": [
+        {
+          "costType": "markup",
+          "currency": "USD",
+          "value": 0
+        },
+        {
+          "costType": "marketSpread",
+          "currency": "USD",
+          "value": 1.48
+        },
+        {
+          "costType": "overnightFee",
+          "currency": "USD",
+          "value": 0.23
+        }
+      ],
+      "lastUpdated": "2026-10-10T02:15:29.3855239Z"
+    },
+    "spread_cost_bps_of_amount": 14.799999999999999,
+    "overnight_fee_bps_per_night": 2.3000000000000003,
+    "overnight_fee_pct_per_year_365_nights": 8.395000000000001,
+    "transaction_fee_usd": 0
+  },
+  {
+    "symbol": "QQQ",
+    "request": {
+      "action": "open",
+      "transaction": "buy",
+      "instrumentId": 3006,
+      "orderType": "mkt",
+      "leverage": 1,
+      "amount": 1000,
+      "orderCurrency": "usd"
+    },
+    "preview": {
+      "instrumentId": 3006,
+      "symbol": "QQQ",
+      "costs": [
+        {
+          "costType": "transactionFee",
+          "currency": "USD",
+          "value": 1.5
+        },
+        {
+          "costType": "markup",
+          "currency": "USD",
+          "value": 0
+        },
+        {
+          "costType": "marketSpread",
+          "currency": "USD",
+          "value": 0.01
+        },
+        {
+          "costType": "overnightFee",
+          "currency": "USD",
+          "value": 0
+        }
+      ],
+      "lastUpdated": "2026-10-09T19:59:55.648883Z"
+    },
+    "spread_cost_bps_of_amount": 0.1,
+    "overnight_fee_bps_per_night": 0,
+    "overnight_fee_pct_per_year_365_nights": 0,
+    "transaction_fee_usd": 1.5
+  },
+  {
+    "symbol": "SPY",
+    "request": {
+      "action": "open",
+      "transaction": "buy",
+      "instrumentId": 3000,
+      "orderType": "mkt",
+      "leverage": 1,
+      "amount": 1000,
+      "orderCurrency": "usd"
+    },
+    "preview": {
+      "instrumentId": 3000,
+      "symbol": "SPY",
+      "costs": [
+        {
+          "costType": "transactionFee",
+          "currency": "USD",
+          "value": 1.5
+        },
+        {
+          "costType": "markup",
+          "currency": "USD",
+          "value": 0
+        },
+        {
+          "costType": "marketSpread",
+          "currency": "USD",
+          "value": 0.03
+        },
+        {
+          "costType": "overnightFee",
+          "currency": "USD",
+          "value": 0
+        }
+      ],
+      "lastUpdated": "2026-10-09T19:59:55.8031292Z"
+    },
+    "spread_cost_bps_of_amount": 0.3,
+    "overnight_fee_bps_per_night": 0,
+    "overnight_fee_pct_per_year_365_nights": 0,
+    "transaction_fee_usd": 1.5
+  }
+]

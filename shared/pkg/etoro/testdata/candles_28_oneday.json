@@ -1,0 +1,105 @@
+{
+ "interval": "OneDay",
+ "candles": [
+  {
+   "instrumentId": 28,
+   "candles": [
+    {
+     "instrumentID": 28,
+     "fromDate": "2026-10-10T00:00:00Z",
+     "open": 30874.0,
+     "high": 30915.0,
+     "low": 30869.0,
+     "close": 30915.0,
+     "volume": null
+    },
+    {
+     "instrumentID": 28,
+     "fromDate": "2026-10-09T00:00:00Z",
+     "open": 30778.7,
+     "high": 31036.2,
+     "low": 30723.6,
+     "close": 30893.3,
+     "volume": null
+    },
+    {
+     "instrumentID": 28,
+     "fromDate": "2026-10-08T00:00:00Z",
+     "open": 31151.4,
+     "high": 31219.4,
+     "low": 30550.3,
+     "close": 30786.0,
+     "volume": null
+    },
+    {
+     "instrumentID": 28,
+     "fromDate": "2026-10-07T00:00:00Z",
+     "open": 31269.4,
+     "high": 31272.4,
+     "low": 30899.0,
+     "close": 31154.9,
+     "volume": null
+    },
+    {
+     "instrumentID": 28,
+     "fromDate": "2026-10-06T00:00:00Z",
+     "open": 31095.0,
+     "high": 31365.1,
+     "low": 31060.7,
+     "close": 31248.9,
+     "volume": null
+    },
+    {
+     "instrumentID": 28,
+     "fromDate": "2026-10-05T00:00:00Z",
+     "open": 30852.8,
+     "high": 31118.7,
+     "low": 30706.4,
+     "close": 31087.9,
+     "volume": null
+    },
+    {
+     "instrumentID": 28,
+     "fromDate": "2026-10-04T00:00:00Z",
+     "open": 30833.0,
+     "high": 30881.0,
+     "low": 30825.0,
+     "close": 30867.0,
+     "volume": null
+    },
+    {
+     "instrumentID": 28,
+     "fromDate": "2026-10-03T00:00:00Z",
+     "open": 30793.0,
+     "high": 30837.0,
+     "low": 30783.0,
+     "close": 30833.0,
+     "volume": null
+    },
+    {
+     "instrumentID": 28,
+     "fromDate": "2026-10-02T00:00:00Z",
+     "open": 30504.7,
+     "high": 31017.2,
+     "low": 30496.4,
+     "close": 30791.9,
+     "volume": null
+    },
+    {
+     "instrumentID": 28,
+     "fromDate": "2026-10-01T00:00:00Z",
+     "open": 30422.2,
+     "high": 30874.8,
+     "low": 30258.4,
+     "close": 30494.9,
+     "volume": null
+    }
+   ],
+   "rangeOpen": 30874.0,
+   "rangeClose": 11078.8,
+   "rangeHigh": 31365.1,
+   "rangeLow": 10668.95,
+   "volume": 0.0
+  }
+ ]
+}

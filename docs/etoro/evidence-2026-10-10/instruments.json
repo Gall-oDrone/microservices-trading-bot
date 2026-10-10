@@ -1,0 +1,252 @@
+[
+  {
+    "symbol": "NSDQ100",
+    "resolved": {
+      "internalInstrumentId": 28,
+      "internalSymbolFull": "NSDQ100",
+      "internalInstrumentDisplayName": "NASDAQ100 Index (Non Expiry)",
+      "internalAssetClassId": 4,
+      "internalAssetClassName": "Indices",
+      "internalExchangeId": 3,
+      "internalExchangeName": "CFD",
+      "isHiddenFromClient": false
+    },
+    "loose_matches": [
+      {
+        "internalInstrumentId": 28,
+        "internalSymbolFull": "NSDQ100",
+        "internalInstrumentDisplayName": "NASDAQ100 Index (Non Expiry)",
+        "internalAssetClassId": 4,
+        "internalAssetClassName": "Indices",
+        "internalExchangeId": 3,
+        "internalExchangeName": "CFD",
+        "isHiddenFromClient": false
+      },
+      {
+        "internalInstrumentId": 686,
+        "internalSymbolFull": "NSDQ100.24-7",
+        "internalInstrumentDisplayName": "NASDAQ100 24/7",
+        "internalAssetClassId": 4,
+        "internalAssetClassName": "Indices",
+        "internalExchangeId": 3,
+        "internalExchangeName": "CFD",
+        "isHiddenFromClient": false
+      },
+      {
+        "internalInstrumentId": 255,
+        "internalSymbolFull": "NSDQ100.FUT",
+        "internalInstrumentDisplayName": "NASDAQ100 Future",
+        "internalAssetClassId": 4,
+        "internalAssetClassName": "Indices",
+        "internalExchangeId": 3,
+        "internalExchangeName": "CFD",
+        "isHiddenFromClient": false
+      }
+    ]
+  },
+  {
+    "symbol": "SPX500",
+    "resolved": {
+      "internalInstrumentId": 27,
+      "internalSymbolFull": "SPX500",
+      "internalInstrumentDisplayName": "SPX500 Index (Non Expiry)",
+      "internalAssetClassId": 4,
+      "internalAssetClassName": "Indices",
+      "internalExchangeId": 3,
+      "internalExchangeName": "CFD",
+      "isHiddenFromClient": false
+    },
+    "loose_matches": [
+      {
+        "internalInstrumentId": 27,
+        "internalSymbolFull": "SPX500",
+        "internalInstrumentDisplayName": "SPX500 Index (Non Expiry)",
+        "internalAssetClassId": 4,
+        "internalAssetClassName": "Indices",
+        "internalExchangeId": 3,
+        "internalExchangeName": "CFD",
+        "isHiddenFromClient": false
+      },
+      {
+        "internalInstrumentId": 254,
+        "internalSymbolFull": "SPX500.FUT",
+        "internalInstrumentDisplayName": "SPX500 Future",
+        "internalAssetClassId": 4,
+        "internalAssetClassName": "Indices",
+        "internalExchangeId": 3,
+        "internalExchangeName": "CFD",
+        "isHiddenFromClient": false
+      }
+    ]
+  },
+  {
+    "symbol": "QQQ",
+    "resolved": {
+      "internalInstrumentId": 3006,
+      "internalSymbolFull": "QQQ",
+      "internalInstrumentDisplayName": "Invesco QQQ",
+      "internalAssetClassId": 6,
+      "internalAssetClassName": "ETF",
+      "internalExchangeId": 4,
+      "internalExchangeName": "Nasdaq",
+      "isHiddenFromClient": false
+    },
+    "loose_matches": [
+      {
+        "internalInstrumentId": 3006,
+        "internalSymbolFull": "QQQ",
+        "internalInstrumentDisplayName": "Invesco QQQ",
+        "internalAssetClassId": 6,
+        "internalAssetClassName": "ETF",
+        "internalExchangeId": 4,
+        "internalExchangeName": "Nasdaq",
+        "isHiddenFromClient": false
+      },
+      {
+        "internalInstrumentId": 3418,
+        "internalSymbolFull": "QQQ.RTH",
+        "internalInstrumentDisplayName": "Invesco QQQ",
+        "internalAssetClassId": 6,
+        "internalAssetClassName": "ETF",
+        "internalExchangeId": 33,
+        "internalExchangeName": "Regular Trading Hours - RTH",
+        "isHiddenFromClient": false
+      },
+      {
+        "internalInstrumentId": 8102,
+        "internalSymbolFull": "QQQJ",
+        "internalInstrumentDisplayName": "Invesco NASDAQ Next Gen 100 ETF",
+        "internalAssetClassId": 6,
+        "internalAssetClassName": "ETF",
+        "internalExchangeId": 4,
+        "internalExchangeName": "Nasdaq",
+        "isHiddenFromClient": false
+      },
+      {
+        "internalInstrumentId": 16015,
+        "internalSymbolFull": "QQQM",
+        "internalInstrumentDisplayName": "Invesco Nasdaq 100 ETF",
+        "internalAssetClassId": 6,
+        "internalAssetClassName": "ETF",
+        "internalExchangeId": 4,
+        "internalExchangeName": "Nasdaq",
+        "isHiddenFromClient": false
+      }
+    ]
+  },
+  {
+    "symbol": "SPY",
+    "resolved": {
+      "internalInstrumentId": 3000,
+      "internalSymbolFull": "SPY",
+      "internalInstrumentDisplayName": "State Street SPDR S\u0026P 500 ETF",
+      "internalAssetClassId": 6,
+      "internalAssetClassName": "ETF",
+      "internalExchangeId": 5,
+      "internalExchangeName": "NYSE",
+      "isHiddenFromClient": false
+    },
+    "loose_matches": [
+      {
+        "internalInstrumentId": 3000,
+        "internalSymbolFull": "SPY",
+        "internalInstrumentDisplayName": "State Street SPDR S\u0026P 500 ETF",
+        "internalAssetClassId": 6,
+        "internalAssetClassName": "ETF",
+        "internalExchangeId": 5,
+        "internalExchangeName": "NYSE",
+        "isHiddenFromClient": false
+      },
+      {
+        "internalInstrumentId": 3417,
+        "internalSymbolFull": "SPY.RTH",
+        "internalInstrumentDisplayName": "State Street SPDR S\u0026P 500 ETF",
+        "internalAssetClassId": 6,
+        "internalAssetClassName": "ETF",
+        "internalExchangeId": 33,
+        "internalExchangeName": "Regular Trading Hours - RTH",
+        "isHiddenFromClient": false
+      },
+      {
+        "internalInstrumentId": 10583,
+        "internalSymbolFull": "SPY4.DE",
+        "internalInstrumentDisplayName": "SPDR S\u0026P 400 US Mid Cap UCITS ETF",
+        "internalAssetClassId": 6,
+        "internalAssetClassName": "ETF",
+        "internalExchangeId": 38,
+        "internalExchangeName": "Xetra ETFs",
+        "isHiddenFromClient": false
+      },
+      {
+        "internalInstrumentId": 2864,
+        "internalSymbolFull": "SPY5.L",
+        "internalInstrumentDisplayName": "SS SPDR S\u0026P 500 UCITS ETF",
+        "internalAssetClassId": 6,
+        "internalAssetClassName": "ETF",
+        "internalExchangeId": 7,
+        "internalExchangeName": "LSE",
+        "isHiddenFromClient": false
+      },
+      {
+        "internalInstrumentId": 3233,
+        "internalSymbolFull": "SPYD",
+        "internalInstrumentDisplayName": "SPDR Portfolio S\u0026P 500 High Dividend ETF",
+        "internalAssetClassId": 6,
+        "internalAssetClassName": "ETF",
+        "internalExchangeId": 5,
+        "internalExchangeName": "NYSE",
+        "isHiddenFromClient": false
+      },
+      {
+        "internalInstrumentId": 3234,
+        "internalSymbolFull": "SPYG",
+        "internalInstrumentDisplayName": "SPDR Portfolio S\u0026P 500 Growth ETF",
+        "internalAssetClassId": 6,
+        "internalAssetClassName": "ETF",
+        "internalExchangeId": 5,
+        "internalExchangeName": "NYSE",
+        "isHiddenFromClient": false
+      },
+      {
+        "internalInstrumentId": 10596,
+        "internalSymbolFull": "SPYN.DE",
+        "internalInstrumentDisplayName": "SS SPDR MSCI Europe Energy UCITS ETF",
+        "internalAssetClassId": 6,
+        "internalAssetClassName": "ETF",
+        "internalExchangeId": 38,
+        "internalExchangeName": "Xetra ETFs",
+        "isHiddenFromClient": false
+      },
+      {
+        "internalInstrumentId": 3430,
+        "internalSymbolFull": "SPYU",
+        "internalInstrumentDisplayName": "MAX S\u0026P 500 4X Leveraged ETN ",
+        "internalAssetClassId": 6,
+        "internalAssetClassName": "ETF",
+        "internalExchangeId": 5,
+        "internalExchangeName": "NYSE",
+        "isHiddenFromClient": false
+      },
+      {
+        "internalInstrumentId": 10811,
+        "internalSymbolFull": "SPYX",
+        "internalInstrumentDisplayName": "SPDR S\u0026P 500 Fossil Fuel Reserves Free ETF",
+        "internalAssetClassId": 6,
+        "internalAssetClassName": "ETF",
+        "internalExchangeId": 5,
+        "internalExchangeName": "NYSE",
+        "isHiddenFromClient": false
+      },
+      {
+        "internalInstrumentId": 8787,
+        "internalSymbolFull": "SPYtest",
+        "internalInstrumentDisplayName": "SPYtest",
+        "internalAssetClassId": 6,
+        "internalAssetClassName": "ETF",
+        "internalExchangeId": 4,
+        "internalExchangeName": "Nasdaq",
+        "isHiddenFromClient": false
+      }
+    ]
+  }
+]

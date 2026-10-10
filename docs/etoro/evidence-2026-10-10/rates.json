@@ -1,0 +1,42 @@
+[
+  {
+    "instrumentId": 28,
+    "bid": 30921,
+    "ask": 30970,
+    "date": "2026-10-10T02:14:29.963",
+    "quoteType": "realtime",
+    "symbol": "NSDQ100",
+    "mid": 30945.5,
+    "spread_bps": 15.8342893150862
+  },
+  {
+    "instrumentId": 27,
+    "bid": 7813.1,
+    "ask": 7824.3,
+    "date": "2026-10-10T02:14:29.987",
+    "quoteType": "realtime",
+    "symbol": "SPX500",
+    "mid": 7818.700000000001,
+    "spread_bps": 14.324631972066735
+  },
+  {
+    "instrumentId": 3006,
+    "bid": 751.17,
+    "ask": 751.18,
+    "date": "2026-10-09T19:59:55.647",
+    "quoteType": "realtime",
+    "symbol": "QQQ",
+    "mid": 751.175,
+    "spread_bps": 0.13312477119167845
+  },
+  {
+    "instrumentId": 3000,
+    "bid": 778.37,
+    "ask": 778.39,
+    "date": "2026-10-09T19:59:55.803",
+    "quoteType": "realtime",
+    "symbol": "SPY",
+    "mid": 778.38,
+    "spread_bps": 0.2569439091444
+  }
+]

@@ -18,6 +18,13 @@ on:
       - 'shared/pkg/bitsodaily/**'
       - 'shared/pkg/varmodel/**'
       - 'shared/pkg/httpcors/**'
+      - 'shared/pkg/etoro/**'
+      - 'shared/pkg/broker/**'
+      - 'shared/pkg/mktcal/**'
+      - 'shared/pkg/etorodaily/**'
+      - 'services/strategy-executor/cmd/etoro-spike/**'
+      - 'docs/etoro/**'
+      - 'scripts/check-no-etoro-secrets.sh'
       - 'services/api-gateway/**'
       - 'services/market-data/**'
       - 'services/backtesting/**'
@@ -100,8 +107,27 @@ jobs:
             services/strategy-executor/internal/reconcile \
             services/strategy-executor/internal/stageenv \
             services/strategy-executor/cmd/daily-executor/stage.go \
-            services/strategy-executor/cmd/daily-executor/costs_contract_test.go)
+            services/strategy-executor/cmd/daily-executor/costs_contract_test.go \
+            shared/pkg/etoro shared/pkg/broker shared/pkg/mktcal shared/pkg/etorodaily \
+            services/strategy-executor/cmd/etoro-spike)
           if [ -n "$out" ]; then echo "gofmt needed:"; echo "$out"; exit 1; fi
+
+      # eToro index-CFD port (docs/etoro): never commit the demo/real keys.
+      - name: no eToro credentials in the tree
+        run: bash scripts/check-no-etoro-secrets.sh
+
+      # eToro index-CFD port, phase P1: v2 client (httptest contract tests on
+      # trimmed real demo responses), broker seam + eToro adapter, NYSE
+      # calendar, eToro daily bars, and the spike CLI (no network in CI).
+      - name: eToro packages
+        working-directory: shared
+        run: |
+          go vet ./pkg/etoro ./pkg/broker/... ./pkg/mktcal ./pkg/etorodaily
+          go test -race -count=1 ./pkg/etoro ./pkg/broker/... ./pkg/mktcal ./pkg/etorodaily
+
+      - name: etoro-spike builds
+        working-directory: services/strategy-executor
+        run: go vet ./cmd/etoro-spike
 
       - name: shared
         working-directory: shared

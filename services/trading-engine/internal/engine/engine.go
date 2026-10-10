@@ -668,6 +668,7 @@ func (te *TradingEngine) processTradeSignal(signal *models.TradeSignalEvent) err
 		Price:        signal.Price,
 		Reason:       fmt.Sprintf("%v", signal.Metadata["reason"]),
 		Timestamp:    signal.Timestamp,
+		ClientRef:    signal.EventID,
 	}
 
 	// Execute based on signal type
@@ -966,20 +967,17 @@ func (te *TradingEngine) validateEtoroSignalPrice(signal *models.TradeSignalEven
 	defer cancel()
 
 	if instrumentID <= 0 {
-		result, err := te.etoroClient.SearchInstrument(ctx, strings.ToUpper(symbol))
+		result, err := te.etoroClient.ResolveSymbol(ctx, strings.ToUpper(symbol))
 		if err != nil {
 			return 0, fmt.Errorf("resolve instrument for price check: %w", err)
 		}
 		instrumentID = result.InstrumentID
 	}
-	rates, err := te.etoroClient.GetRates(ctx, instrumentID)
+	rate, err := te.etoroClient.Rate(ctx, instrumentID)
 	if err != nil {
 		return 0, fmt.Errorf("fetch rates: %w", err)
 	}
-	if len(rates) == 0 {
-		return 0, fmt.Errorf("no rates for instrument %d", instrumentID)
-	}
-	bid, ask := rates[0].Bid, rates[0].Ask
+	bid, ask := rate.Bid, rate.Ask
 	if bid <= 0 || ask <= 0 {
 		return 0, fmt.Errorf("invalid quote for instrument %d (bid %.4f ask %.4f)", instrumentID, bid, ask)
 	}

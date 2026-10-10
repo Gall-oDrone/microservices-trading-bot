@@ -1,0 +1,32 @@
+{
+ "results": [
+  {
+   "instrumentId": 27,
+   "bid": 7812.9,
+   "ask": 7824.1,
+   "date": "2026-10-10T01:45:59.923",
+   "quoteType": "realtime"
+  },
+  {
+   "instrumentId": 28,
+   "bid": 30914.0,
+   "ask": 30962.0,
+   "date": "2026-10-10T01:45:59.923",
+   "quoteType": "realtime"
+  },
+  {
+   "instrumentId": 3000,
+   "bid": 778.37,
+   "ask": 778.39,
+   "date": "2026-10-09T19:59:55.803",
+   "quoteType": "realtime"
+  },
+  {
+   "instrumentId": 3006,
+   "bid": 751.17,
+   "ask": 751.18,
+   "date": "2026-10-09T19:59:55.647",
+   "quoteType": "realtime"
+  }
+ ]
+}
