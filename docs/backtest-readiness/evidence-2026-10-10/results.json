@@ -1,0 +1,2697 @@
+{
+  "params": {
+    "sma": 50,
+    "overnight_bps_per_night": 2.3,
+    "financing_markup_annual": 0.04337999839782713,
+    "irx_last_annual": 0.040570001602172855,
+    "irx_last_date": "2026-10-09",
+    "size_usd": 1100,
+    "etf_fee_usd_per_order": 1.5,
+    "sims": 2000,
+    "seed": 1,
+    "costs_status": "PROVISIONAL (weekend capture 2026-10-10)",
+    "pairs": [
+      {
+        "CFD": "NSDQ100",
+        "Index": "^NDX",
+        "ETF": "QQQ",
+        "SpreadRTBps": 15.5,
+        "ETFSpreadRTBps": 0.13
+      },
+      {
+        "CFD": "SPX500",
+        "Index": "^GSPC",
+        "ETF": "SPY",
+        "SpreadRTBps": 14.8,
+        "ETFSpreadRTBps": 0.26
+      }
+    ],
+    "data_sha256": {
+      "gspc_yahoo_daily.csv": "825d2ec0adb29030de98a3276b0f789397f2bb4b71e28456952c07637a71b889",
+      "irx_yahoo_daily.csv": "a6e72f88257cf3d59bac7f954580771b2ebd72c708a8770177f088e554c4f201",
+      "ndx_yahoo_daily.csv": "f5277add7910f42388806e66566cdb2299631be7f8ccece1adb708c985492f21",
+      "qqq_yahoo_daily.csv": "7f768e7a75166433d0c14bf0d22afda3caf5e2969175ce119aab793817e00811",
+      "spy_yahoo_daily.csv": "1d9114e10087c38f1a874d42931cdeaea8c52c807109cb8a2beda72985f2cba3"
+    }
+  },
+  "pairs": [
+    {
+      "pair": {
+        "CFD": "NSDQ100",
+        "Index": "^NDX",
+        "ETF": "QQQ",
+        "SpreadRTBps": 15.5,
+        "ETFSpreadRTBps": 0.13
+      },
+      "windows": [
+        {
+          "label": "full index history",
+          "bars": "index",
+          "from": "1986-02-01",
+          "to": "2026-10-09",
+          "rows": [
+            {
+              "rule": "cfd_hold",
+              "result": {
+                "return_pct": 13390.977597701522,
+                "cagr_pct": 12.816599812421048,
+                "round_trips": 1,
+                "exposure_pct": 100,
+                "max_dd_pct": 125.13886067438582,
+                "sharpe_ann": 0.25861699651766046,
+                "trade_cost_pct": 18.069518280202672,
+                "finance_pct": 9706.537842344307,
+                "nights_held": 14858,
+                "bars": 10250,
+                "min_equity": -7.294871917706968,
+                "margin_close_out": true
+              }
+            },
+            {
+              "rule": "cfd_trend",
+              "result": {
+                "return_pct": 648.3893550700569,
+                "cagr_pct": 5.073414085738381,
+                "round_trips": 341,
+                "exposure_pct": 66.1170731707317,
+                "max_dd_pct": 49.268175691017255,
+                "sharpe_ann": 0.38153538677370324,
+                "trade_cost_pct": 189.6302019821455,
+                "finance_pct": 696.7175858813763,
+                "nights_held": 9815,
+                "bars": 10250,
+                "min_equity": 1,
+                "margin_close_out": false
+              },
+              "random_beat_pct": 95.4
+            },
+            {
+              "rule": "etf_hold",
+              "result": {
+                "return_pct": 1630.3670894936154,
+                "cagr_pct": 10.908495264326778,
+                "round_trips": 1,
+                "exposure_pct": 99.98559077809799,
+                "max_dd_pct": 82.96391323072494,
+                "sharpe_ann": 0.5195871135613346,
+                "trade_cost_pct": 2.511105337488776,
+                "finance_pct": 0,
+                "nights_held": 0,
+                "bars": 6940,
+                "min_equity": 0.38945356516540836,
+                "margin_close_out": false
+              }
+            },
+            {
+              "rule": "etf_trend",
+              "result": {
+                "return_pct": 470.11605741988785,
+                "cagr_pct": 6.525582856612222,
+                "round_trips": 229,
+                "exposure_pct": 65.27377521613833,
+                "max_dd_pct": 45.7259994497653,
+                "sharpe_ann": 0.4682798246552172,
+                "trade_cost_pct": 139.7460719346463,
+                "finance_pct": 0,
+                "nights_held": 0,
+                "bars": 6940,
+                "min_equity": 0.8634943273621793,
+                "margin_close_out": false
+              }
+            }
+          ]
+        },
+        {
+          "label": "since ETF inception",
+          "bars": "index",
+          "from": "1999-06-10",
+          "to": "2026-10-09",
+          "rows": [
+            {
+              "rule": "cfd_hold",
+              "result": {
+                "return_pct": 768.585595605337,
+                "cagr_pct": 8.2459733461987,
+                "round_trips": 1,
+                "exposure_pct": 100,
+                "max_dd_pct": 107.9162486130307,
+                "sharpe_ann": 0.19393395143177591,
+                "trade_cost_pct": 1.197430463725656,
+                "finance_pct": 575.3660400285584,
+                "nights_held": 9983,
+                "bars": 6876,
+                "min_equity": -0.16580897560796276,
+                "margin_close_out": true
+              }
+            },
+            {
+              "rule": "cfd_trend",
+              "result": {
+                "return_pct": 138.94961042777382,
+                "cagr_pct": 3.244433690223558,
+                "round_trips": 224,
+                "exposure_pct": 65.18324607329843,
+                "max_dd_pct": 49.268175691017326,
+                "sharpe_ann": 0.28129023634918227,
+                "trade_cost_pct": 49.95180806398198,
+                "finance_pct": 170.94660708222824,
+                "nights_held": 6520,
+                "bars": 6876,
+                "min_equity": 0.9508671169232261,
+                "margin_close_out": false
+              },
+              "random_beat_pct": 86.75
+            },
+            {
+              "rule": "etf_hold",
+              "result": {
+                "return_pct": 1591.3206520985675,
+                "cagr_pct": 10.92260592441512,
+                "round_trips": 1,
+                "exposure_pct": 100,
+                "max_dd_pct": 82.96391323072494,
+                "sharpe_ann": 0.5212700831265128,
+                "trade_cost_pct": 2.457532992325176,
+                "finance_pct": 0,
+                "nights_held": 0,
+                "bars": 6876,
+                "min_equity": 0.38066538701359226,
+                "margin_close_out": false
+              }
+            },
+            {
+              "rule": "etf_trend",
+              "result": {
+                "return_pct": 558.7510483261071,
+                "cagr_pct": 7.154362734881059,
+                "round_trips": 224,
+                "exposure_pct": 65.18324607329843,
+                "max_dd_pct": 45.725999449765304,
+                "sharpe_ann": 0.5081856543804618,
+                "trade_cost_pct": 160.01783123380508,
+                "finance_pct": 0,
+                "nights_held": 0,
+                "bars": 6876,
+                "min_equity": 0.9977403477245734,
+                "margin_close_out": false
+              }
+            }
+          ]
+        },
+        {
+          "label": "2000-2009",
+          "bars": "index",
+          "from": "2000-01-01",
+          "to": "2009-12-31",
+          "rows": [
+            {
+              "rule": "cfd_hold",
+              "result": {
+                "return_pct": -85.62862667222073,
+                "cagr_pct": -17.67177488162931,
+                "round_trips": 1,
+                "exposure_pct": 100,
+                "max_dd_pct": 104.7356992196776,
+                "sharpe_ann": 0.2522786064550004,
+                "trade_cost_pct": 0.11585789885420988,
+                "finance_pct": 35.08433181105669,
+                "nights_held": 3650,
+                "bars": 2515,
+                "min_equity": -0.05811186476085811,
+                "margin_close_out": true
+              }
+            },
+            {
+              "rule": "cfd_trend",
+              "result": {
+                "return_pct": -10.535045230056618,
+                "cagr_pct": -1.1096859741298037,
+                "round_trips": 81,
+                "exposure_pct": 54.07554671968191,
+                "max_dd_pct": 49.165188982202615,
+                "sharpe_ann": 0.03712271344065557,
+                "trade_cost_pct": 9.591412792478863,
+                "finance_pct": 30.322322820781476,
+                "nights_held": 1979,
+                "bars": 2515,
+                "min_equity": 0.6237950355324979,
+                "margin_close_out": false
+              },
+              "random_beat_pct": 92.05
+            },
+            {
+              "rule": "etf_hold",
+              "result": {
+                "return_pct": -51.19487513323242,
+                "cagr_pct": -6.938040894588693,
+                "round_trips": 1,
+                "exposure_pct": 100,
+                "max_dd_pct": 82.96391323072494,
+                "sharpe_ann": -0.03044668794686513,
+                "trade_cost_pct": 0.20397505895546186,
+                "finance_pct": 0,
+                "nights_held": 0,
+                "bars": 2515,
+                "min_equity": 0.20826510289847344,
+                "margin_close_out": false
+              }
+            },
+            {
+              "rule": "etf_trend",
+              "result": {
+                "return_pct": 17.679246465428932,
+                "cagr_pct": 1.6451968703567132,
+                "round_trips": 81,
+                "exposure_pct": 54.07554671968191,
+                "max_dd_pct": 45.72599944976532,
+                "sharpe_ann": 0.19036690511518137,
+                "trade_cost_pct": 19.36633343875438,
+                "finance_pct": 0,
+                "nights_held": 0,
+                "bars": 2515,
+                "min_equity": 0.6634962865822164,
+                "margin_close_out": false
+              }
+            }
+          ]
+        },
+        {
+          "label": "2010-2019",
+          "bars": "index",
+          "from": "2010-01-01",
+          "to": "2019-12-31",
+          "rows": [
+            {
+              "rule": "cfd_hold",
+              "result": {
+                "return_pct": 244.4335610076992,
+                "cagr_pct": 13.192415192640272,
+                "round_trips": 1,
+                "exposure_pct": 100,
+                "max_dd_pct": 31.506358113875834,
+                "sharpe_ann": 0.7077642282666216,
+                "trade_cost_pct": 0.43671391213146915,
+                "finance_pct": 118.70904718529083,
+                "nights_held": 3648,
+                "bars": 2516,
+                "min_equity": 0.894999792936815,
+                "margin_close_out": false
+              }
+            },
+            {
+              "rule": "cfd_trend",
+              "result": {
+                "return_pct": 5.884991032057663,
+                "cagr_pct": 0.5746147472458052,
+                "round_trips": 85,
+                "exposure_pct": 71.97933227344993,
+                "max_dd_pct": 23.20843430949914,
+                "sharpe_ann": 0.10718772834280328,
+                "trade_cost_pct": 12.81353164297349,
+                "finance_pct": 35.62301483670483,
+                "nights_held": 2632,
+                "bars": 2516,
+                "min_equity": 0.8564650637625365,
+                "margin_close_out": false
+              },
+              "random_beat_pct": 8.95
+            },
+            {
+              "rule": "etf_hold",
+              "result": {
+                "return_pct": 408.13640477954243,
+                "cagr_pct": 17.68968081035325,
+                "round_trips": 1,
+                "exposure_pct": 100,
+                "max_dd_pct": 22.796654217916164,
+                "sharpe_ann": 1.0311666804608732,
+                "trade_cost_pct": 0.8341850221068277,
+                "finance_pct": 0,
+                "nights_held": 0,
+                "bars": 2516,
+                "min_equity": 0.9186617686297947,
+                "margin_close_out": false
+              }
+            },
+            {
+              "rule": "etf_trend",
+              "result": {
+                "return_pct": 45.11601185896148,
+                "cagr_pct": 3.8015129563725436,
+                "round_trips": 85,
+                "exposure_pct": 71.97933227344993,
+                "max_dd_pct": 20.676601172598218,
+                "sharpe_ann": 0.38391884421665895,
+                "trade_cost_pct": 25.969826239314152,
+                "finance_pct": 0,
+                "nights_held": 0,
+                "bars": 2516,
+                "min_equity": 0.8851953885556316,
+                "margin_close_out": false
+              }
+            }
+          ]
+        },
+        {
+          "label": "2020-2026",
+          "bars": "index",
+          "from": "2020-01-01",
+          "to": "2026-10-09",
+          "rows": [
+            {
+              "rule": "cfd_hold",
+              "result": {
+                "return_pct": 152.67021501905393,
+                "cagr_pct": 14.719603429313043,
+                "round_trips": 1,
+                "exposure_pct": 100,
+                "max_dd_pct": 43.455845130471246,
+                "sharpe_ann": 0.6110071569173257,
+                "trade_cost_pct": 0.34920295210719554,
+                "finance_pct": 97.64253636070406,
+                "nights_held": 2472,
+                "bars": 1702,
+                "min_equity": 0.7815955115800931,
+                "margin_close_out": false
+              }
+            },
+            {
+              "rule": "cfd_trend",
+              "result": {
+                "return_pct": 61.87523934037833,
+                "cagr_pct": 7.3963922389082,
+                "round_trips": 57,
+                "exposure_pct": 69.44770857814336,
+                "max_dd_pct": 22.881901093017028,
+                "sharpe_ann": 0.5212418128655247,
+                "trade_cost_pct": 11.955105524362043,
+                "finance_pct": 47.421033495752866,
+                "nights_held": 1716,
+                "bars": 1702,
+                "min_equity": 0.9797817733600057,
+                "margin_close_out": false
+              },
+              "random_beat_pct": 75.25
+            },
+            {
+              "rule": "etf_hold",
+              "result": {
+                "return_pct": 263.37850594820236,
+                "cagr_pct": 21.0643244467426,
+                "round_trips": 1,
+                "exposure_pct": 100,
+                "max_dd_pct": 35.11874440150149,
+                "sharpe_ann": 0.8920690642190735,
+                "trade_cost_pct": 0.6355748379589252,
+                "finance_pct": 0,
+                "nights_held": 0,
+                "bars": 1702,
+                "min_equity": 0.7885638953213558,
+                "margin_close_out": false
+              }
+            },
+            {
+              "rule": "etf_trend",
+              "result": {
+                "return_pct": 120.32387161838112,
+                "cagr_pct": 12.414914373111152,
+                "round_trips": 57,
+                "exposure_pct": 69.44770857814336,
+                "max_dd_pct": 18.47658042846687,
+                "sharpe_ann": 0.8205358994371628,
+                "trade_cost_pct": 24.98294418896719,
+                "finance_pct": 0,
+                "nights_held": 0,
+                "bars": 1702,
+                "min_equity": 0.9892916648956384,
+                "margin_close_out": false
+              }
+            }
+          ]
+        },
+        {
+          "label": "last 10y",
+          "bars": "index",
+          "from": "2016-10-09",
+          "to": "2026-10-09",
+          "rows": [
+            {
+              "rule": "cfd_hold",
+              "result": {
+                "return_pct": 328.8636827199538,
+                "cagr_pct": 15.719902900542216,
+                "round_trips": 1,
+                "exposure_pct": 100,
+                "max_dd_pct": 47.35607832509214,
+                "sharpe_ann": 0.6457189521919524,
+                "trade_cost_pct": 0.5668046658387337,
+                "finance_pct": 202.00787176096077,
+                "nights_held": 3651,
+                "bars": 2514,
+                "min_equity": 0.9492587697343923,
+                "margin_close_out": false
+              }
+            },
+            {
+              "rule": "cfd_trend",
+              "result": {
+                "return_pct": 87.95186589785837,
+                "cagr_pct": 6.532225639312195,
+                "round_trips": 80,
+                "exposure_pct": 71.75815433571996,
+                "max_dd_pct": 22.881901093017163,
+                "sharpe_ann": 0.5077519963788213,
+                "trade_cost_pct": 17.649476445986796,
+                "finance_pct": 71.06137580195129,
+                "nights_held": 2623,
+                "bars": 2514,
+                "min_equity": 0.9328395321610284,
+                "margin_close_out": false
+              },
+              "random_beat_pct": 69.8
+            },
+            {
+              "rule": "etf_hold",
+              "result": {
+                "return_pct": 573.265991234974,
+                "cagr_pct": 21.07357337789948,
+                "round_trips": 1,
+                "exposure_pct": 100,
+                "max_dd_pct": 35.11874440150149,
+                "sharpe_ann": 0.9615926005979689,
+                "trade_cost_pct": 1.0607454919599575,
+                "finance_pct": 0,
+                "nights_held": 0,
+                "bars": 2514,
+                "min_equity": 0.9530926661943478,
+                "margin_close_out": false
+              }
+            },
+            {
+              "rule": "etf_trend",
+              "result": {
+                "return_pct": 193.80018382093928,
+                "cagr_pct": 11.412926725521345,
+                "round_trips": 80,
+                "exposure_pct": 71.75815433571996,
+                "max_dd_pct": 18.476580428466868,
+                "sharpe_ann": 0.8281053916326007,
+                "trade_cost_pct": 40.38989709203917,
+                "finance_pct": 0,
+                "nights_held": 0,
+                "bars": 2514,
+                "min_equity": 0.9328933962536542,
+                "margin_close_out": false
+              }
+            }
+          ]
+        },
+        {
+          "label": "last 5y",
+          "bars": "index",
+          "from": "2021-10-09",
+          "to": "2026-10-09",
+          "rows": [
+            {
+              "rule": "cfd_hold",
+              "result": {
+                "return_pct": 57.075992627065155,
+                "cagr_pct": 9.498867497886598,
+                "round_trips": 1,
+                "exposure_pct": 100,
+                "max_dd_pct": 40.94363844753598,
+                "sharpe_ann": 0.4745575358390379,
+                "trade_cost_pct": 0.23946933669926856,
+                "finance_pct": 51.754730551420856,
+                "nights_held": 1824,
+                "bars": 1255,
+                "min_equity": 0.659162671821249,
+                "margin_close_out": false
+              }
+            },
+            {
+              "rule": "cfd_trend",
+              "result": {
+                "return_pct": 28.767526948480217,
+                "cagr_pct": 5.212259834955546,
+                "round_trips": 42,
+                "exposure_pct": 66.13545816733068,
+                "max_dd_pct": 18.41710036278166,
+                "sharpe_ann": 0.4120313198147129,
+                "trade_cost_pct": 7.254279724376706,
+                "finance_pct": 31.521060617735742,
+                "nights_held": 1205,
+                "bars": 1255,
+                "min_equity": 0.8767275723036528,
+                "margin_close_out": false
+              },
+              "random_beat_pct": 76.9
+            },
+            {
+              "rule": "etf_hold",
+              "result": {
+                "return_pct": 114.67917343024973,
+                "cagr_pct": 16.593807581962427,
+                "round_trips": 1,
+                "exposure_pct": 100,
+                "max_dd_pct": 35.11874440150148,
+                "sharpe_ann": 0.7884861797678074,
+                "trade_cost_pct": 0.4315569428907575,
+                "finance_pct": 0,
+                "nights_held": 0,
+                "bars": 1255,
+                "min_equity": 0.7279552095513868,
+                "margin_close_out": false
+              }
+            },
+            {
+              "rule": "etf_trend",
+              "result": {
+                "return_pct": 66.91386003384456,
+                "cagr_pct": 10.84379629252037,
+                "round_trips": 42,
+                "exposure_pct": 66.13545816733068,
+                "max_dd_pct": 16.05471111279525,
+                "sharpe_ann": 0.7675544428950343,
+                "trade_cost_pct": 15.024377670696666,
+                "finance_pct": 0,
+                "nights_held": 0,
+                "bars": 1255,
+                "min_equity": 0.906129573119649,
+                "margin_close_out": false
+              }
+            }
+          ]
+        },
+        {
+          "label": "last 3y",
+          "bars": "index",
+          "from": "2023-10-09",
+          "to": "2026-10-09",
+          "rows": [
+            {
+              "rule": "cfd_hold",
+              "result": {
+                "return_pct": 68.95621070443707,
+                "cagr_pct": 19.186539132355108,
+                "round_trips": 1,
+                "exposure_pct": 100,
+                "max_dd_pct": 27.70851864983418,
+                "sharpe_ann": 0.8508315206550235,
+                "trade_cost_pct": 0.23831617707801983,
+                "finance_pct": 38.38771773528465,
+                "nights_held": 1096,
+                "bars": 754,
+                "min_equity": 0.9432774565884668,
+                "margin_close_out": false
+              }
+            },
+            {
+              "rule": "cfd_trend",
+              "result": {
+                "return_pct": 27.539132586492165,
+                "cagr_pct": 8.481275545235567,
+                "round_trips": 29,
+                "exposure_pct": 73.87267904509284,
+                "max_dd_pct": 15.615362226242974,
+                "sharpe_ann": 0.6339757101016912,
+                "trade_cost_pct": 5.2326587597536385,
+                "finance_pct": 22.89555934084587,
+                "nights_held": 810,
+                "bars": 754,
+                "min_equity": 0.9800679212725684,
+                "margin_close_out": false
+              },
+              "random_beat_pct": 63.35
+            },
+            {
+              "rule": "etf_hold",
+              "result": {
+                "return_pct": 110.3190075125791,
+                "cagr_pct": 28.249288406991123,
+                "round_trips": 1,
+                "exposure_pct": 100,
+                "max_dd_pct": 22.76829002129939,
+                "sharpe_ann": 1.3059452458160772,
+                "trade_cost_pct": 0.42557472456059964,
+                "finance_pct": 0,
+                "nights_held": 0,
+                "bars": 754,
+                "min_equity": 0.9472511885349525,
+                "margin_close_out": false
+              }
+            },
+            {
+              "rule": "etf_trend",
+              "result": {
+                "return_pct": 51.70792122019587,
+                "cagr_pct": 14.967865588683015,
+                "round_trips": 29,
+                "exposure_pct": 73.87267904509284,
+                "max_dd_pct": 13.096307557570194,
+                "sharpe_ann": 1.0490115575738819,
+                "trade_cost_pct": 10.35292866409779,
+                "finance_pct": 0,
+                "nights_held": 0,
+                "bars": 754,
+                "min_equity": 0.9803745290189161,
+                "margin_close_out": false
+              }
+            }
+          ]
+        },
+        {
+          "label": "eToro bars",
+          "bars": "etoro",
+          "from": "2023-03-17",
+          "to": "2026-10-09",
+          "rows": [
+            {
+              "rule": "cfd_hold",
+              "result": {
+                "return_pct": 94.05709319339293,
+                "cagr_pct": 20.548369799270063,
+                "round_trips": 1,
+                "exposure_pct": 100,
+                "max_dd_pct": 28.793167328612935,
+                "sharpe_ann": 0.9123971214125453,
+                "trade_cost_pct": 0.2680075865525884,
+                "finance_pct": 51.56863993307178,
+                "nights_held": 1302,
+                "bars": 895,
+                "min_equity": 0.9960989576811496,
+                "margin_close_out": false
+              }
+            },
+            {
+              "rule": "cfd_trend",
+              "result": {
+                "return_pct": 36.98122610807746,
+                "cagr_pct": 9.27527459576587,
+                "round_trips": 33,
+                "exposure_pct": 75.53072625698324,
+                "max_dd_pct": 15.27737372788341,
+                "sharpe_ann": 0.6912938031780484,
+                "trade_cost_pct": 6.199487915963717,
+                "finance_pct": 29.41235294976466,
+                "nights_held": 986,
+                "bars": 895,
+                "min_equity": 0.9960989576811496,
+                "margin_close_out": false
+              },
+              "random_beat_pct": 68.05
+            },
+            {
+              "rule": "etf_hold",
+              "result": {
+                "return_pct": 149.517032271067,
+                "cagr_pct": 29.400002144053783,
+                "round_trips": 1,
+                "exposure_pct": 100,
+                "max_dd_pct": 22.768290021299396,
+                "sharpe_ann": 1.4080758492267866,
+                "trade_cost_pct": 0.4793550500445162,
+                "finance_pct": 0,
+                "nights_held": 0,
+                "bars": 895,
+                "min_equity": 0.9942018757107706,
+                "margin_close_out": false
+              }
+            },
+            {
+              "rule": "etf_trend",
+              "result": {
+                "return_pct": 64.87198049382168,
+                "cagr_pct": 15.135481241691906,
+                "round_trips": 33,
+                "exposure_pct": 75.53072625698324,
+                "max_dd_pct": 14.753397043952866,
+                "sharpe_ann": 1.0561947037977393,
+                "trade_cost_pct": 12.410474350666737,
+                "finance_pct": 0,
+                "nights_held": 0,
+                "bars": 895,
+                "min_equity": 0.9942018757107706,
+                "margin_close_out": false
+              }
+            }
+          ]
+        }
+      ],
+      "calendar_years": [
+        {
+          "year": 2000,
+          "cfd_hold_return_pct": -47.36297682387338,
+          "cfd_trend_return_pct": -11.025588410702813,
+          "etf_hold_return_pct": -39.47745914041501,
+          "etf_trend_return_pct": -9.624751879681648,
+          "cfd_hold_maxdd_pct": 59.80297996489733,
+          "cfd_trend_maxdd_pct": 27.49225080477562,
+          "cfd_trend_random_beat_pct": 68.45,
+          "H1": true,
+          "H2": true,
+          "H2b": true,
+          "H3": false
+        },
+        {
+          "year": 2001,
+          "cfd_hold_return_pct": -38.5876405497417,
+          "cfd_trend_return_pct": -17.301638638988425,
+          "etf_hold_return_pct": -33.74008907482482,
+          "etf_trend_return_pct": -15.762757796899152,
+          "cfd_hold_maxdd_pct": 62.63216569248229,
+          "cfd_trend_maxdd_pct": 28.046992598697283,
+          "cfd_trend_random_beat_pct": 59.8,
+          "H1": true,
+          "H2": true,
+          "H2b": true,
+          "H3": false
+        },
+        {
+          "year": 2002,
+          "cfd_hold_return_pct": -42.55868976945172,
+          "cfd_trend_return_pct": -1.1182706232635287,
+          "etf_hold_return_pct": -38.581553644669576,
+          "etf_trend_return_pct": -0.4247670385101099,
+          "cfd_hold_maxdd_pct": 55.26833356878308,
+          "cfd_trend_maxdd_pct": 15.576816962301573,
+          "cfd_trend_random_beat_pct": 90.6,
+          "H1": true,
+          "H2": true,
+          "H2b": true,
+          "H3": false
+        },
+        {
+          "year": 2003,
+          "cfd_hold_return_pct": 40.733114898135206,
+          "cfd_trend_return_pct": 11.256679380437573,
+          "etf_hold_return_pct": 47.145619262449515,
+          "etf_trend_return_pct": 15.229543629131758,
+          "cfd_hold_maxdd_pct": 13.49289661490829,
+          "cfd_trend_maxdd_pct": 11.142243513117654,
+          "cfd_trend_random_beat_pct": 43.7,
+          "H1": true,
+          "H2": false,
+          "H2b": false,
+          "H3": false
+        },
+        {
+          "year": 2004,
+          "cfd_hold_return_pct": 4.150120422404036,
+          "cfd_trend_return_pct": 1.871422885857954,
+          "etf_hold_return_pct": 9.634456592969642,
+          "etf_trend_return_pct": 4.368918339495087,
+          "cfd_hold_maxdd_pct": 18.929797180234804,
+          "cfd_trend_maxdd_pct": 15.784333255855726,
+          "cfd_trend_random_beat_pct": 62.65,
+          "H1": true,
+          "H2": false,
+          "H2b": false,
+          "H3": false
+        },
+        {
+          "year": 2005,
+          "cfd_hold_return_pct": -6.2140949791965046,
+          "cfd_trend_return_pct": -5.035172635648488,
+          "etf_hold_return_pct": 0.8578199012949206,
+          "etf_trend_return_pct": -2.356475747714415,
+          "cfd_hold_maxdd_pct": 15.579259123246302,
+          "cfd_trend_maxdd_pct": 9.286956248875981,
+          "cfd_trend_random_beat_pct": 31.3,
+          "H1": true,
+          "H2": true,
+          "H2b": false,
+          "H3": false
+        },
+        {
+          "year": 2006,
+          "cfd_hold_return_pct": -2.897023309208291,
+          "cfd_trend_return_pct": -1.8686499704958281,
+          "etf_hold_return_pct": 6.219829202617988,
+          "etf_trend_return_pct": 2.616251752190535,
+          "cfd_hold_maxdd_pct": 21.879062041570325,
+          "cfd_trend_maxdd_pct": 13.670056550456009,
+          "cfd_trend_random_beat_pct": 61.25,
+          "H1": true,
+          "H2": true,
+          "H2b": false,
+          "H3": false
+        },
+        {
+          "year": 2007,
+          "cfd_hold_return_pct": 8.265805817607252,
+          "cfd_trend_return_pct": -10.948598949239774,
+          "etf_hold_return_pct": 17.8826686944878,
+          "etf_trend_return_pct": -6.795043982199478,
+          "cfd_hold_maxdd_pct": 12.499182585164498,
+          "cfd_trend_maxdd_pct": 15.0318488284729,
+          "cfd_trend_random_beat_pct": 5.65,
+          "H1": false,
+          "H2": false,
+          "H2b": false,
+          "H3": false
+        },
+        {
+          "year": 2008,
+          "cfd_hold_return_pct": -46.69300565362852,
+          "cfd_trend_return_pct": -1.8132844842142948,
+          "etf_hold_return_pct": -41.943377553941595,
+          "etf_trend_return_pct": -1.4442412228073631,
+          "cfd_hold_maxdd_pct": 54.769727168628656,
+          "cfd_trend_maxdd_pct": 11.271196827297478,
+          "cfd_trend_random_beat_pct": 92.25,
+          "H1": true,
+          "H2": true,
+          "H2b": true,
+          "H3": false
+        },
+        {
+          "year": 2009,
+          "cfd_hold_return_pct": 47.697416599411646,
+          "cfd_trend_return_pct": 29.85642799006907,
+          "etf_hold_return_pct": 54.20864563280394,
+          "etf_trend_return_pct": 34.5197050702871,
+          "cfd_hold_maxdd_pct": 18.955754857472083,
+          "cfd_trend_maxdd_pct": 13.725526693839832,
+          "cfd_trend_random_beat_pct": 76.85,
+          "H1": true,
+          "H2": false,
+          "H2b": false,
+          "H3": false
+        },
+        {
+          "year": 2010,
+          "cfd_hold_return_pct": 13.06254629631911,
+          "cfd_trend_return_pct": 2.60175368280553,
+          "etf_hold_return_pct": 18.31484690545824,
+          "etf_trend_return_pct": 5.79893573631689,
+          "cfd_hold_maxdd_pct": 16.912947602520457,
+          "cfd_trend_maxdd_pct": 17.046267595886608,
+          "cfd_trend_random_beat_pct": 38.1,
+          "H1": false,
+          "H2": false,
+          "H2b": false,
+          "H3": false
+        },
+        {
+          "year": 2011,
+          "cfd_hold_return_pct": -2.845804682646891,
+          "cfd_trend_return_pct": -10.928446508228195,
+          "etf_hold_return_pct": 2.2350393556963333,
+          "etf_trend_return_pct": -9.562320290269877,
+          "cfd_hold_maxdd_pct": 17.246485047976446,
+          "cfd_trend_maxdd_pct": 18.918893747137588,
+          "cfd_trend_random_beat_pct": 21.45,
+          "H1": false,
+          "H2": false,
+          "H2b": false,
+          "H3": false
+        },
+        {
+          "year": 2012,
+          "cfd_hold_return_pct": 9.372149998402325,
+          "cfd_trend_return_pct": 2.3295373819805842,
+          "etf_hold_return_pct": 15.553728001592159,
+          "etf_trend_return_pct": 3.9739593211223223,
+          "cfd_hold_maxdd_pct": 12.889227388080664,
+          "cfd_trend_maxdd_pct": 14.255917839382306,
+          "cfd_trend_random_beat_pct": 51.65,
+          "H1": false,
+          "H2": false,
+          "H2b": false,
+          "H3": false
+        },
+        {
+          "year": 2013,
+          "cfd_hold_return_pct": 26.613623156829224,
+          "cfd_trend_return_pct": 16.338763953691114,
+          "etf_hold_return_pct": 32.992881123891294,
+          "etf_trend_return_pct": 21.77659613540237,
+          "cfd_hold_maxdd_pct": 6.49034170591561,
+          "cfd_trend_maxdd_pct": 5.570128516662953,
+          "cfd_trend_random_beat_pct": 84.25,
+          "H1": true,
+          "H2": false,
+          "H2b": false,
+          "H3": false
+        },
+        {
+          "year": 2014,
+          "cfd_hold_return_pct": 13.625879605296841,
+          "cfd_trend_return_pct": -4.351996186966334,
+          "etf_hold_return_pct": 19.41164550100567,
+          "etf_trend_return_pct": -1.8619425247869414,
+          "cfd_hold_maxdd_pct": 8.817783919623576,
+          "cfd_trend_maxdd_pct": 10.548111491895309,
+          "cfd_trend_random_beat_pct": 6.75,
+          "H1": false,
+          "H2": false,
+          "H2b": false,
+          "H3": false
+        },
+        {
+          "year": 2015,
+          "cfd_hold_return_pct": 3.157932523274165,
+          "cfd_trend_return_pct": -14.364825775520396,
+          "etf_hold_return_pct": 8.59984041825539,
+          "etf_trend_return_pct": -12.613711427627472,
+          "cfd_hold_maxdd_pct": 14.925157565184788,
+          "cfd_trend_maxdd_pct": 14.298398679298819,
+          "cfd_trend_random_beat_pct": 4.05,
+          "H1": true,
+          "H2": false,
+          "H2b": false,
+          "H3": false
+        },
+        {
+          "year": 2016,
+          "cfd_hold_return_pct": 3.606328090656774,
+          "cfd_trend_return_pct": -2.6475043158928013,
+          "etf_hold_return_pct": 9.156363405786184,
+          "etf_trend_return_pct": -0.717272882154596,
+          "cfd_hold_maxdd_pct": 12.654279695696378,
+          "cfd_trend_maxdd_pct": 7.894554392949699,
+          "cfd_trend_random_beat_pct": 23.95,
+          "H1": true,
+          "H2": false,
+          "H2b": false,
+          "H3": false
+        },
+        {
+          "year": 2017,
+          "cfd_hold_return_pct": 24.211539212892873,
+          "cfd_trend_return_pct": 17.26437867351649,
+          "etf_hold_return_pct": 31.423958088964344,
+          "etf_trend_return_pct": 22.953892771445638,
+          "cfd_hold_maxdd_pct": 5.386238726210982,
+          "cfd_trend_maxdd_pct": 6.939642727886089,
+          "cfd_trend_random_beat_pct": 93.5,
+          "H1": false,
+          "H2": false,
+          "H2b": false,
+          "H3": false
+        },
+        {
+          "year": 2018,
+          "cfd_hold_return_pct": -8.487403970714801,
+          "cfd_trend_return_pct": -0.9386917499794922,
+          "etf_hold_return_pct": -0.9086962721678082,
+          "etf_trend_return_pct": 3.314021134460643,
+          "cfd_hold_maxdd_pct": 25.886832823972583,
+          "cfd_trend_maxdd_pct": 13.608105810141888,
+          "cfd_trend_random_beat_pct": 69,
+          "H1": true,
+          "H2": true,
+          "H2b": false,
+          "H3": false
+        },
+        {
+          "year": 2019,
+          "cfd_hold_return_pct": 32.88048384529287,
+          "cfd_trend_return_pct": 4.574362448338776,
+          "etf_hold_return_pct": 41.58223535701473,
+          "etf_trend_return_pct": 9.288587275046002,
+          "cfd_hold_maxdd_pct": 11.826761095081876,
+          "cfd_trend_maxdd_pct": 18.16357154176254,
+          "cfd_trend_random_beat_pct": 21.2,
+          "H1": false,
+          "H2": false,
+          "H2b": false,
+          "H3": false
+        },
+        {
+          "year": 2020,
+          "cfd_hold_return_pct": 40.78970159947097,
+          "cfd_trend_return_pct": 29.064592115667367,
+          "etf_hold_return_pct": 46.764104484102,
+          "etf_trend_return_pct": 32.21157039597913,
+          "cfd_hold_maxdd_pct": 28.62577256213847,
+          "cfd_trend_maxdd_pct": 18.01538539727006,
+          "cfd_trend_random_beat_pct": 76.85,
+          "H1": true,
+          "H2": false,
+          "H2b": false,
+          "H3": false
+        },
+        {
+          "year": 2021,
+          "cfd_hold_return_pct": 20.992189497912484,
+          "cfd_trend_return_pct": -0.7887249687688835,
+          "etf_hold_return_pct": 26.518342618831458,
+          "etf_trend_return_pct": 2.558108696591721,
+          "cfd_hold_maxdd_pct": 11.219922082635913,
+          "cfd_trend_maxdd_pct": 14.737404932211826,
+          "cfd_trend_random_beat_pct": 12.35,
+          "H1": false,
+          "H2": false,
+          "H2b": false,
+          "H3": false
+        },
+        {
+          "year": 2022,
+          "cfd_hold_return_pct": -38.13435921867841,
+          "cfd_trend_return_pct": -13.550015512145464,
+          "etf_hold_return_pct": -32.96382080796037,
+          "etf_trend_return_pct": -11.85534267077848,
+          "cfd_hold_maxdd_pct": 39.9888957602069,
+          "cfd_trend_maxdd_pct": 15.695260501809717,
+          "cfd_trend_random_beat_pct": 61.7,
+          "H1": true,
+          "H2": true,
+          "H2b": true,
+          "H3": false
+        },
+        {
+          "year": 2023,
+          "cfd_hold_return_pct": 40.280984419134654,
+          "cfd_trend_return_pct": 22.12796362370728,
+          "etf_hold_return_pct": 53.06913222746499,
+          "etf_trend_return_pct": 31.00966885713705,
+          "cfd_hold_maxdd_pct": 14.026950665974402,
+          "cfd_trend_maxdd_pct": 11.36056502693247,
+          "cfd_trend_random_beat_pct": 72,
+          "H1": true,
+          "H2": false,
+          "H2b": false,
+          "H3": false
+        },
+        {
+          "year": 2024,
+          "cfd_hold_return_pct": 15.28233289822225,
+          "cfd_trend_return_pct": 6.326136561150975,
+          "etf_hold_return_pct": 26.369941813351836,
+          "etf_trend_return_pct": 14.523874128591551,
+          "cfd_hold_maxdd_pct": 14.917039458176568,
+          "cfd_trend_maxdd_pct": 12.306758603705582,
+          "cfd_trend_random_beat_pct": 45.65,
+          "H1": true,
+          "H2": false,
+          "H2b": false,
+          "H3": false
+        },
+        {
+          "year": 2025,
+          "cfd_hold_return_pct": 10.493483545296822,
+          "cfd_trend_return_pct": 6.247974243431709,
+          "etf_hold_return_pct": 19.722883017354896,
+          "etf_trend_return_pct": 12.258465944649632,
+          "cfd_hold_maxdd_pct": 24.20358629928396,
+          "cfd_trend_maxdd_pct": 9.71114842712173,
+          "cfd_trend_random_beat_pct": 59.05,
+          "H1": true,
+          "H2": false,
+          "H2b": false,
+          "H3": false
+        },
+        {
+          "year": 2026,
+          "cfd_hold_return_pct": 14.155069614996286,
+          "cfd_trend_return_pct": 3.9061227999819703,
+          "etf_hold_return_pct": 21.240588040146015,
+          "etf_trend_return_pct": 6.786833283202953,
+          "cfd_hold_maxdd_pct": 13.12838367011616,
+          "cfd_trend_maxdd_pct": 13.920088939130789,
+          "cfd_trend_random_beat_pct": 47.2,
+          "H1": false,
+          "H2": false,
+          "H2b": false,
+          "H3": false
+        }
+      ],
+      "rolling_252d_step21": {
+        "windows": 316,
+        "h1_trend_dd_lower_pct": 70.25316455696203,
+        "h2_trend_beats_cfd_hold_pct": 30.69620253164557,
+        "h2b_cfd_trend_beats_etf_hold_pct": 20.88607594936709,
+        "etf_trend_beats_etf_hold_pct": 24.050632911392405,
+        "median_cfd_trend_minus_cfd_hold_pp": -7.612953951304895,
+        "median_cfd_trend_minus_etf_hold_pp": -14.763947381558756
+      },
+      "sensitivity": [
+        {
+          "label": "base (rate-linked financing)",
+          "window": "since ETF inception",
+          "cfd_trend_return_pct": 138.94961042777382,
+          "cfd_hold_return_pct": 768.585595605337,
+          "etf_hold_return_pct": 1591.3206520985675,
+          "etf_trend_return_pct": 558.7510483261071
+        },
+        {
+          "label": "spread x0.5",
+          "window": "since ETF inception",
+          "cfd_trend_return_pct": 184.40227773721398,
+          "cfd_hold_return_pct": 769.4826159597436,
+          "etf_hold_return_pct": 1591.3206520985675,
+          "etf_trend_return_pct": 558.7510483261071
+        },
+        {
+          "label": "spread x2",
+          "window": "since ETF inception",
+          "cfd_trend_return_pct": 68.64155236819762,
+          "cfd_hold_return_pct": 766.792857825457,
+          "etf_hold_return_pct": 1591.3206520985675,
+          "etf_trend_return_pct": 558.7510483261071
+        },
+        {
+          "label": "financing markup x0.5",
+          "window": "since ETF inception",
+          "cfd_trend_return_pct": 252.7306896533997,
+          "cfd_hold_return_pct": 948.0914041138957,
+          "etf_hold_return_pct": 1591.3206520985675,
+          "etf_trend_return_pct": 558.7510483261071
+        },
+        {
+          "label": "financing markup x1.5",
+          "window": "since ETF inception",
+          "cfd_trend_return_pct": 61.52873264791967,
+          "cfd_hold_return_pct": 589.0797870967798,
+          "etf_hold_return_pct": 1591.3206520985675,
+          "etf_trend_return_pct": 558.7510483261071
+        },
+        {
+          "label": "financing fixed at today's fee",
+          "window": "since ETF inception",
+          "cfd_trend_return_pct": 62.036260825157655,
+          "cfd_hold_return_pct": 649.1838541280148,
+          "etf_hold_return_pct": 1591.3206520985675,
+          "etf_trend_return_pct": 558.7510483261071
+        },
+        {
+          "label": "no financing (gross of carry)",
+          "window": "since ETF inception",
+          "cfd_trend_return_pct": 628.7378760289139,
+          "cfd_hold_return_pct": 1343.9516356338952,
+          "etf_hold_return_pct": 1591.3206520985675,
+          "etf_trend_return_pct": 558.7510483261071
+        },
+        {
+          "label": "ETF size 5,000 USD",
+          "window": "since ETF inception",
+          "cfd_trend_return_pct": 138.94961042777382,
+          "cfd_hold_return_pct": 768.585595605337,
+          "etf_hold_return_pct": 1594.9254074552955,
+          "etf_trend_return_pct": 961.3050707071172
+        },
+        {
+          "label": "base (rate-linked financing)",
+          "window": "last 10y",
+          "cfd_trend_return_pct": 87.95186589785837,
+          "cfd_hold_return_pct": 328.8636827199538,
+          "etf_hold_return_pct": 573.265991234974,
+          "etf_trend_return_pct": 193.80018382093928
+        },
+        {
+          "label": "spread x0.5",
+          "window": "last 10y",
+          "cfd_trend_return_pct": 100.01869532554544,
+          "cfd_hold_return_pct": 329.27474349925205,
+          "etf_hold_return_pct": 573.265991234974,
+          "etf_trend_return_pct": 193.80018382093928
+        },
+        {
+          "label": "spread x2",
+          "window": "last 10y",
+          "cfd_trend_return_pct": 65.94615444896745,
+          "cfd_hold_return_pct": 328.0421304192062,
+          "etf_hold_return_pct": 573.265991234974,
+          "etf_trend_return_pct": 193.80018382093928
+        },
+        {
+          "label": "financing markup x0.5",
+          "window": "last 10y",
+          "cfd_trend_return_pct": 119.61952649000898,
+          "cfd_hold_return_pct": 389.2331331032387,
+          "etf_hold_return_pct": 573.265991234974,
+          "etf_trend_return_pct": 193.80018382093928
+        },
+        {
+          "label": "financing markup x1.5",
+          "window": "last 10y",
+          "cfd_trend_return_pct": 60.68616783244991,
+          "cfd_hold_return_pct": 268.494232336669,
+          "etf_hold_return_pct": 573.265991234974,
+          "etf_trend_return_pct": 193.80018382093928
+        },
+        {
+          "label": "financing fixed at today's fee",
+          "window": "last 10y",
+          "cfd_trend_return_pct": 67.02369790846608,
+          "cfd_hold_return_pct": 297.21477500391796,
+          "etf_hold_return_pct": 573.265991234974,
+          "etf_trend_return_pct": 193.80018382093928
+        },
+        {
+          "label": "no financing (gross of carry)",
+          "window": "last 10y",
+          "cfd_trend_return_pct": 204.34851828038822,
+          "cfd_hold_return_pct": 530.8715544809146,
+          "etf_hold_return_pct": 573.265991234974,
+          "etf_trend_return_pct": 193.80018382093928
+        },
+        {
+          "label": "ETF size 5,000 USD",
+          "window": "last 10y",
+          "cfd_trend_return_pct": 87.95186589785837,
+          "cfd_hold_return_pct": 328.8636827199538,
+          "etf_hold_return_pct": 574.700940418262,
+          "etf_trend_return_pct": 248.35584829153717
+        },
+        {
+          "label": "base (rate-linked financing)",
+          "window": "last 3y",
+          "cfd_trend_return_pct": 27.539132586492165,
+          "cfd_hold_return_pct": 68.95621070443707,
+          "etf_hold_return_pct": 110.3190075125791,
+          "etf_trend_return_pct": 51.70792122019587
+        },
+        {
+          "label": "spread x0.5",
+          "window": "last 3y",
+          "cfd_trend_return_pct": 30.449552060087058,
+          "cfd_hold_return_pct": 69.10217128594039,
+          "etf_hold_return_pct": 110.3190075125791,
+          "etf_trend_return_pct": 51.70792122019587
+        },
+        {
+          "label": "spread x2",
+          "window": "last 3y",
+          "cfd_trend_return_pct": 21.90843273313603,
+          "cfd_hold_return_pct": 68.66447663523401,
+          "etf_hold_return_pct": 110.3190075125791,
+          "etf_trend_return_pct": 51.70792122019587
+        },
+        {
+          "label": "financing markup x0.5",
+          "window": "last 3y",
+          "cfd_trend_return_pct": 33.827852664837835,
+          "cfd_hold_return_pct": 78.65734118052204,
+          "etf_hold_return_pct": 110.3190075125791,
+          "etf_trend_return_pct": 51.70792122019587
+        },
+        {
+          "label": "financing markup x1.5",
+          "window": "last 3y",
+          "cfd_trend_return_pct": 21.50675860761233,
+          "cfd_hold_return_pct": 59.25508022835202,
+          "etf_hold_return_pct": 110.3190075125791,
+          "etf_trend_return_pct": 51.70792122019587
+        },
+        {
+          "label": "financing fixed at today's fee",
+          "window": "last 3y",
+          "cfd_trend_return_pct": 28.465495762976566,
+          "cfd_hold_return_pct": 69.79621366119228,
+          "etf_hold_return_pct": 110.3190075125791,
+          "etf_trend_return_pct": 51.70792122019587
+        },
+        {
+          "label": "no financing (gross of carry)",
+          "window": "last 3y",
+          "cfd_trend_return_pct": 54.470189481048095,
+          "cfd_hold_return_pct": 107.34392843972174,
+          "etf_hold_return_pct": 110.3190075125791,
+          "etf_trend_return_pct": 51.70792122019587
+        },
+        {
+          "label": "ETF size 5,000 USD",
+          "window": "last 3y",
+          "cfd_trend_return_pct": 27.539132586492165,
+          "cfd_hold_return_pct": 68.95621070443707,
+          "etf_hold_return_pct": 110.7672658413661,
+          "etf_trend_return_pct": 61.36998568826113
+        }
+      ]
+    },
+    {
+      "pair": {
+        "CFD": "SPX500",
+        "Index": "^GSPC",
+        "ETF": "SPY",
+        "SpreadRTBps": 14.8,
+        "ETFSpreadRTBps": 0.26
+      },
+      "windows": [
+        {
+          "label": "full index history",
+          "bars": "index",
+          "from": "1970-05-02",
+          "to": "2026-10-09",
+          "rows": [
+            {
+              "rule": "cfd_hold",
+              "result": {
+                "return_pct": 3014.406824645293,
+                "cagr_pct": 6.278711759265887,
+                "round_trips": 1,
+                "exposure_pct": 100,
+                "max_dd_pct": 298.3585899765029,
+                "sharpe_ann": -0.03683504127987424,
+                "trade_cost_pct": 7.180621698242634,
+                "finance_pct": 6482.029389119482,
+                "nights_held": 20612,
+                "bars": 14231,
+                "min_equity": -13.461684180843836,
+                "margin_close_out": true
+              }
+            },
+            {
+              "rule": "cfd_trend",
+              "result": {
+                "return_pct": -55.53775076218164,
+                "cagr_pct": -1.4251199659845226,
+                "round_trips": 470,
+                "exposure_pct": 64.47192748225704,
+                "max_dd_pct": 73.69845055426522,
+                "sharpe_ann": -0.08221581801970902,
+                "trade_cost_pct": 51.47161211325566,
+                "finance_pct": 260.4839367985923,
+                "nights_held": 13319,
+                "bars": 14231,
+                "min_equity": 0.3522106496468774,
+                "margin_close_out": false
+              },
+              "random_beat_pct": 53.55
+            },
+            {
+              "rule": "etf_hold",
+              "result": {
+                "return_pct": 3125.6208431972773,
+                "cagr_pct": 10.87308898185615,
+                "round_trips": 1,
+                "exposure_pct": 99.9882103277529,
+                "max_dd_pct": 55.18946379815585,
+                "sharpe_ann": 0.65022819380777,
+                "trade_cost_pct": 4.584291974678498,
+                "finance_pct": 0,
+                "nights_held": 0,
+                "bars": 8482,
+                "min_equity": 0.9858474758269086,
+                "margin_close_out": false
+              }
+            },
+            {
+              "rule": "etf_trend",
+              "result": {
+                "return_pct": 182.6620015885985,
+                "cagr_pct": 3.135629687604613,
+                "round_trips": 300,
+                "exposure_pct": 67.55482197594907,
+                "max_dd_pct": 39.094594721175355,
+                "sharpe_ann": 0.33880571918014984,
+                "trade_cost_pct": 129.18846228718036,
+                "finance_pct": 0,
+                "nights_held": 0,
+                "bars": 8482,
+                "min_equity": 0.8653933291841124,
+                "margin_close_out": false
+              }
+            }
+          ]
+        },
+        {
+          "label": "since ETF inception",
+          "bars": "index",
+          "from": "1993-04-29",
+          "to": "2026-10-09",
+          "rows": [
+            {
+              "rule": "cfd_hold",
+              "result": {
+                "return_pct": 584.2271625700523,
+                "cagr_pct": 5.925241523426683,
+                "round_trips": 1,
+                "exposure_pct": 100,
+                "max_dd_pct": 161.78326534910946,
+                "sharpe_ann": 0.1810940097156457,
+                "trade_cost_pct": 1.3927211027943671,
+                "finance_pct": 1096.5096606438656,
+                "nights_held": 12216,
+                "bars": 8420,
+                "min_equity": -1.4348746091192108,
+                "margin_close_out": true
+              }
+            },
+            {
+              "rule": "cfd_trend",
+              "result": {
+                "return_pct": -43.95410426656409,
+                "cagr_pct": -1.7181463258394536,
+                "round_trips": 297,
+                "exposure_pct": 67.52969121140143,
+                "max_dd_pct": 66.20485648282387,
+                "sharpe_ann": -0.10596703468336262,
+                "trade_cost_pct": 31.44937409916387,
+                "finance_pct": 118.03204810727068,
+                "nights_held": 8255,
+                "bars": 8420,
+                "min_equity": 0.44397127191497004,
+                "margin_close_out": false
+              },
+              "random_beat_pct": 17.1
+            },
+            {
+              "rule": "etf_hold",
+              "result": {
+                "return_pct": 3117.319679355395,
+                "cagr_pct": 10.948839270359345,
+                "round_trips": 1,
+                "exposure_pct": 100,
+                "max_dd_pct": 55.189463798155835,
+                "sharpe_ann": 0.6527700047175808,
+                "trade_cost_pct": 4.572848537221131,
+                "finance_pct": 0,
+                "nights_held": 0,
+                "bars": 8420,
+                "min_equity": 1,
+                "margin_close_out": false
+              }
+            },
+            {
+              "rule": "etf_trend",
+              "result": {
+                "return_pct": 187.1184443245221,
+                "cagr_pct": 3.2073959009811137,
+                "round_trips": 297,
+                "exposure_pct": 67.52969121140143,
+                "max_dd_pct": 39.094594721175135,
+                "sharpe_ann": 0.3451182603200007,
+                "trade_cost_pct": 130.39381493708365,
+                "finance_pct": 0,
+                "nights_held": 0,
+                "bars": 8420,
+                "min_equity": 0.8790371008756847,
+                "margin_close_out": false
+              }
+            }
+          ]
+        },
+        {
+          "label": "2000-2009",
+          "bars": "index",
+          "from": "2000-01-01",
+          "to": "2009-12-31",
+          "rows": [
+            {
+              "rule": "cfd_hold",
+              "result": {
+                "return_pct": -82.85680049152369,
+                "cagr_pct": -16.20340079020498,
+                "round_trips": 1,
+                "exposure_pct": 100,
+                "max_dd_pct": 110.04985040096436,
+                "sharpe_ann": 0.025956859626707213,
+                "trade_cost_pct": 0.1301213784711222,
+                "finance_pct": 58.64037974970419,
+                "nights_held": 3650,
+                "bars": 2515,
+                "min_equity": -0.10229279863042484,
+                "margin_close_out": true
+              }
+            },
+            {
+              "rule": "cfd_trend",
+              "result": {
+                "return_pct": -52.68976964032031,
+                "cagr_pct": -7.227784121395664,
+                "round_trips": 89,
+                "exposure_pct": 55.984095427435385,
+                "max_dd_pct": 61.68657629344927,
+                "sharpe_ann": -0.5922842002782525,
+                "trade_cost_pct": 8.233775285229513,
+                "finance_pct": 24.959440840118397,
+                "nights_held": 2046,
+                "bars": 2515,
+                "min_equity": 0.38313423706550737,
+                "margin_close_out": false
+              },
+              "random_beat_pct": 32.15
+            },
+            {
+              "rule": "etf_hold",
+              "result": {
+                "return_pct": -10.71740690007582,
+                "cagr_pct": -1.1299100285494856,
+                "round_trips": 1,
+                "exposure_pct": 100,
+                "max_dd_pct": 55.18946379815585,
+                "sharpe_ann": 0.07108290487952651,
+                "trade_cost_pct": 0.26074273582866825,
+                "finance_pct": 0,
+                "nights_held": 0,
+                "bars": 2515,
+                "min_equity": 0.5340665977606679,
+                "margin_close_out": false
+              }
+            },
+            {
+              "rule": "etf_trend",
+              "result": {
+                "return_pct": -17.739933145370436,
+                "cagr_pct": -1.9384701088132394,
+                "round_trips": 89,
+                "exposure_pct": 55.984095427435385,
+                "max_dd_pct": 37.99775539338985,
+                "sharpe_ann": -0.09850146700284637,
+                "trade_cost_pct": 18.82896352519403,
+                "finance_pct": 0,
+                "nights_held": 0,
+                "bars": 2515,
+                "min_equity": 0.6200224460661015,
+                "margin_close_out": false
+              }
+            }
+          ]
+        },
+        {
+          "label": "2010-2019",
+          "bars": "index",
+          "from": "2010-01-01",
+          "to": "2019-12-31",
+          "rows": [
+            {
+              "rule": "cfd_hold",
+              "result": {
+                "return_pct": 99.7297061043096,
+                "cagr_pct": 7.1775922691316385,
+                "round_trips": 1,
+                "exposure_pct": 100,
+                "max_dd_pct": 30.553413632339417,
+                "sharpe_ann": 0.4741752120324381,
+                "trade_cost_pct": 0.28796144597402823,
+                "finance_pct": 89.1934216038086,
+                "nights_held": 3648,
+                "bars": 2516,
+                "min_equity": 0.8926486174412515,
+                "margin_close_out": false
+              }
+            },
+            {
+              "rule": "cfd_trend",
+              "result": {
+                "return_pct": -19.43719478670024,
+                "cagr_pct": -2.142346689906649,
+                "round_trips": 93,
+                "exposure_pct": 70.62798092209857,
+                "max_dd_pct": 34.20507839701688,
+                "sharpe_ann": -0.19449094466319505,
+                "trade_cost_pct": 13.012793069626166,
+                "finance_pct": 32.93183283595531,
+                "nights_held": 2576,
+                "bars": 2516,
+                "min_equity": 0.7491143900246932,
+                "margin_close_out": false
+              },
+              "random_beat_pct": 4.4
+            },
+            {
+              "rule": "etf_hold",
+              "result": {
+                "return_pct": 248.87582848358738,
+                "cagr_pct": 13.337851317271298,
+                "round_trips": 1,
+                "exposure_pct": 100,
+                "max_dd_pct": 19.348929282581302,
+                "sharpe_ann": 0.9220571916854452,
+                "trade_cost_pct": 0.6186008639239918,
+                "finance_pct": 0,
+                "nights_held": 0,
+                "bars": 2516,
+                "min_equity": 0.9163219919846025,
+                "margin_close_out": false
+              }
+            },
+            {
+              "rule": "etf_trend",
+              "result": {
+                "return_pct": 15.13042405359104,
+                "cagr_pct": 1.4217676477942032,
+                "round_trips": 93,
+                "exposure_pct": 70.62798092209857,
+                "max_dd_pct": 24.056454462466068,
+                "sharpe_ann": 0.19053632213797425,
+                "trade_cost_pct": 28.44650660086238,
+                "finance_pct": 0,
+                "nights_held": 0,
+                "bars": 2516,
+                "min_equity": 0.937851633995175,
+                "margin_close_out": false
+              }
+            }
+          ]
+        },
+        {
+          "label": "2020-2026",
+          "bars": "index",
+          "from": "2020-01-01",
+          "to": "2026-10-09",
+          "rows": [
+            {
+              "rule": "cfd_hold",
+              "result": {
+                "return_pct": 64.40202796878455,
+                "cagr_pct": 7.643112643101424,
+                "round_trips": 1,
+                "exposure_pct": 100,
+                "max_dd_pct": 34.575495337678525,
+                "sharpe_ann": 0.43128268879764936,
+                "trade_cost_pct": 0.2520231015376419,
+                "finance_pct": 75.99170776432912,
+                "nights_held": 2472,
+                "bars": 1702,
+                "min_equity": 0.6770397515189378,
+                "margin_close_out": false
+              }
+            },
+            {
+              "rule": "cfd_trend",
+              "result": {
+                "return_pct": 16.754456438534437,
+                "cagr_pct": 2.321391932174066,
+                "round_trips": 56,
+                "exposure_pct": 72.62044653349001,
+                "max_dd_pct": 25.751320925221194,
+                "sharpe_ann": 0.25088734153788855,
+                "trade_cost_pct": 9.019568834616107,
+                "finance_pct": 39.24421843103731,
+                "nights_held": 1797,
+                "bars": 1702,
+                "min_equity": 0.9315357631518569,
+                "margin_close_out": false
+              },
+              "random_beat_pct": 58.15
+            },
+            {
+              "rule": "etf_hold",
+              "result": {
+                "return_pct": 163.92735221960345,
+                "cagr_pct": 15.462812874220644,
+                "round_trips": 1,
+                "exposure_pct": 100,
+                "max_dd_pct": 33.71727036119297,
+                "sharpe_ann": 0.8178741768426656,
+                "trade_cost_pct": 0.5014964923272102,
+                "finance_pct": 0,
+                "nights_held": 0,
+                "bars": 1702,
+                "min_equity": 0.6921935866050766,
+                "margin_close_out": false
+              }
+            },
+            {
+              "rule": "etf_trend",
+              "result": {
+                "return_pct": 65.93625008680586,
+                "cagr_pct": 7.791345264314753,
+                "round_trips": 56,
+                "exposure_pct": 72.62044653349001,
+                "max_dd_pct": 22.97112675640254,
+                "sharpe_ann": 0.6976287837435847,
+                "trade_cost_pct": 19.66738841628109,
+                "finance_pct": 0,
+                "nights_held": 0,
+                "bars": 1702,
+                "min_equity": 0.961654596918635,
+                "margin_close_out": false
+              }
+            }
+          ]
+        },
+        {
+          "label": "last 10y",
+          "bars": "index",
+          "from": "2016-10-09",
+          "to": "2026-10-09",
+          "rows": [
+            {
+              "rule": "cfd_hold",
+              "result": {
+                "return_pct": 123.3076534905547,
+                "cagr_pct": 8.38958374349219,
+                "round_trips": 1,
+                "exposure_pct": 100,
+                "max_dd_pct": 40.76746324394606,
+                "sharpe_ann": 0.4560000452218566,
+                "trade_cost_pct": 0.3413712763341849,
+                "finance_pct": 137.73751081984756,
+                "nights_held": 3651,
+                "bars": 2514,
+                "min_equity": 0.780777278383731,
+                "margin_close_out": false
+              }
+            },
+            {
+              "rule": "cfd_trend",
+              "result": {
+                "return_pct": 14.225840574574766,
+                "cagr_pct": 1.342713048111377,
+                "round_trips": 78,
+                "exposure_pct": 73.1901352426412,
+                "max_dd_pct": 25.751320925221172,
+                "sharpe_ann": 0.17890749109621995,
+                "trade_cost_pct": 12.08247694306272,
+                "finance_pct": 52.71919846838647,
+                "nights_held": 2673,
+                "bars": 2514,
+                "min_equity": 0.9048475550582771,
+                "margin_close_out": false
+              },
+              "random_beat_pct": 40.4
+            },
+            {
+              "rule": "etf_hold",
+              "result": {
+                "return_pct": 320.6008957227439,
+                "cagr_pct": 15.494366041670427,
+                "round_trips": 1,
+                "exposure_pct": 100,
+                "max_dd_pct": 33.71727036119297,
+                "sharpe_ann": 0.8942903713343819,
+                "trade_cost_pct": 0.7174763152113912,
+                "finance_pct": 0,
+                "nights_held": 0,
+                "bars": 2514,
+                "min_equity": 0.9634663670577395,
+                "margin_close_out": false
+              }
+            },
+            {
+              "rule": "etf_trend",
+              "result": {
+                "return_pct": 88.5365986416365,
+                "cagr_pct": 6.565414533172964,
+                "round_trips": 78,
+                "exposure_pct": 73.1901352426412,
+                "max_dd_pct": 22.971126756402406,
+                "sharpe_ann": 0.6507334493874329,
+                "trade_cost_pct": 28.861572174101397,
+                "finance_pct": 0,
+                "nights_held": 0,
+                "bars": 2514,
+                "min_equity": 0.994579356391539,
+                "margin_close_out": false
+              }
+            }
+          ]
+        },
+        {
+          "label": "last 5y",
+          "bars": "index",
+          "from": "2021-10-09",
+          "to": "2026-10-09",
+          "rows": [
+            {
+              "rule": "cfd_hold",
+              "result": {
+                "return_pct": 28.28503604848287,
+                "cagr_pct": 5.132917817008242,
+                "round_trips": 1,
+                "exposure_pct": 100,
+                "max_dd_pct": 29.51921456061876,
+                "sharpe_ann": 0.3574980566629796,
+                "trade_cost_pct": 0.20571453963017047,
+                "finance_pct": 49.57587053373895,
+                "nights_held": 1824,
+                "bars": 1255,
+                "min_equity": 0.7627145880863977,
+                "margin_close_out": false
+              }
+            },
+            {
+              "rule": "cfd_trend",
+              "result": {
+                "return_pct": -1.937583768811002,
+                "cagr_pct": -0.39242055037846946,
+                "round_trips": 44,
+                "exposure_pct": 68.84462151394422,
+                "max_dd_pct": 25.714691015425306,
+                "sharpe_ann": 0.019037420304021033,
+                "trade_cost_pct": 5.9425808283035115,
+                "finance_pct": 26.56751992321491,
+                "nights_held": 1253,
+                "bars": 1255,
+                "min_equity": 0.7823996661620041,
+                "margin_close_out": false
+              },
+              "random_beat_pct": 43.4
+            },
+            {
+              "rule": "etf_hold",
+              "result": {
+                "return_pct": 89.89287024044029,
+                "cagr_pct": 13.754411305109437,
+                "round_trips": 1,
+                "exposure_pct": 100,
+                "max_dd_pct": 24.49638204750683,
+                "sharpe_ann": 0.8471071185862934,
+                "trade_cost_pct": 0.39943743406086507,
+                "finance_pct": 0,
+                "nights_held": 0,
+                "bars": 1255,
+                "min_equity": 0.8268305739727254,
+                "margin_close_out": false
+              }
+            },
+            {
+              "rule": "etf_trend",
+              "result": {
+                "return_pct": 30.246769555057874,
+                "cagr_pct": 5.45403866472538,
+                "round_trips": 44,
+                "exposure_pct": 68.84462151394422,
+                "max_dd_pct": 22.72679170130602,
+                "sharpe_ann": 0.5500008076670522,
+                "trade_cost_pct": 12.499076840671295,
+                "finance_pct": 0,
+                "nights_held": 0,
+                "bars": 1255,
+                "min_equity": 0.8150101154560253,
+                "margin_close_out": false
+              }
+            }
+          ]
+        },
+        {
+          "label": "last 3y",
+          "bars": "index",
+          "from": "2023-10-09",
+          "to": "2026-10-09",
+          "rows": [
+            {
+              "rule": "cfd_hold",
+              "result": {
+                "return_pct": 45.251094075544216,
+                "cagr_pct": 13.306572421631024,
+                "round_trips": 1,
+                "exposure_pct": 100,
+                "max_dd_pct": 23.10870092514885,
+                "sharpe_ann": 0.7957988694305255,
+                "trade_cost_pct": 0.20867556698912657,
+                "finance_pct": 36.60823980223233,
+                "nights_held": 1096,
+                "bars": 754,
+                "min_equity": 0.9537492867023196,
+                "margin_close_out": false
+              }
+            },
+            {
+              "rule": "cfd_trend",
+              "result": {
+                "return_pct": 22.33657762533685,
+                "cagr_pct": 6.979784561377533,
+                "round_trips": 22,
+                "exposure_pct": 77.9840848806366,
+                "max_dd_pct": 11.564296814050017,
+                "sharpe_ann": 0.711319852191956,
+                "trade_cost_pct": 3.807009033183781,
+                "finance_pct": 23.999453288314733,
+                "nights_held": 852,
+                "bars": 754,
+                "min_equity": 0.9943331855465888,
+                "margin_close_out": false
+              },
+              "random_beat_pct": 73.05
+            },
+            {
+              "rule": "etf_hold",
+              "result": {
+                "return_pct": 88.2892925683572,
+                "cagr_pct": 23.587206422148576,
+                "round_trips": 1,
+                "exposure_pct": 100,
+                "max_dd_pct": 18.755237333914383,
+                "sharpe_ann": 1.4462736343052296,
+                "trade_cost_pct": 0.39722684755178694,
+                "finance_pct": 0,
+                "nights_held": 0,
+                "bars": 754,
+                "min_equity": 0.9591529822406011,
+                "margin_close_out": false
+              }
+            },
+            {
+              "rule": "etf_trend",
+              "result": {
+                "return_pct": 50.41637814507911,
+                "cagr_pct": 14.639379682387133,
+                "round_trips": 22,
+                "exposure_pct": 77.9840848806366,
+                "max_dd_pct": 9.909140544845977,
+                "sharpe_ann": 1.4019650983722476,
+                "trade_cost_pct": 8.081618921517295,
+                "finance_pct": 0,
+                "nights_held": 0,
+                "bars": 754,
+                "min_equity": 0.9948853517372501,
+                "margin_close_out": false
+              }
+            }
+          ]
+        },
+        {
+          "label": "eToro bars",
+          "bars": "etoro",
+          "from": "2023-03-13",
+          "to": "2026-10-09",
+          "rows": [
+            {
+              "rule": "cfd_hold",
+              "result": {
+                "return_pct": 54.93878110583979,
+                "cagr_pct": 13.074173810290679,
+                "round_trips": 1,
+                "exposure_pct": 100,
+                "max_dd_pct": 24.186040113418333,
+                "sharpe_ann": 0.7993545527241891,
+                "trade_cost_pct": 0.22321168407904896,
+                "finance_pct": 46.54941812771487,
+                "nights_held": 1306,
+                "bars": 899,
+                "min_equity": 0.9960813197497289,
+                "margin_close_out": false
+              }
+            },
+            {
+              "rule": "cfd_trend",
+              "result": {
+                "return_pct": 19.917869874425385,
+                "cagr_pct": 5.229301148670018,
+                "round_trips": 27,
+                "exposure_pct": 76.64071190211347,
+                "max_dd_pct": 11.8375486822597,
+                "sharpe_ann": 0.5600526205269613,
+                "trade_cost_pct": 4.558317031286695,
+                "finance_pct": 28.054083530126505,
+                "nights_held": 996,
+                "bars": 899,
+                "min_equity": 0.9981959020517567,
+                "margin_close_out": false
+              },
+              "random_beat_pct": 62.25
+            },
+            {
+              "rule": "etf_hold",
+              "result": {
+                "return_pct": 113.2011244721634,
+                "cagr_pct": 23.670493330348563,
+                "round_trips": 1,
+                "exposure_pct": 100,
+                "max_dd_pct": 18.755237333914387,
+                "sharpe_ann": 1.4974156320243786,
+                "trade_cost_pct": 0.4315686574196201,
+                "finance_pct": 0,
+                "nights_held": 0,
+                "bars": 899,
+                "min_equity": 1,
+                "margin_close_out": false
+              }
+            },
+            {
+              "rule": "etf_trend",
+              "result": {
+                "return_pct": 56.827817498131374,
+                "cagr_pct": 13.459361450265895,
+                "round_trips": 27,
+                "exposure_pct": 76.64071190211347,
+                "max_dd_pct": 10.300833490108745,
+                "sharpe_ann": 1.3112321841371186,
+                "trade_cost_pct": 9.899325195593224,
+                "finance_pct": 0,
+                "nights_held": 0,
+                "bars": 899,
+                "min_equity": 0.997659599949925,
+                "margin_close_out": false
+              }
+            }
+          ]
+        }
+      ],
+      "calendar_years": [
+        {
+          "year": 1994,
+          "cfd_hold_return_pct": -10.060153784570469,
+          "cfd_trend_return_pct": -8.569426024741722,
+          "etf_hold_return_pct": 0.12106339258999288,
+          "etf_trend_return_pct": -7.261851084909631,
+          "cfd_hold_maxdd_pct": 14.622010949142977,
+          "cfd_trend_maxdd_pct": 10.831858770086356,
+          "cfd_trend_random_beat_pct": 33.2,
+          "H1": true,
+          "H2": true,
+          "H2b": false,
+          "H3": false
+        },
+        {
+          "year": 1995,
+          "cfd_hold_return_pct": 22.534161276179287,
+          "cfd_trend_return_pct": 22.184247920229616,
+          "etf_hold_return_pct": 37.2454650677922,
+          "etf_trend_return_pct": 36.267118872576276,
+          "cfd_hold_maxdd_pct": 2.950485252044137,
+          "cfd_trend_maxdd_pct": 2.949192584585221,
+          "cfd_trend_random_beat_pct": 99.5,
+          "H1": true,
+          "H2": false,
+          "H2b": false,
+          "H3": true
+        },
+        {
+          "year": 1996,
+          "cfd_hold_return_pct": 9.952687882108568,
+          "cfd_trend_return_pct": 2.5707747559911676,
+          "etf_hold_return_pct": 22.315784193501287,
+          "etf_trend_return_pct": 9.65221898437678,
+          "cfd_hold_maxdd_pct": 9.545482055797395,
+          "cfd_trend_maxdd_pct": 9.264752005261686,
+          "cfd_trend_random_beat_pct": 41.15,
+          "H1": true,
+          "H2": false,
+          "H2b": false,
+          "H3": false
+        },
+        {
+          "year": 1997,
+          "cfd_hold_return_pct": 19.826695977655362,
+          "cfd_trend_return_pct": 5.967735977811861,
+          "etf_hold_return_pct": 32.15713205091919,
+          "etf_trend_return_pct": 7.940856726906742,
+          "cfd_hold_maxdd_pct": 12.034826468346163,
+          "cfd_trend_maxdd_pct": 14.564091904079191,
+          "cfd_trend_random_beat_pct": 49.45,
+          "H1": false,
+          "H2": false,
+          "H2b": false,
+          "H3": false
+        },
+        {
+          "year": 1998,
+          "cfd_hold_return_pct": 16.373482518140435,
+          "cfd_trend_return_pct": 14.344050411068121,
+          "etf_hold_return_pct": 28.00866537473432,
+          "etf_trend_return_pct": 17.794171160060678,
+          "cfd_hold_maxdd_pct": 21.95294777038926,
+          "cfd_trend_maxdd_pct": 8.930735504169032,
+          "cfd_trend_random_beat_pct": 78.65,
+          "H1": true,
+          "H2": false,
+          "H2b": false,
+          "H3": false
+        },
+        {
+          "year": 1999,
+          "cfd_hold_return_pct": 9.767215896513747,
+          "cfd_trend_return_pct": -0.2338761895915975,
+          "etf_hold_return_pct": 19.997318237544583,
+          "etf_trend_return_pct": 3.7362743103418694,
+          "cfd_hold_maxdd_pct": 14.819875098046598,
+          "cfd_trend_maxdd_pct": 11.529587117706036,
+          "cfd_trend_random_beat_pct": 41.1,
+          "H1": true,
+          "H2": false,
+          "H2b": false,
+          "H3": false
+        },
+        {
+          "year": 2000,
+          "cfd_hold_return_pct": -20.007492860153665,
+          "cfd_trend_return_pct": -27.065128097888234,
+          "etf_hold_return_pct": -10.824695544265916,
+          "etf_trend_return_pct": -24.18276049436351,
+          "cfd_hold_maxdd_pct": 24.871097682241032,
+          "cfd_trend_maxdd_pct": 27.065128097888234,
+          "cfd_trend_random_beat_pct": 1.85,
+          "H1": false,
+          "H2": false,
+          "H2b": false,
+          "H3": false
+        },
+        {
+          "year": 2001,
+          "cfd_hold_return_pct": -20.156744930766713,
+          "cfd_trend_return_pct": -2.5963580465712677,
+          "etf_hold_return_pct": -12.542993882977893,
+          "etf_trend_return_pct": -3.894787017785417,
+          "cfd_hold_maxdd_pct": 34.577338422005276,
+          "cfd_trend_maxdd_pct": 9.730050786588478,
+          "cfd_trend_random_beat_pct": 77.5,
+          "H1": true,
+          "H2": true,
+          "H2b": true,
+          "H3": false
+        },
+        {
+          "year": 2002,
+          "cfd_hold_return_pct": -28.599897520847172,
+          "cfd_trend_return_pct": -15.070308687655153,
+          "etf_hold_return_pct": -22.350612454184372,
+          "etf_trend_return_pct": -10.253647612692074,
+          "cfd_hold_maxdd_pct": 37.7491131541283,
+          "cfd_trend_maxdd_pct": 17.47155990401973,
+          "cfd_trend_random_beat_pct": 51.25,
+          "H1": true,
+          "H2": true,
+          "H2b": true,
+          "H3": false
+        },
+        {
+          "year": 2003,
+          "cfd_hold_return_pct": 20.388460914731567,
+          "cfd_trend_return_pct": 12.503537118025498,
+          "etf_hold_return_pct": 26.936880849331722,
+          "etf_trend_return_pct": 20.66323026347796,
+          "cfd_hold_maxdd_pct": 14.848810364191689,
+          "cfd_trend_maxdd_pct": 6.266670659155446,
+          "cfd_trend_random_beat_pct": 79.4,
+          "H1": true,
+          "H2": false,
+          "H2b": false,
+          "H3": false
+        },
+        {
+          "year": 2004,
+          "cfd_hold_return_pct": 3.0564479572992687,
+          "cfd_trend_return_pct": -2.874855230993545,
+          "etf_hold_return_pct": 9.938915766420099,
+          "etf_trend_return_pct": -0.11566389854287262,
+          "cfd_hold_maxdd_pct": 10.877125805576336,
+          "cfd_trend_maxdd_pct": 11.735374426330004,
+          "cfd_trend_random_beat_pct": 34.5,
+          "H1": false,
+          "H2": false,
+          "H2b": false,
+          "H3": false
+        },
+        {
+          "year": 2005,
+          "cfd_hold_return_pct": -4.515420157734429,
+          "cfd_trend_return_pct": -7.566299044543056,
+          "etf_hold_return_pct": 3.9464554035183452,
+          "etf_trend_return_pct": -4.1079786571193155,
+          "cfd_hold_maxdd_pct": 8.702955727070993,
+          "cfd_trend_maxdd_pct": 8.740631824098566,
+          "cfd_trend_random_beat_pct": 10.35,
+          "H1": false,
+          "H2": false,
+          "H2b": false,
+          "H3": false
+        },
+        {
+          "year": 2006,
+          "cfd_hold_return_pct": 4.0821970143452235,
+          "cfd_trend_return_pct": 0.6243318677605414,
+          "etf_hold_return_pct": 14.89901337325874,
+          "etf_trend_return_pct": 8.316157933274848,
+          "cfd_hold_maxdd_pct": 9.16380780107049,
+          "cfd_trend_maxdd_pct": 10.053576483142985,
+          "cfd_trend_random_beat_pct": 58.75,
+          "H1": false,
+          "H2": false,
+          "H2b": false,
+          "H3": false
+        },
+        {
+          "year": 2007,
+          "cfd_hold_return_pct": -5.5478877446691,
+          "cfd_trend_return_pct": -12.902055453465277,
+          "etf_hold_return_pct": 4.392531217421847,
+          "etf_trend_return_pct": -3.52345640735533,
+          "cfd_hold_maxdd_pct": 12.989679582574517,
+          "cfd_trend_maxdd_pct": 14.413347498721881,
+          "cfd_trend_random_beat_pct": 6.3,
+          "H1": false,
+          "H2": false,
+          "H2b": false,
+          "H3": false
+        },
+        {
+          "year": 2008,
+          "cfd_hold_return_pct": -43.35117995761346,
+          "cfd_trend_return_pct": -16.08932457098001,
+          "etf_hold_return_pct": -37.10658709120863,
+          "etf_trend_return_pct": -14.692019229502373,
+          "cfd_hold_maxdd_pct": 53.28827420688964,
+          "cfd_trend_maxdd_pct": 17.404573501150345,
+          "cfd_trend_random_beat_pct": 73.45,
+          "H1": true,
+          "H2": true,
+          "H2b": true,
+          "H3": false
+        },
+        {
+          "year": 2009,
+          "cfd_hold_return_pct": 18.649756792617556,
+          "cfd_trend_return_pct": 5.22821900955619,
+          "etf_hold_return_pct": 25.72548334601361,
+          "etf_trend_return_pct": 16.663097845696264,
+          "cfd_hold_maxdd_pct": 28.305732065977786,
+          "cfd_trend_maxdd_pct": 17.562814465858104,
+          "cfd_trend_random_beat_pct": 40.75,
+          "H1": true,
+          "H2": false,
+          "H2b": false,
+          "H3": false
+        },
+        {
+          "year": 2010,
+          "cfd_hold_return_pct": 7.968617530525157,
+          "cfd_trend_return_pct": 7.125226249479644,
+          "etf_hold_return_pct": 13.789957933705143,
+          "etf_trend_return_pct": 8.560480177644369,
+          "cfd_hold_maxdd_pct": 17.00109092139811,
+          "cfd_trend_maxdd_pct": 10.186563748443257,
+          "cfd_trend_random_beat_pct": 74.35,
+          "H1": true,
+          "H2": false,
+          "H2b": false,
+          "H3": false
+        },
+        {
+          "year": 2011,
+          "cfd_hold_return_pct": -4.517098836241884,
+          "cfd_trend_return_pct": -10.22386848343132,
+          "etf_hold_return_pct": 0.8447847626043448,
+          "etf_trend_return_pct": -7.889921369051067,
+          "cfd_hold_maxdd_pct": 21.393250733024104,
+          "cfd_trend_maxdd_pct": 16.254352020823585,
+          "cfd_trend_random_beat_pct": 29.4,
+          "H1": true,
+          "H2": false,
+          "H2b": false,
+          "H3": false
+        },
+        {
+          "year": 2012,
+          "cfd_hold_return_pct": 8.315716181405453,
+          "cfd_trend_return_pct": -0.0009018904123747618,
+          "etf_hold_return_pct": 13.625068903310634,
+          "etf_trend_return_pct": 4.459118417389507,
+          "cfd_hold_maxdd_pct": 10.766936523118783,
+          "cfd_trend_maxdd_pct": 12.930647052265751,
+          "cfd_trend_random_beat_pct": 39.45,
+          "H1": false,
+          "H2": false,
+          "H2b": false,
+          "H3": false
+        },
+        {
+          "year": 2013,
+          "cfd_hold_return_pct": 24.386554823080363,
+          "cfd_trend_return_pct": 15.144420962496818,
+          "etf_hold_return_pct": 29.488705543030093,
+          "etf_trend_return_pct": 18.283463604985318,
+          "cfd_hold_maxdd_pct": 6.251680959611719,
+          "cfd_trend_maxdd_pct": 6.469801596753394,
+          "cfd_trend_random_beat_pct": 90.9,
+          "H1": false,
+          "H2": false,
+          "H2b": false,
+          "H3": false
+        },
+        {
+          "year": 2014,
+          "cfd_hold_return_pct": 6.843118745922294,
+          "cfd_trend_return_pct": -1.9664009655223413,
+          "etf_hold_return_pct": 13.588278752430849,
+          "etf_trend_return_pct": 0.851561069270157,
+          "cfd_hold_maxdd_pct": 7.947399344202068,
+          "cfd_trend_maxdd_pct": 5.173005119582297,
+          "cfd_trend_random_beat_pct": 18.35,
+          "H1": true,
+          "H2": false,
+          "H2b": false,
+          "H3": false
+        },
+        {
+          "year": 2015,
+          "cfd_hold_return_pct": -5.229120131589449,
+          "cfd_trend_return_pct": -20.000662147731628,
+          "etf_hold_return_pct": 0.544875493478969,
+          "etf_trend_return_pct": -18.822075542405848,
+          "cfd_hold_maxdd_pct": 13.967313097396982,
+          "cfd_trend_maxdd_pct": 20.000662147731628,
+          "cfd_trend_random_beat_pct": 0.65,
+          "H1": false,
+          "H2": false,
+          "H2b": false,
+          "H3": false
+        },
+        {
+          "year": 2016,
+          "cfd_hold_return_pct": 4.972408742533818,
+          "cfd_trend_return_pct": -2.7361951679088725,
+          "etf_hold_return_pct": 13.572681639790375,
+          "etf_trend_return_pct": 0.4422547061574855,
+          "cfd_hold_maxdd_pct": 10.785043373825442,
+          "cfd_trend_maxdd_pct": 9.39432257861791,
+          "cfd_trend_random_beat_pct": 14.4,
+          "H1": true,
+          "H2": false,
+          "H2b": false,
+          "H3": false
+        },
+        {
+          "year": 2017,
+          "cfd_hold_return_pct": 12.92663321104448,
+          "cfd_trend_return_pct": 5.714607182079967,
+          "etf_hold_return_pct": 20.556135695685374,
+          "etf_trend_return_pct": 11.66105668077073,
+          "cfd_hold_maxdd_pct": 3.4534194321411076,
+          "cfd_trend_maxdd_pct": 6.31037842689082,
+          "cfd_trend_random_beat_pct": 62.05,
+          "H1": false,
+          "H2": false,
+          "H2b": false,
+          "H3": false
+        },
+        {
+          "year": 2018,
+          "cfd_hold_return_pct": -13.089319840212621,
+          "cfd_trend_return_pct": -14.464830268062146,
+          "etf_hold_return_pct": -5.179748786411819,
+          "etf_trend_return_pct": -11.895385521129265,
+          "cfd_hold_maxdd_pct": 23.71482214701819,
+          "cfd_trend_maxdd_pct": 19.706473721107933,
+          "cfd_trend_random_beat_pct": 22.1,
+          "H1": true,
+          "H2": false,
+          "H2b": false,
+          "H3": false
+        },
+        {
+          "year": 2019,
+          "cfd_hold_return_pct": 22.795824031227596,
+          "cfd_trend_return_pct": 3.8875291252448596,
+          "etf_hold_return_pct": 32.95892252605328,
+          "etf_trend_return_pct": 9.283782065702862,
+          "cfd_hold_maxdd_pct": 7.59338975853119,
+          "cfd_trend_maxdd_pct": 11.400596974321486,
+          "cfd_trend_random_beat_pct": 30.85,
+          "H1": false,
+          "H2": false,
+          "H2b": false,
+          "H3": false
+        },
+        {
+          "year": 2020,
+          "cfd_hold_return_pct": 10.963937168804371,
+          "cfd_trend_return_pct": 13.1754903532316,
+          "etf_hold_return_pct": 17.393308077389015,
+          "etf_trend_return_pct": 16.839746128521682,
+          "cfd_hold_maxdd_pct": 34.575495337678525,
+          "cfd_trend_maxdd_pct": 11.26268565118796,
+          "cfd_trend_random_beat_pct": 71.15,
+          "H1": true,
+          "H2": true,
+          "H2b": false,
+          "H3": false
+        },
+        {
+          "year": 2021,
+          "cfd_hold_return_pct": 21.51331266199701,
+          "cfd_trend_return_pct": 5.424263064563051,
+          "etf_hold_return_pct": 27.88544463658933,
+          "etf_trend_return_pct": 9.69748995977886,
+          "cfd_hold_maxdd_pct": 5.738407701152639,
+          "cfd_trend_maxdd_pct": 7.154456306933126,
+          "cfd_trend_random_beat_pct": 31.8,
+          "H1": false,
+          "H2": false,
+          "H2b": false,
+          "H3": false
+        },
+        {
+          "year": 2022,
+          "cfd_hold_return_pct": -25.050594498369062,
+          "cfd_trend_return_pct": -18.74035629344285,
+          "etf_hold_return_pct": -18.630065278238185,
+          "etf_trend_return_pct": -17.35739125107273,
+          "cfd_hold_maxdd_pct": 29.231637391165787,
+          "cfd_trend_maxdd_pct": 18.982720426205617,
+          "cfd_trend_random_beat_pct": 29.4,
+          "H1": true,
+          "H2": true,
+          "H2b": false,
+          "H3": false
+        },
+        {
+          "year": 2023,
+          "cfd_hold_return_pct": 13.315454549677796,
+          "cfd_trend_return_pct": 5.26747099267193,
+          "etf_hold_return_pct": 25.19355068233855,
+          "etf_trend_return_pct": 12.450054347759432,
+          "cfd_hold_maxdd_pct": 13.17932031434714,
+          "cfd_trend_maxdd_pct": 7.985773298986841,
+          "cfd_trend_random_beat_pct": 59.15,
+          "H1": true,
+          "H2": false,
+          "H2b": false,
+          "H3": false
+        },
+        {
+          "year": 2024,
+          "cfd_hold_return_pct": 13.193322633463534,
+          "cfd_trend_return_pct": 5.655563801501029,
+          "etf_hold_return_pct": 25.373740155342595,
+          "etf_trend_return_pct": 14.939508587995087,
+          "cfd_hold_maxdd_pct": 9.428386705721186,
+          "cfd_trend_maxdd_pct": 7.761973286595994,
+          "cfd_trend_random_beat_pct": 46.95,
+          "H1": true,
+          "H2": false,
+          "H2b": false,
+          "H3": false
+        },
+        {
+          "year": 2025,
+          "cfd_hold_return_pct": 7.031581518154395,
+          "cfd_trend_return_pct": 8.360662784421002,
+          "etf_hold_return_pct": 16.73589328461127,
+          "etf_trend_return_pct": 14.824558227040141,
+          "cfd_hold_maxdd_pct": 20.333940870868954,
+          "cfd_trend_maxdd_pct": 5.843045432332085,
+          "cfd_trend_random_beat_pct": 75.15,
+          "H1": true,
+          "H2": true,
+          "H2b": false,
+          "H3": false
+        },
+        {
+          "year": 2026,
+          "cfd_hold_return_pct": 6.927289060221331,
+          "cfd_trend_return_pct": -0.9040637953428798,
+          "etf_hold_return_pct": 14.114171293994593,
+          "etf_trend_return_pct": 3.8243387121860595,
+          "cfd_hold_maxdd_pct": 10.736295011310276,
+          "cfd_trend_maxdd_pct": 8.700693277370949,
+          "cfd_trend_random_beat_pct": 33.9,
+          "H1": true,
+          "H2": false,
+          "H2b": false,
+          "H3": false
+        }
+      ],
+      "rolling_252d_step21": {
+        "windows": 389,
+        "h1_trend_dd_lower_pct": 69.9228791773779,
+        "h2_trend_beats_cfd_hold_pct": 23.13624678663239,
+        "h2b_cfd_trend_beats_etf_hold_pct": 11.568123393316196,
+        "etf_trend_beats_etf_hold_pct": 15.681233933161954,
+        "median_cfd_trend_minus_cfd_hold_pp": -5.08399535745091,
+        "median_cfd_trend_minus_etf_hold_pp": -14.401347990474168
+      },
+      "sensitivity": [
+        {
+          "label": "base (rate-linked financing)",
+          "window": "since ETF inception",
+          "cfd_trend_return_pct": -43.95410426656409,
+          "cfd_hold_return_pct": 584.2271625700523,
+          "etf_hold_return_pct": 3117.319679355395,
+          "etf_trend_return_pct": 187.1184443245221
+        },
+        {
+          "label": "spread x0.5",
+          "window": "since ETF inception",
+          "cfd_trend_return_pct": -30.12877648524581,
+          "cfd_hold_return_pct": 585.1401187958018,
+          "etf_hold_return_pct": 3117.319679355395,
+          "etf_trend_return_pct": 187.1184443245221
+        },
+        {
+          "label": "spread x2",
+          "window": "since ETF inception",
+          "cfd_trend_return_pct": -63.94810912569486,
+          "cfd_hold_return_pct": 582.4027149829706,
+          "etf_hold_return_pct": 3117.319679355395,
+          "etf_trend_return_pct": 187.1184443245221
+        },
+        {
+          "label": "financing markup x0.5",
+          "window": "since ETF inception",
+          "cfd_trend_return_pct": -7.922781891385133,
+          "cfd_hold_return_pct": 930.102610891371,
+          "etf_hold_return_pct": 3117.319679355395,
+          "etf_trend_return_pct": 187.1184443245221
+        },
+        {
+          "label": "financing markup x1.5",
+          "window": "since ETF inception",
+          "cfd_trend_return_pct": -65.98566070629475,
+          "cfd_hold_return_pct": 238.35171424872925,
+          "etf_hold_return_pct": 3117.319679355395,
+          "etf_trend_return_pct": 187.1184443245221
+        },
+        {
+          "label": "financing fixed at today's fee",
+          "window": "since ETF inception",
+          "cfd_trend_return_pct": -60.88261013883544,
+          "cfd_hold_return_pct": 342.04410956784113,
+          "etf_hold_return_pct": 3117.319679355395,
+          "etf_trend_return_pct": 187.1184443245221
+        },
+        {
+          "label": "no financing (gross of carry)",
+          "window": "since ETF inception",
+          "cfd_trend_return_pct": 164.58158008275197,
+          "cfd_hold_return_pct": 1680.736823213918,
+          "etf_hold_return_pct": 3117.319679355395,
+          "etf_trend_return_pct": 187.1184443245221
+        },
+        {
+          "label": "ETF size 5,000 USD",
+          "window": "since ETF inception",
+          "cfd_trend_return_pct": -43.95410426656409,
+          "cfd_hold_return_pct": 584.2271625700523,
+          "etf_hold_return_pct": 3124.1768804797944,
+          "etf_trend_return_pct": 440.35649397595364
+        },
+        {
+          "label": "base (rate-linked financing)",
+          "window": "last 10y",
+          "cfd_trend_return_pct": 14.225840574574766,
+          "cfd_hold_return_pct": 123.3076534905547,
+          "etf_hold_return_pct": 320.6008957227439,
+          "etf_trend_return_pct": 88.5365986416365
+        },
+        {
+          "label": "spread x0.5",
+          "window": "last 10y",
+          "cfd_trend_return_pct": 21.039243178069643,
+          "cfd_hold_return_pct": 123.52407364774348,
+          "etf_hold_return_pct": 320.6008957227439,
+          "etf_trend_return_pct": 88.5365986416365
+        },
+        {
+          "label": "spread x2",
+          "window": "last 10y",
+          "cfd_trend_return_pct": 1.7214717789787004,
+          "cfd_hold_return_pct": 122.87511017807518,
+          "etf_hold_return_pct": 320.6008957227439,
+          "etf_trend_return_pct": 88.5365986416365
+        },
+        {
+          "label": "financing markup x0.5",
+          "window": "last 10y",
+          "cfd_trend_return_pct": 34.11325631345494,
+          "cfd_hold_return_pct": 165.16481419110852,
+          "etf_hold_return_pct": 320.6008957227439,
+          "etf_trend_return_pct": 88.5365986416365
+        },
+        {
+          "label": "financing markup x1.5",
+          "window": "last 10y",
+          "cfd_trend_return_pct": -2.8078249713684,
+          "cfd_hold_return_pct": 81.45049279000082,
+          "etf_hold_return_pct": 320.6008957227439,
+          "etf_trend_return_pct": 88.5365986416365
+        },
+        {
+          "label": "financing fixed at today's fee",
+          "window": "last 10y",
+          "cfd_trend_return_pct": 0.9698965262807002,
+          "cfd_hold_return_pct": 99.03922744584519,
+          "etf_hold_return_pct": 320.6008957227439,
+          "etf_trend_return_pct": 88.5365986416365
+        },
+        {
+          "label": "no financing (gross of carry)",
+          "window": "last 10y",
+          "cfd_trend_return_pct": 87.43400243117117,
+          "cfd_hold_return_pct": 261.04516431040224,
+          "etf_hold_return_pct": 320.6008957227439,
+          "etf_trend_return_pct": 88.5365986416365
+        },
+        {
+          "label": "ETF size 5,000 USD",
+          "window": "last 10y",
+          "cfd_trend_return_pct": 14.225840574574766,
+          "cfd_hold_return_pct": 123.3076534905547,
+          "etf_hold_return_pct": 321.497339104973,
+          "etf_trend_return_pct": 122.5962807774986
+        },
+        {
+          "label": "base (rate-linked financing)",
+          "window": "last 3y",
+          "cfd_trend_return_pct": 22.33657762533685,
+          "cfd_hold_return_pct": 45.251094075544216,
+          "etf_hold_return_pct": 88.2892925683572,
+          "etf_trend_return_pct": 50.41637814507911
+        },
+        {
+          "label": "spread x0.5",
+          "window": "last 3y",
+          "cfd_trend_return_pct": 24.355071946665507,
+          "cfd_hold_return_pct": 45.37223949647837,
+          "etf_hold_return_pct": 88.2892925683572,
+          "etf_trend_return_pct": 50.41637814507911
+        },
+        {
+          "label": "spread x2",
+          "window": "last 3y",
+          "cfd_trend_return_pct": 18.395184511889283,
+          "cfd_hold_return_pct": 45.00895283425983,
+          "etf_hold_return_pct": 88.2892925683572,
+          "etf_trend_return_pct": 50.41637814507911
+        },
+        {
+          "label": "financing markup x0.5",
+          "window": "last 3y",
+          "cfd_trend_return_pct": 28.732426581567495,
+          "cfd_hold_return_pct": 54.48356657408699,
+          "etf_hold_return_pct": 88.2892925683572,
+          "etf_trend_return_pct": 50.41637814507911
+        },
+        {
+          "label": "financing markup x1.5",
+          "window": "last 3y",
+          "cfd_trend_return_pct": 16.219162384494258,
+          "cfd_hold_return_pct": 36.01862157700146,
+          "etf_hold_return_pct": 88.2892925683572,
+          "etf_trend_return_pct": 50.41637814507911
+        },
+        {
+          "label": "financing fixed at today's fee",
+          "window": "last 3y",
+          "cfd_trend_return_pct": 23.19396013384083,
+          "cfd_hold_return_pct": 46.12553512819031,
+          "etf_hold_return_pct": 88.2892925683572,
+          "etf_trend_return_pct": 50.41637814507911
+        },
+        {
+          "label": "no financing (gross of carry)",
+          "window": "last 3y",
+          "cfd_trend_return_pct": 49.7459445869203,
+          "cfd_hold_return_pct": 81.85933387777655,
+          "etf_hold_return_pct": 88.2892925683572,
+          "etf_trend_return_pct": 50.41637814507911
+        },
+        {
+          "label": "ETF size 5,000 USD",
+          "window": "last 3y",
+          "cfd_trend_return_pct": 22.33657762533685,
+          "cfd_hold_return_pct": 45.251094075544216,
+          "etf_hold_return_pct": 88.69060101059777,
+          "etf_trend_return_pct": 57.62942678492777
+        }
+      ]
+    }
+  ]
+}

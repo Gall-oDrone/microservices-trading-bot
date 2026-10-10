@@ -1,0 +1,230 @@
+index-research  generated 2026-10-10T02:32:33Z
+rule: frozen SMA50 (dailyrule.Trend), decide at close t, fill at open t+1, long/flat, x1
+costs [PROVISIONAL (weekend capture 2026-10-10)]: CFD spread round trip NSDQ100 15.50 bps, SPX500 14.80 bps; overnight 2.30 bps/night
+  financing rate-linked = (^IRX + 4.338%)/365 per calendar night (^IRX 4.057% on 2026-10-09); fixed = 2.30 bps/night
+  ETF: 1.50 USD/order on 1100 USD = 13.64 bps per leg + spread; no financing; dividends via adjusted close
+  random baseline: 2000 same-trip strategies, seed 1
+
+==============================================================================================================
+NSDQ100 (CFD) <- ^NDX (index proxy, 1985-10-01..2026-10-09, 10336 bars)   benchmark QQQ (TR, 1999-03-10..2026-10-09)
+==============================================================================================================
+WINDOW                 RULE          RETURN%    CAGR%   TRIPS   EXPOS%   MAXDD%  SHARPE   TRADE%     FIN% NIGHTS  MINEQ  CO  RANDOM
+--------------------------------------------------------------------------------------------------------------------------------------------
+full index history     cfd_hold     13390.98    12.82       1    100.0   125.14    0.26    18.07  9706.54  14858  -7.29  CO  
+full index history     cfd_trend      648.39     5.07     341     66.1    49.27    0.38   189.63   696.72   9815   1.00      beats  95.4%
+full index history     etf_hold      1630.37    10.91       1    100.0    82.96    0.52     2.51     0.00      0   0.39      
+full index history     etf_trend      470.12     6.53     229     65.3    45.73    0.47   139.75     0.00      0   0.86      
+since ETF inception    cfd_hold       768.59     8.25       1    100.0   107.92    0.19     1.20   575.37   9983  -0.17  CO  
+since ETF inception    cfd_trend      138.95     3.24     224     65.2    49.27    0.28    49.95   170.95   6520   0.95      beats  86.8%
+since ETF inception    etf_hold      1591.32    10.92       1    100.0    82.96    0.52     2.46     0.00      0   0.38      
+since ETF inception    etf_trend      558.75     7.15     224     65.2    45.73    0.51   160.02     0.00      0   1.00      
+2000-2009              cfd_hold       -85.63   -17.67       1    100.0   104.74    0.25     0.12    35.08   3650  -0.06  CO  
+2000-2009              cfd_trend      -10.54    -1.11      81     54.1    49.17    0.04     9.59    30.32   1979   0.62      beats  92.0%
+2000-2009              etf_hold       -51.19    -6.94       1    100.0    82.96   -0.03     0.20     0.00      0   0.21      
+2000-2009              etf_trend       17.68     1.65      81     54.1    45.73    0.19    19.37     0.00      0   0.66      
+2010-2019              cfd_hold       244.43    13.19       1    100.0    31.51    0.71     0.44   118.71   3648   0.89      
+2010-2019              cfd_trend        5.88     0.57      85     72.0    23.21    0.11    12.81    35.62   2632   0.86      beats   8.9%
+2010-2019              etf_hold       408.14    17.69       1    100.0    22.80    1.03     0.83     0.00      0   0.92      
+2010-2019              etf_trend       45.12     3.80      85     72.0    20.68    0.38    25.97     0.00      0   0.89      
+2020-2026              cfd_hold       152.67    14.72       1    100.0    43.46    0.61     0.35    97.64   2472   0.78      
+2020-2026              cfd_trend       61.88     7.40      57     69.4    22.88    0.52    11.96    47.42   1716   0.98      beats  75.2%
+2020-2026              etf_hold       263.38    21.06       1    100.0    35.12    0.89     0.64     0.00      0   0.79      
+2020-2026              etf_trend      120.32    12.41      57     69.4    18.48    0.82    24.98     0.00      0   0.99      
+last 10y               cfd_hold       328.86    15.72       1    100.0    47.36    0.65     0.57   202.01   3651   0.95      
+last 10y               cfd_trend       87.95     6.53      80     71.8    22.88    0.51    17.65    71.06   2623   0.93      beats  69.8%
+last 10y               etf_hold       573.27    21.07       1    100.0    35.12    0.96     1.06     0.00      0   0.95      
+last 10y               etf_trend      193.80    11.41      80     71.8    18.48    0.83    40.39     0.00      0   0.93      
+last 5y                cfd_hold        57.08     9.50       1    100.0    40.94    0.47     0.24    51.75   1824   0.66      
+last 5y                cfd_trend       28.77     5.21      42     66.1    18.42    0.41     7.25    31.52   1205   0.88      beats  76.9%
+last 5y                etf_hold       114.68    16.59       1    100.0    35.12    0.79     0.43     0.00      0   0.73      
+last 5y                etf_trend       66.91    10.84      42     66.1    16.05    0.77    15.02     0.00      0   0.91      
+last 3y                cfd_hold        68.96    19.19       1    100.0    27.71    0.85     0.24    38.39   1096   0.94      
+last 3y                cfd_trend       27.54     8.48      29     73.9    15.62    0.63     5.23    22.90    810   0.98      beats  63.4%
+last 3y                etf_hold       110.32    28.25       1    100.0    22.77    1.31     0.43     0.00      0   0.95      
+last 3y                etf_trend       51.71    14.97      29     73.9    13.10    1.05    10.35     0.00      0   0.98      
+
+-- eToro NSDQ100 daily bars (UTC-day buckets, NYSE trading days), 2023-03-17..2026-10-09 --
+WINDOW                 RULE          RETURN%    CAGR%   TRIPS   EXPOS%   MAXDD%  SHARPE   TRADE%     FIN% NIGHTS  MINEQ  CO  RANDOM
+--------------------------------------------------------------------------------------------------------------------------------------------
+eToro bars             cfd_hold        94.06    20.55       1    100.0    28.79    0.91     0.27    51.57   1302   1.00      
+eToro bars             cfd_trend       36.98     9.28      33     75.5    15.28    0.69     6.20    29.41    986   1.00      beats  68.0%
+eToro bars             etf_hold       149.52    29.40       1    100.0    22.77    1.41     0.48     0.00      0   0.99      
+eToro bars             etf_trend       64.87    15.14      33     75.5    14.75    1.06    12.41     0.00      0   0.99      
+   same dates on index bars: cfd_trend 41.21%  cfd_hold 93.78%  (bar source effect on the rule: -4.23 pp)
+
+-- calendar years (base rates for the pre-registration; CFD rate-linked financing) --
+YEAR    CFDhold%  CFDtrnd%  ETFhold%  ETFtrnd%  holdDD%  trndDD%    rnd>%   H1  H2  H2b  H3 
+2000      -47.36    -11.03    -39.48     -9.62    59.80    27.49     68.5   yes yes yes  no 
+2001      -38.59    -17.30    -33.74    -15.76    62.63    28.05     59.8   yes yes yes  no 
+2002      -42.56     -1.12    -38.58     -0.42    55.27    15.58     90.6   yes yes yes  no 
+2003       40.73     11.26     47.15     15.23    13.49    11.14     43.7   yes no  no   no 
+2004        4.15      1.87      9.63      4.37    18.93    15.78     62.6   yes no  no   no 
+2005       -6.21     -5.04      0.86     -2.36    15.58     9.29     31.3   yes yes no   no 
+2006       -2.90     -1.87      6.22      2.62    21.88    13.67     61.2   yes yes no   no 
+2007        8.27    -10.95     17.88     -6.80    12.50    15.03      5.7   no  no  no   no 
+2008      -46.69     -1.81    -41.94     -1.44    54.77    11.27     92.2   yes yes yes  no 
+2009       47.70     29.86     54.21     34.52    18.96    13.73     76.8   yes no  no   no 
+2010       13.06      2.60     18.31      5.80    16.91    17.05     38.1   no  no  no   no 
+2011       -2.85    -10.93      2.24     -9.56    17.25    18.92     21.4   no  no  no   no 
+2012        9.37      2.33     15.55      3.97    12.89    14.26     51.6   no  no  no   no 
+2013       26.61     16.34     32.99     21.78     6.49     5.57     84.2   yes no  no   no 
+2014       13.63     -4.35     19.41     -1.86     8.82    10.55      6.8   no  no  no   no 
+2015        3.16    -14.36      8.60    -12.61    14.93    14.30      4.0   yes no  no   no 
+2016        3.61     -2.65      9.16     -0.72    12.65     7.89     23.9   yes no  no   no 
+2017       24.21     17.26     31.42     22.95     5.39     6.94     93.5   no  no  no   no 
+2018       -8.49     -0.94     -0.91      3.31    25.89    13.61     69.0   yes yes no   no 
+2019       32.88      4.57     41.58      9.29    11.83    18.16     21.2   no  no  no   no 
+2020       40.79     29.06     46.76     32.21    28.63    18.02     76.8   yes no  no   no 
+2021       20.99     -0.79     26.52      2.56    11.22    14.74     12.3   no  no  no   no 
+2022      -38.13    -13.55    -32.96    -11.86    39.99    15.70     61.7   yes yes yes  no 
+2023       40.28     22.13     53.07     31.01    14.03    11.36     72.0   yes no  no   no 
+2024       15.28      6.33     26.37     14.52    14.92    12.31     45.6   yes no  no   no 
+2025       10.49      6.25     19.72     12.26    24.20     9.71     59.0   yes no  no   no 
+2026       14.16      3.91     21.24      6.79    13.13    13.92     47.2   no  no  no   no 
+base rates over 27 years: H1 18  H2 8  H2b 5  H3 0
+
+-- rolling 252-bar windows, step 21, since ETF inception (316 windows) --
+trend maxDD < CFD hold maxDD: 70.3%   trend > CFD hold: 30.7%   CFD trend > ETF hold: 20.9%   ETF trend > ETF hold: 24.1%
+median (CFD trend - CFD hold): -7.61 pp   median (CFD trend - ETF hold): -14.76 pp
+
+-- cost sensitivity (returns %) --
+SCENARIO                                     WINDOW                 CFDtrend    CFDhold    ETFhold   ETFtrend
+base (rate-linked financing)                 since ETF inception      138.95     768.59    1591.32     558.75
+spread x0.5                                  since ETF inception      184.40     769.48    1591.32     558.75
+spread x2                                    since ETF inception       68.64     766.79    1591.32     558.75
+financing markup x0.5                        since ETF inception      252.73     948.09    1591.32     558.75
+financing markup x1.5                        since ETF inception       61.53     589.08    1591.32     558.75
+financing fixed at today's fee               since ETF inception       62.04     649.18    1591.32     558.75
+no financing (gross of carry)                since ETF inception      628.74    1343.95    1591.32     558.75
+ETF size 5,000 USD                           since ETF inception      138.95     768.59    1594.93     961.31
+base (rate-linked financing)                 last 10y                  87.95     328.86     573.27     193.80
+spread x0.5                                  last 10y                 100.02     329.27     573.27     193.80
+spread x2                                    last 10y                  65.95     328.04     573.27     193.80
+financing markup x0.5                        last 10y                 119.62     389.23     573.27     193.80
+financing markup x1.5                        last 10y                  60.69     268.49     573.27     193.80
+financing fixed at today's fee               last 10y                  67.02     297.21     573.27     193.80
+no financing (gross of carry)                last 10y                 204.35     530.87     573.27     193.80
+ETF size 5,000 USD                           last 10y                  87.95     328.86     574.70     248.36
+base (rate-linked financing)                 last 3y                   27.54      68.96     110.32      51.71
+spread x0.5                                  last 3y                   30.45      69.10     110.32      51.71
+spread x2                                    last 3y                   21.91      68.66     110.32      51.71
+financing markup x0.5                        last 3y                   33.83      78.66     110.32      51.71
+financing markup x1.5                        last 3y                   21.51      59.26     110.32      51.71
+financing fixed at today's fee               last 3y                   28.47      69.80     110.32      51.71
+no financing (gross of carry)                last 3y                   54.47     107.34     110.32      51.71
+ETF size 5,000 USD                           last 3y                   27.54      68.96     110.77      61.37
+
+==============================================================================================================
+SPX500 (CFD) <- ^GSPC (index proxy, 1970-01-02..2026-10-09, 14315 bars)   benchmark SPY (TR, 1993-01-29..2026-10-09)
+==============================================================================================================
+WINDOW                 RULE          RETURN%    CAGR%   TRIPS   EXPOS%   MAXDD%  SHARPE   TRADE%     FIN% NIGHTS  MINEQ  CO  RANDOM
+--------------------------------------------------------------------------------------------------------------------------------------------
+full index history     cfd_hold      3014.41     6.28       1    100.0   298.36   -0.04     7.18  6482.03  20612 -13.46  CO  
+full index history     cfd_trend      -55.54    -1.43     470     64.5    73.70   -0.08    51.47   260.48  13319   0.35      beats  53.5%
+full index history     etf_hold      3125.62    10.87       1    100.0    55.19    0.65     4.58     0.00      0   0.99      
+full index history     etf_trend      182.66     3.14     300     67.6    39.09    0.34   129.19     0.00      0   0.87      
+since ETF inception    cfd_hold       584.23     5.93       1    100.0   161.78    0.18     1.39  1096.51  12216  -1.43  CO  
+since ETF inception    cfd_trend      -43.95    -1.72     297     67.5    66.20   -0.11    31.45   118.03   8255   0.44      beats  17.1%
+since ETF inception    etf_hold      3117.32    10.95       1    100.0    55.19    0.65     4.57     0.00      0   1.00      
+since ETF inception    etf_trend      187.12     3.21     297     67.5    39.09    0.35   130.39     0.00      0   0.88      
+2000-2009              cfd_hold       -82.86   -16.20       1    100.0   110.05    0.03     0.13    58.64   3650  -0.10  CO  
+2000-2009              cfd_trend      -52.69    -7.23      89     56.0    61.69   -0.59     8.23    24.96   2046   0.38      beats  32.1%
+2000-2009              etf_hold       -10.72    -1.13       1    100.0    55.19    0.07     0.26     0.00      0   0.53      
+2000-2009              etf_trend      -17.74    -1.94      89     56.0    38.00   -0.10    18.83     0.00      0   0.62      
+2010-2019              cfd_hold        99.73     7.18       1    100.0    30.55    0.47     0.29    89.19   3648   0.89      
+2010-2019              cfd_trend      -19.44    -2.14      93     70.6    34.21   -0.19    13.01    32.93   2576   0.75      beats   4.4%
+2010-2019              etf_hold       248.88    13.34       1    100.0    19.35    0.92     0.62     0.00      0   0.92      
+2010-2019              etf_trend       15.13     1.42      93     70.6    24.06    0.19    28.45     0.00      0   0.94      
+2020-2026              cfd_hold        64.40     7.64       1    100.0    34.58    0.43     0.25    75.99   2472   0.68      
+2020-2026              cfd_trend       16.75     2.32      56     72.6    25.75    0.25     9.02    39.24   1797   0.93      beats  58.1%
+2020-2026              etf_hold       163.93    15.46       1    100.0    33.72    0.82     0.50     0.00      0   0.69      
+2020-2026              etf_trend       65.94     7.79      56     72.6    22.97    0.70    19.67     0.00      0   0.96      
+last 10y               cfd_hold       123.31     8.39       1    100.0    40.77    0.46     0.34   137.74   3651   0.78      
+last 10y               cfd_trend       14.23     1.34      78     73.2    25.75    0.18    12.08    52.72   2673   0.90      beats  40.4%
+last 10y               etf_hold       320.60    15.49       1    100.0    33.72    0.89     0.72     0.00      0   0.96      
+last 10y               etf_trend       88.54     6.57      78     73.2    22.97    0.65    28.86     0.00      0   0.99      
+last 5y                cfd_hold        28.29     5.13       1    100.0    29.52    0.36     0.21    49.58   1824   0.76      
+last 5y                cfd_trend       -1.94    -0.39      44     68.8    25.71    0.02     5.94    26.57   1253   0.78      beats  43.4%
+last 5y                etf_hold        89.89    13.75       1    100.0    24.50    0.85     0.40     0.00      0   0.83      
+last 5y                etf_trend       30.25     5.45      44     68.8    22.73    0.55    12.50     0.00      0   0.82      
+last 3y                cfd_hold        45.25    13.31       1    100.0    23.11    0.80     0.21    36.61   1096   0.95      
+last 3y                cfd_trend       22.34     6.98      22     78.0    11.56    0.71     3.81    24.00    852   0.99      beats  73.0%
+last 3y                etf_hold        88.29    23.59       1    100.0    18.76    1.45     0.40     0.00      0   0.96      
+last 3y                etf_trend       50.42    14.64      22     78.0     9.91    1.40     8.08     0.00      0   0.99      
+
+-- eToro SPX500 daily bars (UTC-day buckets, NYSE trading days), 2023-03-13..2026-10-09 --
+WINDOW                 RULE          RETURN%    CAGR%   TRIPS   EXPOS%   MAXDD%  SHARPE   TRADE%     FIN% NIGHTS  MINEQ  CO  RANDOM
+--------------------------------------------------------------------------------------------------------------------------------------------
+eToro bars             cfd_hold        54.94    13.07       1    100.0    24.19    0.80     0.22    46.55   1306   1.00      
+eToro bars             cfd_trend       19.92     5.23      27     76.6    11.84    0.56     4.56    28.05    996   1.00      beats  62.2%
+eToro bars             etf_hold       113.20    23.67       1    100.0    18.76    1.50     0.43     0.00      0   1.00      
+eToro bars             etf_trend       56.83    13.46      27     76.6    10.30    1.31     9.90     0.00      0   1.00      
+   same dates on index bars: cfd_trend 24.53%  cfd_hold 56.36%  (bar source effect on the rule: -4.62 pp)
+
+-- calendar years (base rates for the pre-registration; CFD rate-linked financing) --
+YEAR    CFDhold%  CFDtrnd%  ETFhold%  ETFtrnd%  holdDD%  trndDD%    rnd>%   H1  H2  H2b  H3 
+1994      -10.06     -8.57      0.12     -7.26    14.62    10.83     33.2   yes yes no   no 
+1995       22.53     22.18     37.25     36.27     2.95     2.95     99.5   yes no  no   yes
+1996        9.95      2.57     22.32      9.65     9.55     9.26     41.1   yes no  no   no 
+1997       19.83      5.97     32.16      7.94    12.03    14.56     49.5   no  no  no   no 
+1998       16.37     14.34     28.01     17.79    21.95     8.93     78.7   yes no  no   no 
+1999        9.77     -0.23     20.00      3.74    14.82    11.53     41.1   yes no  no   no 
+2000      -20.01    -27.07    -10.82    -24.18    24.87    27.07      1.9   no  no  no   no 
+2001      -20.16     -2.60    -12.54     -3.89    34.58     9.73     77.5   yes yes yes  no 
+2002      -28.60    -15.07    -22.35    -10.25    37.75    17.47     51.2   yes yes yes  no 
+2003       20.39     12.50     26.94     20.66    14.85     6.27     79.4   yes no  no   no 
+2004        3.06     -2.87      9.94     -0.12    10.88    11.74     34.5   no  no  no   no 
+2005       -4.52     -7.57      3.95     -4.11     8.70     8.74     10.3   no  no  no   no 
+2006        4.08      0.62     14.90      8.32     9.16    10.05     58.8   no  no  no   no 
+2007       -5.55    -12.90      4.39     -3.52    12.99    14.41      6.3   no  no  no   no 
+2008      -43.35    -16.09    -37.11    -14.69    53.29    17.40     73.5   yes yes yes  no 
+2009       18.65      5.23     25.73     16.66    28.31    17.56     40.8   yes no  no   no 
+2010        7.97      7.13     13.79      8.56    17.00    10.19     74.3   yes no  no   no 
+2011       -4.52    -10.22      0.84     -7.89    21.39    16.25     29.4   yes no  no   no 
+2012        8.32     -0.00     13.63      4.46    10.77    12.93     39.5   no  no  no   no 
+2013       24.39     15.14     29.49     18.28     6.25     6.47     90.9   no  no  no   no 
+2014        6.84     -1.97     13.59      0.85     7.95     5.17     18.4   yes no  no   no 
+2015       -5.23    -20.00      0.54    -18.82    13.97    20.00      0.7   no  no  no   no 
+2016        4.97     -2.74     13.57      0.44    10.79     9.39     14.4   yes no  no   no 
+2017       12.93      5.71     20.56     11.66     3.45     6.31     62.0   no  no  no   no 
+2018      -13.09    -14.46     -5.18    -11.90    23.71    19.71     22.1   yes no  no   no 
+2019       22.80      3.89     32.96      9.28     7.59    11.40     30.9   no  no  no   no 
+2020       10.96     13.18     17.39     16.84    34.58    11.26     71.2   yes yes no   no 
+2021       21.51      5.42     27.89      9.70     5.74     7.15     31.8   no  no  no   no 
+2022      -25.05    -18.74    -18.63    -17.36    29.23    18.98     29.4   yes yes no   no 
+2023       13.32      5.27     25.19     12.45    13.18     7.99     59.1   yes no  no   no 
+2024       13.19      5.66     25.37     14.94     9.43     7.76     47.0   yes no  no   no 
+2025        7.03      8.36     16.74     14.82    20.33     5.84     75.2   yes yes no   no 
+2026        6.93     -0.90     14.11      3.82    10.74     8.70     33.9   yes no  no   no 
+base rates over 33 years: H1 21  H2 7  H2b 3  H3 1
+
+-- rolling 252-bar windows, step 21, since ETF inception (389 windows) --
+trend maxDD < CFD hold maxDD: 69.9%   trend > CFD hold: 23.1%   CFD trend > ETF hold: 11.6%   ETF trend > ETF hold: 15.7%
+median (CFD trend - CFD hold): -5.08 pp   median (CFD trend - ETF hold): -14.40 pp
+
+-- cost sensitivity (returns %) --
+SCENARIO                                     WINDOW                 CFDtrend    CFDhold    ETFhold   ETFtrend
+base (rate-linked financing)                 since ETF inception      -43.95     584.23    3117.32     187.12
+spread x0.5                                  since ETF inception      -30.13     585.14    3117.32     187.12
+spread x2                                    since ETF inception      -63.95     582.40    3117.32     187.12
+financing markup x0.5                        since ETF inception       -7.92     930.10    3117.32     187.12
+financing markup x1.5                        since ETF inception      -65.99     238.35    3117.32     187.12
+financing fixed at today's fee               since ETF inception      -60.88     342.04    3117.32     187.12
+no financing (gross of carry)                since ETF inception      164.58    1680.74    3117.32     187.12
+ETF size 5,000 USD                           since ETF inception      -43.95     584.23    3124.18     440.36
+base (rate-linked financing)                 last 10y                  14.23     123.31     320.60      88.54
+spread x0.5                                  last 10y                  21.04     123.52     320.60      88.54
+spread x2                                    last 10y                   1.72     122.88     320.60      88.54
+financing markup x0.5                        last 10y                  34.11     165.16     320.60      88.54
+financing markup x1.5                        last 10y                  -2.81      81.45     320.60      88.54
+financing fixed at today's fee               last 10y                   0.97      99.04     320.60      88.54
+no financing (gross of carry)                last 10y                  87.43     261.05     320.60      88.54
+ETF size 5,000 USD                           last 10y                  14.23     123.31     321.50     122.60
+base (rate-linked financing)                 last 3y                   22.34      45.25      88.29      50.42
+spread x0.5                                  last 3y                   24.36      45.37      88.29      50.42
+spread x2                                    last 3y                   18.40      45.01      88.29      50.42
+financing markup x0.5                        last 3y                   28.73      54.48      88.29      50.42
+financing markup x1.5                        last 3y                   16.22      36.02      88.29      50.42
+financing fixed at today's fee               last 3y                   23.19      46.13      88.29      50.42
+no financing (gross of carry)                last 3y                   49.75      81.86      88.29      50.42
+ETF size 5,000 USD                           last 3y                   22.34      45.25      88.69      57.63
