@@ -25,12 +25,25 @@ go build -o etoro-daily-data/etoro-daily-executor ./cmd/etoro-daily-executor
 go build -o etoro-daily-data/etoro-reconcile      ./cmd/etoro-reconcile
 ```
 
-Crontab (the executor skips NYSE holidays itself):
+Crontab (the executor skips NYSE holidays itself). The job must run at 09:35 New York time; two
+forms, depending on the host's cron:
 
 ```cron
+# cron with CRON_TZ support (cronie, systemd-cron):
 CRON_TZ=America/New_York
 35 9 * * 1-5  /path/to/repo/scripts/ops-run.sh etoro
+
+# Debian/Ubuntu vixie cron (this ops host): CRON_TZ is silently ignored, so list both UTC
+# candidates and let only the one in the 09:xx New York hour through (correct across DST).
+# BEGIN mtb-etoro
+35 13,14 * * 1-5 [ "$(TZ=America/New_York date +\%H)" = 09 ] && /path/to/repo/scripts/ops-run.sh etoro
+# END mtb-etoro
 ```
+
+> [!WARNING]
+> Check which form your cron honours (`crontab -l` after a day: the run log must show a
+> 09:35 New York start). With the first form on a cron that ignores `CRON_TZ`, the job runs
+> at 09:35 **UTC**, outside the cash session, and every day ends `needs the NYSE cash session`.
 
 Wiring this into `scripts/install-ops-cron.sh` is planned for phase P6.
 
@@ -64,10 +77,18 @@ Wiring this into `scripts/install-ops-cron.sh` is planned for phase P6.
    - financing to date.
 
 The wrapper then runs `etoro-reconcile` and writes `etoro-daily-data/demo/reconcile/<New York date>.json`.
+The reconcile is read-only. When the ledger's newest order finished within the last 10 minutes and
+the portfolio does not show it yet, it re-reads the portfolio every 5 s for up to 60 s before
+judging (eToro's portfolio lags fills, see §4); a wait that was needed appears as a `portfolio_lag`
+warning and as `position_reads` / `settle_waited_s` in the report. Warnings never make a report
+`drift`.
 
 **P3 exit criterion:** five consecutive trading days with `reconcile=clean`, plus a passing
 kill-switch drill (`scripts/kill-switch-drill.sh --offline --source services/ui-api/internal/api/testdata`;
-it covers both executors).
+it covers both executors). A day whose only drift is `missing_position` reported within the settle
+window of the executor's own fill, followed by a clean read-only re-check saved as
+`reconcile/<date>.recheck.json` and a dated operator note in the run log, counts as clean (precedent:
+2026-10-12, before the reconcile waited for the portfolio). The original report is never edited.
 
 ## 3. Reading the outcome
 
@@ -81,17 +102,20 @@ it covers both executors).
 | `rejected … (recorded)` | eToro refused the order outright. | Read `demo.order.error`. The next day retries with a new ref. |
 | `ledger says flat but the account holds …` / `… no longer holds it` | Someone traded the instrument by hand, or eToro closed the position (e.g. a margin close-out). | Resolve by hand (see §5). Never edit past ledger lines. |
 | `two reads of eToro's bars disagree` | eToro served inconsistent history. | Re-run later. If it persists, record it for the forward-test report. |
-| `reconcile=drift` | See the findings in the JSON report. | `unfinished_intent`: re-run the executor. Other findings: resolve by hand. |
+| `reconcile=drift` with `missing_position` or `orphan_position` **on the same run that just filled or closed** that position | eToro's portfolio had not caught up after the 60 s settle wait. | Re-run `etoro-reconcile` by hand a few minutes later (`-json etoro-daily-data/demo/reconcile/<date>.recheck.json`). Clean: add a dated note to the run log; the day counts as clean. Still drift: resolve by hand (§5). |
+| `reconcile=drift` (other) | See the findings in the JSON report. | `unfinished_intent`: re-run the executor. Other findings: resolve by hand. |
+| `portfolio_lag` warning, `reconcile=clean` | The portfolio needed re-reads before it showed the fill. Normal. | Nothing. The forward-test report lists how often it happened. |
 
 ## 4. eToro behaviours the executor works around
 
 - **Duplicate request id.** eToro rejects a reused `x-request-id`, and `orders:lookup?referenceId=` cannot find API orders. A resent open is therefore resolved to the position opened on the instrument since the intent's timestamp.
-- **Portfolio lag.** The portfolio shows fills 1–3 s late. The adapter polls for up to 30 s.
+- **Portfolio lag.** The portfolio shows fills late: usually 1–3 s, but on 2026-10-12 it still showed no positions and the pre-trade cash balance 5 s after the second fill, and both positions 80 minutes later. The adapter polls for up to 30 s to resolve the fill; the reconcile waits for up to 60 s more (§2). The ledger's `demo.account` snapshot is the **pre-order** balance (`exposure` 0 before the first open); `position_after` is post-fill.
 - **Two versions of daily history** (seen 2026-10-10):
   - up to ~1.3 bps on 13–16 recent closes;
   - the executor reads twice and records `candles.revised_closes` / `max_revision_bps`;
   - recorded closes may move by up to 5 bps before the run stops.
 - **Weekend and holiday quotes.** These bars are dropped. Orders go only in the cash session.
+- **Session-dependent spreads.** Weekend-session previews quoted ~15 bps of spread per open; in the cash session the fills on 2026-10-12 paid 0.2–0.4 bps (fill vs mid −5.2 bps NSDQ100, −1.7 bps SPX500, both inside the quoted spread). The pre-registration's frozen costs are the weekend figures; report both.
 
 ## 5. Halting and manual resolution
 
@@ -104,3 +128,14 @@ it covers both executors).
 - **Resume.** Delete the file. The next run trades from the rule's target.
 - **Untracked position.** Close it by hand on the demo account (or with the eToro MCP `prepare-close` → `place-close`), then re-run. If the position *is* the executor's, add a note in the forward-test report. Never edit past ledger lines.
 - **Disable for a day.** Set `ETORO_EXECUTOR_DISABLED=1` in the cron environment.
+
+## 6. P3 soak log
+
+Five consecutive clean trading days are needed. Started 2026-10-12 (first fills). Earliest exit:
+Friday 2026-10-16.
+
+| NY date | Run | Reconcile | Note |
+|---|---|---|---|
+| 2026-10-09 (Fri, dry) | manual smoke run at install time (03:18 UTC, 23:18 NY), outside session: nothing recorded | clean | Not a soak day. |
+| 2026-10-12 (Mon) | opened NSDQ100 (3616683146) and SPX500 (3616683295), 1,100 USD x1 each | drift → **clean** on re-check | `missing_position` ×2 at 13:35:14Z, portfolio lag; re-check 14:56:22Z clean (`2026-10-12.recheck.json`). Day 1. |
+| 2026-10-13 (Tue) | hold, nothing to do | clean | Day 2. Reconcile rebuilt with the settle wait after this run. |

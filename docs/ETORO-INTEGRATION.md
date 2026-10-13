@@ -51,7 +51,7 @@ For eToro, set the signal `book` field to the ticker symbol (e.g. `AAPL`, `BTC`)
 - **SELL**: closes the long positions held on the instrument (v1 market-close route).
   - It never opens a short: shorts need a stop-loss and are outside the long/flat policy.
 
-## API facts the code relies on (verified on demo, 2026-10-10)
+## API facts the code relies on (verified on demo, 2026-10-10 and 2026-10-12)
 
 - **Routes:**
   - v2 opens, `orders:lookup?orderId=`, costs and eligibility; v2 rates.
@@ -61,10 +61,11 @@ For eToro, set the signal `book` field to the ticker symbol (e.g. `AAPL`, `BTC`)
   - eToro rejects a reused `x-request-id` with 400 "ReferenceID … may already exists" (`etoro.IsDuplicateReference`).
   - `orders:lookup?referenceId=` does **not** find API-placed orders (404).
   - The broker adapter resolves a duplicate to the position the first attempt opened.
-- **Consistency:** the pnl portfolio shows new and closed positions 1–3 s late. A position's `unrealizedPnL` is an object.
+- **Consistency:** the pnl portfolio shows new and closed positions late: usually 1–3 s, but on 2026-10-12 a portfolio read 5 s after a filled open (which the adapter had already resolved to its position id) still showed no positions and an unchanged cash balance; 80 minutes later both positions and the margin were there. A position's `unrealizedPnL` is an object. `etoro-reconcile` therefore re-reads the portfolio for up to 60 s after an order the executor finished within the last 10 minutes.
 - **Order status:** a filled order reads `{id 3, "Filled"}`. Re-closing a closed position gives error 741.
 - **Rate limits:** 60 reads/min and 20 trading writes/min per user key. The client paces at 55/18 and retries reads on 429/5xx (honouring `Retry-After`). It never retries writes.
 - **Daily candles come in two versions:** two reads of the live `OneDay` route about an hour apart returned 13–16 recent closes up to 1.3 bps apart (2026-10-10; opens/highs/lows identical). The executor reads twice and acts only when both agree (see the runbook).
+- **Spreads depend on the session.** In the weekend session (Saturday 2026-10-10, 02:15 UTC) the cost preview quoted 15.5 bps (NSDQ100) and 14.8 bps (SPX500) of spread per open. In the NYSE cash session (Monday 2026-10-12, 09:35 New York) the live quotes were 0.23 bps and 0.38 bps wide and the previews 0.04–0.06 USD on 1,100 USD (≈0.4–0.5 bps). The pre-registration froze the weekend figures (its §3 fallback), so the frozen cost model is pessimistic for the CFD; the forward-test report must show the measured spreads next to the frozen ones.
 
 ## eToro MCP server (operators and IDE agents only)
 

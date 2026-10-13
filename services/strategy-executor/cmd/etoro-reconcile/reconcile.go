@@ -28,7 +28,37 @@ const (
 	codeRejectedOrder    = "rejected_order"
 	codeBlockedDay       = "blocked_day"
 	codeForeignPositions = "other_instruments"
+	codePortfolioLag     = "portfolio_lag" // the portfolio needed re-reads before it showed a fresh fill (warn)
 )
+
+// settle is how long reconcile waits for the portfolio to show an order the
+// executor finished moments ago. eToro's portfolio lags fills: on 2026-10-12
+// an open executed at 13:35:09Z was still absent from the portfolio read at
+// 13:35:14Z and present later, which was reported as missing_position. The
+// wait applies only to books whose newest order finished within Window and
+// only while the first read disagrees with the ledger; a run that reads a
+// consistent portfolio never waits.
+type settle struct {
+	Window   time.Duration // orders finished this recently may still be settling
+	Timeout  time.Duration // total time to keep re-reading
+	Interval time.Duration // pause between reads
+	Sleep    func(context.Context, time.Duration) error
+}
+
+// defaultSettle covers the executor's own 30 s fill poll plus the gap seen
+// on 2026-10-12, without holding up a cron run for long.
+var defaultSettle = settle{Window: 10 * time.Minute, Timeout: 60 * time.Second, Interval: 5 * time.Second, Sleep: sleepCtx}
+
+func sleepCtx(ctx context.Context, d time.Duration) error {
+	t := time.NewTimer(d)
+	defer t.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-t.C:
+		return nil
+	}
+}
 
 type finding struct {
 	Severity string `json:"severity"`
@@ -51,26 +81,36 @@ type bookReport struct {
 }
 
 type report struct {
-	Schema      string          `json:"schema"`
-	GeneratedAt string          `json:"generated_at"`
-	Ledger      string          `json:"ledger"`
-	Clean       bool            `json:"clean"`
-	Account     *broker.Account `json:"account,omitempty"`
-	Books       []bookReport    `json:"books"`
-	Findings    []finding       `json:"findings"`
+	Schema        string          `json:"schema"`
+	GeneratedAt   string          `json:"generated_at"`
+	Ledger        string          `json:"ledger"`
+	Clean         bool            `json:"clean"`
+	Account       *broker.Account `json:"account,omitempty"`
+	PositionReads int             `json:"position_reads"`            // portfolio reads made (1 unless the portfolio lagged)
+	SettleWaitedS float64         `json:"settle_waited_s,omitempty"` // seconds spent waiting for the portfolio
+	Books         []bookReport    `json:"books"`
+	Findings      []finding       `json:"findings"`
 }
 
 // reconcile compares the demo records of the ledger with the account
 // (open positions), the trading history (closed positions) and the intent
 // journal. It never writes anything and never places an order.
 func reconcile(ctx context.Context, b broker.Broker, recs []etoroledger.Record, intents []etoroledger.Intent, now time.Time) (report, error) {
+	return reconcileWith(ctx, b, recs, intents, now, defaultSettle)
+}
+
+func reconcileWith(ctx context.Context, b broker.Broker, recs []etoroledger.Record, intents []etoroledger.Intent, now time.Time, st settle) (report, error) {
 	rep := report{Schema: "etoro-reconcile/v1", GeneratedAt: now.UTC().Format(time.RFC3339), Findings: []finding{}}
 	add := func(sev, book, code, format string, args ...any) {
 		rep.Findings = append(rep.Findings, finding{Severity: sev, Book: book, Code: code, Message: fmt.Sprintf(format, args...)})
 	}
-	positions, err := b.Positions(ctx)
+	positions, lag, err := settledPositions(ctx, b, recs, now, st)
 	if err != nil {
 		return rep, fmt.Errorf("positions: %w", err)
+	}
+	rep.PositionReads, rep.SettleWaitedS = lag.reads, lag.waited.Seconds()
+	for _, book := range lag.lagged {
+		add(sevWarn, book, codePortfolioLag, "the portfolio showed the ledger's latest order only after %d reads (%.0f s)", lag.reads, lag.waited.Seconds())
 	}
 	if acct, err := b.Account(ctx); err == nil {
 		rep.Account = &acct
@@ -203,4 +243,107 @@ func reconcile(ctx context.Context, b broker.Broker, recs []etoroledger.Record, 
 		}
 	}
 	return rep, nil
+}
+
+// lagInfo is what settledPositions did to get a consistent portfolio.
+type lagInfo struct {
+	reads  int
+	waited time.Duration
+	lagged []string // books that needed more than one read
+}
+
+// freshOrder is an executed order the executor finished within the settle
+// window, and the account state the ledger expects for it.
+type freshOrder struct {
+	book       string
+	positionID string
+	wantHeld   bool // open: the position must be in the portfolio; close: it must not
+}
+
+// freshOrders returns, per book, the newest demo record's order when it was
+// executed within st.Window of now (by Finished, else IntentAt).
+func freshOrders(recs []etoroledger.Record, now time.Time, st settle) []freshOrder {
+	newest := map[string]etoroledger.Record{}
+	for _, r := range recs {
+		if r.Mode != etoroledger.ModeDemo || r.Demo == nil {
+			continue
+		}
+		if cur, ok := newest[r.Book]; !ok || r.Decision.BarDate > cur.Decision.BarDate {
+			newest[r.Book] = r
+		}
+	}
+	books := make([]string, 0, len(newest))
+	for b := range newest {
+		books = append(books, b)
+	}
+	sort.Strings(books)
+	var out []freshOrder
+	for _, b := range books {
+		r := newest[b]
+		o := r.Demo.Order
+		if o == nil || o.Status != string(broker.StatusExecuted) {
+			continue
+		}
+		at := o.Finished
+		if at.IsZero() {
+			at = o.IntentAt
+		}
+		if at.IsZero() || now.Sub(at) > st.Window || now.Before(at) {
+			continue
+		}
+		switch o.Kind {
+		case etoroledger.ActionOpen:
+			if pid := r.Demo.PositionAfter.PositionID; pid != "" {
+				out = append(out, freshOrder{book: b, positionID: pid, wantHeld: true})
+			}
+		case etoroledger.ActionClose:
+			if pid := r.Demo.PositionBefore.PositionID; pid != "" {
+				out = append(out, freshOrder{book: b, positionID: pid, wantHeld: false})
+			}
+		}
+	}
+	return out
+}
+
+// settledPositions reads the open positions, re-reading for up to st.Timeout
+// while a book with a fresh order still disagrees with the ledger. It gives
+// up quietly on timeout: the normal findings then describe the mismatch.
+func settledPositions(ctx context.Context, b broker.Broker, recs []etoroledger.Record, now time.Time, st settle) ([]broker.Position, lagInfo, error) {
+	var lag lagInfo
+	fresh := freshOrders(recs, now, st)
+	disagreeing := func(positions []broker.Position) []string {
+		held := map[string]bool{}
+		for _, p := range positions {
+			held[p.ID] = true
+		}
+		var out []string
+		for _, f := range fresh {
+			if held[f.positionID] != f.wantHeld {
+				out = append(out, f.book)
+			}
+		}
+		return out
+	}
+	var first []string
+	for {
+		positions, err := b.Positions(ctx)
+		if err != nil {
+			return nil, lag, err
+		}
+		lag.reads++
+		bad := disagreeing(positions)
+		if lag.reads == 1 {
+			first = bad
+		}
+		if len(bad) == 0 || st.Interval <= 0 || st.Sleep == nil || lag.waited+st.Interval > st.Timeout {
+			if len(bad) == 0 {
+				lag.lagged = first
+			}
+			return positions, lag, nil
+		}
+		if err := st.Sleep(ctx, st.Interval); err != nil {
+			return positions, lag, err
+		}
+		lag.waited += st.Interval
+	}
 }
