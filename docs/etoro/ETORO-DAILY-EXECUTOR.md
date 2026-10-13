@@ -139,3 +139,28 @@ Friday 2026-10-16.
 | 2026-10-09 (Fri, dry) | manual smoke run at install time (03:18 UTC, 23:18 NY), outside session: nothing recorded | clean | Not a soak day. |
 | 2026-10-12 (Mon) | opened NSDQ100 (3616683146) and SPX500 (3616683295), 1,100 USD x1 each | drift → **clean** on re-check | `missing_position` ×2 at 13:35:14Z, portfolio lag; re-check 14:56:22Z clean (`2026-10-12.recheck.json`). Day 1. |
 | 2026-10-13 (Tue) | hold, nothing to do | clean | Day 2. Reconcile rebuilt with the settle wait after this run. |
+
+## 7. Risk report
+
+`cmd/etoro-risk-report` (phase P4) reads the ledger, the saved candles, the Yahoo index histories
+and the reconcile reports, and writes the risk and analytics report: trading-day VaR/ES and
+backtest per book and for the portfolio (with the NSDQ100/SPX500 correlation), index stress
+episodes, a CFD-priced Monte Carlo of the rule against the CFD and ETF holds, P&L attribution with
+modelled and charged financing, and fill quality against the frozen costs. Reporting only; it
+never writes the ledger and makes no eToro call.
+
+```bash
+cd services/strategy-executor
+go build -o etoro-daily-data/etoro-risk-report ./cmd/etoro-risk-report
+etoro-daily-data/etoro-risk-report -ledger ./etoro-daily-data/demo/ledger.jsonl \
+  -candles ./etoro-daily-data/demo/candles \
+  -yahoo ../../docs/backtest-readiness/evidence-2026-10-10/data \
+  -reconcile ./etoro-daily-data/demo/reconcile \
+  -size 1100 -capital 100000 -paths 2000 -seed 1 \
+  -out ./etoro-daily-data/demo/risk/$(TZ=America/New_York date +%F)
+```
+
+Output: `etoro-daily-data/demo/risk/<NY date>/risk.json` (schema `cfdrisk-report/v1`) and
+`risk.md` (also printed). Run it after each soak week (P6 schedules it after the Friday run). How
+to read it, and the first run's numbers, are in
+[`docs/risk/MODEL-VALIDATION-ADDENDUM-ETORO-2026-10-13.md`](../risk/MODEL-VALIDATION-ADDENDUM-ETORO-2026-10-13.md).

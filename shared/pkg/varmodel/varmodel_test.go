@@ -169,3 +169,74 @@ func TestHistoricalVaR(t *testing.T) {
 		t.Fatalf("all gains: %v", v)
 	}
 }
+
+// A chain that skips weekends: Friday -> Monday is one return and a missing
+// weekday breaks the chain. A bar on a day the chain never names (a
+// Saturday) is not filtered: it pairs with its successor (next(Sat) = Mon),
+// so callers drop such bars first (cfdrisk.TradingLogReturns does).
+func TestLogReturnsOnCustomChain(t *testing.T) {
+	weekdays := func(d time.Time) time.Time {
+		for {
+			d = d.AddDate(0, 0, 1)
+			if wd := d.Weekday(); wd != time.Saturday && wd != time.Sunday {
+				return d
+			}
+		}
+	}
+	fri := time.Date(2026, 10, 9, 0, 0, 0, 0, time.UTC)
+	cs := []Close{
+		{fri.AddDate(0, 0, -1), 100}, {fri, 101}, // Thu -> Fri: 1 return
+		{fri.AddDate(0, 0, 3), 102}, // Fri -> Mon: 1 return
+		{fri.AddDate(0, 0, 5), 103}, // Tue missing: Mon -> Wed breaks
+		{fri.AddDate(0, 0, 6), 104}, // Wed -> Thu: 1 return
+	}
+	rs := LogReturnsOn(cs, weekdays)
+	if len(rs) != 3 || !rs[1].Date.Equal(fri.AddDate(0, 0, 3)) || !near(rs[1].R, math.Log(102.0/101), 1e-15) {
+		t.Fatalf("returns %+v", rs)
+	}
+	withSat := append(append([]Close{}, cs[:2]...), append([]Close{{fri.AddDate(0, 0, 1), 50}}, cs[2:]...)...)
+	if rs := LogReturnsOn(withSat, weekdays); len(rs) != 3 || !near(rs[1].R, math.Log(102.0/50), 1e-15) {
+		t.Fatalf("unfiltered Saturday bar: %+v", rs)
+	}
+	// The calendar chain is the default: only Thu -> Fri and Wed -> Thu.
+	if got, want := LogReturns(cs), LogReturnsOn(cs, NextCalendarDay); len(got) != 2 || len(want) != 2 {
+		t.Fatalf("calendar chain %d vs %d returns", len(got), len(want))
+	}
+}
+
+// The parameterised functions with DefaultParams and the calendar chain are
+// the frozen model, bit for bit.
+func TestWithVariantsReproduceFrozenModel(t *testing.T) {
+	rs := alternating(700, 0.02)
+	for k := 0; k < 12; k++ {
+		rs[len(rs)-245+20*k] = -0.10
+	}
+	cs := closesFromReturns(rs)
+	want, err := EstimateFromCloses(cs, Lambda)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := EstimateWith(cs, NextCalendarDay, DefaultParams())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Forecast != want.Forecast || got.Backtest != want.Backtest || got.Returns != want.Returns || len(got.HistReturns) != len(want.HistReturns) {
+		t.Fatalf("EstimateWith %+v\nEstimateFromCloses %+v", got, want)
+	}
+	if DefaultParams().Z() != Z {
+		t.Fatal("Z at the default confidence must be the constant")
+	}
+	if z := (Params{Confidence: 0.975}).Z(); !near(z, 1.959964, 1e-6) {
+		t.Fatalf("z(97.5 %%) = %v", z)
+	}
+	// A shorter long window: the floor drops faster after the shocks.
+	p := DefaultParams()
+	p.LongWindow = 252
+	short, err := EstimateWith(cs, NextCalendarDay, p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(short.HistReturns) != 252 || short.Long == want.Long {
+		t.Fatalf("252-day estimate %+v", short.Forecast)
+	}
+}

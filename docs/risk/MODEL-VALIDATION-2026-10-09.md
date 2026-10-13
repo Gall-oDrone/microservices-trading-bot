@@ -39,6 +39,10 @@ needs its own dated pre-registration.
 Tier 1 means a wrong answer misstates a decision or the books. Tier 2 misstates a limit or a
 sizing. Tier 3 misstates context.
 
+M10–M14 (trading-day VaR/ES, index stress, CFD Monte Carlo, attribution, fill quality for the
+eToro index-CFD executor) are in the addendum
+[MODEL-VALIDATION-ADDENDUM-ETORO-2026-10-13.md](MODEL-VALIDATION-ADDENDUM-ETORO-2026-10-13.md).
+
 ## 2. Conceptual soundness and key assumptions
 
 | ID | Assumption | Assessment |

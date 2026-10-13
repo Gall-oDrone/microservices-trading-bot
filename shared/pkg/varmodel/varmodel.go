@@ -17,6 +17,13 @@
 // Pure functions, no I/O. Returns are computed only between consecutive
 // calendar days: a missing day breaks the chain instead of producing a
 // multi-day return that would inflate the vol.
+//
+// The constants above are the Bitso model, frozen since 2026-10-08 and
+// pinned by the tests. Instruments that trade on an exchange calendar (the
+// eToro index CFDs, shared/pkg/cfdrisk, 2026-10-13) use the same arithmetic
+// with other Params and another notion of "next day": ForecastsWith,
+// EstimateWith and LogReturnsOn take them explicitly, and the original
+// functions are wrappers over them with DefaultParams and the calendar day.
 package varmodel
 
 import (
@@ -71,6 +78,33 @@ func BaselZone(observations, exceptions int) Zone {
 	return ZoneRed
 }
 
+// Params are the model's settings. DefaultParams is the frozen Bitso model;
+// an exchange-traded instrument uses LongWindow 252 (one trading year) and
+// forms returns across trading days (shared/pkg/cfdrisk).
+type Params struct {
+	Lambda         float64 // EWMA decay
+	SeedReturns    int     // returns averaged to seed the EWMA
+	LongWindow     int     // equal-weighted window, in returns
+	MinReturns     int     // fewer: no estimate
+	BacktestWindow int     // Basel observation window, in returns
+	Confidence     float64 // one-sided VaR level
+}
+
+// DefaultParams is the frozen Bitso model: the package constants.
+func DefaultParams() Params {
+	return Params{Lambda: Lambda, SeedReturns: SeedReturns, LongWindow: LongWindow,
+		MinReturns: MinReturns, BacktestWindow: BacktestWindow, Confidence: Confidence}
+}
+
+// Z is the normal quantile at p.Confidence. At the default confidence it is
+// the constant Z, so the frozen model's arithmetic is unchanged to the bit.
+func (p Params) Z() float64 {
+	if p.Confidence == Confidence {
+		return Z
+	}
+	return math.Sqrt2 * math.Erfinv(2*p.Confidence-1)
+}
+
 // Close is one daily close, labelled by its calendar date (UTC midnight or
 // any time on that date; only the date is used).
 type Close struct {
@@ -78,7 +112,9 @@ type Close struct {
 	Price float64
 }
 
-// Return is the log return from the previous calendar day's close to Date's.
+// Return is the log return from the previous day's close to Date's, where
+// "previous day" is the calendar day (LogReturns) or whatever the chain
+// given to LogReturnsOn says.
 type Return struct {
 	Date time.Time
 	R    float64
@@ -89,16 +125,29 @@ func day(t time.Time) time.Time {
 	return time.Date(y, m, d, 0, 0, 0, 0, time.UTC)
 }
 
+// NextCalendarDay is the chain of the Bitso model: crypto trades every day.
+func NextCalendarDay(d time.Time) time.Time { return day(d).AddDate(0, 0, 1) }
+
 // LogReturns returns the log returns between closes on consecutive calendar
 // days. closes must be sorted by date; non-positive prices break the chain.
 func LogReturns(closes []Close) []Return {
+	return LogReturnsOn(closes, NextCalendarDay)
+}
+
+// LogReturnsOn returns the log returns between consecutive closes a, b for
+// which b's date is next(a's date): the next calendar day, the next trading
+// day, or any other chain. Anything else (a hole, a weekend bar on an
+// exchange calendar) breaks the chain, exactly as a missing calendar day
+// does in LogReturns. closes must be sorted by date; non-positive prices
+// break the chain.
+func LogReturnsOn(closes []Close, next func(time.Time) time.Time) []Return {
 	var out []Return
 	for i := 1; i < len(closes); i++ {
 		a, b := closes[i-1], closes[i]
 		if !(a.Price > 0) || !(b.Price > 0) {
 			continue
 		}
-		if day(b.Date).Sub(day(a.Date)) != 24*time.Hour {
+		if !day(b.Date).Equal(day(next(day(a.Date)))) {
 			continue
 		}
 		out = append(out, Return{Date: day(b.Date), R: math.Log(b.Price / a.Price)})
@@ -113,29 +162,37 @@ type Forecast struct {
 }
 
 // Forecasts returns f with f[i] the forecast made after rets[i] (using
-// rets[0..i]).
+// rets[0..i]), with the frozen windows and the given decay.
 func Forecasts(rets []Return, lambda float64) []Forecast {
+	p := DefaultParams()
+	p.Lambda = lambda
+	return ForecastsWith(rets, p)
+}
+
+// ForecastsWith is Forecasts with explicit Params. The recursion is the
+// one documented in the package comment; only the windows are parameters.
+func ForecastsWith(rets []Return, p Params) []Forecast {
 	f := make([]Forecast, len(rets))
 	var v, sumSq float64
 	for i, r := range rets {
 		sq := r.R * r.R
 		sumSq += sq
 		switch {
-		case i < SeedReturns-1:
-		case i == SeedReturns-1:
-			v = sumSq / SeedReturns
+		case i < p.SeedReturns-1:
+		case i == p.SeedReturns-1:
+			v = sumSq / float64(p.SeedReturns)
 		default:
-			v = lambda*v + (1-lambda)*sq
+			v = p.Lambda*v + (1-p.Lambda)*sq
 		}
-		if i >= LongWindow {
-			old := rets[i-LongWindow].R
+		if i >= p.LongWindow {
+			old := rets[i-p.LongWindow].R
 			sumSq -= old * old
 		}
 		n := i + 1
-		if n > LongWindow {
-			n = LongWindow
+		if n > p.LongWindow {
+			n = p.LongWindow
 		}
-		if i+1 < MinReturns {
+		if i+1 < p.MinReturns {
 			continue
 		}
 		long := math.Sqrt(math.Max(sumSq, 0) / float64(n))
@@ -168,20 +225,30 @@ type Estimate struct {
 var ErrInsufficient = errors.New("varmodel: not enough daily returns for an estimate")
 
 // EstimateFromCloses computes the next-day forecast, the 250-day backtest and the
-// historical-simulation window from daily closes.
+// historical-simulation window from daily closes (the frozen model).
 func EstimateFromCloses(closes []Close, lambda float64) (Estimate, error) {
-	rets := LogReturns(closes)
-	if len(rets) < MinReturns {
+	p := DefaultParams()
+	p.Lambda = lambda
+	return EstimateWith(closes, NextCalendarDay, p)
+}
+
+// EstimateWith is EstimateFromCloses with an explicit chain (see
+// LogReturnsOn) and Params: the forecast after the last return, the
+// backtest over the last p.BacktestWindow returns and the last
+// p.LongWindow returns for historical simulation.
+func EstimateWith(closes []Close, next func(time.Time) time.Time, p Params) (Estimate, error) {
+	rets := LogReturnsOn(closes, next)
+	if len(rets) < p.MinReturns {
 		return Estimate{Returns: len(rets)}, ErrInsufficient
 	}
-	f := Forecasts(rets, lambda)
+	f := ForecastsWith(rets, p)
 	e := Estimate{
 		Forecast: f[len(f)-1],
 		Returns:  len(rets),
 		LastDate: rets[len(rets)-1].Date,
-		Backtest: BacktestForecasts(rets, f),
+		Backtest: BacktestForecastsWith(rets, f, p),
 	}
-	from := len(rets) - LongWindow
+	from := len(rets) - p.LongWindow
 	if from < 0 {
 		from = 0
 	}
@@ -195,18 +262,26 @@ func EstimateFromCloses(closes []Close, lambda float64) (Estimate, error) {
 // exception when its simple return is below -z x vol, a short one when it
 // is above +z x vol.
 func BacktestForecasts(rets []Return, f []Forecast) Backtest {
+	return BacktestForecastsWith(rets, f, DefaultParams())
+}
+
+// BacktestForecastsWith is BacktestForecasts with explicit Params. The zone
+// thresholds are Basel's for 250 observations at 99 % (BaselZone) and are
+// not rescaled for other settings.
+func BacktestForecastsWith(rets []Return, f []Forecast, p Params) Backtest {
 	var b Backtest
-	from := len(rets) - BacktestWindow
+	from := len(rets) - p.BacktestWindow
 	if from < 1 {
 		from = 1
 	}
+	z := p.Z()
 	for i := from; i < len(rets); i++ {
 		prev := f[i-1]
 		if !prev.Ready {
 			continue
 		}
 		b.Observations++
-		v := Z * prev.Vol
+		v := z * prev.Vol
 		simple := math.Expm1(rets[i].R)
 		if simple < -v {
 			b.ExceptionsLong++
@@ -215,8 +290,8 @@ func BacktestForecasts(rets []Return, f []Forecast) Backtest {
 			b.ExceptionsShort++
 		}
 	}
-	b.KupiecLong = KupiecPOF(b.Observations, b.ExceptionsLong, 1-Confidence)
-	b.KupiecShort = KupiecPOF(b.Observations, b.ExceptionsShort, 1-Confidence)
+	b.KupiecLong = KupiecPOF(b.Observations, b.ExceptionsLong, 1-p.Confidence)
+	b.KupiecShort = KupiecPOF(b.Observations, b.ExceptionsShort, 1-p.Confidence)
 	worst := b.ExceptionsLong
 	if b.ExceptionsShort > worst {
 		worst = b.ExceptionsShort

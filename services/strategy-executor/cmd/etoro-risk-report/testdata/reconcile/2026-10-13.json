@@ -1,0 +1,41 @@
+{
+  "schema": "etoro-reconcile/v1",
+  "generated_at": "2026-10-13T13:35:05Z",
+  "ledger": "./etoro-daily-data/demo/ledger.jsonl",
+  "clean": true,
+  "account": {
+    "currency": "USD",
+    "cash": 97793.95,
+    "equity": 99981.23,
+    "unrealized_pnl": -12.7
+  },
+  "books": [
+    {
+      "book": "nsdq100",
+      "symbol": "NSDQ100",
+      "instrument_id": 28,
+      "last_bar_date": "2026-10-12",
+      "ledger_state": "long",
+      "ledger_position_id": "3616683146",
+      "ledger_units": 0.035799,
+      "account_positions": [
+        "3616683146"
+      ],
+      "orders_checked": 1
+    },
+    {
+      "book": "spx500",
+      "symbol": "SPX500",
+      "instrument_id": 27,
+      "last_bar_date": "2026-10-12",
+      "ledger_state": "long",
+      "ledger_position_id": "3616683295",
+      "ledger_units": 0.140735,
+      "account_positions": [
+        "3616683295"
+      ],
+      "orders_checked": 1
+    }
+  ],
+  "findings": []
+}
