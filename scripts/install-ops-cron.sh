@@ -38,6 +38,10 @@
 #   --no-compact          do not schedule the compaction refresh
 #   --no-sampler          do not schedule the hourly order-book sampler
 #   --no-research         do not schedule the monthly execution study or the weekly verdicts
+#   --no-etoro-alerts     do not have the alerts job check the eToro demo executor's ledger
+#                         (services/strategy-executor/etoro-daily-data/demo/ledger.jsonl;
+#                         docs/etoro/ETORO-DAILY-EXECUTOR.md). The eToro cron entry itself is
+#                         still installed by hand until phase P6.
 #   --rebuild-executor    rebuild services/strategy-executor/daily-executor-data/daily-executor
 #                         from the committed HEAD in a throwaway clone, so the code version it
 #                         records is the plain commit (never "+dirty" from untracked files;
@@ -50,7 +54,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 ENV_FILE="${MTB_OPS_ENV:-$HOME/.config/microservices-trading-bot/ops.env}"
 topic="" bucket="" print=0 uninstall=0 executor=1 rebuild=0
-sampler=1 research=1 compact=1 compactor_ref="origin/feat/intraday-data-collector" rebuild_compactor=0
+sampler=1 research=1 compact=1 etoro_alerts=1 compactor_ref="origin/feat/intraday-data-collector" rebuild_compactor=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --topic-arn) topic="$2"; shift 2 ;;
@@ -61,6 +65,7 @@ while [ $# -gt 0 ]; do
     --no-compact) compact=0; shift ;;
     --no-sampler) sampler=0; shift ;;
     --no-research) research=0; shift ;;
+    --no-etoro-alerts) etoro_alerts=0; shift ;;
     --rebuild-executor) rebuild=1; shift ;;
     --compactor-ref) compactor_ref="$2"; shift 2 ;;
     --rebuild-compactor) rebuild_compactor=1; shift ;;
@@ -106,6 +111,8 @@ if [ -n "$bucket" ]; then
   s3uri="s3://$bucket/daily-executor/stage"
 fi
 ledger="$ROOT/services/strategy-executor/daily-executor-data/stage/ledger.jsonl"
+etoro_ledger=""
+[ "$etoro_alerts" = 1 ] && etoro_ledger="$ROOT/services/strategy-executor/etoro-daily-data/demo/ledger.jsonl"
 
 envtext="# Written by scripts/install-ops-cron.sh on $(date -u +%Y-%m-%dT%H:%M:%SZ); read by scripts/ops-run.sh.
 PATH=$path_dirs
@@ -113,6 +120,7 @@ AWS_PAGER=
 UI_ALERTS_NOTIFY=$notify
 UI_API_ARCHIVE=$archive
 UI_API_LEDGER=$ledger
+UI_ALERTS_ETORO_LEDGER=$etoro_ledger
 UI_ALERTS_UI_URL=http://127.0.0.1:5173
 DAILY_EXECUTOR_S3_URI=$s3uri
 COMPACT_BUCKET=$bucket"

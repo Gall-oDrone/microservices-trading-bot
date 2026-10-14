@@ -16,6 +16,11 @@
 // It reads the ledgers and the archive like ui-api (same flags and UI_API_*
 // variables) and never writes them; it writes only its state file and
 // publishes to the topic.
+//
+// With -etoro-ledger (UI_ALERTS_ETORO_LEDGER) it also checks the eToro
+// index-CFD demo executor from its ledger directory (internal/etorohealth):
+// a missed or failed 09:35 New York run, a reconcile drift, an order sent but
+// not recorded, a halt. Same lifecycle, same message.
 package main
 
 import (
@@ -38,6 +43,7 @@ import (
 	"bitso-trading-platform/shared/pkg/risk"
 	"bitso-trading-platform/ui-api/internal/alerts"
 	"bitso-trading-platform/ui-api/internal/api"
+	"bitso-trading-platform/ui-api/internal/etorohealth"
 )
 
 func env(key, def string) string {
@@ -66,6 +72,8 @@ func main() {
 	notify := flag.String("notify", env("UI_ALERTS_NOTIFY", "stdout"), "stdout, or sns:<topic ARN>")
 	repeat := flag.Duration("repeat", envDuration("UI_ALERTS_REPEAT", 12*time.Hour), "re-send an open alert this often (0: only when new, escalated or resolved)")
 	uiURL := flag.String("ui-url", env("UI_ALERTS_UI_URL", "http://127.0.0.1:5173"), "operator UI, linked in the message")
+	etoroLedger := flag.String("etoro-ledger", env("UI_ALERTS_ETORO_LEDGER", ""), "eToro demo executor ledger (etoro-daily-data/demo/ledger.jsonl); empty: not checked")
+	etoroName := flag.String("etoro-name", env("UI_ALERTS_ETORO_NAME", "etoro-demo"), "name of the eToro ledger in alerts")
 	dryRun := flag.Bool("dry-run", false, "print what would be sent; do not notify or write the state")
 	test := flag.Bool("test", false, "send one test message and exit")
 	flag.Parse()
@@ -109,12 +117,16 @@ func main() {
 		os.Exit(2)
 	}
 
+	now := time.Now().UTC()
 	cur := evaluate(srv.Handler(), ledgers)
+	if *etoroLedger != "" {
+		checks := etorohealth.Evaluate(etorohealth.Options{LedgerPath: *etoroLedger}, now)
+		cur = alerts.Merge(cur, alerts.FromEtoro(*etoroName, checks))
+	}
 	prev, err := loadState(*statePath)
 	if err != nil {
 		logger.Print(err) // a corrupt state re-sends everything once
 	}
-	now := time.Now().UTC()
 	notice, next := alerts.Diff(prev, cur, now, *repeat)
 	logger.Printf("%d open (%s); new %d, escalated %d, reminders %d, resolved %d",
 		len(cur), counts(cur), len(notice.New), len(notice.Escalated), len(notice.Reminder), len(notice.Resolved))

@@ -45,7 +45,9 @@ CRON_TZ=America/New_York
 > 09:35 New York start). With the first form on a cron that ignores `CRON_TZ`, the job runs
 > at 09:35 **UTC**, outside the cash session, and every day ends `needs the NYSE cash session`.
 
-Wiring this into `scripts/install-ops-cron.sh` is planned for phase P6.
+Wiring the cron entry into `scripts/install-ops-cron.sh` is planned for phase P6. The **alerts**
+side is already wired: the installer writes `UI_ALERTS_ETORO_LEDGER` to `ops.env`, and the
+15-minute `ui-alerts` job checks this ledger directory (§3.1).
 
 ## 2. What a run does
 
@@ -106,6 +108,31 @@ window of the executor's own fill, followed by a clean read-only re-check saved 
 | `reconcile=drift` (other) | See the findings in the JSON report. | `unfinished_intent`: re-run the executor. Other findings: resolve by hand. |
 | `portfolio_lag` warning, `reconcile=clean` | The portfolio needed re-reads before it showed the fill. Normal. | Nothing. The forward-test report lists how often it happened. |
 
+### 3.1 What reaches you without reading the log
+
+`ui-alerts` (R3, `services/ui-api/internal/etorohealth`) evaluates this ledger directory every
+15 minutes from the files alone, with no eToro call, and sends through the same SNS topic and
+lifecycle as the Bitso alerts: once when a condition appears, again when it escalates, a reminder
+every 12 h while it stays open, once when it resolves. Alerts are named `(etoro-demo)`.
+
+| Alert | Severity | Fires when | Clears when |
+|---|---|---|---|
+| eToro ledger coverage | critical | From **10:00 New York** on a trading day, a book has no ledger line with that fill date (the run was missed, or stopped before recording: stale bars, outside the session, unknown order outcome). Looks back 3 trading days. | The day is recorded (a re-run in session). |
+| eToro executor run | critical | The newest `run-*.log` ended `exit≠0`, or has no `exit=` line 15 min after it started. | A later run ends `exit=0`. |
+| eToro reconcile | critical | The newest `reconcile/<date>.json` has drift, and no clean `<date>.recheck.json` exists. | A clean re-check is saved, or the next day's report is clean. |
+| eToro reconcile | warning | The report is clean but carries warnings other than `portfolio_lag`; or the day's run ended `exit=0` and left no report (the reconcile step failed). | — |
+| eToro order sent but not recorded | critical | An intent is on disk for more than 10 min with no ledger line for its reference (the run died between the order and the ledger). | The executor is re-run and records it. |
+| eToro trading halted | warning | `risk-state.json` says halted. Named together with any Bitso halt in the subject ("Trading halted (etoro-demo, stage)"). | The file is removed. |
+| eToro halt file | critical | `risk-state.json` exists but is invalid (the executor exits 2 before anything runs). | Fixed or removed. |
+
+A missed 09:35 run is therefore in your inbox by about 10:15 New York. Not covered: the workstation
+being off (the Lambda watchdog covers only the Bitso ledger until P6 uploads this one to S3).
+
+```bash
+# what would be sent right now, without sending or saving state
+cd services/ui-api && ./bin/ui-alerts -dry-run -etoro-ledger ../strategy-executor/etoro-daily-data/demo/ledger.jsonl
+```
+
 ## 4. eToro behaviours the executor works around
 
 - **Duplicate request id.** eToro rejects a reused `x-request-id`, and `orders:lookup?referenceId=` cannot find API orders. A resent open is therefore resolved to the position opened on the instrument since the intent's timestamp.
@@ -125,6 +152,7 @@ window of the executor's own fill, followed by a clean read-only re-check saved 
     > services/strategy-executor/etoro-daily-data/demo/risk-state.json
   ```
   Until phase P5 adds this ledger to ui-api, the operator UI's **Halt all** button does not reach it.
+  The halt itself does reach you: `ui-alerts` reports it as a warning within 15 minutes (§3.1).
 - **Resume.** Delete the file. The next run trades from the rule's target.
 - **Untracked position.** Close it by hand on the demo account (or with the eToro MCP `prepare-close` → `place-close`), then re-run. If the position *is* the executor's, add a note in the forward-test report. Never edit past ledger lines.
 - **Disable for a day.** Set `ETORO_EXECUTOR_DISABLED=1` in the cron environment.
@@ -139,6 +167,7 @@ Friday 2026-10-16.
 | 2026-10-09 (Fri, dry) | manual smoke run at install time (03:18 UTC, 23:18 NY), outside session: nothing recorded | clean | Not a soak day. |
 | 2026-10-12 (Mon) | opened NSDQ100 (3616683146) and SPX500 (3616683295), 1,100 USD x1 each | drift → **clean** on re-check | `missing_position` ×2 at 13:35:14Z, portfolio lag; re-check 14:56:22Z clean (`2026-10-12.recheck.json`). Day 1. |
 | 2026-10-13 (Tue) | hold, nothing to do | clean | Day 2. Reconcile rebuilt with the settle wait after this run. |
+| 2026-10-14 (Wed) | hold, nothing to do | clean (1 portfolio read) | Day 3. First run with the settle-aware reconcile. eToro alerts switched on in `ui-alerts` the same day. |
 
 ## 7. Risk report
 

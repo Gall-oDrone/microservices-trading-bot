@@ -1156,6 +1156,10 @@ unfinished bar is labelled provisional. The decision path never reads live data.
     `--rebuild-compactor`, and records the commit in `bin/compact-archive.ref`. `--no-compact` skips it.
   - Settings in `~/.config/microservices-trading-bot/ops.env` (chmod 600: PATH with the AWS CLI,
     topic, bucket, ledger); logs in `~/.local/state/mtb-ops/{executor,alerts,compact}.log`.
+  - Since 2026-10-14 the same `ui-alerts` run also checks the eToro demo executor's ledger
+    directory (`UI_ALERTS_ETORO_LEDGER`, `internal/etorohealth`): missed or failed 09:35 New York
+    run, reconcile drift, an order sent but not recorded, a halt. Table in
+    `docs/etoro/ETORO-DAILY-EXECUTOR.md` §3.1.
 - **First catch-up (2026-10-08 00:08 UTC).** 2026-10-01 … 10-06 compacted for both books (12
   partitions, rows match: btc_mxn 26 949 → 49 files in total, btc_usd 149 → 7); the two compaction
   alerts resolved on the next alerts run ("[mtb-ops] 2 resolved").

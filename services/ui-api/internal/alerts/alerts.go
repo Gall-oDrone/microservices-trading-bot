@@ -18,6 +18,7 @@ import (
 	"bitso-trading-platform/shared/pkg/risk"
 	"bitso-trading-platform/ui-api/internal/api"
 	"bitso-trading-platform/ui-api/internal/datahealth"
+	"bitso-trading-platform/ui-api/internal/etorohealth"
 )
 
 // Severities, worst first.
@@ -112,6 +113,31 @@ func FromRisk(ledger string, r api.RiskResponse) []Alert {
 func EvalError(ledger, what string, err error) Alert {
 	return Alert{Key: ledger + "/eval." + what, Severity: Critical,
 		Title: "Cannot evaluate " + what + " (" + ledger + ")", Message: err.Error()}
+}
+
+// FromEtoro maps the eToro executor's checks (package etorohealth): fail is
+// critical, warn is a warning. The halt check keys as <ledger>/risk.halted,
+// like FromRisk, so a halt over both executors is named in one subject.
+func FromEtoro(ledger string, checks []etorohealth.Check) []Alert {
+	var out []Alert
+	for _, c := range checks {
+		sev := ""
+		switch c.Status {
+		case datahealth.Fail:
+			sev = Critical
+		case datahealth.Warn:
+			sev = Warning
+		}
+		if sev == "" {
+			continue
+		}
+		key := ledger + "/" + c.ID
+		if c.ID == etorohealth.IDHalt && sev == Warning {
+			key = ledger + haltSuffix
+		}
+		out = append(out, Alert{Key: key, Severity: sev, Title: c.Label + " (" + ledger + ")", Message: c.Message})
+	}
+	return out
 }
 
 // Merge de-duplicates by key (the archive checks repeat per ledger), keeping
