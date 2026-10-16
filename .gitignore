@@ -42,6 +42,8 @@ __pycache__/
 # Logs
 *.log
 logs/
+# ui-api's eToro handler tests read a real executor run log as a fixture.
+!services/ui-api/internal/api/testdata/etoro-demo/run-*.log
 
 # Backtest script outputs
 .backtest-results/

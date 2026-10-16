@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"bitso-trading-platform/shared/pkg/dailyledger"
+	"bitso-trading-platform/shared/pkg/etoroledger"
 	"bitso-trading-platform/shared/pkg/risk"
 	"bitso-trading-platform/ui-api/internal/executor"
 	"bitso-trading-platform/ui-api/internal/live"
@@ -28,10 +29,32 @@ import (
 	"bitso-trading-platform/ui-api/internal/store"
 )
 
+// Venues a ledger can belong to (P5a, 2026-10-16). The Bitso routes and
+// their JSON are unchanged; an eToro ledger is served under /api/ui/etoro/
+// (etoro.go) and takes part in the venue-neutral controls (halt, resume,
+// halt-all).
+const (
+	VenueBitso = "bitso"
+	VenueEtoro = "etoro"
+)
+
 // Ledger is one named daily-executor ledger (with its own candles dir).
 type Ledger struct {
 	Name  string
 	Store *store.Store
+	// Venue is VenueBitso (the default when empty) or VenueEtoro. For an
+	// eToro ledger Store gives the paths (ledger, halt file, candles dir)
+	// and the halt file; the ledger itself is read with etoroledger, never
+	// with dailyledger.
+	Venue string
+}
+
+// venue is the ledger's venue with the default applied.
+func (l Ledger) venue() string {
+	if l.Venue == "" {
+		return VenueBitso
+	}
+	return l.Venue
 }
 
 // Server holds the API's dependencies.
@@ -80,6 +103,10 @@ var (
 	bookRe       = regexp.MustCompile(`^[a-z]{2,6}_[a-z]{2,6}$`)
 	ledgerNameRe = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{0,31}$`)
 )
+
+// ValidLedgerName reports whether name may name a ledger (ledgerNameRe),
+// for names given outside ParseLedgers (cmd -etoro-name).
+func ValidLedgerName(name string) bool { return ledgerNameRe.MatchString(name) }
 
 // ParseLedgers parses "name=path,name=path". Names must be unique and match
 // ledgerNameRe; each ledger's candles are read from <ledger dir>/candles. A
@@ -176,21 +203,45 @@ func (s *Server) ledgers() []Ledger {
 	return []Ledger{{Name: "stage", Store: s.Store}}
 }
 
-// pick returns the ledger named by ?ledger= (default: the first).
+// pick returns the Bitso ledger named by ?ledger= (default: the first Bitso
+// ledger). Every Bitso-only route uses it, so an eToro ledger name gets a
+// clean 400 there instead of a dailyledger parse of the wrong file.
 func (s *Server) pick(w http.ResponseWriter, r *http.Request) (Ledger, bool) {
-	ls := s.ledgers()
+	return s.pickVenue(w, r, VenueBitso)
+}
+
+// pickAny is pick for the venue-neutral routes (the operator controls):
+// any ledger by name, default the first one configured.
+func (s *Server) pickAny(w http.ResponseWriter, r *http.Request) (Ledger, bool) {
+	return s.pickVenue(w, r, "")
+}
+
+// pickVenue resolves ?ledger= among the ledgers of venue ("" = any). With
+// no name it is the first ledger of that venue; none configured is a 404.
+func (s *Server) pickVenue(w http.ResponseWriter, r *http.Request, venue string) (Ledger, bool) {
 	name := r.URL.Query().Get("ledger")
 	if name == "" {
-		return ls[0], true
+		for _, l := range s.ledgers() {
+			if venue == "" || l.venue() == venue {
+				return l, true
+			}
+		}
+		writeErr(w, http.StatusNotFound, "no "+venue+" ledger configured")
+		return Ledger{}, false
 	}
 	if !ledgerNameRe.MatchString(name) {
 		writeErr(w, http.StatusBadRequest, "invalid ledger name")
 		return Ledger{}, false
 	}
-	for _, l := range ls {
-		if l.Name == name {
-			return l, true
+	for _, l := range s.ledgers() {
+		if l.Name != name {
+			continue
 		}
+		if venue != "" && l.venue() != venue {
+			writeErr(w, http.StatusBadRequest, fmt.Sprintf("ledger %s is on venue %s; this route serves %s ledgers", name, l.venue(), venue))
+			return Ledger{}, false
+		}
+		return l, true
 	}
 	writeErr(w, http.StatusBadRequest, "unknown ledger "+name)
 	return Ledger{}, false
@@ -230,6 +281,15 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/ui/strategies", s.strategies)
 	mux.HandleFunc("POST /api/ui/strategies/{name}/start", s.startStrategy)
 	mux.HandleFunc("POST /api/ui/strategies/{name}/stop", s.stopStrategy)
+	// eToro index-CFD executor (P5a): its own namespace and JSON shapes
+	// (USD, units, New York time). See etoro.go.
+	mux.HandleFunc("GET /api/ui/etoro/forward-tests", s.etoroForwardTests)
+	mux.HandleFunc("GET /api/ui/etoro/forward-tests/{book}/ledger", s.etoroLedger)
+	mux.HandleFunc("GET /api/ui/etoro/forward-tests/{book}/candles", s.etoroCandles)
+	mux.HandleFunc("GET /api/ui/etoro/risk", s.etoroRisk)
+	mux.HandleFunc("GET /api/ui/etoro/health", s.etoroHealth)
+	mux.HandleFunc("GET /api/ui/etoro/reconcile", s.etoroReconcile)
+	mux.HandleFunc("GET /api/ui/etoro/risk-report", s.etoroRiskReport)
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusNotFound, "no such endpoint")
 	})
@@ -352,7 +412,10 @@ func (s *Server) healthz(w http.ResponseWriter, r *http.Request) {
 
 // LedgerInfo describes one configured ledger.
 type LedgerInfo struct {
-	Name        string   `json:"name"`
+	Name string `json:"name"`
+	// Venue is "bitso" or "etoro" (additive, P5a): the web app picks the
+	// venue's pages and formatting from it.
+	Venue       string   `json:"venue"`
 	Path        string   `json:"path"`
 	Default     bool     `json:"default"`
 	Found       bool     `json:"found"`
@@ -370,21 +433,37 @@ type LedgersResponse struct {
 func (s *Server) listLedgers(w http.ResponseWriter, r *http.Request) {
 	resp := LedgersResponse{Ledgers: []LedgerInfo{}}
 	for i, l := range s.ledgers() {
-		info := LedgerInfo{Name: l.Name, Path: l.Store.Where(l.Store.LedgerPath), Default: i == 0, Modes: []string{}}
+		info := LedgerInfo{Name: l.Name, Venue: l.venue(), Path: l.Store.Where(l.Store.LedgerPath), Default: i == 0, Modes: []string{}}
 		_, info.Found, _ = l.Store.LedgerInfo()
-		recs, err := l.Store.Records()
-		if err != nil {
-			info.Error = err.Error()
-		}
-		info.Records = len(recs)
 		modes := map[string]bool{}
-		for _, rec := range recs {
-			if rec.Mode != "" && !modes[rec.Mode] {
-				modes[rec.Mode] = true
-				info.Modes = append(info.Modes, rec.Mode)
+		note := func(mode, barDate string) {
+			if mode != "" && !modes[mode] {
+				modes[mode] = true
+				info.Modes = append(info.Modes, mode)
 			}
-			if rec.Decision.BarDate > info.LastBarDate {
-				info.LastBarDate = rec.Decision.BarDate
+			if barDate > info.LastBarDate {
+				info.LastBarDate = barDate
+			}
+		}
+		if l.venue() == VenueEtoro {
+			// The eToro ledger has its own schema: never parse it with
+			// dailyledger.
+			recs, err := etoroledger.ReadFile(l.Store.LedgerPath)
+			if err != nil {
+				info.Error = err.Error()
+			}
+			info.Records = len(recs)
+			for _, rec := range recs {
+				note(rec.Mode, rec.Decision.BarDate)
+			}
+		} else {
+			recs, err := l.Store.Records()
+			if err != nil {
+				info.Error = err.Error()
+			}
+			info.Records = len(recs)
+			for _, rec := range recs {
+				note(rec.Mode, rec.Decision.BarDate)
 			}
 		}
 		sort.Strings(info.Modes)

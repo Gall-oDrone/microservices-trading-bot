@@ -1,8 +1,11 @@
 #!/bin/sh
 # Re-capture the MSW fixtures in src/mocks/fixtures from a running ui-api.
-#   (cd services/ui-api && go run ./cmd -ledgers stage=...,dry-run=... -archive s3://<bucket>) &   then:   npm run fixtures
+#   (cd services/ui-api && go run ./cmd -ledgers stage=...,dry-run=... -archive s3://<bucket> -etoro-ledger ../strategy-executor/etoro-daily-data/demo/ledger.jsonl) &   then:   npm run fixtures
 # Layout: healthz.json and ledgers.json at the top, then one directory per
 # ledger with forward-tests.json, risk.json, health-data.json, controls.json, ledger-<book>.json, candles-<book>.json.
+# A ledger whose venue is etoro (P5a) gets the /api/ui/etoro/ views instead:
+# etoro-forward-tests.json, etoro-risk.json, etoro-health.json, etoro-reconcile.json,
+# etoro-risk-report.json, etoro-ledger-<book>.json, etoro-candles-<book>.json.
 set -eu
 API="${UI_API_URL:-http://127.0.0.1:8090}"
 OUT="$(dirname "$0")/../src/mocks/fixtures"
@@ -18,10 +21,30 @@ curl -fsS "$API/api/ui/live?books=btc_mxn,btc_usd&market=1" > "$OUT/live-market.
 # controls to read "enabled"). GET only; the capture never starts or stops anything.
 curl -fsS "$API/api/ui/strategies" > "$OUT/strategies.json"
 LEDGERS=$(node -e 'const l=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")).ledgers;console.log(l.map(x=>x.name).join(" "))' "$OUT/ledgers.json")
-for l in $LEDGERS; do
+# name:venue pairs; venue is "bitso" or "etoro" (an older ui-api without the field counts as bitso).
+LEDGER_VENUES=$(node -e 'const l=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")).ledgers;console.log(l.map(x=>x.name+":"+(x.venue||"bitso")).join(" "))' "$OUT/ledgers.json")
+for lv in $LEDGER_VENUES; do
+  l=${lv%%:*}
+  venue=${lv#*:}
   D="$OUT/$l"
   rm -rf "$D"
   mkdir -p "$D"
+  if [ "$venue" = etoro ]; then
+    # eToro index-CFD executor (P5a): USD, units, New York time. Operator
+    # controls are shared: controls.json comes from the same route.
+    curl -fsS "$API/api/ui/etoro/forward-tests?ledger=$l" > "$D/etoro-forward-tests.json"
+    curl -fsS "$API/api/ui/etoro/risk?ledger=$l" > "$D/etoro-risk.json"
+    curl -fsS "$API/api/ui/etoro/health?ledger=$l" > "$D/etoro-health.json"
+    curl -fsS "$API/api/ui/etoro/reconcile?ledger=$l" > "$D/etoro-reconcile.json"
+    # 404 until cmd/etoro-risk-report has run once (P4): skipped then.
+    curl -fsS "$API/api/ui/etoro/risk-report?ledger=$l" > "$D/etoro-risk-report.json" || rm -f "$D/etoro-risk-report.json"
+    curl -fsS "$API/api/ui/controls?ledger=$l" > "$D/controls.json"
+    for b in nsdq100 spx500; do
+      curl -fsS "$API/api/ui/etoro/forward-tests/$b/ledger?ledger=$l" > "$D/etoro-ledger-$b.json"
+      curl -fsS "$API/api/ui/etoro/forward-tests/$b/candles?days=365&ledger=$l" > "$D/etoro-candles-$b.json" || rm -f "$D/etoro-candles-$b.json"
+    done
+    continue
+  fi
   curl -fsS "$API/api/ui/forward-tests?ledger=$l" > "$D/forward-tests.json"
   curl -fsS "$API/api/ui/risk?ledger=$l" > "$D/risk.json"
   # Data health: the archive section is "off" unless ui-api runs with -archive.

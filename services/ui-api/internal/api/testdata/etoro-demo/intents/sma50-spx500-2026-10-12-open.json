@@ -1,0 +1,11 @@
+{
+  "client_ref": "sma50-spx500-2026-10-12-open",
+  "request_id": "053fb194-68e1-5529-a163-4cb3373cc867",
+  "kind": "open",
+  "book": "spx500",
+  "instrument_id": 27,
+  "bar_date": "2026-10-09",
+  "fill_date": "2026-10-12",
+  "amount": 1100,
+  "intent_at": "2026-10-12T13:35:10.783098251Z"
+}

@@ -87,6 +87,7 @@ For eToro, set the signal `book` field to the ticker symbol (e.g. `AAPL`, `BTC`)
 - `services/strategy-executor/cmd/etoro-daily-executor/`: the SMA50 index-CFD executor on the demo account (P3). Runbook: [docs/etoro/ETORO-DAILY-EXECUTOR.md](etoro/ETORO-DAILY-EXECUTOR.md).
 - `services/strategy-executor/cmd/etoro-reconcile/`: read-only reconciliation of its ledger against the demo account.
 - `shared/pkg/etoroledger/`: the executor's ledger schema and intent journal.
+- `services/ui-api/` (operator UI backend, P5a): `internal/api/etoro.go` and `etoro_views.go` serve the ledger under `/api/ui/etoro/` (forward tests, per-book ledger and candles, risk with `risk.EtoroDemoPolicy` and the halt file, health, reconcile reports, the P4 risk report); `internal/etorohealth/` is the file-only health check shared with `ui-alerts`; the ledger is registered with `-etoro-ledger` (`UI_API_ETORO_LEDGER`) as venue `etoro`, so the shared halt/resume and halt-all controls write its `risk-state.json` and audit to `ui-audit.jsonl` next to it. `web/scripts/capture-fixtures.sh` captures the eToro endpoints for the web fixtures.
 - `services/trading-engine/internal/execution/etoro_executor.go`: Kafka-signal execution (`BROKER=etoro`).
 - `shared/pkg/config/broker.go`: `BROKER` parsing.
 

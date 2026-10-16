@@ -35,6 +35,13 @@
 // at it on a loopback address:
 //
 //	go run ./cmd -operator-token-file ~/.config/mtb/operator-token -strategy-executor-url http://127.0.0.1:8081
+//
+// The eToro index-CFD demo executor's ledger (porting plan P5a) is served
+// under /api/ui/etoro/ and reached by the halt controls when -etoro-ledger
+// names it (UI_API_ETORO_LEDGER; scripts/install-ops-cron.sh writes it to
+// ops.env). It is a local file, never an S3 copy:
+//
+//	go run ./cmd -etoro-ledger ../strategy-executor/etoro-daily-data/demo/ledger.jsonl
 package main
 
 import (
@@ -89,6 +96,8 @@ func main() {
 	strategyAudit := flag.String("strategy-audit-file", env("UI_API_STRATEGY_AUDIT_FILE", ""), "strategy start/stop audit log (default: "+api.StrategyAuditFile+" next to the first local ledger)")
 	bookSamples := flag.String("book-samples", env("UI_API_BOOK_SAMPLES", "../strategy-executor/daily-executor-data/book-samples"), "hourly order-book samples dir (<dir>/<book>.jsonl, cmd/book-sampler) for the capacity distribution; missing means none")
 	preregDirs := flag.String("prereg-dirs", env("UI_API_PREREG_DIRS", "../strategy-executor/daily-executor-data/prereg,../../docs/backtest-readiness"), "where to look for the latest pre-registered verdict report (scripts/prereg-evaluation.sh output), comma-separated")
+	etoroLedger := flag.String("etoro-ledger", env("UI_API_ETORO_LEDGER", ""), "eToro index-CFD executor ledger (etoro-daily-data/demo/ledger.jsonl, local disk) for /api/ui/etoro/ and the halt controls (default: off)")
+	etoroName := flag.String("etoro-name", env("UI_API_ETORO_NAME", "etoro-demo"), "ledger name of -etoro-ledger (?ledger=, the confirm phrase of its halt/resume)")
 	flag.Parse()
 
 	if *printPolicy {
@@ -124,6 +133,22 @@ func main() {
 		if ledgers, err = api.ParseLedgers(*ledgerSpec); err != nil {
 			logger.Fatal("-ledgers: ", err)
 		}
+	}
+	if *etoroLedger != "" {
+		// Appended after the Bitso ledgers: the first ledger stays the
+		// default of the Bitso routes and of /healthz.
+		if strings.HasPrefix(*etoroLedger, "s3://") {
+			logger.Fatal("-etoro-ledger: must be the local file the executor writes, not an S3 copy")
+		}
+		if !api.ValidLedgerName(*etoroName) {
+			logger.Fatalf("-etoro-name %q: use lowercase letters, digits, '-' or '_' (max 32)", *etoroName)
+		}
+		for _, l := range ledgers {
+			if l.Name == *etoroName {
+				logger.Fatalf("-etoro-name %q is already a -ledgers name", *etoroName)
+			}
+		}
+		ledgers = append(ledgers, api.Ledger{Name: *etoroName, Store: store.New(*etoroLedger, ""), Venue: api.VenueEtoro})
 	}
 	srv := &api.Server{Ledgers: ledgers, Policy: pol, PolicySrc: src, StageSize: *stageSize, StaticDir: *static,
 		Version: version(), Log: logger, BookSamplesDir: *bookSamples,
@@ -164,7 +189,11 @@ func main() {
 
 	go func() {
 		for _, l := range ledgers {
-			logger.Printf("ledger %s: %s | candles %s", l.Name, l.Store.Where(l.Store.LedgerPath), l.Store.Where(l.Store.CandlesDir))
+			venue := ""
+			if l.Venue != "" {
+				venue = " (" + l.Venue + ")"
+			}
+			logger.Printf("ledger %s%s: %s | candles %s", l.Name, venue, l.Store.Where(l.Store.LedgerPath), l.Store.Where(l.Store.CandlesDir))
 			if l.Store.Remote() {
 				// The first S3 call resolves credentials and connects (seconds);
 				// do it now rather than on the first page load.

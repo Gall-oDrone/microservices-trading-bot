@@ -42,6 +42,7 @@ var strategyNameRe = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$`)
 // LedgerControl is one ledger on the Strategies page.
 type LedgerControl struct {
 	Name   string `json:"name"`
+	Venue  string `json:"venue"` // bitso | etoro (additive, P5a)
 	Remote bool   `json:"remote"`
 	// ControlsEnabled says whether halt/resume (and the kill switch) can
 	// act on this ledger.
@@ -184,7 +185,8 @@ func viewStrategy(s executor.Strategy) StrategyView {
 	return v
 }
 
-// localLedgers are the ledgers whose halt file ui-api can write.
+// localLedgers are the ledgers whose halt file ui-api can write, of either
+// venue: the eToro executor reads risk-state.json next to its ledger too.
 func (s *Server) localLedgers() []Ledger {
 	var out []Ledger
 	for _, l := range s.ledgers() {
@@ -235,7 +237,7 @@ func (s *Server) strategies(w http.ResponseWriter, r *http.Request) {
 	for _, l := range s.ledgers() {
 		enabled, why := s.controlsState(l)
 		_, hf := s.policyFor(l)
-		info.Ledgers = append(info.Ledgers, LedgerControl{Name: l.Name, Remote: l.Store.Remote(),
+		info.Ledgers = append(info.Ledgers, LedgerControl{Name: l.Name, Venue: l.venue(), Remote: l.Store.Remote(),
 			ControlsEnabled: enabled, DisabledReason: why, HaltFile: hf})
 	}
 	ks := KillSwitchInfo{Confirm: HaltAllConfirm, Targets: []string{}, AlreadyHalted: []string{}}

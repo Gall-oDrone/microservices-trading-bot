@@ -88,6 +88,7 @@ type ControlResponse struct {
 // this ledger, the halt file, and the recent audit log.
 type ControlsInfo struct {
 	Ledger  string `json:"ledger"`
+	Venue   string `json:"venue"` // bitso | etoro (additive, P5a)
 	Enabled bool   `json:"enabled"`
 	// DisabledReason says why controls are off for this ledger.
 	DisabledReason string        `json:"disabled_reason,omitempty"`
@@ -117,13 +118,13 @@ func auditPath(l Ledger) string {
 }
 
 func (s *Server) controls(w http.ResponseWriter, r *http.Request) {
-	l, ok := s.pick(w, r)
+	l, ok := s.pickAny(w, r)
 	if !ok {
 		return
 	}
 	enabled, why := s.controlsState(l)
 	_, hf := s.policyFor(l)
-	info := ControlsInfo{Ledger: l.Name, Enabled: enabled, DisabledReason: why, HaltFile: hf, Audit: []audit.Entry{}}
+	info := ControlsInfo{Ledger: l.Name, Venue: l.venue(), Enabled: enabled, DisabledReason: why, HaltFile: hf, Audit: []audit.Entry{}}
 	if p := auditPath(l); p != "" {
 		info.AuditPath = p
 		entries, err := audit.Tail(p, auditTail)
@@ -258,7 +259,9 @@ func (s *Server) baseEntry(r *http.Request, action string) audit.Entry {
 }
 
 func (s *Server) control(w http.ResponseWriter, r *http.Request, action string) {
-	l, ok := s.pick(w, r)
+	// Venue-neutral: the eToro executor reads the same halt file format
+	// next to its ledger (shared/pkg/risk.LoadHaltState).
+	l, ok := s.pickAny(w, r)
 	if !ok {
 		return
 	}

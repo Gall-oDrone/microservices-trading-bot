@@ -1,0 +1,12 @@
+{
+  "client_ref": "sma50-nsdq100-2026-10-16-close",
+  "request_id": "c8b55e0a-6ae5-5e93-b983-73663c8940c6",
+  "kind": "close",
+  "book": "nsdq100",
+  "instrument_id": 28,
+  "bar_date": "2026-10-15",
+  "fill_date": "2026-10-16",
+  "amount": 1100,
+  "position_id": "3616683146",
+  "intent_at": "2026-10-16T13:35:04.631651563Z"
+}

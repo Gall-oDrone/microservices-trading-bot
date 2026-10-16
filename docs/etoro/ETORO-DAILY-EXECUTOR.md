@@ -155,7 +155,10 @@ cd services/ui-api && ./bin/ui-alerts -dry-run -etoro-ledger ../strategy-executo
   printf '{"halted":true,"reason":"<why>","by":"<you>","at":"%s"}\n' "$(date -u +%FT%TZ)" \
     > services/strategy-executor/etoro-daily-data/demo/risk-state.json
   ```
-  Until phase P5 adds this ledger to ui-api, the operator UI's **Halt all** button does not reach it.
+  With `ui-api -etoro-ledger <this ledger>` (`UI_API_ETORO_LEDGER` in `ops.env`; P5a, 2026-10-16) the operator UI reaches
+  it too: **Halt all** writes this halt file along with the Bitso ones, and the ledger's own halt/resume
+  (`POST /api/ui/risk/halt|resume?ledger=etoro-demo`, confirm `etoro-demo`) writes it alone. Every attempt is
+  audited in `ui-audit.jsonl` next to the ledger.
   The halt itself does reach you: `ui-alerts` reports it as a warning within 15 minutes (§3.1).
 - **Resume.** Delete the file. The next run trades from the rule's target.
 - **Untracked position.** Close it by hand on the demo account (or with the eToro MCP `prepare-close` → `place-close`), then re-run. If the position *is* the executor's, add a note in the forward-test report. Never edit past ledger lines.
