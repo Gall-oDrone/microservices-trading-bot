@@ -39,6 +39,8 @@ export interface Entry {
   executor?: string
   upstream_status?: number
   detail?: string
+  /** The client_ref of an assisted trade (P5d). */
+  ref?: string
 }
 
 const state = new Map<string, { halt: HaltState | null; audit: Entry[] }>()
@@ -117,18 +119,21 @@ export async function withMockHalt(res: Response, request: Request, defaultLedge
   })
 }
 
-export function controlHandlers(fixture: Fixture, defaultLedger: string) {
+export function controlHandlers(fixture: Fixture, defaultLedger: string, trading?: (request: Request) => unknown) {
   const ledgerOf = (request: Request) => new URL(request.url).searchParams.get('ledger') || defaultLedger
 
   return [
     http.get('/api/ui/controls', async ({ request }) => {
       const res = fixture(request, 'controls')
       if (!res.ok) return res
-      const info = (await res.json()) as Json & { halt_file: { path: string }; audit: Entry[] }
+      const info = (await res.json()) as Json & { venue?: string; halt_file: { path: string }; audit: Entry[] }
+      // The assisted trades (P5d) are on in mock mode for the eToro ledger
+      // (the capture says off: the dev backend never runs with -etoro-trading).
+      const withTrading = info.venue === 'etoro' && trading ? { ...info, trading: trading(request) } : info
       const s = state.get(ledgerOf(request))
-      if (!s) return HttpResponse.json(info)
+      if (!s) return HttpResponse.json(withTrading)
       return HttpResponse.json({
-        ...info,
+        ...withTrading,
         halt_file: s.halt ? haltFileInfo(info.halt_file.path, s.halt) : info.halt_file,
         audit: [...s.audit, ...info.audit].slice(0, 50),
       })

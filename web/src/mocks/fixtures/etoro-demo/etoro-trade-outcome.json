@@ -1,0 +1,39 @@
+{
+  "status": "executed",
+  "book": "nsdq100",
+  "side": "open",
+  "client_ref": "ui-nsdq100-2026-10-19-open-3f9a1c",
+  "request_id": "0131154d-2afd-5235-a7ed-38eabaaf7b43",
+  "order_id": "388041902",
+  "position_ids": [
+    "3616700001"
+  ],
+  "avg_price": 29190.6,
+  "units": 0.037683,
+  "amount_usd": 1100,
+  "fill_vs_mid_bps": 0.29,
+  "fill_vs_close_bps": -22.7,
+  "position_after": {
+    "state": "long",
+    "position_id": "3616700001",
+    "units": 0.037683,
+    "amount": 1100,
+    "open_rate": 29190.6,
+    "opened_at": "2026-10-19T15:00:41Z"
+  },
+  "ledger_recorded": true,
+  "audit_path": "../strategy-executor/etoro-daily-data/demo/ui-audit.jsonl",
+  "audit": {
+    "id": "8f2c1a9d4b7e3c10",
+    "at": "2026-10-19T15:00:38Z",
+    "action": "trade.place",
+    "outcome": "done",
+    "ledger": "etoro-demo",
+    "by": "diego",
+    "reason": "Re-entering NSDQ100 by hand after the incident review",
+    "remote": "127.0.0.1:51234",
+    "user_agent": "Mozilla/5.0",
+    "detail": "open nsdq100 1100 USD x1 (0.037684 units) -> executed: order 388041902 positions [3616700001] avg 29190.60 units 0.037683 (vs mid +0.3 bps, vs close -22.7 bps)",
+    "ref": "ui-nsdq100-2026-10-19-open-3f9a1c"
+  }
+}

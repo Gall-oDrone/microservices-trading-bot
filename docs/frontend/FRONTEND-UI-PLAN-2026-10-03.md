@@ -1514,12 +1514,91 @@ unfinished bar is labelled provisional. The decision path never reads live data.
   eToro's rates `date` field lags and is not monotonic, so quotes are stamped with the poll time.
   Weekends and holidays: the forming bar is a UTC day that will not be in the executor's file and
   the flip level is withheld from 00:00 UTC Saturday until the next 09:35 NY run refreshes the
-  candles. No Trade page yet (P5d: assisted prepare → place, demo only). The risk report is read
+  candles. The risk report is read
   as written by P4 (as-of 2026-10-13 in the fixture); a missing report shows an empty card, not an
   error. Studies the research index does not list (e.g. the index-CFD pre-registration) open by
-  direct link only.
+  direct link only. The Trade page (assisted prepare → place, demo only) is §8.16.
 
----
+### 8.16 Trade page (as built, 2026-10-16; porting plan P5d, §4.4)
+
+- **What it is.** `/trade` under *Trading* in the nav, for the eToro ledger (a Bitso ledger gets a
+  note and a link: the stage executor has no operator order path). The operator prepares a trade
+  and places it within two minutes on the eToro **demo** account; ui-api does every check, writes
+  the executor's intent first, sends through the same `etorobroker` adapter the executor uses,
+  appends the line to the executor's ledger with `source: "ui"` and audits every step
+  (`services/ui-api/internal/api/trades.go`; runbook
+  [`docs/etoro/ETORO-DAILY-EXECUTOR.md` §8](../etoro/ETORO-DAILY-EXECUTOR.md)). The design
+  question of P5 §4 was settled for option 1: one ledger, one source of truth, the executor plans
+  from the console's line the next morning and brings the book back to the rule's target unless
+  halted.
+- **Page.** (a) *Proposals from the rule*: per book, `decision.signal` against `demo_position`
+  from `etoro/forward-tests` ("rule says long, demo is flat → open 1,100 USD x1", "rule says flat,
+  demo is long → close position …", "in line, nothing to do"), a *Prepare* button when there is
+  something to do and trading is on. (b) *Manual*: book, side, amount (default 1,100, 1,000–1,500
+  per policy) or the ledger's position to close (read-only, from the forward tests), the operator
+  token (sessionStorage, as the controls). (c) *Preview card*: verdict with the reasons (block) and
+  warnings (e.g. "the rule says flat: the executor closes this position at its next run"), quote
+  bid/ask/spread bps, units, costs (spread, overnight per night, weekend), account cash/equity/
+  exposure, the ledger's position before and the rule's signal, the risk check, the confirmation
+  phrase and a **120 s countdown** (`<meter>` + m:ss; amber under 20 s, "token expired" at 0, which
+  disables Place and offers *Re-prepare*). (d) *Place* through the shared `ConfirmDialog` (tone
+  danger: reason, who, the phrase typed again, the operator token) → *outcome card* (status, order
+  id, position ids, fill, units, amount, fill vs mid / vs close, "ledger recorded", the audit id)
+  and the executor note. A 409/410/422/502 at place marks the preview refused with the server's
+  reason and offers *Re-prepare*. (e) The `trade.*` tail of `ui-audit.jsonl` (the shared
+  `AuditLog`). (f) Trading off: a banner with ui-api's reason and how to enable it
+  (`-etoro-trading`, `-operator-token-file`, `-etoro-ledger`, `-etoro-env-file` with
+  `ETORO_ENV=demo`); proposals are shown read-only, no form, no previews.
+- **Security model delta vs the halt controls (§8.12).** Same gates (loopback Origin, bearer
+  operator token, JSON body with unknown fields rejected, 4 KB, reason/by/confirm rules, one mutex,
+  audit of every attempt) plus: trading is **off unless `-etoro-trading`** and every prerequisite is
+  present (fatal at start otherwise); the broker is built for the demo environment only and
+  `NewEtoroTrading` refuses anything else; prepare **never sends** and runs the checks in the plan's
+  order (halt file → `risk.Check` with `EtoroDemoPolicy` → eligibility ledger vs account → live
+  quote → cost preview → cash), a block verdict carries no token; the token is **HMAC-SHA256** over
+  the preview (client ref, request id, book, side, amount or position, units, bid/ask, expiry)
+  with a per-process random secret keyed by SHA-256 of the operator token (bound to this process
+  and this operator session), **TTL 120 s**, **single use** (in-memory used set); place re-verifies
+  the token, the phrase, the halt file, the NYSE session, the ledger and the account, takes the
+  executor's `ledger.jsonl.lock` (a run in progress → 409), writes the **intent first** (fsync),
+  audits `requested`, sends, appends the ledger line, audits `done`/`failed`; a failed place leaves
+  the intent on disk so reconcile and the data-health page report it. `client_ref` is
+  `ui-<book>-<NY date>-<open|close>-<6 hex>`, the `x-request-id` is `UUIDv5(client_ref)` as the
+  executor's. Nothing for the real account is reachable from the console.
+- **Contracts.** `POST /api/ui/etoro/trades/prepare` `{book, side, amount_usd | position_id,
+  leverage: 1}` → `TradePreview` (`web/src/api/etoroSchemas.ts` `tradePreviewSchema`);
+  `POST /api/ui/etoro/trades/place` `{token, confirm, reason, by}` → `TradePlaceResponse`
+  (`tradePlaceResponseSchema`; a 502 carries the same shape with `error`). `GET /controls` gains
+  `trading: {enabled, disabled_reason, token_ttl_s, min/max/default_amount_usd}` (optional in the
+  schema). The ledger record schema accepts `signal: "manual"`, `source: "ui"`, `operator`; the
+  order view carries `source`/`by`; audit entries carry `ref`. `src/api/trades.ts` holds the
+  mutations (token from sessionStorage, 401 forgets it) and the pure helpers (`secondsLeft`,
+  `fmtCountdown`, `deriveProposals`).
+- **Mock and tests.** `src/mocks/trades.ts`: in-memory tokens with a real expiry, single use, the
+  halt from the controls mock, one leg per day, ledger-vs-account eligibility; a placed trade moves
+  the mock position so `etoro/forward-tests` and the next proposal follow it; scenarios staged by
+  `?mock=short-cash|market-closed|trading-off|short-ttl|broker-down` on the page URL (forwarded to
+  the API in mock builds only, `client.ts withMockFlag`, compiled out of production). Fixtures:
+  `etoro-demo/controls.json` gained the `trading` block as a backend without `-etoro-trading`
+  answers it; `etoro-trade-preview.json` and `etoro-trade-outcome.json` are hand-written from the
+  Go test's shapes (`capture-fixtures.sh` cannot capture them: the dev backend never trades).
+  vitest `trade.test.tsx` (18): schemas against the fixtures and a console ledger line, the
+  countdown and proposal helpers, the mock endpoints (close, 409 on reuse, the one-leg block, 400s,
+  401), the page (manual prepare → countdown → place → outcome → audit and proposals follow, a
+  block verdict, an expired token, trading off, the Bitso note). Playwright `e2e/etoro.spec.ts`
+  (+7 scenarios × desktop + phone): the happy path through the dialog with the audit tail and the
+  forward-tests view following, the proposal button, an expired token (3 s TTL) with Re-prepare, a
+  halt between prepare and place (422 with the reason, then a block verdict), HALT ALL then
+  prepare shows block, trading off, the Bitso note. Backend: `trades_test.go` with a fake broker
+  (every gate and check in order, the token round trip, intent → order → ledger → audit, broker
+  failure, re-checks, the lock, `TestKillSwitchBlocksAssistedTrades`), and the ledger/executor
+  tests of the `source: "ui"` line. The kill-switch drill script runs the Go test as its step 10
+  (it cannot start ui-api with `-etoro-trading`).
+- **Known limits.** The executor resumes only its own `sma50-*` intents: a console place that
+  fails after the intent is resolved by hand (runbook §8). A close is always the whole position.
+  The audit log's clock column reads Mexico City on every page (the shared component). The
+  `trading` block of the stage/dry-run controls fixtures is absent (pinned captures; the schema
+  makes it optional).
 
 ## 9. How to run (local)
 
@@ -1549,6 +1628,10 @@ export PATH=$PWD/.tools/node/bin:$PATH              # portable Node 22
 # Kill-switch drill (§8.14): scratch copies, a throwaway ui-api, 38 checks; touches no real ledger:
 #   scripts/kill-switch-drill.sh            # --keep, --source <ledger dir>, --offline, --no-executor
 #   scripts/kill-switch-drill.sh --offline --source services/ui-api/internal/api/testdata   # as CI runs it
+# Trade page (§8.16): assisted trades on the eToro DEMO ledger, off unless all of these are given:
+#   go run ./cmd -operator-token-file ~/.config/mtb/operator-token \
+#     -etoro-ledger ../strategy-executor/etoro-daily-data/demo/ledger.jsonl -etoro-trading
+#   (the env file defaults to ~/.config/microservices-trading-bot/etoro-demo.env and must say ETORO_ENV=demo)
 cd web && npm ci && npm run dev                     # http://127.0.0.1:5173
 # or, without the backend:
 npm run dev:mock

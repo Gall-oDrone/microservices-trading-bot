@@ -189,8 +189,10 @@ func haltCheck(ledgerPath string) Check {
 // book, a demo record whose fill date is that day. Every outcome of a run
 // that reached the ledger counts (none, open, close, blocked, rejected); a
 // run that stopped before recording (stale bars, outside the session, an
-// unknown order outcome) leaves a hole, which is the point.
+// unknown order outcome) leaves a hole, which is the point. Console trades
+// (source ui, P5d) are not runs and do not count.
 func coverageCheck(demo []etoroledger.Record, books []string, due time.Time, days int) Check {
+	demo = etoroledger.RuleRecords(demo)
 	if len(demo) == 0 {
 		return Check{IDCoverage, "eToro ledger coverage", datahealth.Warn, "no demo records yet"}
 	}

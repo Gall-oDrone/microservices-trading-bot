@@ -110,6 +110,13 @@ export const IconRefresh = (p: P) => (
     <path d="M20 4v7h-7" />
   </svg>
 )
+/** The Trade page: an order ticket. */
+export const IconTrade = (p: P) => (
+  <svg {...base} {...p}>
+    <rect x="4" y="5" width="16" height="14" rx="2" />
+    <path d="M8 10h8M8 14h5" />
+  </svg>
+)
 export const IconExternal = (p: P) => (
   <svg {...base} {...p}>
     <path d="M14 4h6v6M20 4l-9 9" />

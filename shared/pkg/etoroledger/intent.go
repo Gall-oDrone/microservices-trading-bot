@@ -1,6 +1,8 @@
 package etoroledger
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -130,4 +132,17 @@ func Intents(dir string) ([]Intent, error) {
 // date, e.g. "sma50-nsdq100-2026-10-13-open".
 func ClientRef(book, fillDate, kind string) string {
 	return "sma50-" + book + "-" + fillDate + "-" + kind
+}
+
+// UIClientRef is the idempotency key of an assisted trade from the console,
+// e.g. "ui-nsdq100-2026-10-16-open-3f9a1c": the New York date of the trade
+// and six random hex digits, so two console trades on one book and day (a
+// close and a later open, or a retry after a failed place) never share a
+// reference. The request id sent to eToro is still RequestIDFor(ref).
+func UIClientRef(book, nyDate, kind string) (string, error) {
+	var b [3]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		return "", fmt.Errorf("client ref: %w", err)
+	}
+	return "ui-" + book + "-" + nyDate + "-" + kind + "-" + hex.EncodeToString(b[:]), nil
 }

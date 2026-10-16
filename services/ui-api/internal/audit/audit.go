@@ -52,6 +52,9 @@ type Entry struct {
 	UpstreamStatus int    `json:"upstream_status,omitempty"`
 	// Detail is extra context, e.g. an acknowledged open position.
 	Detail string `json:"detail,omitempty"`
+	// Ref is the client_ref of an assisted trade (P5d): it ties the
+	// trade.prepare and trade.place lines to the ledger line and the intent.
+	Ref string `json:"ref,omitempty"`
 }
 
 // Append writes e as one line and syncs it to disk. The file is created

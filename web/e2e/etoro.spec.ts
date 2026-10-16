@@ -16,12 +16,12 @@ function watchConsole(page: Page): string[] {
   return errors
 }
 
-async function expectHealthy(page: Page, errors: string[]) {
+async function expectHealthy(page: Page, errors: string[], allow?: RegExp) {
   await expect(page.getByText(/does not match the UI contract/)).toHaveCount(0)
   await expect(page.getByText('Could not load this view')).toHaveCount(0)
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)
   expect(overflow, 'page must not scroll horizontally').toBeLessThanOrEqual(1)
-  expect(errors).toEqual([])
+  expect(allow ? errors.filter((e) => !allow.test(e)) : errors).toEqual([])
 }
 
 test('ledger picker: lists etoro-demo with its venue and switches every view to it', async ({ page }) => {
@@ -249,4 +249,219 @@ test('market: live NSDQ100 and SPX500 quotes, the NYSE session badge and the pro
   await expectHealthy(page, errors)
   await spx.locator('#market-open-spx500').click()
   await expect(page).toHaveURL(/\/forward-tests\/spx500\?ledger=etoro-demo$/)
+})
+
+// --- Trade page (P5d): assisted prepare -> place against the mock. ---------
+// The mock keeps tokens (real 120 s expiry, single use), the halt from the
+// controls mock and the positions in memory per page; `?mock=<scenario>` on
+// the page URL stages a scenario (forwarded to the API in mock builds only).
+
+const TOKEN = 'e2e-operator-token-0123456789abcdef0123456789'
+
+async function placeThroughDialog(page: Page, phrase: string, reason: string) {
+  const dialog = page.getByRole('dialog')
+  await expect(dialog).toContainText(phrase)
+  await page.locator('#control-reason').fill(reason)
+  await page.locator('#control-by').fill('e2e')
+  await page.locator('#control-confirm').fill(phrase)
+  if (
+    await page
+      .locator('#control-token')
+      .inputValue()
+      .then((v) => v === '')
+  ) {
+    await page.locator('#control-token').fill(TOKEN)
+  }
+  await page.locator('#control-submit').click()
+}
+
+test('trade: proposal → prepare → countdown → place with the phrase → outcome, audit tail and the ledger follow', async ({
+  page,
+}) => {
+  const errors = watchConsole(page)
+  await page.goto(`/trade${ETORO}`)
+  await expect(page).toHaveTitle(/Trade · eToro/)
+  await expect(page.locator('#nav-trade')).toHaveAttribute('href', '/trade?ledger=etoro-demo')
+  // Both books are in line with the rule in the capture: nothing to propose yet.
+  await expect(page.getByTestId('trade-proposal-text-nsdq100')).toContainText('in line (rule flat, demo flat)')
+  await expect(page.getByTestId('trade-proposal-text-spx500')).toContainText('in line (rule long, demo long)')
+  await expect(page.getByTestId('trade-propose-spx500')).toHaveCount(0)
+
+  // Manual: close SPX500 by hand.
+  await page.getByTestId('trade-book').selectOption('spx500')
+  await page.getByTestId('trade-side-close').click()
+  await expect(page.getByTestId('trade-position')).toHaveValue('3616683295')
+  await page.getByTestId('trade-token').fill(TOKEN)
+  await page.getByTestId('trade-prepare').click()
+  const pv = page.getByTestId('trade-preview')
+  await expect(pv).toHaveAttribute('data-verdict', 'allow')
+  await expect(pv.getByTestId('trade-confirmation')).toHaveText('CLOSE SPX500')
+  await expect(pv.getByTestId('trade-countdown')).toContainText(/expires in [12]:\d\d/)
+  await expect(pv.getByTestId('trade-warnings')).toContainText('the rule says long')
+  await expect(pv).toContainText('0.140735 u')
+  await expect(pv.getByTestId('trade-executor-note')).toContainText("brought back to the rule's target")
+  await pv.getByTestId('trade-place').click()
+  await placeThroughDialog(page, 'CLOSE SPX500', 'E2E: closing SPX500 by hand')
+  const out = page.getByTestId('trade-outcome')
+  await expect(out).toHaveAttribute('data-status', 'executed')
+  await expect(out).toContainText('ledger recorded')
+  await expect(out).toContainText('3616683295')
+  await expect(out.getByTestId('trade-fill-quality')).toContainText('bps')
+  await expect(page.getByTestId('trade-preview')).toHaveCount(0)
+
+  // The audit tail shows prepare done, place requested, place done.
+  const audit = page.getByTestId('trade-audit')
+  await expect(audit.getByTestId('audit-row').first()).toContainText('trade.place')
+  await expect(audit.getByTestId('audit-row').first()).toContainText('done')
+  await expect(audit).toContainText('trade.prepare')
+
+  // The rule (long) now disagrees with the demo (flat): the proposal is an
+  // open; prepared from the proposal it is blocked by the one-leg-per-day
+  // rule (the close was today's leg), with the reason and no Place button.
+  await expect(page.getByTestId('trade-proposal-text-spx500')).toContainText(
+    'rule says long, demo is flat → open 1,100 USD',
+  )
+  await page.getByTestId('trade-propose-spx500').click()
+  await expect(pv).toHaveAttribute('data-verdict', 'block')
+  await expect(pv.getByTestId('trade-reasons')).toContainText('max_orders_per_day')
+  await expect(pv.getByTestId('trade-place')).toHaveCount(0)
+  await expect(pv.getByTestId('trade-reprepare')).toContainText('Prepare again')
+
+  // The forward-tests view follows the console trade.
+  await page.locator('#nav-forward-tests').click()
+  await expect(page.getByTestId('ft-card-spx500').getByTestId('demo-position-spx500')).toHaveText('flat')
+  await expect(page.getByTestId('ft-card-spx500').getByTestId('last-order-spx500')).toContainText('close')
+  await expectHealthy(page, errors)
+})
+
+test('trade: a proposal from the rule fills the form and prepares with the rule’s amount', async ({ page }) => {
+  const errors = watchConsole(page)
+  await page.goto(`/trade${ETORO}`)
+  // The capture is in line on both books, so a proposal appears only after a
+  // console trade: close SPX500 by hand, then the rule (long) proposes the
+  // re-open and the button prepares it (the preview itself blocks on the
+  // one-leg-per-day rule, which is the policy).
+  await page.getByTestId('trade-book').selectOption('spx500')
+  await page.getByTestId('trade-side-close').click()
+  await page.getByTestId('trade-token').fill(TOKEN)
+  await page.getByTestId('trade-prepare').click()
+  await page.getByTestId('trade-place').click()
+  await placeThroughDialog(page, 'CLOSE SPX500', 'E2E: closing SPX500 before the proposal')
+  await expect(page.getByTestId('trade-outcome')).toHaveAttribute('data-status', 'executed')
+  await page.getByTestId('trade-propose-spx500').click()
+  await expect(page.getByTestId('trade-side-open')).toHaveAttribute('aria-pressed', 'true')
+  await expect(page.getByTestId('trade-amount')).toHaveValue('1100')
+  const pv = page.getByTestId('trade-preview')
+  await expect(pv).toContainText('Preview · open SPX500')
+  await expect(pv).toContainText('1,100 USD x1')
+  await expect(pv.getByTestId('trade-confirmation')).toHaveText('PLACE SPX500')
+  await expectHealthy(page, errors)
+})
+
+test('trade: an expired token disables Place and offers Re-prepare', async ({ page }) => {
+  const errors = watchConsole(page)
+  // `?mock=short-ttl`: the mock issues 3 s tokens.
+  await page.goto(`/trade${ETORO}&mock=short-ttl`)
+  await page.getByTestId('trade-book').selectOption('spx500')
+  await page.getByTestId('trade-side-close').click()
+  await page.getByTestId('trade-token').fill(TOKEN)
+  await page.getByTestId('trade-prepare').click()
+  const pv = page.getByTestId('trade-preview')
+  await expect(pv).toHaveAttribute('data-verdict', 'allow')
+  await expect(pv.getByTestId('trade-place')).toBeEnabled()
+  await expect(pv).toHaveAttribute('data-expired', 'true', { timeout: 8000 })
+  await expect(pv.getByTestId('trade-countdown')).toContainText('token expired')
+  await expect(pv.getByTestId('trade-place')).toBeDisabled()
+  await pv.getByTestId('trade-reprepare').click()
+  await expect(pv).toHaveAttribute('data-expired', 'false')
+  await expect(pv.getByTestId('trade-place')).toBeEnabled()
+  await expectHealthy(page, errors)
+})
+
+test('trade: a halt between prepare and place is refused with 422 and the reason', async ({ page }) => {
+  const errors = watchConsole(page)
+  await page.goto(`/trade${ETORO}`)
+  await page.getByTestId('trade-book').selectOption('spx500')
+  await page.getByTestId('trade-side-close').click()
+  await page.getByTestId('trade-token').fill(TOKEN)
+  await page.getByTestId('trade-prepare').click()
+  const pv = page.getByTestId('trade-preview')
+  await expect(pv).toHaveAttribute('data-verdict', 'allow')
+  // Someone halts the ledger meanwhile (the mock's halt control, same page context).
+  const halted = await page.evaluate(async () => {
+    const r = await fetch('/api/ui/risk/halt?ledger=etoro-demo', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer mock-token' },
+      body: JSON.stringify({ reason: 'E2E: halt during prepare', by: 'e2e', confirm: 'etoro-demo' }),
+    })
+    return r.status
+  })
+  expect(halted).toBe(200)
+  await pv.getByTestId('trade-place').click()
+  await placeThroughDialog(page, 'CLOSE SPX500', 'E2E: placing after a halt')
+  const err = page.getByTestId('control-error')
+  await expect(err).toContainText('Refused at the re-check')
+  await expect(err).toContainText('trading is halted: E2E: halt during prepare')
+  await page.locator('#control-cancel').click()
+  await expect(pv.getByTestId('trade-refused')).toContainText('trading is halted')
+  await expect(pv.getByTestId('trade-place')).toBeDisabled()
+  await expect(pv.getByTestId('trade-reprepare')).toBeVisible()
+  // Prepared again while halted: a block verdict with the halt as the first reason.
+  await pv.getByTestId('trade-reprepare').click()
+  await expect(pv).toHaveAttribute('data-verdict', 'block')
+  await expect(pv.getByTestId('trade-reasons').locator('li').first()).toContainText(
+    'halted: trading is halted: E2E: halt during prepare',
+  )
+  await expect(page.locator('#trade-halted')).toContainText('E2E: halt during prepare')
+  // The refused place is a 422 the browser logs as a resource error: expected here.
+  await expectHealthy(page, errors, /status of 422/)
+})
+
+test('trade: the kill switch (HALT ALL) makes prepare answer block', async ({ page }) => {
+  const errors = watchConsole(page)
+  await page.goto(`/strategies${ETORO}`)
+  await page.locator('#kill-switch-open').click()
+  await page.locator('#control-reason').fill('E2E: kill switch before trading')
+  await page.locator('#control-by').fill('e2e')
+  await page.locator('#control-confirm').fill('HALT ALL')
+  await page.locator('#control-token').fill(TOKEN)
+  await page.locator('#control-submit').click()
+  await expect(page.getByTestId('halt-all-flash')).toContainText('etoro-demo halted')
+  await page.locator('#nav-trade').click()
+  await expect(page).toHaveURL(/\/trade\?ledger=etoro-demo$/)
+  await expect(page.locator('#trade-halted')).toContainText('E2E: kill switch before trading')
+  await page.getByTestId('trade-book').selectOption('spx500')
+  await page.getByTestId('trade-side-close').click()
+  await page.getByTestId('trade-prepare').click()
+  const pv = page.getByTestId('trade-preview')
+  await expect(pv).toHaveAttribute('data-verdict', 'block')
+  await expect(pv.getByTestId('trade-reasons').locator('li').first()).toContainText(
+    'halted: trading is halted: E2E: kill switch before trading',
+  )
+  await expect(pv.getByTestId('trade-place')).toHaveCount(0)
+  await expectHealthy(page, errors)
+})
+
+test('trade: with trading off the page says why and how to enable it, and offers no preview', async ({ page }) => {
+  const errors = watchConsole(page)
+  await page.goto(`/trade${ETORO}&mock=trading-off`)
+  const banner = page.locator('#trade-disabled')
+  await expect(banner).toContainText('Assisted trading is off')
+  await expect(page.getByTestId('trade-disabled-reason')).toContainText('-etoro-trading')
+  await expect(banner).toContainText('-operator-token-file')
+  await expect(banner).toContainText('ETORO_ENV=demo')
+  await expect(page.getByTestId('trade-proposals')).toBeVisible()
+  await expect(page.getByTestId('trade-form')).toHaveCount(0)
+  await expect(page.getByTestId('trade-propose-spx500')).toHaveCount(0)
+  await expectHealthy(page, errors)
+})
+
+test('trade: a Bitso ledger gets the note and the link to the eToro ledger', async ({ page }) => {
+  const errors = watchConsole(page)
+  await page.goto('/trade')
+  await expect(page.getByTestId('trade-bitso-note')).toContainText('eToro demo account')
+  await page.locator('#trade-switch-etoro').click()
+  await expect(page).toHaveURL(/\/trade\?ledger=etoro-demo$/)
+  await expect(page.getByTestId('trade-proposals')).toBeVisible()
+  await expectHealthy(page, errors)
 })

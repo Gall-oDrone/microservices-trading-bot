@@ -1,0 +1,65 @@
+{
+  "verdict": "allow",
+  "reasons": [],
+  "warnings": [
+    "the rule says flat: the executor closes this position at its next 09:35 New York run unless the ledger is halted"
+  ],
+  "ledger": "etoro-demo",
+  "book": "nsdq100",
+  "side": "open",
+  "instrument": {
+    "symbol": "NSDQ100",
+    "id": 28
+  },
+  "position": {
+    "state": "flat"
+  },
+  "rule_signal": "flat",
+  "quote": {
+    "bid": 29189.4,
+    "ask": 29190.1,
+    "at": "2026-10-19T15:00:02Z",
+    "spread_bps": 0.2398
+  },
+  "costs": {
+    "spread": 0.04,
+    "markup": 0,
+    "transaction_fee": 0,
+    "overnight_fee": 0.26,
+    "weekend_fee": 0
+  },
+  "account": {
+    "currency": "USD",
+    "cash": 97793.95,
+    "equity": 99949.9,
+    "exposure": 1083.66
+  },
+  "risk": {
+    "policy_version": "etoro-demo-2026-10-10",
+    "order": {
+      "book": "nsdq100",
+      "side": "buy",
+      "qty_btc": 0.037684,
+      "price": 29190.1,
+      "ref_price": 29868.7,
+      "leverage": 1
+    },
+    "state": {
+      "position_btc": 0,
+      "orders_today": 0,
+      "equity": 99949.9,
+      "exposure": 1083.66
+    },
+    "allowed": true
+  },
+  "units": 0.037684,
+  "amount_usd": 1100,
+  "ref_price": 29868.7,
+  "confirmation": "PLACE NSDQ100",
+  "client_ref": "ui-nsdq100-2026-10-19-open-3f9a1c",
+  "request_id": "0131154d-2afd-5235-a7ed-38eabaaf7b43",
+  "prepared_at": "2026-10-19T15:00:04Z",
+  "token": "eyJpZCI6Ijg3ZGIifQ.c2lnbmF0dXJl",
+  "expires_at": "2026-10-19T15:02:04Z",
+  "expires_in_s": 120
+}

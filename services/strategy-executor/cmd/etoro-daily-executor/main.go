@@ -29,9 +29,18 @@
 //  4. appends one line per instrument per decision day to the ledger
 //     (shared/pkg/etoroledger) and never writes a second line for that day.
 //
-//     go run ./cmd/etoro-daily-executor                       # dry run: decide and record, no orders
-//     go run ./cmd/etoro-daily-executor -no-record            # print only
-//     go run ./cmd/etoro-daily-executor -demo -ledger ./etoro-daily-data/demo/ledger.jsonl
+// Assisted trades (P5d): an operator can open or close a demo position from
+// the console (ui-api POST /api/ui/etoro/trades/place). Those land in the
+// same ledger as lines with source "ui", keyed apart from the daily lines,
+// and LastDemoPosition orders by (bar_date, recorded_at): the next run plans
+// from the position the operator left. A manual position against the rule
+// is therefore brought back to the rule's target at the next 09:35 run
+// (closed when the rule says flat, opened when it says long and the operator
+// closed) unless the ledger is halted. docs/etoro/ETORO-DAILY-EXECUTOR.md §8.
+//
+//	go run ./cmd/etoro-daily-executor                       # dry run: decide and record, no orders
+//	go run ./cmd/etoro-daily-executor -no-record            # print only
+//	go run ./cmd/etoro-daily-executor -demo -ledger ./etoro-daily-data/demo/ledger.jsonl
 //
 // Credentials: ETORO_PUBLIC_KEY / ETORO_PRIVATE_KEY (the candles route needs
 // them too), from the environment or -env-file (chmod 600). ETORO_ENV must be
@@ -305,7 +314,9 @@ func runBook(ctx context.Context, o options, de demoEnv, s instSpec, fetch func(
 }
 
 // checkHistory verifies that every recorded day of the book still has the
-// same close in today's bars, within revisionTolBps.
+// same close in today's bars, within revisionTolBps. Console trades (source
+// ui) are skipped: their close is the reference price the risk check used,
+// not a bar, and they may be dated today, whose bar is not closed yet.
 func checkHistory(led *etoroledger.Ledger, book string, rows []bitsodaily.Row) error {
 	closeOn := make(map[string]float64, len(rows))
 	for _, r := range rows {
@@ -316,8 +327,8 @@ func checkHistory(led *etoroledger.Ledger, book string, rows []bitsodaily.Row) e
 		first = rows[0].Date
 	}
 	for _, r := range led.Records() {
-		if r.Book != book || r.Decision.BarDate < first {
-			continue // older than the 1000-bar window
+		if r.Book != book || r.IsUI() || r.Decision.BarDate < first {
+			continue // another book, a console trade, or older than the 1000-bar window
 		}
 		c, ok := closeOn[r.Decision.BarDate]
 		if !ok {

@@ -175,7 +175,7 @@ func reconcileWith(ctx context.Context, b broker.Broker, recs []etoroledger.Reco
 		pos := etoroledger.LastDemoPosition(demo, book)
 		br.LedgerState, br.LedgerPositionID, br.LedgerUnits = pos.State, pos.PositionID, pos.Units
 		for _, r := range demo {
-			if r.Book == book && r.Decision.BarDate > br.LastBarDate {
+			if r.Book == book && !r.IsUI() && r.Decision.BarDate > br.LastBarDate {
 				br.LastBarDate = r.Decision.BarDate
 			}
 		}
@@ -271,15 +271,17 @@ type freshOrder struct {
 	wantHeld   bool // open: the position must be in the portfolio; close: it must not
 }
 
-// freshOrders returns, per book, the newest demo record's order when it was
-// executed within st.Window of now (by Finished, else IntentAt).
+// freshOrders returns, per book, the newest demo record's order (by bar date
+// then recorded time, like etoroledger.LastDemoPosition: a console trade
+// counts) when it was executed within st.Window of now (by Finished, else
+// IntentAt).
 func freshOrders(recs []etoroledger.Record, now time.Time, st settle) []freshOrder {
 	newest := map[string]etoroledger.Record{}
 	for _, r := range recs {
 		if r.Mode != etoroledger.ModeDemo || r.Demo == nil {
 			continue
 		}
-		if cur, ok := newest[r.Book]; !ok || r.Decision.BarDate > cur.Decision.BarDate {
+		if cur, ok := newest[r.Book]; !ok || etoroledger.Newer(r, cur) {
 			newest[r.Book] = r
 		}
 	}

@@ -31,13 +31,16 @@ type instSpec struct {
 
 const prereg = "FORWARD-TEST-PREREGISTRATION-SMA50-INDEX-CFD-2026-10-12.md"
 
-// The cost cells are PROVISIONAL until the weekday re-measure of 2026-10-12
-// (pre-registration §3); they are replaced with the frozen values then.
+// The cost cells were PROVISIONAL (weekend capture of 2026-10-10) until the
+// weekday re-measure of 2026-10-12 confirmed them (pre-registration §3);
+// they are frozen since. The label is the one cmd/etoro-risk-report carries.
+const costsStatus = "FROZEN (pre-registration §3: the provisional values of 2026-10-10 became final on 2026-10-12)"
+
 var frozenSpecs = map[string]instSpec{
 	"NSDQ100": {Book: "nsdq100", Symbol: "NSDQ100", ID: 28, ForwardStart: "2026-10-13",
-		SpreadRTBps: 15.5, OvernightBps: 2.3, CostsStatus: "provisional (weekend capture 2026-10-10)", Prereg: prereg},
+		SpreadRTBps: 15.5, OvernightBps: 2.3, CostsStatus: costsStatus, Prereg: prereg},
 	"SPX500": {Book: "spx500", Symbol: "SPX500", ID: 27, ForwardStart: "2026-10-13",
-		SpreadRTBps: 14.8, OvernightBps: 2.3, CostsStatus: "provisional (weekend capture 2026-10-10)", Prereg: prereg},
+		SpreadRTBps: 14.8, OvernightBps: 2.3, CostsStatus: costsStatus, Prereg: prereg},
 }
 
 func specNames() []string {

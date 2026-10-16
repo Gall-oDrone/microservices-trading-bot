@@ -183,6 +183,18 @@ days whose books and records agree; two of them needed a clean re-check for a la
 waits out), with the kill-switch drill passed (40/40). Both lags are fixed in the reconcile that
 runs from Monday 2026-10-19; the soak log continues through P5 as a plain record.
 
+**Binaries rebuilt 2026-10-16 after the Friday run (P5d).** `etoro-daily-executor` and
+`etoro-reconcile` were rebuilt from `feat/etoro` (previous copies kept as `*.prev` next to them)
+for two changes that do not touch the rule: the ledger gained console trades (§8: lines with
+`source: "ui"`, keyed by `book|bar_date|client_ref` so they never collide with the daily line, and
+`LastDemoPosition` now orders by `(bar_date, recorded_at)`), and the paper block's `costs_status`
+label changed from `provisional (weekend capture 2026-10-10)` to `FROZEN (pre-registration §3: the
+provisional values of 2026-10-10 became final on 2026-10-12)`, the wording `etoro-risk-report`
+already used; the frozen numbers themselves are unchanged. The rebuilt reconcile was run once,
+read-only, against the live ledger at 19:20:57Z: **CLEAN** (cash 98,859.70, equity 99,936.94;
+nsdq100 flat, spx500 long 3616683295). The executor was not run; Monday 2026-10-19 09:35 is its
+first run with the new binary.
+
 ## 7. Risk report
 
 `cmd/etoro-risk-report` (phase P4) reads the ledger, the saved candles, the Yahoo index histories
@@ -207,3 +219,87 @@ Output: `etoro-daily-data/demo/risk/<NY date>/risk.json` (schema `cfdrisk-report
 `risk.md` (also printed). Run it after each soak week (P6 schedules it after the Friday run). How
 to read it, and the first run's numbers, are in
 [`docs/risk/MODEL-VALIDATION-ADDENDUM-ETORO-2026-10-13.md`](../risk/MODEL-VALIDATION-ADDENDUM-ETORO-2026-10-13.md).
+
+## 8. Assisted trades from the console (P5d, 2026-10-16)
+
+The operator UI's **Trade** page (`web/`, route `/trade?ledger=etoro-demo`) can open or close a
+demo position by hand through `ui-api`: `POST /api/ui/etoro/trades/prepare` runs the checks and
+returns a preview with a two-minute token, `POST /api/ui/etoro/trades/place` sends it. It is the
+porting plan's §4.4 "assisted mode" (prepare → place, as the eToro MCP does), demo only.
+
+**How it is enabled.** Off by default. `ui-api` needs all of `-etoro-trading`
+(`UI_API_ETORO_TRADING=1`), `-operator-token-file` (the same 0600 token the halt controls use),
+`-etoro-ledger` (this ledger, a local file) and `-etoro-env-file` naming the demo env file with
+`ETORO_ENV=demo`; a missing prerequisite is fatal at start, and `ETORO_ENV=real` is refused in
+code. `GET /api/ui/controls?ledger=etoro-demo` reports `trading: {enabled, disabled_reason}`, and
+the Trade page shows the reason when it is off. The same gates as the halt controls apply to every
+call: loopback `Origin`, `Authorization: Bearer <operator token>`, a JSON body (unknown fields
+rejected, 4 KB cap), and an audit line for every attempt.
+
+**The checks (prepare), in order, each a reason in the block verdict:** the halt file
+(`risk-state.json`; an invalid file blocks too, as it stops the executor) → `risk.Check` with
+`risk.EtoroDemoPolicy` on the same order and state the executor builds (units from the amount and
+the live ask, the last recorded close as the price-deviation reference, legs already sent today
+from the ledger, equity and exposure from the account, the NYSE cash session) → eligibility (an
+open needs the ledger flat and no untracked position on the instrument; a close needs the ledger's
+position id and the account still holding it) → the live quote → the cost preview (opens) →
+available cash ≥ amount (opens). Warnings never block: a trade against the rule's current signal
+warns that the executor will undo it (below). A block verdict still returns the preview, never a
+token.
+
+**The token.** HMAC-SHA256 over the preview (client ref, request id, book, side, amount or
+position, units, bid/ask, expiry) with a per-process random secret keyed by SHA-256 of the
+operator token: valid for this `ui-api` process and this operator session only, 120 s to live,
+accepted once. `client_ref` is `ui-<book>-<NY date>-<open|close>-<6 hex>`; the `x-request-id`
+sent to eToro is `UUIDv5(client_ref)` as the executor's.
+
+**Place.** Verifies the token, the TTL, the confirmation phrase (`PLACE NSDQ100` / `CLOSE NSDQ100`),
+reason and who (the halt controls' rules), then under the controls' mutex and the executor's own
+`ledger.jsonl.lock` (a running executor makes place answer 409; a console trade never interleaves
+with a run) re-checks the halt file, the session, the ledger and the account; writes the
+**intent first** (`intents/<client_ref>.json`, fsync), audits `trade.place requested`, sends
+through the same `etorobroker` adapter (market, amount USD, x1; a close is the whole position;
+the adapter polls up to 30 s and resolves a duplicate reference), appends the ledger line, audits
+`done`. Errors: 401 token, 410 expired, 409 reused or lock held, 422 refused at the re-check
+(halt, session closed, ledger changed), 502 eToro did not execute.
+
+**The ledger line.** The executor's record shape with `source: "ui"` and
+`operator: {by, reason}`; `decision` carries `bar_date = fill_date =` the New York date of the
+trade, `signal: "manual"`, `prev_signal` = the rule's latest signal, `close` = the reference close
+the check used; `paper` and `candles` are zero (the trade is outside the pre-registered paper
+account); `demo` is what the executor writes (position before/after, account, quote, costs, the
+risk check, the order with `fill_vs_mid_bps` and `fill_vs_close_bps`). It is keyed
+`book|bar_date|client_ref`, so it never collides with the executor's `book|bar_date` line for the
+same bar (written the next morning); `Ledger.Get(book, bar_date)` still returns the executor's
+line only. The web ledger table shows it as `manual` with the operator.
+
+**What the executor does next.** It plans from `LastDemoPosition`, which now orders by
+`(bar_date, recorded_at)`: the console line of day D (recorded at D 11:00) is newer than the
+run's bar D-1 line (recorded D 09:35) and older than its bar D line (recorded D+1 09:35). So a
+manual position against the rule is **brought back to the rule's target at the next 09:35 run**
+(closed when the rule says flat; re-opened when it says long and the operator closed) unless the
+ledger is halted. The data-integrity check on recorded closes and the run coverage ignore console
+lines (their `close` is a reference price, not a bar); `reconcile` and `etorohealth` count them
+(positions, intents). **One leg per instrument per trading day is policy, whoever sends it**:
+after the run's leg a console open on the same book is blocked for the day
+(`max_orders_per_day`), and after a console leg the executor's planned order for that book is
+blocked and recorded the next morning only if it falls on the same NY date (it never does: the run
+is the next trading day). A close is a reducing order and is never trapped by the cap.
+
+**Reading `ui-audit.jsonl`.** Next to the ledger, one JSON line per attempt, newest last.
+`action` is `trade.prepare` or `trade.place`; `outcome` is `done` (prepare: allow; place:
+executed), `refused` (prepare: block, with `error: "blocked: <reasons>"`; place: TTL, phrase,
+re-check), `denied` (token or origin), `requested` (place, before the order) or `failed` (place,
+after the order: `error` says what eToro answered). `ref` is the `client_ref`, the same on the
+prepare line, the place lines, the intent file and the ledger line; `detail` is the trade in words
+and, on `done`, the fill. The Trade page shows the `trade.*` tail; the Risk page's audit log shows
+all of it.
+
+**When a place fails after the intent.** The intent stays on disk and no ledger line is written:
+`etoro-reconcile` reports `unfinished_intent` and the data-health page fails `etoro.intents` after
+10 minutes. The executor resumes only its own `sma50-*` intents; a console intent is resolved by
+hand: check the demo account (and the trading history), close an orphan position if one was
+opened, then move the intent file out of `intents/` (keep it with the day's notes). If the order
+did execute, add the ledger line by hand from the audit `failed` line and the position (never edit
+past lines), or close the position and leave the ledger flat. The Trade page's outcome card says
+which case it is.

@@ -387,8 +387,25 @@ export const auditEntrySchema = z.object({
   executor: z.string().optional(),
   upstream_status: z.number().optional(),
   detail: z.string().optional(),
+  /** The client_ref of an assisted trade (P5d): ties its prepare and place lines to the ledger line. */
+  ref: z.string().optional(),
 })
 export type AuditEntry = z.infer<typeof auditEntrySchema>
+
+/**
+ * api.TradingInfo (P5d): whether the assisted trades are available on the
+ * ledger (eToro only, -etoro-trading, token file, demo env file) and the
+ * form bounds. Optional in controlsInfoSchema: older captures lack it.
+ */
+export const tradingInfoSchema = z.object({
+  enabled: z.boolean(),
+  disabled_reason: z.string().optional(),
+  token_ttl_s: z.number(),
+  min_amount_usd: z.number(),
+  max_amount_usd: z.number(),
+  default_amount_usd: z.number(),
+})
+export type TradingInfo = z.infer<typeof tradingInfoSchema>
 
 /** GET /api/ui/controls: whether halt/resume is available for this ledger, and the audit log (newest first). */
 export const controlsInfoSchema = z.object({
@@ -399,6 +416,7 @@ export const controlsInfoSchema = z.object({
   audit_path: z.string(),
   audit: z.array(auditEntrySchema),
   audit_error: z.string().optional(),
+  trading: tradingInfoSchema.optional(),
 })
 export type ControlsInfo = z.infer<typeof controlsInfoSchema>
 

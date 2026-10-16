@@ -44,6 +44,19 @@ export class ApiError extends Error {
 
 const BASE = '/api/ui'
 
+/**
+ * Mock builds only (VITE_MOCK=1; a compile-time constant, so production has
+ * none of this): a `?mock=<scenario>` on the page URL is forwarded to every
+ * API call, which lets the MSW handlers stage a scenario (short cash, market
+ * closed, trading off, a short token TTL) for the Playwright tests.
+ */
+function withMockFlag(path: string): string {
+  if (import.meta.env.VITE_MOCK !== '1' || typeof location === 'undefined') return path
+  const flag = new URLSearchParams(location.search).get('mock')
+  if (!flag) return path
+  return `${path}${path.includes('?') ? '&' : '?'}mock=${encodeURIComponent(flag)}`
+}
+
 export async function fetchJSON<S extends z.ZodTypeAny>(
   path: string,
   schema: S,
@@ -52,7 +65,7 @@ export async function fetchJSON<S extends z.ZodTypeAny>(
 ): Promise<z.infer<S>> {
   let res: Response
   try {
-    res = await fetch(BASE + path, {
+    res = await fetch(BASE + withMockFlag(path), {
       ...init,
       signal,
       headers: { Accept: 'application/json', ...(init?.headers as Record<string, string> | undefined) },

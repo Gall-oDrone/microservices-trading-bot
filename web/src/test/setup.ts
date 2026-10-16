@@ -5,6 +5,7 @@ import { afterAll, afterEach, beforeAll, vi } from 'vitest'
 import { resetMockControls } from '../mocks/controls'
 import { handlers } from '../mocks/handlers'
 import { resetMockStrategies } from '../mocks/strategies'
+import { resetMockTrades } from '../mocks/trades'
 
 // Lightweight Charts needs a real canvas; tests check data and text, not pixels.
 vi.mock('lightweight-charts', () => {
@@ -40,6 +41,7 @@ afterEach(() => {
   server.resetHandlers()
   resetMockControls()
   resetMockStrategies()
+  resetMockTrades()
   cleanup()
 })
 afterAll(() => server.close())

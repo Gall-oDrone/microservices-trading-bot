@@ -353,6 +353,64 @@ func TestDemoRefusesUntrackedPosition(t *testing.T) {
 	}
 }
 
+// P5d: an operator closes the executor's position from the console on
+// Monday afternoon. The console writes a ledger line with source "ui" (bar
+// date = fill date = Monday, close = the reference price it checked
+// against). Tuesday's run plans from that line (flat), re-opens because the
+// rule still says long, and the ui line's close never trips the
+// data-integrity check even though it is not a bar close.
+func TestDemoPlansFromConsoleTrade(t *testing.T) {
+	h := newHarness(t, true)
+	if err := h.run(monday, bars("2026-10-09", 0)); err != nil {
+		t.Fatal(err)
+	}
+	opened := h.records()[0].Demo.PositionAfter
+	// The operator's close, 13:00 New York, through the console.
+	h.fb.closes = nil
+	bo, err := h.fb.Close(context.Background(), broker.CloseRequest{Instrument: broker.Instrument{ID: 28}, PositionID: opened.PositionID, ClientRef: "ui-nsdq100-2026-10-12-close-3f9a1c"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ui := etoroledger.Record{Schema: etoroledger.Schema, RecordedAt: "2026-10-12T17:00:00Z", Mode: etoroledger.ModeDemo, Venue: "etoro",
+		Book: "nsdq100", Instrument: etoroledger.Instrument{Symbol: "NSDQ100", ID: 28}, Source: etoroledger.SourceUI,
+		Decision: etoroledger.Decision{BarDate: "2026-10-12", FillDate: "2026-10-12", Close: 999, Signal: etoroledger.SignalManual, Action: "sell"},
+		Operator: &etoroledger.Operator{By: "diego", Reason: "closing by hand before the long weekend"},
+		Demo: &etoroledger.Demo{Env: "demo", Target: etoroledger.SignalManual, Action: etoroledger.ActionClose, PositionBefore: opened, PositionAfter: etoroledger.Flat(),
+			Order: &etoroledger.Order{Kind: etoroledger.ActionClose, ClientRef: bo.ClientRef, Status: string(bo.Status), PositionIDs: bo.PositionIDs}}}
+	if err := h.de.led.Append(ui); err != nil {
+		t.Fatal(err)
+	}
+	if p := h.de.led.LastDemoPosition("nsdq100"); p.State != "flat" {
+		t.Fatalf("after the console close the executor must see flat: %+v", p)
+	}
+	// Tuesday: the rule still says long, the ledger says flat, the account is
+	// flat -> open again with Tuesday's reference.
+	tue := monday.AddDate(0, 0, 1)
+	if err := h.run(tue, bars("2026-10-12", 0)); err != nil {
+		t.Fatalf("tuesday: %v", err)
+	}
+	recs := h.records()
+	if len(recs) != 3 {
+		t.Fatalf("records %d", len(recs))
+	}
+	last := recs[len(recs)-1]
+	if last.IsUI() || last.Decision.BarDate != "2026-10-12" || last.Demo.Action != etoroledger.ActionOpen ||
+		last.Demo.PositionBefore.State != "flat" || last.Demo.Order.ClientRef != "sma50-nsdq100-2026-10-13-open" {
+		t.Fatalf("tuesday record %+v", last)
+	}
+	if n := etoroledger.LegsOn(recs, "nsdq100", "2026-10-12"); n != 2 {
+		t.Fatalf("legs on monday %d (the executor's open and the console's close)", n)
+	}
+	// The executor's bar-10-12 line and the console's 10-12 line coexist:
+	// Get finds the executor's, a re-run finds the day recorded.
+	if r, ok := h.de.led.Get("nsdq100", "2026-10-12"); !ok || r.IsUI() {
+		t.Fatalf("get %+v %v", r, ok)
+	}
+	if err := h.run(tue.Add(time.Hour), bars("2026-10-12", 0)); err != nil || len(h.records()) != 3 {
+		t.Fatalf("re-run: %v records %d", err, len(h.records()))
+	}
+}
+
 func TestDemoHaltBlocksAndRecords(t *testing.T) {
 	h := newHarness(t, true)
 	hs := risk.HaltState{Halted: true, Reason: "Kill switch drill", By: "drill", At: "2026-10-12T13:00:00Z"}

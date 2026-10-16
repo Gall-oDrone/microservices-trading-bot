@@ -112,10 +112,13 @@ func etoroRunStatus(recs []etoroledger.Record, now time.Time) EtoroRunStatus {
 	return rs
 }
 
-// EtoroOrderView is a demo order with the day it was for.
+// EtoroOrderView is a demo order with the day it was for. Source is "ui"
+// for an assisted trade from the console (P5d), empty for the executor's.
 type EtoroOrderView struct {
 	BarDate  string `json:"bar_date"`
 	FillDate string `json:"fill_date"`
+	Source   string `json:"source,omitempty"`
+	By       string `json:"by,omitempty"`
 	etoroledger.Order
 }
 
@@ -157,7 +160,8 @@ type EtoroForwardTest struct {
 	RiskFindings     []risk.Finding       `json:"risk_findings"`
 }
 
-// newestDemo is the newest record with a demo section, if any.
+// newestDemo is the newest record with a demo section, if any (the records
+// are sorted oldest first by etoroledger; a console trade counts).
 func newestDemo(recs []etoroledger.Record) *etoroledger.Record {
 	for i := len(recs) - 1; i >= 0; i-- {
 		if recs[i].Demo != nil {
@@ -170,19 +174,27 @@ func newestDemo(recs []etoroledger.Record) *etoroledger.Record {
 func lastEtoroOrder(recs []etoroledger.Record) *EtoroOrderView {
 	for i := len(recs) - 1; i >= 0; i-- {
 		if d := recs[i].Demo; d != nil && d.Order != nil {
-			return &EtoroOrderView{BarDate: recs[i].Decision.BarDate, FillDate: recs[i].Decision.FillDate, Order: *d.Order}
+			v := &EtoroOrderView{BarDate: recs[i].Decision.BarDate, FillDate: recs[i].Decision.FillDate, Source: recs[i].Source, Order: *d.Order}
+			if op := recs[i].Operator; op != nil {
+				v.By = op.By
+			}
+			return v
 		}
 	}
 	return nil
 }
 
+// buildEtoroForwardTest describes the rule from the executor's records
+// (decision, paper, candles, run coverage) and the demo state from the
+// newest record of any source, console trades included.
 func buildEtoroForwardTest(book string, recs []etoroledger.Record, now time.Time, br EtoroBookRisk) EtoroForwardTest {
 	ft := EtoroForwardTest{Venue: VenueEtoro, Book: book, Quote: "USD", RiskFindings: []risk.Finding{}}
-	ft.Run = etoroRunStatus(recs, now)
-	if len(recs) == 0 {
+	rule := etoroledger.RuleRecords(recs)
+	ft.Run = etoroRunStatus(rule, now)
+	if len(rule) == 0 {
 		return ft
 	}
-	last := recs[len(recs)-1]
+	last := rule[len(rule)-1]
 	ft.Instrument, ft.Prereg, ft.Mode, ft.CodeVersion, ft.RecordedAt = last.Instrument, last.Prereg, last.Mode, last.CodeVersion, last.RecordedAt
 	ft.Decision, ft.Paper, ft.Candles = last.Decision, last.Paper, last.Candles
 	if d := newestDemo(recs); d != nil {
@@ -221,9 +233,11 @@ type EtoroEquityPoint struct {
 	DemoExposure *float64 `json:"demo_exposure"`
 }
 
+// buildEtoroEquity is the rule's series: console trades (no paper account
+// of their own) are left out.
 func buildEtoroEquity(recs []etoroledger.Record) []EtoroEquityPoint {
 	out := make([]EtoroEquityPoint, 0, len(recs))
-	for _, r := range recs {
+	for _, r := range etoroledger.RuleRecords(recs) {
 		p := EtoroEquityPoint{Date: r.Decision.BarDate, Equity: r.Paper.Equity, HoldEquity: r.Paper.HoldEquity,
 			MaxDrawdown: r.Paper.MaxDrawdown, Signal: r.Decision.Signal, Close: r.Decision.Close, SMA: r.Decision.SMA}
 		if r.Demo != nil && r.Demo.Account != nil {
@@ -278,10 +292,16 @@ func buildEtoroBookRisk(p risk.Policy, book string, recs []etoroledger.Record, n
 	l := p.For(book)
 	br := EtoroBookRisk{Book: book, Quote: "USD", Limits: l, State: "flat", Position: etoroledger.Flat(),
 		BlockedDays: []string{}, Findings: []risk.Finding{}}
+	rule := etoroledger.RuleRecords(recs)
 	if len(recs) == 0 {
 		return br
 	}
+	// The rule's newest line gives the close and the paper drawdown; the
+	// newest line of any source gives the position (a console trade counts).
 	last := recs[len(recs)-1]
+	if len(rule) > 0 {
+		last = rule[len(rule)-1]
+	}
 	br.Instrument, br.Mode, br.LastClose, br.PaperDrawdown = last.Instrument, last.Mode, last.Decision.Close, last.Paper.MaxDrawdown
 	pos := etoroledger.LastDemoPosition(recs, book)
 	br.Position = pos
@@ -340,7 +360,7 @@ func buildEtoroBookRisk(p risk.Policy, book string, recs []etoroledger.Record, n
 			Message: fmt.Sprintf("open exposure %.0f USD is %.1f%% of equity, above the %.0f%% cap (no new open passes the check)",
 				br.ExposureUSD, br.ExposurePctEquity, l.MaxExposurePctEquity*100)})
 	}
-	if rs := etoroRunStatus(recs, now); rs.Status == "missed" {
+	if rs := etoroRunStatus(rule, now); rs.Status == "missed" {
 		br.Findings = append(br.Findings, risk.Finding{Rule: RuleRunMissed, Severity: risk.Warn,
 			Value: float64(len(rs.MissingDays)), Message: "missing ledger days: " + join(rs.MissingDays)})
 	}

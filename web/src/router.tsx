@@ -13,6 +13,7 @@ import { RunPage } from './pages/RunPage'
 import { RunsPage } from './pages/RunsPage'
 import { StrategiesPage } from './pages/StrategiesPage'
 import { StudyPage } from './pages/StudyPage'
+import { TradePage } from './pages/TradePage'
 
 export const routes: RouteObject[] = [
   // Full-screen landing page, outside the console shell.
@@ -24,6 +25,7 @@ export const routes: RouteObject[] = [
       { path: 'forward-tests/:book', element: <ForwardTestDetailPage /> },
       { path: 'risk', element: <RiskPage /> },
       { path: 'strategies', element: <StrategiesPage /> },
+      { path: 'trade', element: <TradePage /> },
       { path: 'market', element: <MarketPage /> },
       { path: 'data-health', element: <DataHealthPage /> },
       { path: 'research', element: <ResearchPage /> },

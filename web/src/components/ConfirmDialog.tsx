@@ -103,6 +103,8 @@ export interface ConfirmDialogProps<T> {
   ack?: { label: ReactNode; message: string }
   pending: boolean
   error: unknown
+  /** Overrides the heading of an ApiError (return undefined to keep the default wording). */
+  errorTitle?: (e: ApiError) => string | undefined
   run: (v: ConfirmValues, cb: ConfirmCallbacks<T>) => void
   onClose: () => void
   onDone: (r: T) => void
@@ -123,6 +125,7 @@ export function ConfirmDialog<T>({
   ack,
   pending,
   error,
+  errorTitle,
   run,
   onClose,
   onDone,
@@ -205,15 +208,16 @@ export function ConfirmDialog<T>({
   const err = error as Error | null | undefined
   const errTitle =
     err instanceof ApiError
-      ? err.status === 401
-        ? 'Token rejected'
-        : err.status === 409
-          ? 'Nothing changed'
-          : err.status === 403
-            ? 'Controls refused'
-            : err.status === 502
-              ? 'strategy-executor did not answer'
-              : `ui-api said no (HTTP ${err.status || 'unreachable'})`
+      ? (errorTitle?.(err) ??
+        (err.status === 401
+          ? 'Token rejected'
+          : err.status === 409
+            ? 'Nothing changed'
+            : err.status === 403
+              ? 'Controls refused'
+              : err.status === 502
+                ? 'strategy-executor did not answer'
+                : `ui-api said no (HTTP ${err.status || 'unreachable'})`))
       : 'Request failed'
 
   return createPortal(

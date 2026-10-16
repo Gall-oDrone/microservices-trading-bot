@@ -11,5 +11,13 @@
     "at": ""
   },
   "audit_path": "../strategy-executor/etoro-daily-data/demo/ui-audit.jsonl",
-  "audit": []
+  "audit": [],
+  "trading": {
+    "enabled": false,
+    "disabled_reason": "assisted trading is off: start ui-api with -etoro-trading (UI_API_ETORO_TRADING=1), -operator-token-file and -etoro-env-file naming a 0600 file with ETORO_ENV=demo",
+    "token_ttl_s": 120,
+    "min_amount_usd": 1000,
+    "max_amount_usd": 1500,
+    "default_amount_usd": 1100
+  }
 }

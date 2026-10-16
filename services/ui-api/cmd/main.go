@@ -49,6 +49,15 @@
 // (UI_API_ETORO_ENV_FILE, default ~/.config/microservices-trading-bot/
 // etoro-demo.env, which must say ETORO_ENV=demo); -etoro-live=false or a
 // missing env file turns the feed off and the rest keeps serving.
+//
+// Assisted trades on the demo account (porting plan P5d, the Trade page) are
+// OFF by default. -etoro-trading (UI_API_ETORO_TRADING=1) turns them on and
+// needs all of: -operator-token-file, -etoro-ledger (a local file) and the
+// env file with ETORO_ENV=demo; a missing prerequisite is fatal rather than
+// a silent read-only start. The real account is refused in code:
+//
+//	go run ./cmd -operator-token-file ~/.config/mtb/operator-token \
+//	  -etoro-ledger ../strategy-executor/etoro-daily-data/demo/ledger.jsonl -etoro-trading
 package main
 
 import (
@@ -109,6 +118,7 @@ func main() {
 	etoroName := flag.String("etoro-name", env("UI_API_ETORO_NAME", "etoro-demo"), "ledger name of -etoro-ledger (?ledger=, the confirm phrase of its halt/resume)")
 	etoroLiveOn := flag.Bool("etoro-live", env("UI_API_ETORO_LIVE", "1") != "0", "with -etoro-ledger, poll eToro's rates for the index CFDs every 5 s, display only (UI_API_ETORO_LIVE=0 disables)")
 	etoroEnvFile := flag.String("etoro-env-file", env("UI_API_ETORO_ENV_FILE", etorolive.DefaultEnvFile()), "KEY=VALUE file with the eToro demo keys for the rates poll (ETORO_ENV must be demo); missing turns the feed off")
+	etoroTrading := flag.Bool("etoro-trading", env("UI_API_ETORO_TRADING", "0") == "1", "enable the assisted trades (Trade page) on the eToro DEMO ledger; needs -operator-token-file, -etoro-ledger and -etoro-env-file with ETORO_ENV=demo (default: off)")
 	flag.Parse()
 
 	if *printPolicy {
@@ -190,6 +200,22 @@ func main() {
 	}
 	if *etoroLedger != "" && *etoroLiveOn {
 		srv.EtoroLive = startEtoroLive(ctx, ledgers[len(ledgers)-1], *etoroEnvFile, logger)
+	}
+	if *etoroTrading {
+		switch {
+		case *etoroLedger == "":
+			logger.Fatal("-etoro-trading needs -etoro-ledger (the local demo ledger)")
+		case srv.OperatorToken == "":
+			logger.Fatal("-etoro-trading needs -operator-token-file: the trades are token-gated like the halt controls")
+		}
+		cfg, err := etorolive.Credentials(*etoroEnvFile)
+		if err != nil {
+			logger.Fatalf("-etoro-trading: %v (the env file must exist, be 0600 and say ETORO_ENV=demo)", err)
+		}
+		if srv.Trading, err = api.NewEtoroTrading(cfg); err != nil {
+			logger.Fatal("-etoro-trading: ", err)
+		}
+		logger.Printf("etoro trading: ASSISTED TRADES ENABLED on the demo account (ledger %s, token-gated, %s tokens)", *etoroName, api.TradeTokenTTL)
 	}
 	hs := &http.Server{
 		Addr: *addr, Handler: srv.Handler(),

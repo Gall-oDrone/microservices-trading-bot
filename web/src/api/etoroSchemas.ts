@@ -7,6 +7,7 @@
  */
 import { z } from 'zod'
 import {
+  auditEntrySchema,
   bookLimitsSchema,
   candlePointSchema,
   findingSchema,
@@ -33,14 +34,18 @@ export type EtoroBook = (typeof etoroBooks)[number]
 export const etoroInstrumentSchema = z.object({ symbol: z.string(), id: z.number() })
 export type EtoroInstrument = z.infer<typeof etoroInstrumentSchema>
 
-/** etoroledger.Decision: the frozen rule's output for one NYSE trading day. */
+/**
+ * etoroledger.Decision: the frozen rule's output for one NYSE trading day.
+ * A console trade's line (P5d) carries signal "manual" and the rule's
+ * signal as prev_signal ("" without a rule record).
+ */
 export const etoroDecisionSchema = z.object({
   bar_date: z.string(),
   fill_date: z.string(),
   close: z.number(),
   sma50: z.number(),
-  signal,
-  prev_signal: signal,
+  signal: signal.or(z.literal('manual')),
+  prev_signal: orEmpty(signal),
   action: z.enum(['buy', 'sell', 'hold']),
 })
 
@@ -180,7 +185,13 @@ export const etoroDemoSchema = z.object({
 })
 export type EtoroDemo = z.infer<typeof etoroDemoSchema>
 
-/** etoroledger.Record: one ledger line, one instrument, one decision day. */
+/** etoroledger.Operator: who placed a console trade and why. */
+export const etoroOperatorSchema = z.object({ by: z.string(), reason: z.string() })
+
+/**
+ * etoroledger.Record: one ledger line, one instrument, one decision day; or,
+ * with source "ui", one assisted trade from the console (P5d).
+ */
 export const etoroLedgerRecordSchema = z.object({
   schema: z.string(),
   recorded_at: z.string(),
@@ -191,9 +202,11 @@ export const etoroLedgerRecordSchema = z.object({
   instrument: etoroInstrumentSchema,
   prereg: z.string(),
   decision: etoroDecisionSchema,
-  paper: etoroPaperSchema,
+  paper: etoroPaperSchema.extend({ position: orEmpty(signal) }),
   candles: etoroCandleInfoSchema,
   demo: etoroDemoSchema.optional(),
+  source: z.enum(['ui']).optional(),
+  operator: etoroOperatorSchema.optional(),
 })
 export type EtoroLedgerRecord = z.infer<typeof etoroLedgerRecordSchema>
 
@@ -225,8 +238,13 @@ export const etoroRunStatusSchema = z.object({
 })
 export type EtoroRunStatus = z.infer<typeof etoroRunStatusSchema>
 
-/** api.EtoroOrderView: a demo order with the day it was for. */
-export const etoroOrderViewSchema = etoroOrderSchema.extend({ bar_date: z.string(), fill_date: z.string() })
+/** api.EtoroOrderView: a demo order with the day it was for; source "ui" and `by` for a console trade. */
+export const etoroOrderViewSchema = etoroOrderSchema.extend({
+  bar_date: z.string(),
+  fill_date: z.string(),
+  source: z.enum(['ui']).optional(),
+  by: z.string().optional(),
+})
 export type EtoroOrderView = z.infer<typeof etoroOrderViewSchema>
 
 /**
@@ -625,3 +643,68 @@ export type EtoroLiveSnapshot = z.infer<typeof etoroLiveSnapshotSchema>
 
 /** The "session" event that follows every heartbeat on /api/ui/etoro/stream. */
 export const etoroSessionEventSchema = etoroSessionSchema
+
+// --- Assisted trades (services/ui-api/internal/api/trades.go, P5d) ---------
+
+export const tradeSide = z.enum(['open', 'close'])
+export type TradeSide = z.infer<typeof tradeSide>
+
+export const tradeVerdict = z.enum(['allow', 'block'])
+
+/**
+ * api.TradePreview: POST /api/ui/etoro/trades/prepare. The checks' outcome
+ * in order (halt, risk.Check, eligibility, quote, costs, cash) as reasons,
+ * the preview itself, and on an allow verdict the token to place it within
+ * expires_in_s seconds.
+ */
+export const tradePreviewSchema = z.object({
+  verdict: tradeVerdict,
+  reasons: list(z.string()),
+  warnings: list(z.string()),
+  ledger: z.string(),
+  book: z.string(),
+  side: tradeSide,
+  instrument: etoroInstrumentSchema,
+  position: etoroPositionSchema,
+  rule_signal: orEmpty(signal),
+  quote: etoroQuoteSchema.nullable(),
+  costs: etoroCostsSchema.nullable(),
+  account: etoroAccountSchema.nullable(),
+  risk: etoroRiskCheckSchema.nullable(),
+  units: z.number(),
+  amount_usd: z.number(),
+  position_id: z.string().optional(),
+  ref_price: z.number(),
+  confirmation: z.string(),
+  client_ref: z.string(),
+  request_id: z.string(),
+  prepared_at: z.string(),
+  token: z.string().optional(),
+  expires_at: z.string().optional(),
+  expires_in_s: z.number().optional(),
+})
+export type TradePreview = z.infer<typeof tradePreviewSchema>
+
+/** api.TradePlaceResponse: POST /api/ui/etoro/trades/place (200; a 502 carries the same shape with `error`). */
+export const tradePlaceResponseSchema = z.object({
+  status: z.string(),
+  book: z.string(),
+  side: tradeSide,
+  client_ref: z.string(),
+  request_id: z.string(),
+  order_id: z.string().optional(),
+  position_ids: list(z.string()),
+  avg_price: z.number(),
+  units: z.number(),
+  amount_usd: z.number(),
+  fill_vs_mid_bps: z.number(),
+  fill_vs_close_bps: z.number(),
+  position_after: etoroPositionSchema,
+  ledger_recorded: z.boolean(),
+  ledger_error: z.string().optional(),
+  audit_path: z.string(),
+  audit: auditEntrySchema,
+  audit_error: z.string().optional(),
+  error: z.string().optional(),
+})
+export type TradePlaceResponse = z.infer<typeof tradePlaceResponseSchema>

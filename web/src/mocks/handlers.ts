@@ -6,6 +6,7 @@
 import { http, HttpResponse } from 'msw'
 import { controlHandlers, withMockHalt } from './controls'
 import { strategyHandlers } from './strategies'
+import { mockTradingInfo, tradeHandlers, withMockTrades } from './trades'
 import healthz from './fixtures/healthz.json'
 import etoroLive from './fixtures/etoro-demo/etoro-live.json'
 import ledgers from './fixtures/ledgers.json'
@@ -185,8 +186,10 @@ export const handlers = [
   // GET /strategies, POST /strategies/:name/start|stop and POST /risk/halt-all.
   // Before controlHandlers, whose /risk/:action would otherwise take halt-all.
   ...strategyHandlers,
-  // GET /controls, GET /risk (with any mock halt) and POST /risk/halt|resume.
-  ...controlHandlers(fixture, defaultLedger),
+  // POST /etoro/trades/prepare|place (P5d): in-memory tokens and positions.
+  ...tradeHandlers,
+  // GET /controls (with the mock trading block), GET /risk (with any mock halt) and POST /risk/halt|resume.
+  ...controlHandlers(fixture, defaultLedger, mockTradingInfo),
   http.get('/api/ui/health/data', ({ request }) => bitso(request, 'health-data')),
   http.get('/api/ui/forward-tests/:book/ledger', ({ params, request }) =>
     bitso(request, `ledger-${String(params.book)}`),
@@ -211,7 +214,8 @@ export const handlers = [
   ),
 
   // The eToro venue (/api/ui/etoro/*, P5a): fixtures/etoro-demo/etoro-*.json.
-  http.get('/api/ui/etoro/forward-tests', ({ request }) => etoro(request, 'etoro-forward-tests')),
+  // A console trade placed through the mock moves the position shown here (trades.ts).
+  http.get('/api/ui/etoro/forward-tests', ({ request }) => withMockTrades(etoro(request, 'etoro-forward-tests'))),
   http.get('/api/ui/etoro/forward-tests/:book/ledger', ({ params, request }) =>
     etoro(request, `etoro-ledger-${String(params.book)}`),
   ),

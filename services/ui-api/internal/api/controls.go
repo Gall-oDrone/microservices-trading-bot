@@ -57,9 +57,10 @@ var controlPaths = map[string]bool{
 
 var strategyControlRe = regexp.MustCompile(`^/api/ui/strategies/[^/]+/(start|stop)$`)
 
-// isControlPath reports whether POST is allowed on path.
+// isControlPath reports whether POST is allowed on path (the halt controls,
+// the strategy start/stop, and the assisted trades of trades.go).
 func isControlPath(path string) bool {
-	return controlPaths[path] || strategyControlRe.MatchString(path)
+	return controlPaths[path] || tradePaths[path] || strategyControlRe.MatchString(path)
 }
 
 var byRe = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9 ._@-]{0,63}$`)
@@ -96,6 +97,9 @@ type ControlsInfo struct {
 	AuditPath      string        `json:"audit_path"`
 	Audit          []audit.Entry `json:"audit"`
 	AuditError     string        `json:"audit_error,omitempty"`
+	// Trading says whether the assisted trades (P5d, eToro ledgers only)
+	// are available here, and why not.
+	Trading TradingInfo `json:"trading"`
 }
 
 // controlsState reports whether a ledger can be controlled from the UI.
@@ -124,7 +128,7 @@ func (s *Server) controls(w http.ResponseWriter, r *http.Request) {
 	}
 	enabled, why := s.controlsState(l)
 	_, hf := s.policyFor(l)
-	info := ControlsInfo{Ledger: l.Name, Venue: l.venue(), Enabled: enabled, DisabledReason: why, HaltFile: hf, Audit: []audit.Entry{}}
+	info := ControlsInfo{Ledger: l.Name, Venue: l.venue(), Enabled: enabled, DisabledReason: why, HaltFile: hf, Audit: []audit.Entry{}, Trading: s.tradingInfo(l)}
 	if p := auditPath(l); p != "" {
 		info.AuditPath = p
 		entries, err := audit.Tail(p, auditTail)

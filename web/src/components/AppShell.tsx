@@ -24,6 +24,7 @@ import {
   IconPulse,
   IconShield,
   IconSun,
+  IconTrade,
   IconTrend,
 } from './icons'
 import { Badge, VenueTag } from './ui'
@@ -158,6 +159,14 @@ function Nav() {
       </NavLink>
       <NavLink to={{ pathname: '/strategies', search }} className="nav-link" id="nav-strategies">
         <IconPower /> Strategies
+      </NavLink>
+      <NavLink to={{ pathname: '/trade', search }} className="nav-link" id="nav-trade">
+        <IconTrade /> Trade
+        {etoro && (
+          <span className="count" aria-hidden="true">
+            <Badge tone="etoro">demo</Badge>
+          </span>
+        )}
       </NavLink>
       <NavLink to={{ pathname: '/market', search }} className="nav-link" id="nav-market">
         <IconCandles /> Market

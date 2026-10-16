@@ -4998,3 +4998,156 @@ table.data tr.current td {
     order: 3;
   }
 }
+
+/* ============================================================
+   Trade page (porting plan P5d): assisted prepare -> place on
+   the eToro demo account. Violet is the venue, red is the
+   irreversible button, the countdown turns amber then red.
+   ============================================================ */
+.trade-grid {
+  margin-bottom: 16px;
+}
+.trade-proposals {
+  display: grid;
+  gap: 10px;
+}
+.trade-proposal {
+  display: grid;
+  gap: 8px;
+}
+.trade-proposal-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  font-size: 13px;
+}
+.trade-proposal-text {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13.5px;
+  color: var(--text-2);
+}
+.trade-proposal-text svg {
+  width: 16px;
+  height: 16px;
+  flex: none;
+}
+.trade-proposal .btn {
+  justify-self: start;
+}
+.trade-form {
+  display: grid;
+  gap: 12px;
+}
+.trade-form .seg {
+  height: 36px;
+}
+.trade-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-top: 4px;
+}
+.trade-note {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  margin: 10px 0 0;
+  padding: 10px 12px;
+  border-radius: var(--radius);
+  background: var(--venue-etoro-soft);
+  color: var(--text-2);
+  font-size: 12.5px;
+  line-height: 1.45;
+}
+.trade-note svg {
+  width: 15px;
+  height: 15px;
+  flex: none;
+  margin-top: 2px;
+  color: var(--venue-etoro);
+}
+.trade-preview,
+.trade-outcome {
+  margin-bottom: 16px;
+}
+.trade-preview.block {
+  border-color: var(--block-line, var(--loss));
+}
+.trade-reasons {
+  list-style: none;
+  margin: 0 0 12px;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+}
+.trade-reasons li {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  padding: 8px 10px;
+  border-radius: var(--radius);
+  font-size: 13px;
+  line-height: 1.4;
+}
+.trade-reasons li svg {
+  width: 15px;
+  height: 15px;
+  flex: none;
+  margin-top: 2px;
+}
+.trade-reasons.block li {
+  background: var(--loss-soft, hsl(6 80% 50% / 0.12));
+  color: var(--loss);
+}
+.trade-reasons.warn li {
+  background: var(--warn-soft, hsl(40 90% 50% / 0.12));
+  color: var(--warn, hsl(40 90% 45%));
+}
+.trade-facts {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px 18px;
+  margin: 6px 0 14px;
+}
+.trade-confirm-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 10px 12px;
+  border: 1px dashed var(--venue-etoro-line);
+  border-radius: var(--radius);
+  font-size: 13px;
+}
+.trade-countdown {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 12.5px;
+  color: var(--text-2);
+}
+.trade-countdown meter {
+  width: 120px;
+  height: 8px;
+}
+.trade-countdown.urgent {
+  color: var(--warn, hsl(40 90% 45%));
+}
+.trade-countdown.expired {
+  color: var(--loss);
+}
+.trade-outcome h2 svg {
+  width: 18px;
+  height: 18px;
+  vertical-align: -3px;
+}
+@media (max-width: 720px) {
+  .trade-facts {
+    grid-template-columns: 1fr 1fr;
+  }
+}

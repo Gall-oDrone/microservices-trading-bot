@@ -85,6 +85,11 @@ type Server struct {
 	// the API read-only. See controls.go.
 	OperatorToken string
 	controlsMu    sync.Mutex
+	// Trading enables the assisted trades on the eToro ledger (P5d, cmd
+	// -etoro-trading) when set with the demo broker; nil keeps them off and
+	// TradingOffReason (optional) says why in GET /controls. See trades.go.
+	Trading          *EtoroTrading
+	TradingOffReason string
 	// Executor is the intraday strategy-executor (loopback) for the
 	// Strategies page; nil lists ledgers only. See strategies.go.
 	Executor *executor.Client
@@ -296,6 +301,10 @@ func (s *Server) Handler() http.Handler {
 	// Live quotes from the rates poller (P5c), display only. See etoro_live.go.
 	mux.HandleFunc("GET /api/ui/etoro/live", s.etoroLiveSnapshot)
 	mux.HandleFunc("GET /api/ui/etoro/stream", s.etoroStream)
+	// Assisted trades on the demo account (P5d): prepare -> place, token-gated
+	// like the controls and off unless -etoro-trading. See trades.go.
+	mux.HandleFunc("POST /api/ui/etoro/trades/prepare", s.tradePrepare)
+	mux.HandleFunc("POST /api/ui/etoro/trades/place", s.tradePlace)
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusNotFound, "no such endpoint")
 	})

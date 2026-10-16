@@ -23,6 +23,16 @@
 #   8. halt-all over a corrupt halt file replaces it with a valid halt;
 #   9. resume restores every copy; the source ledger dir is unchanged.
 #
+# The assisted path (P5d: a halted eToro ledger makes POST /etoro/trades/prepare
+# answer a block verdict with no token and /etoro/trades/place refuse with 422)
+# is NOT rehearsed here: the drill runs a real ui-api binary, and ui-api must
+# never be started with -etoro-trading except by an operator with the demo
+# keys; there is no broker fake at this level. That leg is the Go test
+# TestKillSwitchBlocksAssistedTrades in services/ui-api/internal/api/trades_test.go
+# (fake broker, same halt file and halt-all control as here):
+#   (cd services/ui-api && go test -race -run TestKillSwitchBlocksAssistedTrades ./internal/api)
+# Step 10 below runs it, so one invocation of the drill covers both paths.
+#
 # It never writes outside its work dir, never talks to S3 and never places an
 # order. Exit 0 when every check passes.
 #
@@ -197,6 +207,13 @@ for n in alpha beta gamma; do
   check "$n trading allowed" "$(halted $n)" "false none"
 done
 check "source ledger dir unchanged ($SOURCE)" "$(src_state)" "$BEFORE"
+
+step "10. Assisted trades (Go test with a fake broker; see the header)"
+if (cd "$ROOT/services/ui-api" && go test -race -count=1 -run 'TestKillSwitchBlocksAssistedTrades|TestTradePlaceRecheckHaltAndSession' ./internal/api >"$WORK/assisted.log" 2>&1); then
+  ok "halted ledger: prepare answers block, place answers 422, nothing reaches the broker"
+else
+  bad "TestKillSwitchBlocksAssistedTrades failed (see $WORK/assisted.log)"; KEEP=1
+fi
 
 printf '\n%d passed, %d failed\n' "$PASS" "$FAIL"
 [ "$FAIL" = 0 ]
