@@ -1,0 +1,76 @@
+{
+  "generated_at": "2026-10-16T18:48:02Z",
+  "upstream": {
+    "source": "etoro",
+    "connected": true,
+    "since": "2026-10-16T18:47:27.854408326Z",
+    "last_message_at": "2026-10-16T18:47:58.956939887Z",
+    "reconnects": 0
+  },
+  "books": [
+    {
+      "book": "nsdq100",
+      "last": 29189.75,
+      "last_side": "",
+      "last_at": "2026-10-16T18:47:58.956939887Z",
+      "bid": 29189.4,
+      "ask": 29190.1,
+      "candle": {
+        "date": "2026-10-16",
+        "open": 29189.75,
+        "high": 29189.75,
+        "low": 29177.65,
+        "close": 29189.75,
+        "volume": 0,
+        "trade_count": 7,
+        "seeded": false
+      },
+      "provisional": {
+        "label": "provisional: if today closed now",
+        "price": 29189.75,
+        "flip_level": 29882.015714285706,
+        "sma50": 29868.17039999999,
+        "signal": "flat",
+        "distance_to_flip_pct": -2.3716054926325376,
+        "based_on": "2026-10-15"
+      },
+      "updated_at": "2026-10-16T18:47:58.956944577Z"
+    },
+    {
+      "book": "spx500",
+      "last": 7649.23,
+      "last_side": "",
+      "last_at": "2026-10-16T18:47:58.956939887Z",
+      "bid": 7649.08,
+      "ask": 7649.38,
+      "candle": {
+        "date": "2026-10-16",
+        "open": 7649.23,
+        "high": 7649.23,
+        "low": 7647.73,
+        "close": 7649.23,
+        "volume": 0,
+        "trade_count": 7,
+        "seeded": false
+      },
+      "provisional": {
+        "label": "provisional: if today closed now",
+        "price": 7649.23,
+        "flip_level": 7707.383265306123,
+        "sma50": 7706.2202,
+        "signal": "flat",
+        "distance_to_flip_pct": -0.7602499245822535,
+        "based_on": "2026-10-15"
+      },
+      "updated_at": "2026-10-16T18:47:58.956946947Z"
+    }
+  ],
+  "session": {
+    "now_new_york": "2026-10-16T14:48:02-04:00",
+    "date": "2026-10-16",
+    "trading_day": true,
+    "open": true,
+    "opens_at": "2026-10-16T09:30:00-04:00",
+    "closes_at": "2026-10-16T16:00:00-04:00"
+  }
+}

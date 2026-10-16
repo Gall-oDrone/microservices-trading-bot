@@ -39,6 +39,9 @@ for lv in $LEDGER_VENUES; do
     # 404 until cmd/etoro-risk-report has run once (P4): skipped then.
     curl -fsS "$API/api/ui/etoro/risk-report?ledger=$l" > "$D/etoro-risk-report.json" || rm -f "$D/etoro-risk-report.json"
     curl -fsS "$API/api/ui/controls?ledger=$l" > "$D/controls.json"
+    # Live quotes (P5c; needs the demo env file, see ui-api -etoro-env-file): mock
+    # mode replays this over SSE on /api/ui/etoro/stream. 503 when the feed is off: skipped.
+    curl -fsS "$API/api/ui/etoro/live?books=nsdq100,spx500" > "$D/etoro-live.json" || rm -f "$D/etoro-live.json"
     for b in nsdq100 spx500; do
       curl -fsS "$API/api/ui/etoro/forward-tests/$b/ledger?ledger=$l" > "$D/etoro-ledger-$b.json"
       curl -fsS "$API/api/ui/etoro/forward-tests/$b/candles?days=365&ledger=$l" > "$D/etoro-candles-$b.json" || rm -f "$D/etoro-candles-$b.json"

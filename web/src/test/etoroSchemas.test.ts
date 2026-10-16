@@ -4,6 +4,7 @@ import {
   etoroForwardTestsResponseSchema,
   etoroHealthResponseSchema,
   etoroLedgerResponseSchema,
+  etoroLiveSnapshotSchema,
   etoroReconcileResponseSchema,
   etoroRiskReportSchema,
   etoroRiskResponseSchema,
@@ -16,6 +17,7 @@ import forwardTests from '../mocks/fixtures/etoro-demo/etoro-forward-tests.json'
 import health from '../mocks/fixtures/etoro-demo/etoro-health.json'
 import ledgerNsdq from '../mocks/fixtures/etoro-demo/etoro-ledger-nsdq100.json'
 import ledgerSpx from '../mocks/fixtures/etoro-demo/etoro-ledger-spx500.json'
+import liveSnap from '../mocks/fixtures/etoro-demo/etoro-live.json'
 import reconcile from '../mocks/fixtures/etoro-demo/etoro-reconcile.json'
 import risk from '../mocks/fixtures/etoro-demo/etoro-risk.json'
 import riskReport from '../mocks/fixtures/etoro-demo/etoro-risk-report.json'
@@ -33,6 +35,7 @@ describe('contract: the eToro ui-api responses parse with the UI schemas', () =>
     ['etoro/health', etoroHealthResponseSchema, health],
     ['etoro/reconcile', etoroReconcileResponseSchema, reconcile],
     ['etoro/risk-report', etoroRiskReportSchema, riskReport],
+    ['etoro/live', etoroLiveSnapshotSchema, liveSnap],
     ['controls (etoro-demo)', controlsInfoSchema, controls],
     ['ledgers (with venue)', ledgersResponseSchema, ledgers],
     ['strategies (with venue)', strategiesInfoSchema, strategies],

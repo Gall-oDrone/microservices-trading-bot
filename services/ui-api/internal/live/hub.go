@@ -24,18 +24,23 @@ func mustLoc(name string) *time.Location {
 	return l
 }
 
-// Day is the Mexico City calendar date of t, i.e. its daily bucket.
-func Day(t time.Time) string { return t.In(Mexico).Format("2006-01-02") }
+// Day is the Mexico City calendar date of t, i.e. its daily bucket on
+// Bitso. A hub buckets by its own location (DayIn); the REST seeder is
+// Bitso-only and keeps using this.
+func Day(t time.Time) string { return DayIn(t, Mexico) }
+
+// DayIn is the calendar date of t in loc, i.e. its daily bucket there.
+func DayIn(t time.Time, loc *time.Location) string { return t.In(loc).Format("2006-01-02") }
 
 // Candle is today's forming daily bar.
 type Candle struct {
-	Date       string  `json:"date"` // Mexico City day of the bucket
+	Date       string  `json:"date"` // day of the bucket in the hub's location
 	Open       float64 `json:"open"`
 	High       float64 `json:"high"`
 	Low        float64 `json:"low"`
 	Close      float64 `json:"close"`
 	Volume     float64 `json:"volume"`
-	TradeCount int     `json:"trade_count"`
+	TradeCount int     `json:"trade_count"` // quote updates on a QuoteOnly hub
 	// Seeded is true once the bar was loaded from Bitso's REST OHLC, so it
 	// covers the whole day and not only the trades seen since connecting.
 	Seeded bool `json:"seeded"`
@@ -81,6 +86,16 @@ type Provisional struct {
 // reason, when the closes do not end on the day before the forming bar
 // (the executor has not fetched yesterday's bar yet) or are too few.
 func ComputeProvisional(closes []float64, lastDate, formingDay string, price float64) (*Provisional, string) {
+	return ComputeProvisionalWith(closes, lastDate, formingDay, price, calendarPrev)
+}
+
+// calendarPrev is the day before: Bitso has a bar every calendar day.
+func calendarPrev(d time.Time) time.Time { return d.AddDate(0, 0, -1) }
+
+// ComputeProvisionalWith is ComputeProvisional with prev giving the bar
+// expected before the forming day (the previous NYSE trading day for the
+// eToro index CFDs, whose candle files have no weekend or holiday bars).
+func ComputeProvisionalWith(closes []float64, lastDate, formingDay string, price float64, prev func(time.Time) time.Time) (*Provisional, string) {
 	if price <= 0 {
 		return nil, "no trade yet"
 	}
@@ -91,7 +106,10 @@ func ComputeProvisional(closes []float64, lastDate, formingDay string, price flo
 	if err != nil {
 		return nil, "bad forming day"
 	}
-	if want := fd.AddDate(0, 0, -1).Format("2006-01-02"); lastDate != want {
+	if prev == nil {
+		prev = calendarPrev
+	}
+	if want := prev(fd).Format("2006-01-02"); lastDate != want {
 		return nil, "candle file ends " + lastDate + ", not " + want + " (waiting for the executor's next run)"
 	}
 	s49 := 0.0
@@ -243,6 +261,17 @@ type Hub struct {
 	Heartbeat time.Duration
 	Log       *log.Logger
 	Now       func() time.Time
+	// Loc is the time zone of the daily bucket: Mexico City for Bitso (the
+	// default), UTC for eToro's OneDay bars (bar D closes at D+1 00:00Z).
+	Loc *time.Location
+	// PrevBar gives the closed bar expected before the forming day; nil is
+	// the calendar day before. The eToro candle files have one bar per
+	// NYSE trading day, so there it is the previous trading day.
+	PrevBar func(formingDay time.Time) time.Time
+	// QuoteOnly is set for a source that publishes quotes, not trades (the
+	// eToro rates poller): the mid of every top-of-book update becomes the
+	// last price and feeds the forming bar; nothing lands on the tape.
+	QuoteOnly bool
 
 	mu     sync.Mutex
 	books  map[string]*bookState
@@ -253,10 +282,16 @@ type Hub struct {
 	ctx    context.Context
 }
 
-// NewHub returns a hub for books with the defaults (1 s throttle, 15 s heartbeat).
+// NewHub returns a hub for books with the defaults (1 s throttle, 15 s
+// heartbeat) bucketing days in Mexico City.
 func NewHub(books []string, source string, seeder Seeder, closes Closes, logger *log.Logger) *Hub {
+	return NewHubIn(Mexico, books, source, seeder, closes, logger)
+}
+
+// NewHubIn is NewHub with the daily bucket's time zone given.
+func NewHubIn(loc *time.Location, books []string, source string, seeder Seeder, closes Closes, logger *log.Logger) *Hub {
 	h := &Hub{Books: append([]string(nil), books...), Source: source, Seeder: seeder, Closes: closes,
-		Throttle: time.Second, Heartbeat: 15 * time.Second, Log: logger, Now: time.Now}
+		Throttle: time.Second, Heartbeat: 15 * time.Second, Log: logger, Now: time.Now, Loc: loc}
 	sort.Strings(h.Books)
 	h.init()
 	return h
@@ -276,8 +311,14 @@ func (h *Hub) init() {
 	if h.Now == nil {
 		h.Now = time.Now
 	}
+	if h.Loc == nil {
+		h.Loc = Mexico
+	}
 	h.ctx = context.Background()
 }
+
+// day is t's daily bucket in the hub's location.
+func (h *Hub) day(t time.Time) string { return DayIn(t, h.Loc) }
 
 // Has reports whether the hub tracks book.
 func (h *Hub) Has(book string) bool {
@@ -458,7 +499,7 @@ func (h *Hub) bookSnapshotLocked(b string) BookSnapshot {
 		c := *st.candle
 		bs.Candle = &c
 	}
-	day := Day(h.Now())
+	day := h.day(h.Now())
 	if bs.Candle != nil {
 		day = bs.Candle.Date
 	}
@@ -471,7 +512,7 @@ func (h *Hub) bookSnapshotLocked(b string) BookSnapshot {
 		bs.ProvisionalNote = "closed candles: " + err.Error()
 		return bs
 	}
-	bs.Provisional, bs.ProvisionalNote = ComputeProvisional(closes, lastDate, day, st.last)
+	bs.Provisional, bs.ProvisionalNote = ComputeProvisionalWith(closes, lastDate, day, st.last, h.PrevBar)
 	return bs
 }
 
@@ -527,7 +568,7 @@ func (h *Hub) seed(ctx context.Context, book string) {
 	h.mu.Lock()
 	st := h.books[book]
 	start := h.Now()
-	day := Day(start)
+	day := h.day(start)
 	st.seeding, st.seedFrom, st.pending = true, start, nil
 	h.mu.Unlock()
 
@@ -552,7 +593,7 @@ func (h *Hub) seed(ctx context.Context, book string) {
 	c.Date, c.Seeded = day, true
 	// Trades from before the request are in the REST bar already.
 	for _, t := range pending {
-		if !t.At.Before(start) && Day(t.At) == day {
+		if !t.At.Before(start) && h.day(t.At) == day {
 			c.apply(t)
 		}
 	}
@@ -579,10 +620,18 @@ func (h *Hub) OnTrade(t Trade) {
 	if !ok {
 		return
 	}
+	h.applyLastLocked(st, t)
+	st.addTape(t)
+	st.updated = h.Now()
+	h.dirty[t.Book] = true
+}
+
+// applyLastLocked moves the last price and the forming bar to t.
+func (h *Hub) applyLastLocked(st *bookState, t Trade) {
 	if !t.At.Before(st.lastAt) {
 		st.last, st.lastSide, st.lastAt = t.Price, t.Side, t.At
 	}
-	day := Day(t.At)
+	day := h.day(t.At)
 	switch {
 	case st.candle == nil || day > st.candle.Date:
 		st.candle = &Candle{Date: day}
@@ -595,9 +644,6 @@ func (h *Hub) OnTrade(t Trade) {
 	if st.seeding {
 		st.pending = append(st.pending, t)
 	}
-	st.addTape(t)
-	st.updated = h.Now()
-	h.dirty[t.Book] = true
 }
 
 // OnTop updates the best bid and ask and the top levels.
@@ -613,6 +659,11 @@ func (h *Hub) OnTop(t Top) {
 	}
 	if t.Ask > 0 {
 		st.ask = t.Ask
+	}
+	if h.QuoteOnly && t.Bid > 0 && t.Ask > 0 {
+		// No trades on this source: the mid is the price the forming bar
+		// and the provisional flip level are built from.
+		h.applyLastLocked(st, Trade{Book: t.Book, Price: (t.Bid + t.Ask) / 2, At: t.At})
 	}
 	// Each orders message is a full top-of-book snapshot; an empty side
 	// (never seen for BTC) keeps the previous levels rather than blanking.

@@ -14,6 +14,7 @@ import {
   haltStateSchema,
   healthCheckSchema,
   healthStatus,
+  liveSnapshotSchema,
   signal,
 } from './schemas'
 
@@ -608,3 +609,19 @@ export const etoroRiskReportSchema = z
   })
   .passthrough()
 export type EtoroRiskReport = z.infer<typeof etoroRiskReportSchema>
+
+// --- Live quotes (services/ui-api/internal/etorolive, P5c): display only. ---
+
+/**
+ * api.EtoroLiveSnapshot: GET /api/ui/etoro/live and the "snapshot" event of
+ * /api/ui/etoro/stream. The Bitso live shape (books with bid/ask, the
+ * forming bar and the provisional flip level) plus the NYSE session. The
+ * bar is a UTC day (eToro's OneDay bucket), `last` is the mid of the newest
+ * 5 s rates poll, and `trade_count` counts quote updates: the rates route
+ * carries no trades.
+ */
+export const etoroLiveSnapshotSchema = liveSnapshotSchema.extend({ session: etoroSessionSchema })
+export type EtoroLiveSnapshot = z.infer<typeof etoroLiveSnapshotSchema>
+
+/** The "session" event that follows every heartbeat on /api/ui/etoro/stream. */
+export const etoroSessionEventSchema = etoroSessionSchema

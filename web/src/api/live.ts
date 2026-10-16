@@ -1,5 +1,6 @@
 /**
- * Live market data from ui-api's Server-Sent Events stream (GET /api/ui/stream).
+ * Live market data from ui-api's Server-Sent Events stream (GET /api/ui/stream,
+ * or /api/ui/etoro/stream for the eToro venue).
  *
  * Display only: the executor decides on closed production candles, never on
  * anything here. Every event is parsed with the same zod contract as the REST
@@ -7,6 +8,7 @@
  */
 import { useEffect, useReducer, useState } from 'react'
 import type { z } from 'zod'
+import { etoroLiveSnapshotSchema, etoroSessionEventSchema, type EtoroSession } from './etoroSchemas'
 import {
   bookSnapshotSchema,
   heartbeatSchema,
@@ -25,6 +27,11 @@ export const REOPEN_MS = 15_000
 
 export type LivePhase = 'connecting' | 'live' | 'stale' | 'reconnecting' | 'off' | 'error'
 
+/** Which ui-api stream to open: Bitso's /stream (default) or the eToro venue's /etoro/stream. */
+export type LiveVenue = 'bitso' | 'etoro'
+
+export const STREAM_PATH: Record<LiveVenue, string> = { bitso: '/api/ui/stream', etoro: '/api/ui/etoro/stream' }
+
 export interface LiveState {
   /** Derived for display: stale and upstream-reconnecting are folded in. */
   phase: LivePhase
@@ -32,6 +39,8 @@ export interface LiveState {
   books: Record<string, BookSnapshot>
   /** Depth, spread and tape per book; only filled with `{ market: true }` (the Market page). */
   markets: Record<string, Market>
+  /** The NYSE session, on the eToro stream only (snapshot and every "session" event); null on Bitso. */
+  session: EtoroSession | null
   /** Date.now() of the last event received, or null before the first. */
   lastEventAt: number | null
   /** Contract mismatch or why the stream is off. */
@@ -45,14 +54,30 @@ export type LiveRaw = Omit<LiveState, 'phase' | 'now'> & { conn: 'connecting' | 
 type Action =
   | { type: 'reset' }
   | { type: 'open' }
-  | { type: 'snapshot'; upstream: LiveStatus; books: BookSnapshot[]; markets?: Market[]; at: number }
+  | {
+      type: 'snapshot'
+      upstream: LiveStatus
+      books: BookSnapshot[]
+      markets?: Market[]
+      session?: EtoroSession
+      at: number
+    }
   | { type: 'book'; book: BookSnapshot; at: number }
   | { type: 'market'; market: Market; at: number }
   | { type: 'status'; upstream: LiveStatus; at: number }
+  | { type: 'session'; session: EtoroSession; at: number }
   | { type: 'conn'; conn: LiveRaw['conn']; error?: string }
   | { type: 'contract'; error: string }
 
-const initial: LiveRaw = { conn: 'connecting', upstream: null, books: {}, markets: {}, lastEventAt: null, error: null }
+const initial: LiveRaw = {
+  conn: 'connecting',
+  upstream: null,
+  books: {},
+  markets: {},
+  session: null,
+  lastEventAt: null,
+  error: null,
+}
 
 function reducer(s: LiveRaw, a: Action): LiveRaw {
   switch (a.type) {
@@ -67,6 +92,7 @@ function reducer(s: LiveRaw, a: Action): LiveRaw {
         upstream: a.upstream,
         books: Object.fromEntries(a.books.map((b) => [b.book, b])),
         markets: a.markets ? Object.fromEntries(a.markets.map((m) => [m.book, m])) : s.markets,
+        session: a.session ?? s.session,
         lastEventAt: a.at,
       }
     case 'book':
@@ -75,6 +101,8 @@ function reducer(s: LiveRaw, a: Action): LiveRaw {
       return { ...s, markets: { ...s.markets, [a.market.book]: a.market }, lastEventAt: a.at }
     case 'status':
       return { ...s, upstream: a.upstream, lastEventAt: a.at }
+    case 'session':
+      return { ...s, session: a.session, lastEventAt: a.at }
     case 'conn':
       return { ...s, conn: a.conn, error: a.error ?? s.error }
     case 'contract':
@@ -111,10 +139,13 @@ function parse<S extends z.ZodTypeAny>(ev: Event, name: string, schema: S): z.in
  * browser reconnects on its own after a dropped stream (ui-api sends
  * `retry: 3000`); if the server refuses the stream we retry every REOPEN_MS.
  * With `market: true` the stream also carries depth, spread and the tape.
+ * With `venue: 'etoro'` it is the eToro rates stream, whose snapshot and
+ * "session" events carry the NYSE session.
  */
-export function useLiveStream(books: string[], opts: { market?: boolean } = {}): LiveState {
+export function useLiveStream(books: string[], opts: { market?: boolean; venue?: LiveVenue } = {}): LiveState {
   const key = [...books].sort().join(',')
   const market = opts.market === true
+  const venue: LiveVenue = opts.venue ?? 'bitso'
   const [raw, dispatch] = useReducer(reducer, initial)
   const [now, setNow] = useState(() => Date.now())
 
@@ -140,7 +171,7 @@ export function useLiveStream(books: string[], opts: { market?: boolean } = {}):
       })
     }
     const open = () => {
-      es = new EventSource(`/api/ui/stream?books=${encodeURIComponent(key)}${market ? '&market=1' : ''}`)
+      es = new EventSource(`${STREAM_PATH[venue]}?books=${encodeURIComponent(key)}${market ? '&market=1' : ''}`)
       es.onopen = () => dispatch({ type: 'open' })
       es.onerror = () => {
         if (es?.readyState === EventSource.CLOSED) {
@@ -152,9 +183,23 @@ export function useLiveStream(books: string[], opts: { market?: boolean } = {}):
           dispatch({ type: 'conn', conn: 'reconnecting' })
         }
       }
-      on('snapshot', liveSnapshotSchema, (s) =>
-        dispatch({ type: 'snapshot', upstream: s.upstream, books: s.books, markets: s.markets, at: Date.now() }),
-      )
+      if (venue === 'etoro') {
+        on('snapshot', etoroLiveSnapshotSchema, (s) =>
+          dispatch({
+            type: 'snapshot',
+            upstream: s.upstream,
+            books: s.books,
+            markets: s.markets,
+            session: s.session,
+            at: Date.now(),
+          }),
+        )
+        on('session', etoroSessionEventSchema, (s) => dispatch({ type: 'session', session: s, at: Date.now() }))
+      } else {
+        on('snapshot', liveSnapshotSchema, (s) =>
+          dispatch({ type: 'snapshot', upstream: s.upstream, books: s.books, markets: s.markets, at: Date.now() }),
+        )
+      }
       on('book', bookSnapshotSchema, (b) => dispatch({ type: 'book', book: b, at: Date.now() }))
       if (market) on('market', marketSchema, (m) => dispatch({ type: 'market', market: m, at: Date.now() }))
       on('status', liveStatusSchema, (u) => dispatch({ type: 'status', upstream: u, at: Date.now() }))
@@ -165,13 +210,14 @@ export function useLiveStream(books: string[], opts: { market?: boolean } = {}):
       clearTimeout(reopen)
       es?.close()
     }
-  }, [key, market])
+  }, [key, market, venue])
 
   return {
     phase: livePhase(raw, now),
     upstream: raw.upstream,
     books: raw.books,
     markets: raw.markets,
+    session: raw.session,
     lastEventAt: raw.lastEventAt,
     error: raw.error,
     now,

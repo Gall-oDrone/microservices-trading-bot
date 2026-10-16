@@ -7,6 +7,7 @@ import { http, HttpResponse } from 'msw'
 import { controlHandlers, withMockHalt } from './controls'
 import { strategyHandlers } from './strategies'
 import healthz from './fixtures/healthz.json'
+import etoroLive from './fixtures/etoro-demo/etoro-live.json'
 import ledgers from './fixtures/ledgers.json'
 import live from './fixtures/live.json'
 import liveMarket from './fixtures/live-market.json'
@@ -94,13 +95,15 @@ const TIME_KEYS = new Set([
 /**
  * The captured live snapshot for `?books=`, with its timestamps moved to now
  * so it reads as fresh. `?market=1` serves the capture that also has depth,
- * spread and the tape (live-market.json), like ui-api.
+ * spread and the tape (live-market.json), like ui-api. With `src` it is
+ * another capture (the eToro one: its `session` is served as captured, so
+ * the NYSE badge in the mock is deterministic).
  */
-function liveNow(request: Request) {
+function liveNow(request: Request, src?: Json) {
   const params = new URL(request.url).searchParams
   const want = (params.get('books') ?? '').split(',').filter(Boolean)
   const market = ['1', 'true'].includes(params.get('market') ?? '')
-  const src: Json = market ? liveMarket : live
+  src ??= market ? liveMarket : live
   const shift = Date.now() - Date.parse(String(src.generated_at))
   const move = (v: unknown): unknown => {
     if (Array.isArray(v)) return v.map(move)
@@ -114,17 +117,21 @@ function liveNow(request: Request) {
     }
     return v
   }
-  const snap = move(src) as typeof liveMarket
+  const snap = move(src) as typeof liveMarket & { session?: unknown }
   const keep = (b: { book: string }) => want.length === 0 || want.includes(b.book)
   return {
     ...snap,
     books: snap.books.filter(keep),
-    ...(market ? { markets: snap.markets.filter(keep) } : { markets: undefined }),
+    ...(market && snap.markets ? { markets: snap.markets.filter(keep) } : { markets: undefined }),
   }
 }
 
-/** Replays the snapshot as Server-Sent Events, then a heartbeat every 10 s, like ui-api's /stream. */
-function liveStream(request: Request): Response {
+/**
+ * Replays the snapshot as Server-Sent Events, then a heartbeat every 10 s,
+ * like ui-api's /stream. The eToro stream (`src`) follows each heartbeat
+ * with a "session" event, like /etoro/stream.
+ */
+function liveStream(request: Request, src?: Json): Response {
   const enc = new TextEncoder()
   let timer: ReturnType<typeof setInterval> | undefined
   const body = new ReadableStream<Uint8Array>({
@@ -132,10 +139,11 @@ function liveStream(request: Request): Response {
       const send = (name: string, data: unknown) =>
         ctl.enqueue(enc.encode(`event: ${name}\ndata: ${JSON.stringify(data)}\n\n`))
       ctl.enqueue(enc.encode('retry: 3000\n\n'))
-      send('snapshot', liveNow(request))
+      send('snapshot', liveNow(request, src))
       timer = setInterval(() => {
-        const s = liveNow(request)
+        const s = liveNow(request, src)
         send('heartbeat', { time: s.generated_at, upstream: s.upstream })
+        if (s.session) send('session', s.session)
       }, 10_000)
       request.signal.addEventListener('abort', () => clearInterval(timer))
     },
@@ -151,6 +159,9 @@ export const handlers = [
   http.get('/api/ui/ledgers', () => HttpResponse.json(ledgers)),
   http.get('/api/ui/live', ({ request }) => HttpResponse.json(liveNow(request))),
   http.get('/api/ui/stream', ({ request }) => liveStream(request)),
+  // The eToro rates feed (P5c): the capture replayed as the snapshot, then heartbeats with the session.
+  http.get('/api/ui/etoro/live', ({ request }) => HttpResponse.json(liveNow(request, etoroLive))),
+  http.get('/api/ui/etoro/stream', ({ request }) => liveStream(request, etoroLive)),
   http.get('/api/ui/research/studies', () => HttpResponse.json(studies)),
   http.get('/api/ui/research/studies/:name', ({ params }) => {
     const name = String(params.name)

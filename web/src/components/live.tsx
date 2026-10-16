@@ -56,11 +56,11 @@ function useTick(v: number | undefined): 'up' | 'down' | '' {
   return dir
 }
 
-export function TickPrice({ value, quote }: { value: number; quote: string }) {
+export function TickPrice({ value, quote, book }: { value: number; quote: string; book?: string }) {
   const dir = useTick(value)
   return (
     <span key={value} className={`tick ${dir}`} data-testid="live-price">
-      {fmtPrice(value, quote)}
+      {fmtPrice(value, quote, book)}
     </span>
   )
 }

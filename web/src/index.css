@@ -4700,6 +4700,70 @@ table.data tr.current td {
   border-color: var(--venue-etoro);
 }
 
+/* Market page, eToro view (P5c): the quote block of a book card reuses the
+   Bitso ticker's price, bid/ask and spread-gauge styles on a raised panel
+   with the venue accent; it dims when the stream is stale. */
+.etoro-quote {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 14px;
+  padding: 14px 16px;
+  border: 1px solid var(--venue-etoro-line);
+  border-radius: var(--radius);
+  background: radial-gradient(120% 140% at 0% 0%, var(--venue-etoro-soft), transparent 60%), var(--bg-raised);
+  transition:
+    opacity var(--t) var(--ease),
+    filter var(--t) var(--ease);
+}
+.etoro-quote .ticker-price {
+  font-size: 32px;
+}
+.etoro-quote.is-stale {
+  opacity: 0.55;
+  filter: saturate(0.3);
+}
+.etoro-quote .spread-gauge > span {
+  background: linear-gradient(90deg, var(--venue-etoro), var(--long));
+}
+.etoro-rule {
+  margin-top: 14px;
+  transition:
+    opacity var(--t) var(--ease),
+    filter var(--t) var(--ease);
+}
+.etoro-rule.is-stale {
+  opacity: 0.5;
+  filter: saturate(0.3);
+}
+.etoro-rule .signal-pill {
+  padding: 3px 9px 3px 7px;
+  font-size: 11px;
+}
+.etoro-forming {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  margin-top: 12px;
+  padding: 8px 12px;
+  border-left: 2px solid var(--venue-etoro-line);
+  font-size: 12px;
+  color: var(--text-2);
+}
+.etoro-closes {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 130px), 1fr));
+  gap: 12px;
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px dashed var(--line-soft);
+}
+@media (max-width: 720px) {
+  .etoro-quote .ticker-price {
+    font-size: 26px;
+  }
+}
+
 /* The NYSE session clock in a page head. */
 .session-clock {
   display: inline-flex;

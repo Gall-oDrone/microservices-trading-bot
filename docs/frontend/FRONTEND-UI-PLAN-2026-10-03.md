@@ -1464,28 +1464,60 @@ unfinished bar is labelled provisional. The decision path never reads live data.
   - *Landing:* a second row under "Today" for the eToro forward test (both books: signal, distance
     to the SMA, demo position, paper vs CFD hold, next run NY, the session clock) linking to the
     list with `?ledger=etoro-demo`; the Bitso hero and tiles stay on a Bitso ledger even when the
-    URL selects the eToro one. *Market:* the eToro ledger gets the session, last closes and a link
-    to the candles (no live feed before P5c).
+    URL selects the eToro one. *Market (P5c, 2026-10-16):* the eToro ledger gets **live quotes**: per
+    book a quote block with the mid (ticks up/down), bid / ask, spread in USD and bps with the
+    gauge, "updated Ns ago" (NY time on hover), the provisional rule grid (flip level with
+    "goes long above …" / "flips to flat below …", distance to flip, SMA50 now, "if today closed
+    now" with the **would flip** badge against the recorded signal), the forming **UTC-day** bar
+    (O/H/L/C and how many quotes built it; it closes at 00:00 UTC like eToro's OneDay bucket and
+    the executor's candle files), the last close / recorded SMA50 / close vs SMA50, and the link
+    to the candles. The page head carries the `LiveBadge` and the NYSE `SessionClock` fed by the
+    stream's `session` (snapshot and a `session` event after every heartbeat), so open/closed and
+    closes-at follow the calendar without polling; a closed session shows an info banner (eToro
+    keeps quoting off the futures). Everything dims when the stream is stale, like the Bitso page.
+    Source: `GET /api/ui/etoro/stream` (SSE) and `/api/ui/etoro/live` (same `Snapshot` shape as
+    `/live` plus `session`), served from a second `live.Hub` fed by `internal/etorolive`'s rates
+    poller: one `GetRates` for ids 28 and 27 every **5 s = 12 reads/min**, inside the client's
+    55/min pacing, read-only by construction (no trading or portfolio route is reachable), demo
+    keys from `-etoro-env-file` (`ETORO_ENV` must be `demo`; `real` is refused with a log line and
+    the feed stays off). The price is the mid of the newest poll (eToro publishes quotes, not
+    trades); the hub buckets by UTC day and takes the previous NYSE trading day as the bar before
+    the forming one, so Monday's flip level reads Friday's close; the flip level is the mean of the
+    last 49 closes of the executor's newest candle file, withheld (with the reason) until that file
+    ends on the previous trading day.
 - **Fixtures and mock.** `src/mocks/fixtures/etoro-demo/` (captured from P5a: forward tests,
-  ledger and candles per book, risk, health, reconcile, risk report, controls); `ledgers.json` and
-  `strategies.json` gained `venue` and the `etoro-demo` entry by hand (the Bitso fixtures are
-  byte-identical). MSW serves `/api/ui/etoro/*` from that directory, defaults to the first eToro
-  ledger like `pickVenue`, and refuses cross-venue requests with ui-api's message; the in-memory
-  halt from the controls mock shows in `/etoro/risk` too, and halt-all halts all three ledgers.
-- **Tests.** Vitest: every eToro fixture parses (`etoroSchemas.test.ts`), formatters (NY time on
-  both sides of DST, units, labels, CFD quotes) and `useVenue` resolution (`etoroFormat.test.tsx`),
-  every page with the eToro ledger selected (`etoroPages.test.tsx`); the Bitso suites updated for
-  the third ledger. Playwright `e2e/etoro.spec.ts` (8 scenarios × desktop + phone): picker with
-  venue, list (NSDQ100 flat, SPX500 long 0.140735 u, next run NY), spx500 detail, risk (5 % meter,
-  halt/resume with `etoro-demo`, the report's VaR 52.81 USD), data health (10-16 drift with a
-  clean re-check), kill switch across venues, landing row, market notice. The 14 smoke tests stay
-  green. Note: the vitest suite needs Node 22 (CI's version); on Node 24 undici rejects jsdom's
-  `AbortSignal` and MSW intercepts nothing.
-- **Known limits.** No live eToro quotes yet (Market shows the session and last closes; P5c adds
-  the rates poller and the provisional flip level). No Trade page yet (P5d: assisted prepare →
-  place, demo only). The risk report is read as written by P4 (as-of 2026-10-13 in the fixture); a
-  missing report shows an empty card, not an error. Studies the research index does not list
-  (e.g. the index-CFD pre-registration) open by direct link only.
+  ledger and candles per book, risk, health, reconcile, risk report, controls; from P5c:
+  `etoro-live.json`, one real `/api/ui/etoro/live` snapshot taken in the 2026-10-16 cash session);
+  `ledgers.json` and `strategies.json` gained `venue` and the `etoro-demo` entry by hand (the Bitso
+  fixtures are byte-identical). MSW serves `/api/ui/etoro/*` from that directory, defaults to the
+  first eToro ledger like `pickVenue`, and refuses cross-venue requests with ui-api's message; the
+  in-memory halt from the controls mock shows in `/etoro/risk` too, and halt-all halts all three
+  ledgers. `/api/ui/etoro/live` and `/api/ui/etoro/stream` replay the live capture with its
+  timestamps moved to now (the `session` as captured, so the badge is deterministic) and follow
+  each heartbeat with a `session` event, like ui-api.
+- **Tests.** Vitest: every eToro fixture parses (`etoroSchemas.test.ts`, the live snapshot
+  included), formatters (NY time on both sides of DST, units, labels, CFD quotes) and `useVenue`
+  resolution (`etoroFormat.test.tsx`), every page with the eToro ledger selected
+  (`etoroPages.test.tsx`; the Market page without `EventSource` reads "live off" and still shows
+  the closes and the session), the eToro stream through the fake `EventSource` (`live.test.tsx`:
+  URL, bid/ask/spread, flip phrasing, "would flip", the `session` event, a `book` update, a
+  contract mismatch); the Bitso suites updated for the third ledger. Playwright `e2e/etoro.spec.ts`
+  (8 scenarios × desktop + phone): picker with venue, list (NSDQ100 flat, SPX500 long 0.140735 u,
+  next run NY), spx500 detail, risk (5 % meter, halt/resume with `etoro-demo`, the report's VaR
+  52.81 USD), data health (10-16 drift with a clean re-check), kill switch across venues, landing
+  row, market (both books' bid/ask from the mock stream, the session badge, the flip levels and
+  "would flip"). The 14 smoke tests stay green. Note: the vitest suite needs Node 22 (CI's
+  version); on Node 24 undici rejects jsdom's `AbortSignal` and MSW intercepts nothing.
+- **Known limits.** The eToro feed is a 5 s poll, not a push stream: a quote can be up to 5 s old
+  and the forming bar only counts quotes seen since ui-api started (no REST seed: eToro's OneDay
+  route would give the bar in progress, but that is a second read and the bar is display only).
+  eToro's rates `date` field lags and is not monotonic, so quotes are stamped with the poll time.
+  Weekends and holidays: the forming bar is a UTC day that will not be in the executor's file and
+  the flip level is withheld from 00:00 UTC Saturday until the next 09:35 NY run refreshes the
+  candles. No Trade page yet (P5d: assisted prepare → place, demo only). The risk report is read
+  as written by P4 (as-of 2026-10-13 in the fixture); a missing report shows an empty card, not an
+  error. Studies the research index does not list (e.g. the index-CFD pre-registration) open by
+  direct link only.
 
 ---
 

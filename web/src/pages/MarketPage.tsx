@@ -367,7 +367,7 @@ function CandlesCard({ book, snap, live }: { book: string; snap: BookSnapshot | 
   )
 }
 
-/** The Market page of the selected ledger: Bitso's live books below; the eToro ledger has no live feed before P5c. */
+/** The Market page of the selected ledger: Bitso's live books below; the eToro ledger gets its rates stream (EtoroMarketPage). */
 export function MarketPage() {
   return <VenueSwitch bitso={<BitsoMarketPage />} etoro={<EtoroMarketPage />} />
 }

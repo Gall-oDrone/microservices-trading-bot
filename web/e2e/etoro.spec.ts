@@ -221,10 +221,32 @@ test('landing: the eToro row next to the Bitso tiles, linking to the eToro forwa
   await expect(page.getByTestId('ft-card-nsdq100')).toBeVisible()
 })
 
-test('market: the eToro ledger explains that live quotes come with P5c', async ({ page }) => {
+test('market: live NSDQ100 and SPX500 quotes, the NYSE session badge and the provisional flip level', async ({
+  page,
+}) => {
   const errors = watchConsole(page)
   await page.goto(`/market${ETORO}`)
-  await expect(page.locator('#market-etoro-off')).toContainText('No live eToro quotes yet')
-  await expect(page.getByTestId('market-spx500')).toContainText('7,738.57')
+  await expect(page).toHaveTitle(/Market · eToro/)
+  // The mock stream (/api/ui/etoro/stream) connects and the snapshot paints both books.
+  await expect(page.getByTestId('live-badge')).toHaveText(/^live$/i)
+  const nsdq = page.getByTestId('market-nsdq100')
+  await expect(nsdq.getByTestId('bid-nsdq100')).toHaveText('29,189.40')
+  await expect(nsdq.getByTestId('ask-nsdq100')).toHaveText('29,190.10')
+  await expect(nsdq.getByTestId('spread-nsdq100')).toContainText('0.24 bps')
+  await expect(nsdq.getByTestId('flip-nsdq100')).toHaveText('goes long above 29,882.02')
+  await expect(nsdq.getByTestId('forming-nsdq100')).toContainText('UTC day 16 Oct 2026')
+  await expect(nsdq.getByTestId('closes-nsdq100')).toContainText('29,868.70')
+  const spx = page.getByTestId('market-spx500')
+  await expect(spx.getByTestId('bid-spx500')).toHaveText('7,649.08')
+  await expect(spx.getByTestId('ask-spx500')).toHaveText('7,649.38')
+  await expect(spx.getByTestId('flip-spx500')).toHaveText('goes long above 7,707.38')
+  await expect(spx.getByText('would flip')).toBeVisible() // recorded long, mid below the flip level
+  await expect(spx.getByTestId('closes-spx500')).toContainText('7,738.57')
+  const clock = page.getByTestId('session-clock')
+  await expect(clock).toHaveAttribute('data-open', 'true')
+  await expect(clock).toContainText('NYSE open · closes 16:00 NY')
+  await expect(page.locator('#market-etoro-off')).toHaveCount(0)
   await expectHealthy(page, errors)
+  await spx.locator('#market-open-spx500').click()
+  await expect(page).toHaveURL(/\/forward-tests\/spx500\?ledger=etoro-demo$/)
 })

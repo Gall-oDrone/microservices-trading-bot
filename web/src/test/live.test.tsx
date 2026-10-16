@@ -2,8 +2,10 @@ import { QueryClientProvider } from '@tanstack/react-query'
 import { act, render, screen, waitFor, within } from '@testing-library/react'
 import { createMemoryRouter, RouterProvider } from 'react-router'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { etoroLiveSnapshotSchema } from '../api/etoroSchemas'
 import { livePhase, STALE_MS, type LiveRaw } from '../api/live'
 import { liveSnapshotSchema, type LiveStatus } from '../api/schemas'
+import etoroLive from '../mocks/fixtures/etoro-demo/etoro-live.json'
 import live from '../mocks/fixtures/live.json'
 import { makeQueryClient, routes } from '../router'
 
@@ -87,7 +89,15 @@ describe('live contract', () => {
 
 describe('livePhase', () => {
   const up: LiveStatus = { source: 'wss://x', connected: true, since: '', last_message_at: '', reconnects: 0 }
-  const base: LiveRaw = { conn: 'open', upstream: up, books: {}, markets: {}, lastEventAt: 1_000, error: null }
+  const base: LiveRaw = {
+    conn: 'open',
+    upstream: up,
+    books: {},
+    markets: {},
+    session: null,
+    lastEventAt: 1_000,
+    error: null,
+  }
   it.each<[string, Partial<LiveRaw>, number, string]>([
     ['fresh event', {}, 1_000 + STALE_MS, 'live'],
     ['no event for longer than STALE_MS', {}, 1_001 + STALE_MS, 'stale'],
@@ -170,5 +180,71 @@ describe('live strip', () => {
     expect(within(usd).getByText('If today closed now')).toBeInTheDocument()
     expect(await screen.findByText('flip level (provisional)')).toBeInTheDocument()
     expect(await screen.findByText(/records, newest first/)).toBeInTheDocument()
+  })
+})
+
+describe('eToro market (rates stream, P5c)', () => {
+  const etoroSnapshot = () => etoroLiveSnapshotSchema.parse(structuredClone(etoroLive))
+
+  it('the captured /api/ui/etoro/live response parses with the UI schema', () => {
+    const r = etoroLiveSnapshotSchema.safeParse(etoroLive)
+    expect(r.success, r.success ? '' : JSON.stringify(r.error.issues[0])).toBe(true)
+  })
+
+  it('opens the eToro stream for both books and shows bid, ask, spread, session and the flip level', async () => {
+    renderAt('/market?ledger=etoro-demo')
+    const es = await stream()
+    expect(es.url).toBe('/api/ui/etoro/stream?books=nsdq100%2Cspx500')
+    const snap = etoroSnapshot()
+    es.emit('snapshot', snap)
+
+    const nsdq = await screen.findByTestId('market-nsdq100')
+    expect(within(nsdq).getByTestId('bid-nsdq100')).toHaveTextContent('29,189.40')
+    expect(within(nsdq).getByTestId('ask-nsdq100')).toHaveTextContent('29,190.10')
+    expect(within(nsdq).getByTestId('live-price')).toHaveTextContent('29,189.75')
+    expect(within(nsdq).getByTestId('spread-nsdq100')).toHaveTextContent('0.70 USD · 0.24 bps')
+    // Recorded flat, provisional flat below the flip level: "goes long above".
+    expect(within(nsdq).getByTestId('flip-nsdq100')).toHaveTextContent('goes long above 29,882.02')
+    expect(within(nsdq).queryByText('would flip')).not.toBeInTheDocument()
+    expect(within(nsdq).getByTestId('forming-nsdq100')).toHaveTextContent('UTC day 16 Oct 2026')
+    expect(within(nsdq).getByTestId('forming-nsdq100')).toHaveTextContent('7 quotes')
+    expect(within(nsdq).getByTestId('closes-nsdq100')).toHaveTextContent('29,868.70')
+
+    // SPX500 is recorded long and the mid is below its flip level: the rule would flip.
+    const spx = screen.getByTestId('market-spx500')
+    expect(within(spx).getByTestId('bid-spx500')).toHaveTextContent('7,649.08')
+    expect(within(spx).getByTestId('flip-spx500')).toHaveTextContent('goes long above 7,707.38')
+    expect(within(spx).getByText('would flip')).toBeInTheDocument()
+
+    // The session comes from the stream's snapshot; the badge is live.
+    const clock = screen.getByTestId('session-clock')
+    expect(clock).toHaveAttribute('data-open', 'true')
+    expect(clock).toHaveTextContent('NYSE open · closes 16:00 NY')
+    expect(screen.getByTestId('live-badge')).toHaveTextContent(/^live$/i)
+    expect(screen.queryByText('Live eToro quotes unavailable')).not.toBeInTheDocument()
+
+    // A "session" event (after each heartbeat) moves the badge; a "book" event moves the quote.
+    es.emit('session', { ...snap.session, open: false, now_new_york: '2026-10-16T16:05:00-04:00' })
+    await waitFor(() => expect(screen.getByTestId('session-clock')).toHaveAttribute('data-open', 'false'))
+    expect(screen.getByTestId('session-clock')).toHaveTextContent('closed · since 16:00 NY')
+    const b = structuredClone(snap.books.find((x) => x.book === 'nsdq100')!)
+    b.bid = 29900.1
+    b.ask = 29900.9
+    b.last = 29900.5
+    b.provisional = { ...b.provisional!, price: 29900.5, signal: 'long', distance_to_flip_pct: 0.06 }
+    es.emit('book', b)
+    await waitFor(() => expect(within(nsdq).getByTestId('bid-nsdq100')).toHaveTextContent('29,900.10'))
+    expect(within(nsdq).getByTestId('flip-nsdq100')).toHaveTextContent('flips to flat below 29,882.02')
+    expect(within(nsdq).getByText('would flip')).toBeInTheDocument()
+  })
+
+  it('a contract mismatch on the eToro snapshot is an error, not a wrong number', async () => {
+    renderAt('/market?ledger=etoro-demo')
+    const es = await stream()
+    const snap = etoroSnapshot() as unknown as { session: unknown }
+    snap.session = { open: 'yes' }
+    es.emit('snapshot', snap)
+    expect(await screen.findByText('Live eToro quotes unavailable')).toBeInTheDocument()
+    expect(screen.getByTestId('live-badge')).toHaveTextContent(/live error/i)
   })
 })

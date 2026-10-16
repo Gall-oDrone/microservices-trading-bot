@@ -42,6 +42,13 @@
 // ops.env). It is a local file, never an S3 copy:
 //
 //	go run ./cmd -etoro-ledger ../strategy-executor/etoro-daily-data/demo/ledger.jsonl
+//
+// With an eToro ledger, ui-api also polls eToro's rates route for NSDQ100
+// and SPX500 every 5 s (porting plan P5c; 12 reads a minute, display only,
+// never a trading or portfolio route) with the demo keys in -etoro-env-file
+// (UI_API_ETORO_ENV_FILE, default ~/.config/microservices-trading-bot/
+// etoro-demo.env, which must say ETORO_ENV=demo); -etoro-live=false or a
+// missing env file turns the feed off and the rest keeps serving.
 package main
 
 import (
@@ -62,8 +69,10 @@ import (
 	"syscall"
 	"time"
 
+	"bitso-trading-platform/shared/pkg/etoro"
 	"bitso-trading-platform/shared/pkg/risk"
 	"bitso-trading-platform/ui-api/internal/api"
+	"bitso-trading-platform/ui-api/internal/etorolive"
 	"bitso-trading-platform/ui-api/internal/executor"
 	"bitso-trading-platform/ui-api/internal/live"
 	"bitso-trading-platform/ui-api/internal/research"
@@ -98,6 +107,8 @@ func main() {
 	preregDirs := flag.String("prereg-dirs", env("UI_API_PREREG_DIRS", "../strategy-executor/daily-executor-data/prereg,../../docs/backtest-readiness"), "where to look for the latest pre-registered verdict report (scripts/prereg-evaluation.sh output), comma-separated")
 	etoroLedger := flag.String("etoro-ledger", env("UI_API_ETORO_LEDGER", ""), "eToro index-CFD executor ledger (etoro-daily-data/demo/ledger.jsonl, local disk) for /api/ui/etoro/ and the halt controls (default: off)")
 	etoroName := flag.String("etoro-name", env("UI_API_ETORO_NAME", "etoro-demo"), "ledger name of -etoro-ledger (?ledger=, the confirm phrase of its halt/resume)")
+	etoroLiveOn := flag.Bool("etoro-live", env("UI_API_ETORO_LIVE", "1") != "0", "with -etoro-ledger, poll eToro's rates for the index CFDs every 5 s, display only (UI_API_ETORO_LIVE=0 disables)")
+	etoroEnvFile := flag.String("etoro-env-file", env("UI_API_ETORO_ENV_FILE", etorolive.DefaultEnvFile()), "KEY=VALUE file with the eToro demo keys for the rates poll (ETORO_ENV must be demo); missing turns the feed off")
 	flag.Parse()
 
 	if *printPolicy {
@@ -177,6 +188,9 @@ func main() {
 	if *liveOn {
 		srv.Live = startLive(ctx, ledgers[0].Store, *liveURL, *liveREST, logger)
 	}
+	if *etoroLedger != "" && *etoroLiveOn {
+		srv.EtoroLive = startEtoroLive(ctx, ledgers[len(ledgers)-1], *etoroEnvFile, logger)
+	}
 	hs := &http.Server{
 		Addr: *addr, Handler: srv.Handler(),
 		ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second,
@@ -185,6 +199,9 @@ func main() {
 	}
 	if srv.Live != nil {
 		hs.RegisterOnShutdown(srv.Live.Close) // ends open SSE streams
+	}
+	if srv.EtoroLive != nil {
+		hs.RegisterOnShutdown(srv.EtoroLive.Close)
 	}
 
 	go func() {
@@ -275,6 +292,45 @@ func startLive(ctx context.Context, st *store.Store, wsURL, restURL string, logg
 	go hub.Run(ctx)
 	go feed.Run(ctx)
 	logger.Printf("live: %s for %v (display only)", wsURL, hub.Books)
+	return hub
+}
+
+// startEtoroLive starts the eToro rates poller for the eToro ledger's books
+// (porting plan P5c). The hub buckets the forming bar by UTC day like the
+// executor's candle files, from which the provisional flip level is read.
+// Without usable demo keys it logs why and returns nil: the console keeps
+// serving everything else. GetRates is the only eToro call made here.
+func startEtoroLive(ctx context.Context, l api.Ledger, envFile string, logger *log.Logger) *live.Hub {
+	if l.Venue != api.VenueEtoro {
+		logger.Printf("etoro live: off (ledger %s is not an eToro ledger)", l.Name)
+		return nil
+	}
+	cfg, err := etorolive.Credentials(envFile)
+	switch {
+	case etorolive.IsNotExist(err):
+		logger.Printf("etoro live: off (no env file %s; -etoro-env-file)", envFile)
+		return nil
+	case errors.Is(err, etorolive.ErrNotDemo):
+		logger.Printf("etoro live: REFUSED: %v; the console only ever uses demo keys, feed off", err)
+		return nil
+	case err != nil:
+		logger.Printf("etoro live: off (%v)", err)
+		return nil
+	}
+	client, err := etoro.NewClient(cfg)
+	if err != nil {
+		logger.Printf("etoro live: off (%v)", err)
+		return nil
+	}
+	books := make([]string, 0, len(etorolive.DefaultBooks))
+	for b := range etorolive.DefaultBooks {
+		books = append(books, b)
+	}
+	hub := api.NewEtoroHub(books, api.EtoroCloses(l.Store), logger)
+	poller := &etorolive.Poller{Rates: client.GetRates, Books: etorolive.DefaultBooks, Interval: etorolive.DefaultInterval, Handler: hub, Log: logger}
+	go hub.Run(ctx)
+	go poller.Run(ctx)
+	logger.Printf("etoro live: polling rates for %v every %s (display only)", hub.Books, poller.Interval)
 	return hub
 }
 

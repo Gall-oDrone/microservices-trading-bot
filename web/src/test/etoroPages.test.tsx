@@ -103,10 +103,18 @@ describe('eToro ledger pages (?ledger=etoro-demo)', () => {
     expect(screen.getByTestId('strategy-stop-lp_btc_demo')).toBeDisabled()
   })
 
-  it('market: explains that eToro quotes are not streamed yet', async () => {
+  it('market: without EventSource (jsdom) the feed reads off, the last closes and the session still show', async () => {
     renderAt('/market?ledger=etoro-demo')
-    expect(await screen.findByText('No live eToro quotes yet')).toBeInTheDocument()
-    expect(await screen.findByTestId('market-spx500')).toHaveTextContent('7,738.57')
+    expect(await screen.findByText('Live eToro quotes unavailable')).toBeInTheDocument()
+    const spx = await screen.findByTestId('market-spx500')
+    expect(within(spx).getByTestId('closes-spx500')).toHaveTextContent('7,738.57')
+    expect(within(spx).getByTestId('bid-spx500')).toHaveTextContent('—')
+    expect(screen.getByTestId('session-clock')).toHaveAttribute('data-open', 'true')
+    expect(screen.getByTestId('live-badge')).toHaveTextContent(/live off/i)
+    expect(document.querySelector('#market-open-spx500')).toHaveAttribute(
+      'href',
+      '/forward-tests/spx500?ledger=etoro-demo',
+    )
   })
 
   it('landing: the eToro row next to the Bitso tiles', async () => {

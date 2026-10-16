@@ -72,6 +72,9 @@ type Server struct {
 	Log       *log.Logger
 	// Live is the display-only market data hub; nil disables /live and /stream.
 	Live *live.Hub
+	// EtoroLive is the eToro index-CFD quotes hub (internal/etorolive, P5c);
+	// nil disables /etoro/live and /etoro/stream. See etoro_live.go.
+	EtoroLive *live.Hub
 	// Research indexes the study write-ups; nil serves an empty list.
 	Research *research.Index
 	// Archive is the collector's S3 trade archive (read-only) for
@@ -290,6 +293,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/ui/etoro/health", s.etoroHealth)
 	mux.HandleFunc("GET /api/ui/etoro/reconcile", s.etoroReconcile)
 	mux.HandleFunc("GET /api/ui/etoro/risk-report", s.etoroRiskReport)
+	// Live quotes from the rates poller (P5c), display only. See etoro_live.go.
+	mux.HandleFunc("GET /api/ui/etoro/live", s.etoroLiveSnapshot)
+	mux.HandleFunc("GET /api/ui/etoro/stream", s.etoroStream)
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusNotFound, "no such endpoint")
 	})
