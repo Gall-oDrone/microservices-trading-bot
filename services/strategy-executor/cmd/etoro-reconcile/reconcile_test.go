@@ -17,6 +17,10 @@ type fake struct {
 	lagReads int
 	before   []broker.Position
 	reads    int
+	// histLagReads is how many ClosedPositions reads return nothing: the
+	// trading history lagging a close (seen 2026-10-16).
+	histLagReads int
+	histReads    int
 }
 
 func (f *fake) Venue() string { return "etoro" }
@@ -43,6 +47,10 @@ func (f *fake) PreviewOpen(context.Context, broker.OpenRequest) (broker.Costs, e
 	return broker.Costs{}, nil
 }
 func (f *fake) ClosedPositions(context.Context, time.Time) ([]broker.ClosedPosition, error) {
+	f.histReads++
+	if f.histReads <= f.histLagReads {
+		return nil, nil
+	}
 	return f.closed, nil
 }
 
@@ -163,6 +171,34 @@ func TestPortfolioLag(t *testing.T) {
 		r, err := run(f, []etoroledger.Record{open("nsdq100", nsdq, "2026-10-09", "11", 0.0355), cl}, nil, t0)
 		if err != nil || !r.Clean || has(r, codeOrphanPosition) || !has(r, codePortfolioLag) || r.PositionReads != 3 {
 			t.Fatalf("want the lingering position waited out, got reads=%d %+v %v", r.PositionReads, r.Findings, err)
+		}
+	})
+
+	// 2026-10-16: the portfolio dropped the closed NSDQ100 position after 3
+	// reads (10 s), but the trading history did not list the close yet and
+	// the run reported close_not_in_history; a re-check 3 h later was clean.
+	t.Run("a fresh close the history lists late", func(t *testing.T) {
+		cl := etoroledger.Record{Mode: etoroledger.ModeDemo, Book: "nsdq100", Instrument: nsdq, Decision: etoroledger.Decision{BarDate: "2026-10-15"},
+			Demo: &etoroledger.Demo{Action: etoroledger.ActionClose, PositionBefore: etoroledger.Position{State: "long", PositionID: "11"},
+				PositionAfter: etoroledger.Flat(),
+				Order:         &etoroledger.Order{Kind: etoroledger.ActionClose, ClientRef: "c", Status: "executed", AvgPrice: 29770.5, IntentAt: t0, Finished: t0}}}
+		recs := []etoroledger.Record{open("nsdq100", nsdq, "2026-10-09", "11", 0.0355), cl}
+		f := &fake{lagReads: 2, before: []broker.Position{pos("11", 28, 0.0355)}, histLagReads: 3, closed: []broker.ClosedPosition{{ID: "11", CloseRate: 29770.5}}}
+		var slept time.Duration
+		r, err := reconcileWith(context.Background(), f, recs, nil, t0, testSettle(&slept))
+		if err != nil || !r.Clean || has(r, codeCloseNotInHist) {
+			t.Fatalf("want clean once the history lists the close, got %+v %v", r.Findings, err)
+		}
+		if !has(r, codePortfolioLag) || !has(r, codeHistoryLag) || r.PositionReads != 3 || r.HistoryReads != 4 || slept != 5*defaultSettle.Interval || r.SettleWaitedS != slept.Seconds() {
+			t.Fatalf("want 3 portfolio + 4 history reads over %v, got pos=%d hist=%d waited=%vs findings=%+v", 5*defaultSettle.Interval, r.PositionReads, r.HistoryReads, r.SettleWaitedS, r.Findings)
+		}
+		// The history shares the portfolio's budget: past the timeout the
+		// close is still reported as not in the history.
+		f = &fake{lagReads: 2, before: []broker.Position{pos("11", 28, 0.0355)}, histLagReads: 1000, closed: []broker.ClosedPosition{{ID: "11", CloseRate: 29770.5}}}
+		slept = 0
+		r, err = reconcileWith(context.Background(), f, recs, nil, t0, testSettle(&slept))
+		if err != nil || r.Clean || !has(r, codeCloseNotInHist) || has(r, codeHistoryLag) || slept > defaultSettle.Timeout {
+			t.Fatalf("want close_not_in_history after the shared timeout (%v slept), got %+v %v", slept, r.Findings, err)
 		}
 	})
 

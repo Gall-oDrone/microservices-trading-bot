@@ -81,8 +81,8 @@ func printReport(r report) {
 		status = "DRIFT"
 	}
 	fmt.Printf("etoro-reconcile %s | %s | %s\n", r.GeneratedAt, r.Ledger, status)
-	if r.PositionReads > 1 {
-		fmt.Printf("  portfolio  : consistent after %d reads (%.0f s)\n", r.PositionReads, r.SettleWaitedS)
+	if r.PositionReads > 1 || r.HistoryReads > 1 {
+		fmt.Printf("  settled    : portfolio after %d reads, history after %d (%.0f s)\n", r.PositionReads, r.HistoryReads, r.SettleWaitedS)
 	}
 	if a := r.Account; a != nil {
 		fmt.Printf("  account    : %s cash %.2f equity %.2f\n", a.Currency, a.Cash, a.Equity)

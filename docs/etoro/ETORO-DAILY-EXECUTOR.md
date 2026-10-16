@@ -80,17 +80,20 @@ side is already wired: the installer writes `UI_ALERTS_ETORO_LEDGER` to `ops.env
 
 The wrapper then runs `etoro-reconcile` and writes `etoro-daily-data/demo/reconcile/<New York date>.json`.
 The reconcile is read-only. When the ledger's newest order finished within the last 10 minutes and
-the portfolio does not show it yet, it re-reads the portfolio every 5 s for up to 60 s before
-judging (eToro's portfolio lags fills, see §4); a wait that was needed appears as a `portfolio_lag`
-warning and as `position_reads` / `settle_waited_s` in the report. Warnings never make a report
-`drift`.
+eToro's views do not show it yet, it re-reads every 5 s for up to 60 s in total before judging: the
+portfolio (a fresh open must be listed, a fresh close must be gone) and the trading history (a
+fresh close must be listed). A wait that was needed appears as a `portfolio_lag` / `history_lag`
+warning and as `position_reads` / `history_reads` / `settle_waited_s` in the report. Warnings never
+make a report `drift`.
 
 **P3 exit criterion:** five consecutive trading days with `reconcile=clean`, plus a passing
 kill-switch drill (`scripts/kill-switch-drill.sh --offline --source services/ui-api/internal/api/testdata`;
-it covers both executors). A day whose only drift is `missing_position` reported within the settle
-window of the executor's own fill, followed by a clean read-only re-check saved as
-`reconcile/<date>.recheck.json` and a dated operator note in the run log, counts as clean (precedent:
-2026-10-12, before the reconcile waited for the portfolio). The original report is never edited.
+it covers both executors). A day whose only drift is `missing_position`, `orphan_position` or
+`close_not_in_history` reported within the settle window of the executor's own fill or close,
+followed by a clean read-only re-check saved as `reconcile/<date>.recheck.json` and a dated operator
+note in the run log, counts as clean (precedents: 2026-10-12, portfolio lag on an open, before the
+reconcile waited for the portfolio; 2026-10-16, history lag on a close, before it waited for the
+history). The original report is never edited.
 
 ## 3. Reading the outcome
 
@@ -104,9 +107,9 @@ window of the executor's own fill, followed by a clean read-only re-check saved 
 | `rejected … (recorded)` | eToro refused the order outright. | Read `demo.order.error`. The next day retries with a new ref. |
 | `ledger says flat but the account holds …` / `… no longer holds it` | Someone traded the instrument by hand, or eToro closed the position (e.g. a margin close-out). | Resolve by hand (see §5). Never edit past ledger lines. |
 | `two reads of eToro's bars disagree` | eToro served inconsistent history. | Re-run later. If it persists, record it for the forward-test report. |
-| `reconcile=drift` with `missing_position` or `orphan_position` **on the same run that just filled or closed** that position | eToro's portfolio had not caught up after the 60 s settle wait. | Re-run `etoro-reconcile` by hand a few minutes later (`-json etoro-daily-data/demo/reconcile/<date>.recheck.json`). Clean: add a dated note to the run log; the day counts as clean. Still drift: resolve by hand (§5). |
+| `reconcile=drift` with `missing_position`, `orphan_position` or `close_not_in_history` **on the same run that just filled or closed** that position | eToro's portfolio or trading history had not caught up after the 60 s settle wait. | Re-run `etoro-reconcile` by hand a few minutes later (`-json etoro-daily-data/demo/reconcile/<date>.recheck.json`). Clean: add a dated note to the run log; the day counts as clean. Still drift: resolve by hand (§5). |
 | `reconcile=drift` (other) | See the findings in the JSON report. | `unfinished_intent`: re-run the executor. Other findings: resolve by hand. |
-| `portfolio_lag` warning, `reconcile=clean` | The portfolio needed re-reads before it showed the fill. Normal. | Nothing. The forward-test report lists how often it happened. |
+| `portfolio_lag` / `history_lag` warning, `reconcile=clean` | The portfolio or the history needed re-reads before it showed the order. Normal. | Nothing. The forward-test report lists how often it happened. |
 
 ### 3.1 What reaches you without reading the log
 
@@ -137,6 +140,7 @@ cd services/ui-api && ./bin/ui-alerts -dry-run -etoro-ledger ../strategy-executo
 
 - **Duplicate request id.** eToro rejects a reused `x-request-id`, and `orders:lookup?referenceId=` cannot find API orders. A resent open is therefore resolved to the position opened on the instrument since the intent's timestamp.
 - **Portfolio lag.** The portfolio shows fills late: usually 1–3 s, but on 2026-10-12 it still showed no positions and the pre-trade cash balance 5 s after the second fill, and both positions 80 minutes later. The adapter polls for up to 30 s to resolve the fill; the reconcile waits for up to 60 s more (§2). The ledger's `demo.account` snapshot is the **pre-order** balance (`exposure` 0 before the first open); `position_after` is post-fill.
+- **Trading-history lag.** The closed-positions history lists a close later than the portfolio drops it: on 2026-10-16 the portfolio no longer held the closed NSDQ100 position 10 s after the close, but the history did not list it yet (3 h later it did). The reconcile waits for the history too (§2).
 - **Two versions of daily history** (seen 2026-10-10):
   - up to ~1.3 bps on 13–16 recent closes;
   - the executor reads twice and records `candles.revised_closes` / `max_revision_bps`;
@@ -168,6 +172,13 @@ Friday 2026-10-16.
 | 2026-10-12 (Mon) | opened NSDQ100 (3616683146) and SPX500 (3616683295), 1,100 USD x1 each | drift → **clean** on re-check | `missing_position` ×2 at 13:35:14Z, portfolio lag; re-check 14:56:22Z clean (`2026-10-12.recheck.json`). Day 1. |
 | 2026-10-13 (Tue) | hold, nothing to do | clean | Day 2. Reconcile rebuilt with the settle wait after this run. |
 | 2026-10-14 (Wed) | hold, nothing to do | clean (1 portfolio read) | Day 3. First run with the settle-aware reconcile. eToro alerts switched on in `ui-alerts` the same day. |
+| 2026-10-15 (Thu) | hold, nothing to do | clean | Day 4. |
+| 2026-10-16 (Fri) | **closed NSDQ100** (order 389021477, 0.035799 u at 29770.50; rule flat: 10-15 close 29868.70 vs SMA50 29871.96); SPX500 hold | drift → **clean** on re-check | Portfolio settled after 3 reads (10 s, as designed); `close_not_in_history` because the history lagged further; re-check 16:43:43Z clean (`2026-10-16.recheck.json`). First alert e-mail of the soak, 13:45 UTC, resolved by the re-check. Day 5. Reconcile rebuilt to wait for the history too. |
+
+**P3 exit criterion met on 2026-10-16** under the re-check rule above (five consecutive trading
+days whose books and records agree; two of them needed a clean re-check for a lag the reconcile now
+waits out), with the kill-switch drill passed (40/40). Both lags are fixed in the reconcile that
+runs from Monday 2026-10-19; the soak log continues through P5 as a plain record.
 
 ## 7. Risk report
 

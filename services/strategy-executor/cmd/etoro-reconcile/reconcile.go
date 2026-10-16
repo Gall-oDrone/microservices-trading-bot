@@ -29,15 +29,19 @@ const (
 	codeBlockedDay       = "blocked_day"
 	codeForeignPositions = "other_instruments"
 	codePortfolioLag     = "portfolio_lag" // the portfolio needed re-reads before it showed a fresh fill (warn)
+	codeHistoryLag       = "history_lag"   // the trading history needed re-reads before it listed a fresh close (warn)
 )
 
-// settle is how long reconcile waits for the portfolio to show an order the
-// executor finished moments ago. eToro's portfolio lags fills: on 2026-10-12
-// an open executed at 13:35:09Z was still absent from the portfolio read at
+// settle is how long reconcile waits for eToro's views to show an order the
+// executor finished moments ago. The portfolio lags fills: on 2026-10-12 an
+// open executed at 13:35:09Z was still absent from the portfolio read at
 // 13:35:14Z and present later, which was reported as missing_position. The
-// wait applies only to books whose newest order finished within Window and
-// only while the first read disagrees with the ledger; a run that reads a
-// consistent portfolio never waits.
+// trading history lags closes: on 2026-10-16 the portfolio had dropped a
+// closed position after 10 s but the history did not list the close yet
+// (close_not_in_history). The wait applies only to books whose newest order
+// finished within Window and only while a read disagrees with the ledger; a
+// run that reads consistent views never waits. Timeout is one budget shared
+// by the portfolio and the history reads.
 type settle struct {
 	Window   time.Duration // orders finished this recently may still be settling
 	Timeout  time.Duration // total time to keep re-reading
@@ -87,7 +91,8 @@ type report struct {
 	Clean         bool            `json:"clean"`
 	Account       *broker.Account `json:"account,omitempty"`
 	PositionReads int             `json:"position_reads"`            // portfolio reads made (1 unless the portfolio lagged)
-	SettleWaitedS float64         `json:"settle_waited_s,omitempty"` // seconds spent waiting for the portfolio
+	HistoryReads  int             `json:"history_reads,omitempty"`   // trading-history reads made (1 unless the history lagged)
+	SettleWaitedS float64         `json:"settle_waited_s,omitempty"` // seconds spent waiting for the portfolio and the history
 	Books         []bookReport    `json:"books"`
 	Findings      []finding       `json:"findings"`
 }
@@ -104,11 +109,11 @@ func reconcileWith(ctx context.Context, b broker.Broker, recs []etoroledger.Reco
 	add := func(sev, book, code, format string, args ...any) {
 		rep.Findings = append(rep.Findings, finding{Severity: sev, Book: book, Code: code, Message: fmt.Sprintf(format, args...)})
 	}
-	positions, lag, err := settledPositions(ctx, b, recs, now, st)
+	fresh := freshOrders(recs, now, st)
+	positions, lag, err := settledPositions(ctx, b, fresh, st)
 	if err != nil {
 		return rep, fmt.Errorf("positions: %w", err)
 	}
-	rep.PositionReads, rep.SettleWaitedS = lag.reads, lag.waited.Seconds()
 	for _, book := range lag.lagged {
 		add(sevWarn, book, codePortfolioLag, "the portfolio showed the ledger's latest order only after %d reads (%.0f s)", lag.reads, lag.waited.Seconds())
 	}
@@ -141,15 +146,21 @@ func reconcileWith(ctx context.Context, b broker.Broker, recs []etoroledger.Reco
 		if min := now.Add(-360 * 24 * time.Hour); since.Before(min) {
 			since = min
 		}
-		cps, err := hr.ClosedPositions(ctx, since)
+		cps, hlag, err := settledClosed(ctx, hr, since, fresh, st, lag.waited)
 		if err != nil {
 			return rep, fmt.Errorf("trading history: %w", err)
+		}
+		lag.waited += hlag.waited
+		rep.HistoryReads = hlag.reads
+		for _, book := range hlag.lagged {
+			add(sevWarn, book, codeHistoryLag, "the trading history listed the ledger's latest close only after %d reads (%.0f s)", hlag.reads, hlag.waited.Seconds())
 		}
 		closed = make(map[string]broker.ClosedPosition, len(cps))
 		for _, c := range cps {
 			closed[c.ID] = c
 		}
 	}
+	rep.PositionReads, rep.SettleWaitedS = lag.reads, lag.waited.Seconds()
 
 	names := make([]string, 0, len(books))
 	for k := range books {
@@ -308,9 +319,7 @@ func freshOrders(recs []etoroledger.Record, now time.Time, st settle) []freshOrd
 // settledPositions reads the open positions, re-reading for up to st.Timeout
 // while a book with a fresh order still disagrees with the ledger. It gives
 // up quietly on timeout: the normal findings then describe the mismatch.
-func settledPositions(ctx context.Context, b broker.Broker, recs []etoroledger.Record, now time.Time, st settle) ([]broker.Position, lagInfo, error) {
-	var lag lagInfo
-	fresh := freshOrders(recs, now, st)
+func settledPositions(ctx context.Context, b broker.Broker, fresh []freshOrder, st settle) ([]broker.Position, lagInfo, error) {
 	disagreeing := func(positions []broker.Position) []string {
 		held := map[string]bool{}
 		for _, p := range positions {
@@ -324,25 +333,55 @@ func settledPositions(ctx context.Context, b broker.Broker, recs []etoroledger.R
 		}
 		return out
 	}
+	return settled(ctx, b.Positions, disagreeing, st, 0)
+}
+
+// settledClosed reads the trading history, re-reading while a fresh close is
+// not listed yet. alreadyWaited is what the portfolio read used of the shared
+// settle budget.
+func settledClosed(ctx context.Context, hr broker.HistoryReader, since time.Time, fresh []freshOrder, st settle, alreadyWaited time.Duration) ([]broker.ClosedPosition, lagInfo, error) {
+	disagreeing := func(cps []broker.ClosedPosition) []string {
+		closed := map[string]bool{}
+		for _, c := range cps {
+			closed[c.ID] = true
+		}
+		var out []string
+		for _, f := range fresh {
+			if !f.wantHeld && !closed[f.positionID] {
+				out = append(out, f.book)
+			}
+		}
+		return out
+	}
+	read := func(ctx context.Context) ([]broker.ClosedPosition, error) { return hr.ClosedPositions(ctx, since) }
+	return settled(ctx, read, disagreeing, st, alreadyWaited)
+}
+
+// settled reads with read until disagreeing returns nothing or the settle
+// budget (st.Timeout minus alreadyWaited) is used up. lag.waited counts only
+// the waiting done here; lag.lagged lists the books that disagreed on the
+// first read when a later read agreed.
+func settled[T any](ctx context.Context, read func(context.Context) ([]T, error), disagreeing func([]T) []string, st settle, alreadyWaited time.Duration) ([]T, lagInfo, error) {
+	var lag lagInfo
 	var first []string
 	for {
-		positions, err := b.Positions(ctx)
+		items, err := read(ctx)
 		if err != nil {
 			return nil, lag, err
 		}
 		lag.reads++
-		bad := disagreeing(positions)
+		bad := disagreeing(items)
 		if lag.reads == 1 {
 			first = bad
 		}
-		if len(bad) == 0 || st.Interval <= 0 || st.Sleep == nil || lag.waited+st.Interval > st.Timeout {
+		if len(bad) == 0 || st.Interval <= 0 || st.Sleep == nil || alreadyWaited+lag.waited+st.Interval > st.Timeout {
 			if len(bad) == 0 {
 				lag.lagged = first
 			}
-			return positions, lag, nil
+			return items, lag, nil
 		}
 		if err := st.Sleep(ctx, st.Interval); err != nil {
-			return positions, lag, err
+			return items, lag, err
 		}
 		lag.waited += st.Interval
 	}
