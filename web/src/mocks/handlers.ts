@@ -4,7 +4,7 @@
  * `npm run fixtures` while ui-api is running.
  */
 import { http, HttpResponse } from 'msw'
-import { controlHandlers } from './controls'
+import { controlHandlers, withMockHalt } from './controls'
 import { strategyHandlers } from './strategies'
 import healthz from './fixtures/healthz.json'
 import ledgers from './fixtures/ledgers.json'
@@ -42,14 +42,42 @@ for (const [path, data] of Object.entries(files)) {
 }
 const defaultLedger = ledgers.ledgers.find((l) => l.default)?.name ?? 'stage'
 
-/** Mirrors ui-api: no ?ledger= means the default; an unknown name is a 400. */
-function fixture(request: Request, name: string): Response {
-  const ledger = new URL(request.url).searchParams.get('ledger') || defaultLedger
+type Venue = 'bitso' | 'etoro'
+const venueOf: Record<string, Venue> = Object.fromEntries(ledgers.ledgers.map((l) => [l.name, l.venue as Venue]))
+const firstOf = (venue: Venue) => ledgers.ledgers.find((l) => venueOf[l.name] === venue)?.name
+
+/**
+ * Mirrors ui-api's pickVenue: no ?ledger= means the default (the first ledger
+ * of the route's venue for /etoro/*), an unknown name is a 400, and a ledger
+ * on the other venue is a 400 too, so a Bitso page can never show data for
+ * the eToro ledger or the other way round. `venue` undefined is a
+ * venue-neutral route (controls).
+ */
+export function fixture(request: Request, name: string, venue?: Venue): Response {
+  const want = new URL(request.url).searchParams.get('ledger')
+  const ledger = want || (venue ? firstOf(venue) : undefined) || defaultLedger
   const files = byLedger[ledger]
-  if (!files) return HttpResponse.json({ error: `unknown ledger ${ledger}` }, { status: 400 })
+  if (!files || !(ledger in venueOf)) return HttpResponse.json({ error: `unknown ledger ${ledger}` }, { status: 400 })
+  if (venue && venueOf[ledger] !== venue) {
+    return HttpResponse.json(
+      { error: `ledger ${ledger} is on venue ${venueOf[ledger]}; this route serves ${venue} ledgers` },
+      { status: 400 },
+    )
+  }
   const f = files[name]
   if (!f) return HttpResponse.json({ error: `no fixture ${ledger}/${name}` }, { status: 404 })
   return HttpResponse.json(f)
+}
+
+const bitso = (request: Request, name: string) => fixture(request, name, 'bitso')
+const etoro = (request: Request, name: string) => fixture(request, name, 'etoro')
+
+/** The captured candles trimmed to ?days=, like ui-api's buildCandles. */
+async function candlesFor(res: Response, request: Request) {
+  if (!res.ok) return res
+  const c = (await res.json()) as { candles: unknown[] }
+  const days = Number(new URL(request.url).searchParams.get('days') ?? 180)
+  return HttpResponse.json({ ...c, candles: c.candles.slice(-days) })
 }
 
 const TIME_KEYS = new Set([
@@ -142,21 +170,21 @@ export const handlers = [
     const doc = runFiles[`./research/run-${date}--${name}.json`]
     return doc ? HttpResponse.json(doc) : HttpResponse.json({ error: `no run ${date}/${name}` }, { status: 404 })
   }),
-  http.get('/api/ui/forward-tests', ({ request }) => fixture(request, 'forward-tests')),
+  http.get('/api/ui/forward-tests', ({ request }) => bitso(request, 'forward-tests')),
   // GET /strategies, POST /strategies/:name/start|stop and POST /risk/halt-all.
   // Before controlHandlers, whose /risk/:action would otherwise take halt-all.
   ...strategyHandlers,
   // GET /controls, GET /risk (with any mock halt) and POST /risk/halt|resume.
   ...controlHandlers(fixture, defaultLedger),
-  http.get('/api/ui/health/data', ({ request }) => fixture(request, 'health-data')),
+  http.get('/api/ui/health/data', ({ request }) => bitso(request, 'health-data')),
   http.get('/api/ui/forward-tests/:book/ledger', ({ params, request }) =>
-    fixture(request, `ledger-${String(params.book)}`),
+    bitso(request, `ledger-${String(params.book)}`),
   ),
   http.get('/api/ui/forward-tests/:book/performance', ({ params, request }) =>
-    fixture(request, `performance-${String(params.book)}`),
+    bitso(request, `performance-${String(params.book)}`),
   ),
   http.get('/api/ui/forward-tests/:book/capacity', ({ params, request }) =>
-    fixture(request, `capacity-${String(params.book)}`),
+    bitso(request, `capacity-${String(params.book)}`),
   ),
   // Not ledger-specific: the report comes from public data (plan §6.4.14).
   http.get('/api/ui/forward-tests/:book/prereg', ({ params }) => {
@@ -165,13 +193,23 @@ export const handlers = [
   }),
   // One capture at the defaults; the cost / block / paths query is ignored.
   http.get('/api/ui/forward-tests/:book/montecarlo', ({ params, request }) =>
-    fixture(request, `montecarlo-${String(params.book)}`),
+    bitso(request, `montecarlo-${String(params.book)}`),
   ),
-  http.get('/api/ui/forward-tests/:book/candles', async ({ params, request }) => {
-    const res = fixture(request, `candles-${String(params.book)}`)
-    if (!res.ok) return res
-    const c = (await res.json()) as { candles: unknown[] }
-    const days = Number(new URL(request.url).searchParams.get('days') ?? 180)
-    return HttpResponse.json({ ...c, candles: c.candles.slice(-days) })
-  }),
+  http.get('/api/ui/forward-tests/:book/candles', ({ params, request }) =>
+    candlesFor(bitso(request, `candles-${String(params.book)}`), request),
+  ),
+
+  // The eToro venue (/api/ui/etoro/*, P5a): fixtures/etoro-demo/etoro-*.json.
+  http.get('/api/ui/etoro/forward-tests', ({ request }) => etoro(request, 'etoro-forward-tests')),
+  http.get('/api/ui/etoro/forward-tests/:book/ledger', ({ params, request }) =>
+    etoro(request, `etoro-ledger-${String(params.book)}`),
+  ),
+  http.get('/api/ui/etoro/forward-tests/:book/candles', ({ params, request }) =>
+    candlesFor(etoro(request, `etoro-candles-${String(params.book)}`), request),
+  ),
+  // The Risk page's halt from the controls mock shows here too (controls.ts).
+  http.get('/api/ui/etoro/risk', ({ request }) => withMockHalt(etoro(request, 'etoro-risk'), request, defaultLedger)),
+  http.get('/api/ui/etoro/health', ({ request }) => etoro(request, 'etoro-health')),
+  http.get('/api/ui/etoro/reconcile', ({ request }) => etoro(request, 'etoro-reconcile')),
+  http.get('/api/ui/etoro/risk-report', ({ request }) => etoro(request, 'etoro-risk-report')),
 ]

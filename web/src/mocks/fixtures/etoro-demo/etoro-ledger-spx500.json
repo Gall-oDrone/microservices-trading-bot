@@ -1,0 +1,473 @@
+{
+  "ledger": "etoro-demo",
+  "venue": "etoro",
+  "book": "spx500",
+  "mode": "demo",
+  "records": [
+    {
+      "schema": "etoro-ledger/v1",
+      "recorded_at": "2026-10-12T13:35:14Z",
+      "code_version": "357928a1768f",
+      "mode": "demo",
+      "venue": "etoro",
+      "book": "spx500",
+      "instrument": {
+        "symbol": "SPX500",
+        "id": 27
+      },
+      "prereg": "FORWARD-TEST-PREREGISTRATION-SMA50-INDEX-CFD-2026-10-12.md",
+      "decision": {
+        "bar_date": "2026-10-09",
+        "fill_date": "2026-10-12",
+        "close": 7816.31,
+        "sma50": 7697.4083999999975,
+        "signal": "long",
+        "prev_signal": "long",
+        "action": "hold"
+      },
+      "paper": {
+        "forward_start": "2026-10-13",
+        "started": false,
+        "days": 0,
+        "position": "flat",
+        "round_trips": 0,
+        "spread_rt_bps": 14.8,
+        "overnight_bps": 2.3,
+        "costs_status": "provisional (weekend capture 2026-10-10)",
+        "equity_if_closed": 1,
+        "hold_equity_if_closed": 1,
+        "max_drawdown": 0,
+        "financing_pct": 0,
+        "pending_action": "buy"
+      },
+      "candles": {
+        "source": "etoro live candles OneDay, instrument 27, NYSE trading days",
+        "first": "2022-12-15",
+        "last": "2026-10-09",
+        "bars": 957,
+        "missing_trading_days": 0,
+        "sha256_prefix": "d203abd972371196"
+      },
+      "demo": {
+        "env": "demo",
+        "target": "long",
+        "action": "open",
+        "position_before": {
+          "state": "flat"
+        },
+        "position_after": {
+          "state": "long",
+          "position_id": "3616683295",
+          "units": 0.140735,
+          "amount": 1099.99,
+          "open_rate": 7816.069999999999,
+          "opened_at": "2026-10-12T13:35:11Z"
+        },
+        "account": {
+          "currency": "USD",
+          "cash": 99993.93,
+          "equity": 99993.93,
+          "exposure": 0
+        },
+        "quote": {
+          "bid": 7817.27,
+          "ask": 7817.57,
+          "at": "2026-10-12T13:33:59Z",
+          "spread_bps": 0.38375832435672175
+        },
+        "costs": {
+          "spread": 0.06,
+          "markup": 0,
+          "transaction_fee": 0,
+          "overnight_fee": 0.25,
+          "weekend_fee": 0
+        },
+        "risk": {
+          "policy_version": "etoro-demo-2026-10-10",
+          "order": {
+            "book": "spx500",
+            "side": "buy",
+            "qty_btc": 0.14070868569133377,
+            "price": 7817.57,
+            "ref_price": 7816.31,
+            "leverage": 1
+          },
+          "state": {
+            "position_btc": 0,
+            "orders_today": 0,
+            "equity": 99993.93
+          },
+          "allowed": true
+        },
+        "order": {
+          "kind": "open",
+          "client_ref": "sma50-spx500-2026-10-12-open",
+          "request_id": "053fb194-68e1-5529-a163-4cb3373cc867",
+          "order_id": "388031765",
+          "status": "executed",
+          "position_ids": [
+            "3616683295"
+          ],
+          "avg_price": 7816.069999999999,
+          "units": 0.140735,
+          "amount": 1099.99,
+          "spread_cost": 0.04,
+          "intent_at": "2026-10-12T13:35:10.783098251Z",
+          "started": "2026-10-12T13:35:10.783098251Z",
+          "finished": "2026-10-12T13:35:14.525586234Z",
+          "fill_vs_mid_bps": -1.726912459611065,
+          "fill_vs_close_bps": -0.307050257732358
+        }
+      }
+    },
+    {
+      "schema": "etoro-ledger/v1",
+      "recorded_at": "2026-10-13T13:35:05Z",
+      "code_version": "357928a1768f",
+      "mode": "demo",
+      "venue": "etoro",
+      "book": "spx500",
+      "instrument": {
+        "symbol": "SPX500",
+        "id": 27
+      },
+      "prereg": "FORWARD-TEST-PREREGISTRATION-SMA50-INDEX-CFD-2026-10-12.md",
+      "decision": {
+        "bar_date": "2026-10-12",
+        "fill_date": "2026-10-13",
+        "close": 7806.65,
+        "sma50": 7703.743599999998,
+        "signal": "long",
+        "prev_signal": "long",
+        "action": "hold"
+      },
+      "paper": {
+        "forward_start": "2026-10-13",
+        "started": false,
+        "days": 0,
+        "position": "flat",
+        "round_trips": 0,
+        "spread_rt_bps": 14.8,
+        "overnight_bps": 2.3,
+        "costs_status": "provisional (weekend capture 2026-10-10)",
+        "equity_if_closed": 1,
+        "hold_equity_if_closed": 1,
+        "max_drawdown": 0,
+        "financing_pct": 0,
+        "pending_action": "buy"
+      },
+      "candles": {
+        "source": "etoro live candles OneDay, instrument 27, NYSE trading days",
+        "first": "2022-12-16",
+        "last": "2026-10-12",
+        "bars": 957,
+        "missing_trading_days": 0,
+        "sha256_prefix": "16ca4396ec39d336"
+      },
+      "demo": {
+        "env": "demo",
+        "target": "long",
+        "action": "none",
+        "position_before": {
+          "state": "long",
+          "position_id": "3616683295",
+          "units": 0.140735,
+          "amount": 1099.99,
+          "open_rate": 7816.069999999999,
+          "opened_at": "2026-10-12T13:35:11Z"
+        },
+        "position_after": {
+          "state": "long",
+          "position_id": "3616683295",
+          "units": 0.140735,
+          "amount": 1099.99,
+          "open_rate": 7816.069999999999,
+          "opened_at": "2026-10-12T13:35:11Z"
+        },
+        "account": {
+          "currency": "USD",
+          "cash": 97793.95,
+          "equity": 99981.23,
+          "exposure": 2187.29
+        }
+      }
+    },
+    {
+      "schema": "etoro-ledger/v1",
+      "recorded_at": "2026-10-14T13:35:05Z",
+      "code_version": "357928a1768f",
+      "mode": "demo",
+      "venue": "etoro",
+      "book": "spx500",
+      "instrument": {
+        "symbol": "SPX500",
+        "id": 27
+      },
+      "prereg": "FORWARD-TEST-PREREGISTRATION-SMA50-INDEX-CFD-2026-10-12.md",
+      "decision": {
+        "bar_date": "2026-10-13",
+        "fill_date": "2026-10-14",
+        "close": 7806.05,
+        "sma50": 7707.798799999998,
+        "signal": "long",
+        "prev_signal": "long",
+        "action": "hold"
+      },
+      "paper": {
+        "forward_start": "2026-10-13",
+        "started": true,
+        "days": 1,
+        "position": "long",
+        "round_trips": 1,
+        "spread_rt_bps": 14.8,
+        "overnight_bps": 2.3,
+        "costs_status": "provisional (weekend capture 2026-10-10)",
+        "equity_if_closed": 0.9988020426575319,
+        "hold_equity_if_closed": 0.9988020426575319,
+        "max_drawdown": 0.00045829648186468397,
+        "financing_pct": 0,
+        "pending_action": "hold"
+      },
+      "candles": {
+        "source": "etoro live candles OneDay, instrument 27, NYSE trading days",
+        "first": "2022-12-19",
+        "last": "2026-10-13",
+        "bars": 957,
+        "missing_trading_days": 0,
+        "sha256_prefix": "679b73356171bf33"
+      },
+      "demo": {
+        "env": "demo",
+        "target": "long",
+        "action": "none",
+        "position_before": {
+          "state": "long",
+          "position_id": "3616683295",
+          "units": 0.140735,
+          "amount": 1099.99,
+          "open_rate": 7816.069999999999,
+          "opened_at": "2026-10-12T13:35:11Z"
+        },
+        "position_after": {
+          "state": "long",
+          "position_id": "3616683295",
+          "units": 0.140735,
+          "amount": 1099.99,
+          "open_rate": 7816.069999999999,
+          "opened_at": "2026-10-12T13:35:11Z"
+        },
+        "account": {
+          "currency": "USD",
+          "cash": 97793.95,
+          "equity": 99974.17,
+          "exposure": 2180.23
+        }
+      }
+    },
+    {
+      "schema": "etoro-ledger/v1",
+      "recorded_at": "2026-10-15T13:35:05Z",
+      "code_version": "357928a1768f",
+      "mode": "demo",
+      "venue": "etoro",
+      "book": "spx500",
+      "instrument": {
+        "symbol": "SPX500",
+        "id": 27
+      },
+      "prereg": "FORWARD-TEST-PREREGISTRATION-SMA50-INDEX-CFD-2026-10-12.md",
+      "decision": {
+        "bar_date": "2026-10-14",
+        "fill_date": "2026-10-15",
+        "close": 7715.66,
+        "sma50": 7707.169999999997,
+        "signal": "long",
+        "prev_signal": "long",
+        "action": "hold"
+      },
+      "paper": {
+        "forward_start": "2026-10-13",
+        "started": true,
+        "days": 2,
+        "position": "long",
+        "round_trips": 1,
+        "spread_rt_bps": 14.8,
+        "overnight_bps": 2.3,
+        "costs_status": "provisional (weekend capture 2026-10-10)",
+        "equity_if_closed": 0.9870065397701295,
+        "hold_equity_if_closed": 0.9870065397701295,
+        "max_drawdown": 0.012262364257422997,
+        "financing_pct": 0.02298945918091711,
+        "pending_action": "hold"
+      },
+      "candles": {
+        "source": "etoro live candles OneDay, instrument 27, NYSE trading days",
+        "first": "2022-12-20",
+        "last": "2026-10-14",
+        "bars": 957,
+        "missing_trading_days": 0,
+        "sha256_prefix": "7aad7c9a20f0000a",
+        "revised_closes": 13,
+        "max_revision_bps": 0.9224097499998402
+      },
+      "demo": {
+        "env": "demo",
+        "target": "long",
+        "action": "none",
+        "position_before": {
+          "state": "long",
+          "position_id": "3616683295",
+          "units": 0.140735,
+          "amount": 1099.99,
+          "open_rate": 7816.069999999999,
+          "opened_at": "2026-10-12T13:35:11Z"
+        },
+        "position_after": {
+          "state": "long",
+          "position_id": "3616683295",
+          "units": 0.140735,
+          "amount": 1099.99,
+          "open_rate": 7816.069999999999,
+          "opened_at": "2026-10-12T13:35:11Z"
+        },
+        "account": {
+          "currency": "USD",
+          "cash": 97793.95,
+          "equity": 99931.23,
+          "exposure": 2137.2799999999997
+        }
+      }
+    },
+    {
+      "schema": "etoro-ledger/v1",
+      "recorded_at": "2026-10-16T13:35:06Z",
+      "code_version": "357928a1768f",
+      "mode": "demo",
+      "venue": "etoro",
+      "book": "spx500",
+      "instrument": {
+        "symbol": "SPX500",
+        "id": 27
+      },
+      "prereg": "FORWARD-TEST-PREREGISTRATION-SMA50-INDEX-CFD-2026-10-12.md",
+      "decision": {
+        "bar_date": "2026-10-15",
+        "fill_date": "2026-10-16",
+        "close": 7738.57,
+        "sma50": 7707.335999999997,
+        "signal": "long",
+        "prev_signal": "long",
+        "action": "hold"
+      },
+      "paper": {
+        "forward_start": "2026-10-13",
+        "started": true,
+        "days": 3,
+        "position": "long",
+        "round_trips": 1,
+        "spread_rt_bps": 14.8,
+        "overnight_bps": 2.3,
+        "costs_status": "provisional (weekend capture 2026-10-10)",
+        "equity_if_closed": 0.9897106944054505,
+        "hold_equity_if_closed": 0.9897106944054505,
+        "max_drawdown": 0.01248959678939987,
+        "financing_pct": 0.04571271237860799,
+        "pending_action": "hold"
+      },
+      "candles": {
+        "source": "etoro live candles OneDay, instrument 27, NYSE trading days",
+        "first": "2022-12-21",
+        "last": "2026-10-15",
+        "bars": 957,
+        "missing_trading_days": 0,
+        "sha256_prefix": "2efc231eea544ee7",
+        "revised_closes": 13,
+        "max_revision_bps": 0.9224948418234823
+      },
+      "demo": {
+        "env": "demo",
+        "target": "long",
+        "action": "none",
+        "position_before": {
+          "state": "long",
+          "position_id": "3616683295",
+          "units": 0.140735,
+          "amount": 1099.99,
+          "open_rate": 7816.069999999999,
+          "opened_at": "2026-10-12T13:35:11Z"
+        },
+        "position_after": {
+          "state": "long",
+          "position_id": "3616683295",
+          "units": 0.140735,
+          "amount": 1099.99,
+          "open_rate": 7816.069999999999,
+          "opened_at": "2026-10-12T13:35:11Z"
+        },
+        "account": {
+          "currency": "USD",
+          "cash": 97793.95,
+          "equity": 99949.9,
+          "exposure": 2155.95
+        }
+      }
+    }
+  ],
+  "equity": [
+    {
+      "date": "2026-10-09",
+      "equity": 1,
+      "hold_equity": 1,
+      "max_drawdown": 0,
+      "signal": "long",
+      "close": 7816.31,
+      "sma50": 7697.4083999999975,
+      "demo_equity": 99993.93,
+      "demo_exposure": 0
+    },
+    {
+      "date": "2026-10-12",
+      "equity": 1,
+      "hold_equity": 1,
+      "max_drawdown": 0,
+      "signal": "long",
+      "close": 7806.65,
+      "sma50": 7703.743599999998,
+      "demo_equity": 99981.23,
+      "demo_exposure": 2187.29
+    },
+    {
+      "date": "2026-10-13",
+      "equity": 0.9988020426575319,
+      "hold_equity": 0.9988020426575319,
+      "max_drawdown": 0.00045829648186468397,
+      "signal": "long",
+      "close": 7806.05,
+      "sma50": 7707.798799999998,
+      "demo_equity": 99974.17,
+      "demo_exposure": 2180.23
+    },
+    {
+      "date": "2026-10-14",
+      "equity": 0.9870065397701295,
+      "hold_equity": 0.9870065397701295,
+      "max_drawdown": 0.012262364257422997,
+      "signal": "long",
+      "close": 7715.66,
+      "sma50": 7707.169999999997,
+      "demo_equity": 99931.23,
+      "demo_exposure": 2137.2799999999997
+    },
+    {
+      "date": "2026-10-15",
+      "equity": 0.9897106944054505,
+      "hold_equity": 0.9897106944054505,
+      "max_drawdown": 0.01248959678939987,
+      "signal": "long",
+      "close": 7738.57,
+      "sma50": 7707.335999999997,
+      "demo_equity": 99949.9,
+      "demo_exposure": 2155.95
+    }
+  ]
+}

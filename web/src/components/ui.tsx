@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
-import { ApiError } from '../api/client'
-import type { Finding, Signal } from '../api/schemas'
+import { ApiError, useLedgers } from '../api/client'
+import type { Finding, Signal, Venue } from '../api/schemas'
 import { IconAlert, IconArrowUp, IconBlock, IconInfo, IconMinus } from './icons'
 
 export function Stat({
@@ -48,7 +48,7 @@ export function Badge({
   mono,
   title,
 }: {
-  tone?: 'long' | 'flat' | 'loss' | 'warn' | 'info' | 'ok' | 'block'
+  tone?: 'long' | 'flat' | 'loss' | 'warn' | 'info' | 'ok' | 'block' | 'etoro'
   children: ReactNode
   dot?: boolean
   mono?: boolean
@@ -62,12 +62,29 @@ export function Badge({
   )
 }
 
-/** Short label for a ledger, shown on every card so stage and dry-run are never confused. */
-export function LedgerBadge({ name }: { name: string }) {
+/**
+ * Short label for a ledger, shown on every card so stage, dry-run and the
+ * eToro demo are never confused. The tone follows the venue: eToro ledgers
+ * take the venue accent, Bitso's `stage` stays blue, other Bitso ledgers grey.
+ * `venue` may be passed; otherwise it is looked up in the ledgers list.
+ */
+export function LedgerBadge({ name, venue }: { name: string; venue?: Venue }) {
+  const ledgers = useLedgers()
+  const v = venue ?? ledgers.data?.ledgers.find((l) => l.name === name)?.venue ?? 'bitso'
+  const tone = v === 'etoro' ? 'etoro' : name === 'stage' ? 'info' : 'flat'
   return (
-    <Badge tone={name === 'stage' ? 'info' : 'flat'} mono title={`Ledger: ${name}`}>
+    <Badge tone={tone} mono title={`Ledger: ${name}`}>
       {name}
     </Badge>
+  )
+}
+
+/** The venue as a small uppercase tag (ledger picker, kill switch, landing tiles). */
+export function VenueTag({ venue }: { venue: Venue }) {
+  return (
+    <span className={`venue-tag ${venue}`} data-testid="venue-tag">
+      {venue}
+    </span>
   )
 }
 

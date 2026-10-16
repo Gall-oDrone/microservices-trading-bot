@@ -2,6 +2,7 @@
   "ledgers": [
     {
       "name": "stage",
+      "venue": "bitso",
       "path": "../strategy-executor/daily-executor-data/stage/ledger.jsonl",
       "default": true,
       "found": true,
@@ -13,12 +14,25 @@
     },
     {
       "name": "dry-run",
+      "venue": "bitso",
       "path": "../strategy-executor/daily-executor-data/ledger.jsonl",
       "default": false,
       "found": false,
       "records": 0,
       "modes": [],
       "last_bar_date": ""
+    },
+    {
+      "name": "etoro-demo",
+      "venue": "etoro",
+      "path": "../strategy-executor/etoro-daily-data/demo/ledger.jsonl",
+      "default": false,
+      "found": true,
+      "records": 10,
+      "modes": [
+        "demo"
+      ],
+      "last_bar_date": "2026-10-15"
     }
   ]
 }

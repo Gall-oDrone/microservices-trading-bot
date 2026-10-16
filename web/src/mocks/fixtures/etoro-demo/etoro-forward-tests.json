@@ -1,0 +1,211 @@
+{
+  "ledger": "etoro-demo",
+  "venue": "etoro",
+  "generated_at": "2026-10-16T17:42:58Z",
+  "session": {
+    "now_new_york": "2026-10-16T13:42:58-04:00",
+    "date": "2026-10-16",
+    "trading_day": true,
+    "open": true,
+    "opens_at": "2026-10-16T09:30:00-04:00",
+    "closes_at": "2026-10-16T16:00:00-04:00"
+  },
+  "books": [
+    {
+      "ledger": "etoro-demo",
+      "venue": "etoro",
+      "book": "nsdq100",
+      "instrument": {
+        "symbol": "NSDQ100",
+        "id": 28
+      },
+      "quote": "USD",
+      "prereg": "FORWARD-TEST-PREREGISTRATION-SMA50-INDEX-CFD-2026-10-12.md",
+      "mode": "demo",
+      "code_version": "357928a1768f",
+      "recorded_at": "2026-10-16T13:35:05Z",
+      "decision": {
+        "bar_date": "2026-10-15",
+        "fill_date": "2026-10-16",
+        "close": 29868.7,
+        "sma50": 29871.959200000056,
+        "signal": "flat",
+        "prev_signal": "long",
+        "action": "sell"
+      },
+      "paper": {
+        "forward_start": "2026-10-13",
+        "started": true,
+        "days": 3,
+        "position": "long",
+        "round_trips": 1,
+        "spread_rt_bps": 15.5,
+        "overnight_bps": 2.3,
+        "costs_status": "provisional (weekend capture 2026-10-10)",
+        "equity_if_closed": 0.9728629924364185,
+        "hold_equity_if_closed": 0.9728629924364185,
+        "max_drawdown": 0.026382102125851015,
+        "financing_pct": 0.04536346813340405,
+        "pending_action": "sell"
+      },
+      "candles": {
+        "source": "etoro live candles OneDay, instrument 28, NYSE trading days",
+        "first": "2022-12-28",
+        "last": "2026-10-15",
+        "bars": 953,
+        "missing_trading_days": 0,
+        "sha256_prefix": "1764b216226496d9",
+        "revised_closes": 16,
+        "max_revision_bps": 1.2597631645240785
+      },
+      "demo_position": {
+        "state": "flat"
+      },
+      "demo_action": "close",
+      "account": {
+        "currency": "USD",
+        "cash": 97793.95,
+        "equity": 99949.9,
+        "exposure": 2155.95
+      },
+      "last_order": {
+        "bar_date": "2026-10-15",
+        "fill_date": "2026-10-16",
+        "kind": "close",
+        "client_ref": "sma50-nsdq100-2026-10-16-close",
+        "request_id": "c8b55e0a-6ae5-5e93-b983-73663c8940c6",
+        "order_id": "389021477",
+        "status": "executed",
+        "position_ids": [
+          "3616683146"
+        ],
+        "avg_price": 29770.5,
+        "units": 0.035799,
+        "amount": 1099.99,
+        "intent_at": "2026-10-16T13:35:04.631651563Z",
+        "started": "2026-10-16T13:35:04.631651563Z",
+        "finished": "2026-10-16T13:35:05.881854517Z",
+        "fill_vs_mid_bps": 5.958725336332279,
+        "fill_vs_close_bps": 32.87722599242709
+      },
+      "distance_to_sma_pct": -0.010911757123862064,
+      "excess_vs_hold_pct": 0,
+      "run": {
+        "status": "ok",
+        "due_date": "2026-10-16",
+        "last_fill_date": "2026-10-16",
+        "last_bar_date": "2026-10-15",
+        "missing_days": [],
+        "today_due": true,
+        "today_done": true,
+        "next_run_at": "2026-10-19T09:35:00-04:00",
+        "next_run_date": "2026-10-19",
+        "message": "up to date"
+      },
+      "risk_warnings": 0,
+      "risk_blocks": 0,
+      "risk_findings": []
+    },
+    {
+      "ledger": "etoro-demo",
+      "venue": "etoro",
+      "book": "spx500",
+      "instrument": {
+        "symbol": "SPX500",
+        "id": 27
+      },
+      "quote": "USD",
+      "prereg": "FORWARD-TEST-PREREGISTRATION-SMA50-INDEX-CFD-2026-10-12.md",
+      "mode": "demo",
+      "code_version": "357928a1768f",
+      "recorded_at": "2026-10-16T13:35:06Z",
+      "decision": {
+        "bar_date": "2026-10-15",
+        "fill_date": "2026-10-16",
+        "close": 7738.57,
+        "sma50": 7707.335999999997,
+        "signal": "long",
+        "prev_signal": "long",
+        "action": "hold"
+      },
+      "paper": {
+        "forward_start": "2026-10-13",
+        "started": true,
+        "days": 3,
+        "position": "long",
+        "round_trips": 1,
+        "spread_rt_bps": 14.8,
+        "overnight_bps": 2.3,
+        "costs_status": "provisional (weekend capture 2026-10-10)",
+        "equity_if_closed": 0.9897106944054505,
+        "hold_equity_if_closed": 0.9897106944054505,
+        "max_drawdown": 0.01248959678939987,
+        "financing_pct": 0.04571271237860799,
+        "pending_action": "hold"
+      },
+      "candles": {
+        "source": "etoro live candles OneDay, instrument 27, NYSE trading days",
+        "first": "2022-12-21",
+        "last": "2026-10-15",
+        "bars": 957,
+        "missing_trading_days": 0,
+        "sha256_prefix": "2efc231eea544ee7",
+        "revised_closes": 13,
+        "max_revision_bps": 0.9224948418234823
+      },
+      "demo_position": {
+        "state": "long",
+        "position_id": "3616683295",
+        "units": 0.140735,
+        "amount": 1099.99,
+        "open_rate": 7816.069999999999,
+        "opened_at": "2026-10-12T13:35:11Z"
+      },
+      "demo_action": "none",
+      "account": {
+        "currency": "USD",
+        "cash": 97793.95,
+        "equity": 99949.9,
+        "exposure": 2155.95
+      },
+      "last_order": {
+        "bar_date": "2026-10-09",
+        "fill_date": "2026-10-12",
+        "kind": "open",
+        "client_ref": "sma50-spx500-2026-10-12-open",
+        "request_id": "053fb194-68e1-5529-a163-4cb3373cc867",
+        "order_id": "388031765",
+        "status": "executed",
+        "position_ids": [
+          "3616683295"
+        ],
+        "avg_price": 7816.069999999999,
+        "units": 0.140735,
+        "amount": 1099.99,
+        "spread_cost": 0.04,
+        "intent_at": "2026-10-12T13:35:10.783098251Z",
+        "started": "2026-10-12T13:35:10.783098251Z",
+        "finished": "2026-10-12T13:35:14.525586234Z",
+        "fill_vs_mid_bps": -1.726912459611065,
+        "fill_vs_close_bps": -0.307050257732358
+      },
+      "distance_to_sma_pct": 0.40361462130604375,
+      "excess_vs_hold_pct": 0,
+      "run": {
+        "status": "ok",
+        "due_date": "2026-10-16",
+        "last_fill_date": "2026-10-16",
+        "last_bar_date": "2026-10-15",
+        "missing_days": [],
+        "today_due": true,
+        "today_done": true,
+        "next_run_at": "2026-10-19T09:35:00-04:00",
+        "next_run_date": "2026-10-19",
+        "message": "up to date"
+      },
+      "risk_warnings": 0,
+      "risk_blocks": 0,
+      "risk_findings": []
+    }
+  ]
+}

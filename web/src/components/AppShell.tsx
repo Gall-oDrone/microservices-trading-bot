@@ -1,12 +1,16 @@
 import { Link, NavLink, Outlet, useLocation, useSearchParams } from 'react-router'
 import {
   useDataHealth,
+  useEtoroForwardTests,
+  useEtoroHealth,
+  useEtoroRisk,
   useForwardTests,
   useHealth,
   useLedgerName,
   useLedgerSearch,
   useLedgers,
   useRisk,
+  useVenue,
 } from '../api/client'
 import { ago } from '../lib/format'
 import { useTheme } from '../lib/theme'
@@ -22,7 +26,7 @@ import {
   IconSun,
   IconTrend,
 } from './icons'
-import { Badge } from './ui'
+import { Badge, VenueTag } from './ui'
 
 /** Light / dark switch. Dark is the default; the choice persists in localStorage. */
 export function ThemeToggle() {
@@ -64,8 +68,9 @@ function HealthFoot() {
 }
 
 /**
- * Picks which ledger every page reads (stage, dry-run, …). The choice lives in
- * the URL (`?ledger=`), so it is shareable and survives reloads.
+ * Picks which ledger every page reads (stage, dry-run, etoro-demo, …). The
+ * choice lives in the URL (`?ledger=`), so it is shareable and survives
+ * reloads. Each ledger shows its venue: the pages, units and clock follow it.
  */
 function LedgerPicker() {
   const q = useLedgers()
@@ -79,6 +84,7 @@ function LedgerPicker() {
     <div className="ledger-picker">
       <label className="nav-label" htmlFor="ledger-picker">
         Ledger
+        {!unknown && <VenueTag venue={current.venue} />}
       </label>
       {ledgers.length === 1 ? (
         <div className="ledger-single" id="ledger-picker" title={current.path}>
@@ -102,7 +108,7 @@ function LedgerPicker() {
           {unknown && <option value="">unknown: {selected}</option>}
           {ledgers.map((l) => (
             <option key={l.name} value={l.name}>
-              {l.name} {l.found ? `· ${l.records} rec` : '· no file yet'}
+              {l.name} {l.found ? `· ${l.records} rec` : '· no file yet'} · {l.venue}
             </option>
           ))}
         </select>
@@ -113,14 +119,23 @@ function LedgerPicker() {
 
 function Nav() {
   const search = useLedgerSearch()
-  const ft = useForwardTests()
-  const risk = useRisk()
-  const missed = ft.data?.books.filter((b) => b.run.status === 'missed').length ?? 0
-  const blocks = risk.data?.blocks ?? 0
-  const warns = risk.data?.warnings ?? 0
-  const health = useDataHealth()
-  const healthFails = health.data?.checks.filter((c) => c.status === 'fail').length ?? 0
-  const healthWarns = health.data?.checks.filter((c) => c.status === 'warn').length ?? 0
+  const venue = useVenue()
+  const bitso = venue === 'bitso'
+  const etoro = venue === 'etoro'
+  // Each venue's own endpoints feed the counts; the other venue's stay idle.
+  const ft = useForwardTests({ enabled: bitso })
+  const eft = useEtoroForwardTests({ enabled: etoro })
+  const risk = useRisk({ enabled: bitso })
+  const erisk = useEtoroRisk({ enabled: etoro })
+  const health = useDataHealth({ enabled: bitso })
+  const ehealth = useEtoroHealth({ enabled: etoro })
+  const books = (etoro ? eft.data?.books : ft.data?.books) ?? []
+  const missed = books.filter((b) => b.run.status === 'missed').length
+  const blocks = (etoro ? erisk.data?.blocks : risk.data?.blocks) ?? 0
+  const warns = (etoro ? erisk.data?.warnings : risk.data?.warnings) ?? 0
+  const checks = (etoro ? ehealth.data?.checks : health.data?.checks) ?? []
+  const healthFails = checks.filter((c) => c.status === 'fail').length
+  const healthWarns = checks.filter((c) => c.status === 'warn').length
   const inRuns = useLocation().pathname.startsWith('/research/runs')
   return (
     <nav className="nav" aria-label="Main">

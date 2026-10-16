@@ -1,11 +1,31 @@
-/** Formatting helpers. Daily bars are Mexico City days, so times show there. */
+/**
+ * Formatting helpers. Bitso daily bars are Mexico City days, eToro index
+ * CFDs trade on New York time, so each venue has its own clock (fmtMx, fmtNY).
+ */
 
 const MX_TZ = 'America/Mexico_City'
+export const NY_TZ = 'America/New_York'
 
-const quoteDigits: Record<string, number> = { mxn: 0, usd: 0 }
+/**
+ * The eToro index-CFD books (porting plan): symbol, quote currency and price
+ * precision. Bitso books (btc_mxn, btc_usd) are not here: their quote comes
+ * from the book name and their prices are whole pesos / dollars.
+ */
+export const CFD_BOOKS: Record<string, { symbol: string; label: string; quote: string; digits: number }> = {
+  nsdq100: { symbol: 'NSDQ100', label: 'NSDQ100 · Nasdaq-100 CFD', quote: 'usd', digits: 2 },
+  spx500: { symbol: 'SPX500', label: 'SPX500 · S&P 500 CFD', quote: 'usd', digits: 2 },
+}
 
-export function fmtPrice(v: number, quote: string): string {
-  const d = quoteDigits[quote.toLowerCase()] ?? 2
+const QUOTE_DIGITS: Record<string, number> = { mxn: 0, usd: 0 }
+
+/** Decimals a price is shown with: whole MXN/USD on Bitso, cents on the index CFDs. */
+export function quoteDigits(quote: string, book?: string): number {
+  if (book && CFD_BOOKS[book]) return CFD_BOOKS[book].digits
+  return QUOTE_DIGITS[quote.toLowerCase()] ?? 2
+}
+
+export function fmtPrice(v: number, quote: string, book?: string): string {
+  const d = quoteDigits(quote, book)
   return v.toLocaleString('en-US', { minimumFractionDigits: d, maximumFractionDigits: d })
 }
 
@@ -15,6 +35,17 @@ export function fmtMoney(v: number, quote: string, digits = 2): string {
 
 export function fmtBTC(v: number): string {
   return `${v.toFixed(8)} BTC`
+}
+
+/** CFD instrument units (eToro quotes them to six decimals): 0.140735 -> "0.140735 u". */
+export function fmtUnits(v: number): string {
+  return `${v.toFixed(6)} u`
+}
+
+/** An eToro demo position in words: "flat" or "long 0.140735 u". */
+export function positionText(p: { state: string; units?: number } | null | undefined): string {
+  if (!p || p.state !== 'long' || !p.units) return 'flat'
+  return `long ${fmtUnits(p.units)}`
 }
 
 /** 0.0123 -> "1.23%". */
@@ -29,16 +60,26 @@ export function fmtPct(v: number, digits = 2, signed = true): string {
 }
 
 export function fmtBps(v: number, signed = false): string {
-  const s = v.toFixed(0)
-  return signed && v > 0 ? `+${s} bps` : `${s} bps`
+  const r = Math.round(v) === 0 ? 0 : v // no "-0 bps"
+  const s = r.toFixed(0)
+  return signed && r > 0 ? `+${s} bps` : `${s} bps`
 }
 
 /** "2026-10-01T01:00:36Z" -> "30 Sep 2026, 19:00" in Mexico City. */
 export function fmtMx(iso: string): string {
+  return fmtIn(iso, MX_TZ)
+}
+
+/** "2026-10-19T13:35:00Z" -> "19 Oct 2026, 09:35" in New York (EDT or EST as the date falls). */
+export function fmtNY(iso: string): string {
+  return fmtIn(iso, NY_TZ)
+}
+
+function fmtIn(iso: string, timeZone: string): string {
   const d = new Date(iso)
   if (Number.isNaN(d.getTime())) return iso
   return d.toLocaleString('en-GB', {
-    timeZone: MX_TZ,
+    timeZone,
     day: '2-digit',
     month: 'short',
     year: 'numeric',
@@ -46,6 +87,13 @@ export function fmtMx(iso: string): string {
     minute: '2-digit',
     hour12: false,
   })
+}
+
+/** Only the clock: "2026-10-19T13:35:00Z" -> "09:35" in New York. */
+export function fmtNYTime(iso: string): string {
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return iso
+  return d.toLocaleTimeString('en-GB', { timeZone: NY_TZ, hour: '2-digit', minute: '2-digit', hour12: false })
 }
 
 export function fmtUTC(iso: string): string {
@@ -78,8 +126,14 @@ export function fmtDuration(fromIso: string, toIso: string): string {
   return m < 60 ? `${m}m` : `${Math.floor(m / 60)}h ${String(m % 60).padStart(2, '0')}m`
 }
 
+/** "btc_mxn" -> "BTC / MXN"; "nsdq100" -> "NSDQ100 · Nasdaq-100 CFD". */
 export function bookLabel(book: string): string {
-  return book.replace('_', ' / ').toUpperCase()
+  return CFD_BOOKS[book]?.label ?? book.replace('_', ' / ').toUpperCase()
+}
+
+/** The short form for table headers and chips: "nsdq100" -> "NSDQ100", "btc_mxn" -> "BTC / MXN". */
+export function bookSymbol(book: string): string {
+  return CFD_BOOKS[book]?.symbol ?? bookLabel(book)
 }
 
 export function ago(iso: string, now = Date.now()): string {

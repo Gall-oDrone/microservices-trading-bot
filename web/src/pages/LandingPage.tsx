@@ -6,18 +6,45 @@
  */
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { Link } from 'react-router'
-import { useCandles, useForwardTests, useHealth, useLedgerSearch, useRisk, useRuns, useStudies } from '../api/client'
+import {
+  useCandles,
+  useEtoroForwardTests,
+  useEtoroLedgerName,
+  useForwardTests,
+  useHealth,
+  useLedgerName,
+  useLedgerSearch,
+  useRisk,
+  useRuns,
+  useStudies,
+  useVenue,
+  type LedgerOpts,
+} from '../api/client'
 import { useLiveStream, type LiveState } from '../api/live'
+import type { EtoroForwardTest } from '../api/etoroSchemas'
 import type { ForwardTest, RiskResponse, Study } from '../api/schemas'
 import { ThemeToggle } from '../components/AppShell'
+import { SessionClock } from '../components/etoro/parts'
 import { IconArrowRight, IconExternal, IconLogo } from '../components/icons'
 import { LiveBadge, TickPrice } from '../components/live'
 import { TrendChart } from '../components/TrendChart'
-import { Badge, SignalPill, Skeleton } from '../components/ui'
-import { bookLabel, fmtBps, fmtDate, fmtFrac, fmtPct, fmtPrice } from '../lib/format'
+import { Badge, SignalPill, Skeleton, VenueTag } from '../components/ui'
+import { bookLabel, bookSymbol, fmtBps, fmtDate, fmtFrac, fmtNY, fmtPct, fmtPrice, positionText } from '../lib/format'
 import { KIND_LABEL, KIND_TONE } from '../lib/research'
 import { currentRun, trendGeometry } from '../lib/trend'
 import { usePageTitle } from '../lib/usePageTitle'
+
+/**
+ * The landing page is about the Bitso forward test; its Bitso queries follow
+ * the URL's ledger unless that ledger is on another venue, in which case
+ * they fall back to the default (first) ledger. Nothing is asked until the
+ * ledgers list has answered.
+ */
+function useBitsoOpts(): LedgerOpts {
+  const selected = useLedgerName()
+  const venue = useVenue()
+  return { ledger: venue === 'etoro' ? '' : selected, enabled: venue !== undefined }
+}
 
 const REPO = 'https://github.com/Gall-oDrone/microservices-trading-bot'
 
@@ -130,7 +157,7 @@ function HeroCard({ books, live, loading }: { books: ForwardTest[]; live: LiveSt
   const book = picked && options.includes(picked) ? picked : options[0]
   const ft = books.find((b) => b.book === book)
   const quote = ft?.quote ?? book.split('_')[1] ?? ''
-  const q = useCandles(book, 365)
+  const q = useCandles(book, 365, useBitsoOpts())
   const candles = useMemo(() => q.data?.candles ?? [], [q.data])
   const g = useMemo(() => trendGeometry(candles), [candles])
   const run = useMemo(() => currentRun(candles), [candles])
@@ -314,6 +341,118 @@ function BookTile({ ft }: { ft: ForwardTest }) {
   )
 }
 
+/** One eToro book on the landing: signal, distance to the SMA, the demo position and the next 09:35 New York run. */
+function EtoroTile({ ft, ledger }: { ft: EtoroForwardTest; ledger: string }) {
+  const d = ft.decision
+  const recorded = ft.recorded_at !== ''
+  const above = ft.distance_to_sma_pct >= 0
+  const search = `?ledger=${encodeURIComponent(ledger)}`
+  return (
+    <article
+      className="lp-book venue-etoro"
+      data-testid={`lp-etoro-${ft.book}`}
+      aria-labelledby={`lp-etoro-${ft.book}-title`}
+    >
+      <header className="lp-book-head">
+        <div>
+          <h3 id={`lp-etoro-${ft.book}-title`}>{bookLabel(ft.book)}</h3>
+          <span className="faint">Paper + eToro demo{recorded && ` · bar ${fmtDate(d.bar_date)}`}</span>
+        </div>
+        <SignalPill signal={recorded ? d.signal : ''} />
+      </header>
+      {recorded ? (
+        <>
+          <p className="lp-book-big">
+            <span className={`num ${above ? 'pos' : 'neg'}`}>
+              {fmtPct(Math.abs(ft.distance_to_sma_pct), Math.abs(ft.distance_to_sma_pct) < 0.1 ? 2 : 1, false)}
+            </span>{' '}
+            {above ? 'above' : 'below'} the 50-day average
+          </p>
+          <dl className="lp-book-rows">
+            <div>
+              <dt>Close / SMA50</dt>
+              <dd className="num">
+                {fmtPrice(d.close, ft.quote, ft.book)}{' '}
+                <span className="faint">/ {fmtPrice(d.sma50, ft.quote, ft.book)}</span>
+              </dd>
+            </div>
+            <div>
+              <dt>Demo position</dt>
+              <dd className="num" data-testid={`lp-etoro-position-${ft.book}`}>
+                {positionText(ft.demo_position)}
+                {ft.demo_position?.state === 'long' && ft.demo_position.open_rate ? (
+                  <span className="faint"> @ {fmtPrice(ft.demo_position.open_rate, ft.quote, ft.book)}</span>
+                ) : null}
+              </dd>
+            </div>
+            <div>
+              <dt>Paper / CFD hold</dt>
+              <dd className="num">
+                {ft.paper.equity_if_closed.toFixed(4)}{' '}
+                <span className="faint">/ {ft.paper.hold_equity_if_closed.toFixed(4)}</span>
+              </dd>
+            </div>
+            <div>
+              <dt>Next run (New York)</dt>
+              <dd className="num" data-testid="next-run" title={ft.run.next_run_at}>
+                {fmtNY(ft.run.next_run_at)} NY
+              </dd>
+            </div>
+          </dl>
+        </>
+      ) : (
+        <p className="muted lp-book-empty">No records in the {ft.ledger} ledger yet.</p>
+      )}
+      <Link to={{ pathname: `/forward-tests/${ft.book}`, search }} className="lp-link" id={`lp-open-etoro-${ft.book}`}>
+        Open {bookSymbol(ft.book)} on eToro <IconArrowRight />
+      </Link>
+    </article>
+  )
+}
+
+/** The eToro row of "Today": both index-CFD books from the first eToro ledger, when one is configured. */
+function EtoroToday() {
+  const ledger = useEtoroLedgerName()
+  const q = useEtoroForwardTests({ ledger: ledger ?? '', enabled: ledger !== undefined })
+  if (!ledger) return null
+  const search = `?ledger=${encodeURIComponent(ledger)}`
+  return (
+    <div data-testid="lp-etoro">
+      <Reveal>
+        <div className="lp-venue-head">
+          <h3>SMA50 forward test · eToro index CFDs (demo)</h3>
+          <VenueTag venue="etoro" />
+          {q.data && <SessionClock s={q.data.session} />}
+          <span className="spacer" />
+          <Link to={{ pathname: '/forward-tests', search }} className="lp-link" id="lp-open-etoro">
+            All eToro forward tests <IconArrowRight />
+          </Link>
+        </div>
+      </Reveal>
+      {q.isLoading && (
+        <div className="lp-books">
+          <Skeleton h={220} />
+          <Skeleton h={220} />
+        </div>
+      )}
+      {q.isError && (
+        <p className="lp-offline" role="status">
+          The eToro views are not answering ({q.error.message}).
+        </p>
+      )}
+      {q.data && (
+        <div className="lp-books">
+          {q.data.books.map((b, i) => (
+            <Reveal key={b.book} delay={i * 80}>
+              <EtoroTile ft={b} ledger={ledger} />
+            </Reveal>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function Today({ books, loading, error }: { books: ForwardTest[]; loading: boolean; error: Error | null }) {
   return (
     <section className="lp-section" aria-labelledby="today-title" id="today">
@@ -344,6 +483,7 @@ function Today({ books, loading, error }: { books: ForwardTest[]; loading: boole
             ))}
           </div>
         )}
+        <EtoroToday />
       </div>
     </section>
   )
@@ -548,7 +688,7 @@ function Research() {
 // ---------------------------------------------------------------- guardrails
 
 function Guardrails() {
-  const q = useRisk()
+  const q = useRisk(useBitsoOpts())
   const search = useLedgerSearch()
   const r: RiskResponse | undefined = q.data
   const limits = r ? (r.books[0]?.limits ?? r.policy.default) : null
@@ -679,7 +819,7 @@ function Closing() {
 
 export function LandingPage() {
   usePageTitle('SMA50 forward tests on Bitso')
-  const q = useForwardTests()
+  const q = useForwardTests(useBitsoOpts())
   const books = useMemo(() => q.data?.books ?? [], [q.data])
   const live = useLiveStream(books.map((b) => b.book))
   return (

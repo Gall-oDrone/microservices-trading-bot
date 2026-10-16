@@ -35,6 +35,10 @@
   --info: hsl(205 80% 64%);
   --info-soft: hsl(205 80% 64% / 0.13);
   --bench: hsl(220 10% 62%);
+  /* Venue accents: Bitso has none (the console's default look); eToro is violet. */
+  --venue-etoro: hsl(262 78% 72%);
+  --venue-etoro-soft: hsl(262 78% 72% / 0.14);
+  --venue-etoro-line: hsl(262 78% 72% / 0.35);
 
   --radius-s: 6px;
   --radius: 10px;
@@ -95,6 +99,9 @@
   --info: hsl(208 78% 40%);
   --info-soft: hsl(208 78% 45% / 0.11);
   --bench: hsl(220 8% 50%);
+  --venue-etoro: hsl(262 60% 46%);
+  --venue-etoro-soft: hsl(262 60% 46% / 0.1);
+  --venue-etoro-line: hsl(262 60% 46% / 0.3);
 
   --shadow-1: 0 1px 0 hsl(0 0% 100% / 0.8) inset, 0 1px 2px hsl(222 30% 20% / 0.08);
   --shadow-2: 0 1px 2px hsl(222 30% 20% / 0.05), 0 10px 28px -14px hsl(222 40% 20% / 0.18);
@@ -4296,7 +4303,8 @@ table.data.controls-audit td {
 .ledger-card-head {
   display: flex;
   align-items: center;
-  gap: 10px;
+  flex-wrap: wrap;
+  gap: 6px 10px;
 }
 .controls-orb.remote {
   background: var(--text-3);
@@ -4635,4 +4643,294 @@ table.data tfoot td {
 }
 table.data tr.current td {
   background: var(--info-soft);
+}
+
+/* ============================================================
+   eToro venue (porting plan P5b): the violet accent marks the
+   venue, never a signal. Cards keep the console's surfaces and
+   take a thin accent edge; the session clock and the NY times
+   use the same token.
+   ============================================================ */
+.badge.etoro {
+  background: var(--venue-etoro-soft);
+  color: var(--venue-etoro);
+}
+.venue-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 18px;
+  padding: 0 7px;
+  border-radius: 999px;
+  font: 600 10.5px var(--font-sans);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  background: var(--surface-3);
+  color: var(--text-3);
+}
+.venue-tag.etoro {
+  background: var(--venue-etoro-soft);
+  color: var(--venue-etoro);
+}
+.ledger-picker .nav-label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+/* Cards of the eToro views: an accent edge instead of a different surface. */
+.card.venue-etoro {
+  border-color: var(--venue-etoro-line);
+  background:
+    radial-gradient(110% 90% at 100% 0%, var(--venue-etoro-soft), transparent 50%),
+    linear-gradient(180deg, var(--surface), var(--card-end));
+}
+.card.venue-etoro::before {
+  content: '';
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 2px;
+  border-radius: var(--radius-l) var(--radius-l) 0 0;
+  background: linear-gradient(90deg, transparent, var(--venue-etoro), transparent);
+  opacity: 0.7;
+  pointer-events: none;
+}
+.card.venue-etoro.interactive:hover {
+  border-color: var(--venue-etoro);
+}
+
+/* The NYSE session clock in a page head. */
+.session-clock {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px 6px 8px;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius);
+  background: var(--bg-raised);
+  font-size: 12px;
+  color: var(--text-2);
+  white-space: nowrap;
+}
+.session-clock .live-dot {
+  background: var(--venue-etoro);
+}
+.session-clock .live-dot::after {
+  border-color: var(--venue-etoro);
+}
+.session-clock.closed .live-dot {
+  background: var(--text-3);
+}
+.session-clock.closed .live-dot::after {
+  animation: none;
+}
+.session-clock b {
+  color: var(--text);
+  font-weight: 600;
+}
+
+/* Demo position / account strip on a forward-test card. */
+.demo-strip {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius);
+  background: var(--bg-raised);
+}
+.demo-strip .stat-value {
+  font-size: 15px;
+}
+.demo-strip.long {
+  border-color: color-mix(in srgb, var(--long) 30%, transparent);
+  background: radial-gradient(90% 100% at 0% 0%, var(--long-soft), transparent 55%), var(--bg-raised);
+}
+.order-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  font-size: 12.5px;
+}
+.order-line .num {
+  font-size: 12.5px;
+}
+
+/* Policy summary chips on the eToro Risk page. */
+.policy-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.policy-chip {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 8px 12px;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius);
+  background: var(--bg-raised);
+  min-width: 120px;
+  transition:
+    border-color var(--t-fast) var(--ease),
+    transform var(--t-fast) var(--ease);
+}
+.policy-chip:hover {
+  border-color: var(--venue-etoro-line);
+  transform: translateY(-1px);
+}
+.policy-chip .k {
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+.policy-chip .v {
+  font: 500 14px var(--font-mono);
+  color: var(--text);
+}
+
+/* The P4 risk report card: a grid of small facts with a stress strip. */
+.report-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 14px 18px;
+}
+.report-section {
+  padding-top: 14px;
+  margin-top: 14px;
+  border-top: 1px solid var(--line-soft);
+}
+.report-section h3 {
+  margin: 0 0 10px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+.prob-list {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+.prob-item {
+  padding: 10px 12px;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius);
+  background: var(--bg-raised);
+}
+.prob-item .p {
+  font: 500 20px var(--font-mono);
+  letter-spacing: -0.02em;
+}
+.prob-item .ci {
+  font-size: 11px;
+  color: var(--text-3);
+}
+.prob-item .meter-track {
+  margin-top: 8px;
+}
+.meter-fill.etoro {
+  background: var(--venue-etoro);
+}
+.fillq-row {
+  display: grid;
+  grid-template-columns: minmax(90px, auto) minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  font-size: 12.5px;
+  padding: 6px 0;
+}
+.fillq-row + .fillq-row {
+  border-top: 1px solid var(--line-soft);
+}
+
+/* Reconcile reports on the Data health page. */
+.reconcile-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.reconcile-row {
+  display: grid;
+  grid-template-columns: 96px auto minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 8px 14px;
+  padding: 12px 4px;
+  border-bottom: 1px solid var(--line-soft);
+  font-size: 13px;
+  transition: background var(--t-fast) var(--ease);
+}
+.reconcile-row:last-child {
+  border-bottom: 0;
+}
+.reconcile-row:hover {
+  background: var(--row-hover);
+}
+.reconcile-findings {
+  margin: 4px 0 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 12.5px;
+  color: var(--text-2);
+}
+.reconcile-findings li::before {
+  content: '\2022  ';
+  color: var(--text-3);
+}
+.reconcile-recheck {
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--text-3);
+}
+
+/* Landing: the eToro tile row shares the Bitso tile styles with an accent edge. */
+.lp-book.venue-etoro {
+  border-color: var(--venue-etoro-line);
+  background:
+    radial-gradient(110% 90% at 100% 0%, var(--venue-etoro-soft), transparent 50%),
+    linear-gradient(180deg, var(--surface), var(--card-end));
+}
+.lp-book.venue-etoro:hover {
+  border-color: var(--venue-etoro);
+}
+.lp-venue-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 28px 0 14px;
+  font-size: 13px;
+  color: var(--text-2);
+}
+.lp-venue-head h3 {
+  margin: 0;
+  font-size: 15px;
+  letter-spacing: -0.01em;
+}
+
+@media (max-width: 720px) {
+  .demo-strip,
+  .prob-list {
+    grid-template-columns: 1fr;
+  }
+  .reconcile-row {
+    grid-template-columns: 1fr auto;
+  }
+  .reconcile-row > :nth-child(3) {
+    grid-column: 1 / -1;
+  }
+  .fillq-row {
+    grid-template-columns: 1fr auto;
+  }
+  .fillq-row > :nth-child(2) {
+    grid-column: 1 / -1;
+    order: 3;
+  }
 }

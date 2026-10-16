@@ -12,7 +12,7 @@
 import { http, HttpResponse } from 'msw'
 
 type Json = Record<string, unknown>
-type Fixture = (request: Request, name: string) => Response
+type Fixture = (request: Request, name: string, venue?: 'bitso' | 'etoro') => Response
 
 export interface HaltState {
   halted: boolean
@@ -91,6 +91,32 @@ function validate(body: Json, ledger: string): string | null {
   return null
 }
 
+/**
+ * A risk response (either venue) with the ledger's in-memory halt merged in,
+ * the way the real halt file would show up in GET /risk and /etoro/risk.
+ */
+export async function withMockHalt(res: Response, request: Request, defaultLedger: string): Promise<Response> {
+  if (!res.ok) return res
+  const r = (await res.json()) as Json & {
+    halted: boolean
+    halt_reason: string
+    halt_source: string
+    halt_file: { path: string }
+    policy: { halted?: boolean }
+  }
+  const ledger = new URL(request.url).searchParams.get('ledger') || (r.ledger as string) || defaultLedger
+  const h = state.get(ledger)?.halt
+  if (!h) return HttpResponse.json(r)
+  const policy = !!r.policy.halted
+  return HttpResponse.json({
+    ...r,
+    halted: policy || h.halted,
+    halt_reason: h.halted ? (h.reason ?? '') : r.halt_reason,
+    halt_source: h.halted ? (policy ? 'both' : 'file') : r.halt_source,
+    halt_file: haltFileInfo(r.halt_file.path, h),
+  })
+}
+
 export function controlHandlers(fixture: Fixture, defaultLedger: string) {
   const ledgerOf = (request: Request) => new URL(request.url).searchParams.get('ledger') || defaultLedger
 
@@ -108,27 +134,7 @@ export function controlHandlers(fixture: Fixture, defaultLedger: string) {
       })
     }),
 
-    http.get('/api/ui/risk', async ({ request }) => {
-      const res = fixture(request, 'risk')
-      if (!res.ok) return res
-      const r = (await res.json()) as Json & {
-        halted: boolean
-        halt_reason: string
-        halt_source: string
-        halt_file: { path: string }
-        policy: { halted?: boolean }
-      }
-      const h = state.get(ledgerOf(request))?.halt
-      if (!h) return HttpResponse.json(r)
-      const policy = !!r.policy.halted
-      return HttpResponse.json({
-        ...r,
-        halted: policy || h.halted,
-        halt_reason: h.halted ? (h.reason ?? '') : r.halt_reason,
-        halt_source: h.halted ? (policy ? 'both' : 'file') : r.halt_source,
-        halt_file: haltFileInfo(r.halt_file.path, h),
-      })
-    }),
+    http.get('/api/ui/risk', ({ request }) => withMockHalt(fixture(request, 'risk', 'bitso'), request, defaultLedger)),
 
     http.post('/api/ui/risk/:action', async ({ params, request }) => {
       const action = String(params.action)

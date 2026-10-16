@@ -17,7 +17,8 @@ import {
   type Time,
 } from 'lightweight-charts'
 import { useEffect, useRef } from 'react'
-import type { CandlePoint, EquityPoint, Fill, LiveCandle, PnLDay } from '../api/schemas'
+import type { EtoroEquityPoint } from '../api/etoroSchemas'
+import type { CandlePoint, EquityPoint, LiveCandle, PnLDay } from '../api/schemas'
 import { useTheme } from '../lib/theme'
 
 function token(name: string, fallback: string): string {
@@ -99,19 +100,33 @@ export interface LiveOverlay {
   fresh: boolean
 }
 
-/** Daily candles with SMA50, volume, and markers for signal flips and stage fills. */
+/** A fill to mark on the price chart: Bitso stage fills and eToro demo orders both fit. */
+export interface FillMarker {
+  fill_date: string
+  side: 'buy' | 'sell'
+  /** Marker text; defaults to "stage <side>". */
+  label?: string
+}
+
+/** Daily candles with SMA50, volume, and markers for signal flips and fills. */
 export function PriceChart({
   candles,
   fills,
   label,
   quote,
   live,
+  digits,
+  volume = true,
 }: {
   candles: CandlePoint[]
-  fills: Fill[]
+  fills: FillMarker[]
   label: string
   quote: string
   live?: LiveOverlay
+  /** Price precision; defaults to whole units for MXN/USD and 2 decimals otherwise. */
+  digits?: number
+  /** Draw the volume histogram (false for sources without volume, like eToro's OneDay candles). */
+  volume?: boolean
 }) {
   const priceRef = useRef<ISeriesApi<'Candlestick'> | null>(null)
   const volRef = useRef<ISeriesApi<'Histogram'> | null>(null)
@@ -121,6 +136,7 @@ export function PriceChart({
       const long = token('--long', '#2ec4a7')
       const loss = token('--loss', '#f0715c')
       const whole = ['mxn', 'usd'].includes(quote.toLowerCase())
+      const precision = digits ?? (whole ? 0 : 2)
       const price = chart.addSeries(CandlestickSeries, {
         upColor: long,
         downColor: loss,
@@ -128,7 +144,7 @@ export function PriceChart({
         wickUpColor: long,
         wickDownColor: loss,
         priceLineVisible: false,
-        priceFormat: { type: 'price', precision: whole ? 0 : 2, minMove: whole ? 1 : 0.01 },
+        priceFormat: { type: 'price', precision, minMove: precision === 0 ? 1 : 10 ** -precision },
       })
       price.setData(candles.map((c) => ({ time: t(c.date), open: c.open, high: c.high, low: c.low, close: c.close })))
       const sma = chart.addSeries(LineSeries, {
@@ -140,23 +156,28 @@ export function PriceChart({
       })
       sma.setData(candles.filter((c) => c.sma50 != null).map((c) => ({ time: t(c.date), value: c.sma50! })))
 
-      const vol = chart.addSeries(HistogramSeries, {
-        priceScaleId: 'vol',
-        priceFormat: { type: 'volume' },
-        lastValueVisible: false,
-        priceLineVisible: false,
-      })
-      chart.priceScale('vol').applyOptions({ scaleMargins: { top: 0.82, bottom: 0 } })
-      price.priceScale().applyOptions({ scaleMargins: { top: 0.06, bottom: 0.22 } })
-      const volHi = token('--chart-vol-hi', 'hsla(205, 80%, 64%, 0.55)')
-      const volLo = token('--chart-vol', 'hsla(220, 12%, 50%, 0.28)')
-      vol.setData(
-        candles.map((c) => ({
-          time: t(c.date),
-          value: c.volume,
-          color: (c.volume_ratio_20d ?? 0) >= 1.5 ? volHi : volLo,
-        })),
-      )
+      let vol: ISeriesApi<'Histogram'> | null = null
+      if (volume) {
+        vol = chart.addSeries(HistogramSeries, {
+          priceScaleId: 'vol',
+          priceFormat: { type: 'volume' },
+          lastValueVisible: false,
+          priceLineVisible: false,
+        })
+        chart.priceScale('vol').applyOptions({ scaleMargins: { top: 0.82, bottom: 0 } })
+        price.priceScale().applyOptions({ scaleMargins: { top: 0.06, bottom: 0.22 } })
+        const volHi = token('--chart-vol-hi', 'hsla(205, 80%, 64%, 0.55)')
+        const volLo = token('--chart-vol', 'hsla(220, 12%, 50%, 0.28)')
+        vol.setData(
+          candles.map((c) => ({
+            time: t(c.date),
+            value: c.volume,
+            color: (c.volume_ratio_20d ?? 0) >= 1.5 ? volHi : volLo,
+          })),
+        )
+      } else {
+        price.priceScale().applyOptions({ scaleMargins: { top: 0.06, bottom: 0.08 } })
+      }
 
       const markers: SeriesMarker<Time>[] = []
       for (let i = 1; i < candles.length; i++) {
@@ -179,7 +200,7 @@ export function PriceChart({
           position: f.side === 'buy' ? 'belowBar' : 'aboveBar',
           color: token('--info', '#5bb4f0'),
           shape: 'circle',
-          text: `stage ${f.side}`,
+          text: f.label ?? `stage ${f.side}`,
         })
       }
       markers.sort((x, y) => String(x.time).localeCompare(String(y.time)))
@@ -192,7 +213,7 @@ export function PriceChart({
         flipRef.current = null
       }
     },
-    [candles, fills, quote],
+    [candles, fills, quote, digits, volume],
   )
   const [theme] = useTheme()
 
@@ -238,7 +259,7 @@ export function PriceChart({
       price.removePriceLine(flipRef.current)
       flipRef.current = null
     }
-  }, [candles, fills, quote, c, flip, fresh, theme])
+  }, [candles, fills, quote, digits, volume, c, flip, fresh, theme])
   return <div ref={ref} className="chart" role="img" aria-label={label} />
 }
 
@@ -276,6 +297,62 @@ export function EquityChart({ points, label }: { points: EquityPoint[]; label: s
     [points],
   )
   return <div ref={ref} className="chart sm" role="img" aria-label={label} />
+}
+
+/**
+ * eToro: the paper rule and holding the CFD (both 1.0 at the forward start,
+ * right axis) with the demo account's equity in USD on a left axis, so the
+ * two can be read against each other without rescaling either.
+ */
+export function EtoroEquityChart({ points, label }: { points: EtoroEquityPoint[]; label: string }) {
+  const ref = useChart(
+    (chart) => {
+      chart.applyOptions({
+        timeScale: { fixLeftEdge: false, fixRightEdge: false },
+        leftPriceScale: { visible: true, borderVisible: false },
+      })
+      const hold = chart.addSeries(LineSeries, {
+        color: token('--bench', '#959aa6'),
+        lineWidth: 2,
+        lineStyle: LineStyle.Dashed,
+        priceLineVisible: false,
+        lastValueVisible: true,
+        title: 'CFD hold',
+      })
+      hold.setData(points.map((p) => ({ time: t(p.date), value: p.hold_equity })))
+      const eq = chart.addSeries(LineSeries, {
+        color: token('--long', '#2ec4a7'),
+        lineWidth: 2,
+        priceLineVisible: false,
+        title: 'paper',
+        pointMarkersVisible: points.length < 40,
+      })
+      eq.setData(points.map((p) => ({ time: t(p.date), value: p.equity })))
+      eq.createPriceLine({
+        price: 1,
+        color: alpha('--text-3', '#7a8394', 0.6),
+        lineWidth: 1,
+        lineStyle: LineStyle.Dotted,
+        axisLabelVisible: false,
+        title: 'start',
+      })
+      const demoPts = points.filter((p) => p.demo_equity != null)
+      if (demoPts.length > 0) {
+        const demo = chart.addSeries(LineSeries, {
+          priceScaleId: 'left',
+          color: token('--venue-etoro', '#a78bfa'),
+          lineWidth: 2,
+          priceLineVisible: false,
+          title: 'demo USD',
+          pointMarkersVisible: demoPts.length < 40,
+          priceFormat: { type: 'price', precision: 0, minMove: 1 },
+        })
+        demo.setData(demoPts.map((p) => ({ time: t(p.date), value: p.demo_equity! })))
+      }
+    },
+    [points],
+  )
+  return <div ref={ref} className="chart sm" role="img" aria-label={label} data-testid="etoro-equity-chart" />
 }
 
 /** Plan §6.4.12: the stage position's P&L by day (bars) and cumulative (line), and the paper account's P&L on the same money. */

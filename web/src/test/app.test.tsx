@@ -106,7 +106,11 @@ describe('Ledger picker', () => {
       within(picker)
         .getAllByRole('option')
         .map((o) => o.textContent),
-    ).toEqual([expect.stringMatching(/^stage/), expect.stringMatching(/^dry-run · no file yet/)])
+    ).toEqual([
+      expect.stringMatching(/^stage · 8 rec · bitso$/),
+      expect.stringMatching(/^dry-run · no file yet · bitso$/),
+      expect.stringMatching(/^etoro-demo · 10 rec · etoro$/),
+    ])
     await screen.findByTestId('ft-card-btc_mxn')
     await userEvent.selectOptions(picker, 'dry-run')
     expect(await screen.findAllByText('No records in the dry-run ledger yet')).toHaveLength(2)

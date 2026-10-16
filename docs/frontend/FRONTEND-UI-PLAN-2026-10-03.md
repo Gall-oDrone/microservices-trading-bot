@@ -1408,6 +1408,85 @@ unfinished bar is labelled provisional. The decision path never reads live data.
     announced) before the kill switch; the body ends with `Halted ledgers now: …`. A subject
     without halt news does not repeat them; resolved halts are named together the same way.
 
+### 8.15 eToro venue (as built, 2026-10-16)
+
+- **What.** The eToro index-CFD demo executor (porting plan P5a/P5b) is a second **venue** in the
+  console, not a second console: one shell, one ledger picker, the same cards, tokens and
+  dialogs. Every page reads the selected ledger's `venue` from `GET /api/ui/ledgers` (`bitso` |
+  `etoro`, additive; absent means Bitso) through `useVenue()` and renders the Bitso view or the
+  eToro view behind one `VenueSwitch`. The two never mix: while the ledgers list loads nothing
+  venue-specific is requested, and ui-api answers 400 to a Bitso route asked about the eToro
+  ledger (and vice versa); the MSW mock mirrors that. Units follow the venue: USD and instrument
+  units (`fmtUnits`, six decimals), New York time (`fmtNY`, `NY_TZ`, EDT/EST as the date falls),
+  CFD prices in cents (`quoteDigits(quote, book)`), `bookLabel('nsdq100')` →
+  `NSDQ100 · Nasdaq-100 CFD`. A violet venue accent (`--venue-etoro`, both themes) marks the
+  badge, the card edges and the session clock; it never encodes a signal.
+- **Endpoints** (ui-api P5a, `?ledger=etoro-demo`, schemas in `src/api/etoroSchemas.ts`, hooks in
+  `src/api/client.ts` at the Bitso cadence): `GET /api/ui/etoro/forward-tests` (per book: decision,
+  paper vs CFD hold, demo position, account, last order, run status with `next_run_at`, plus the
+  NYSE `session`), `etoro/forward-tests/{book}/ledger` (records + paper/demo equity series),
+  `etoro/forward-tests/{book}/candles` (the Bitso candle shape), `etoro/risk` (EtoroDemoPolicy,
+  halt file, account, per-book exposure), `etoro/health` (the etorohealth checks in the
+  `HealthCheck` shape), `etoro/reconcile` (newest reports first, with `.recheck` and
+  `effective_clean`), `etoro/risk-report` (the P4 `cfdrisk-report/v1` file passed through with
+  `date`/`path`; 404 until the first one exists). `GET /api/ui/controls`, `POST risk/halt|resume`
+  and `halt-all` are venue-neutral and reach the eToro halt file; `GET /api/ui/strategies` lists
+  the eToro ledger with its venue and in the kill-switch targets.
+- **Pages (eToro view).**
+  - *Forward tests:* header "SMA50 forward test · eToro index CFDs (demo)" with the NYSE session
+    clock; per book: signal / previous signal / action, close vs SMA50, paper equity vs CFD hold
+    (round-trip and overnight bps), max drawdown, the demo strip (position in units with open rate
+    and NY time, account equity and cash, exposure and % of equity), the last order (kind, status,
+    units @ price, fill vs mid and vs decision close in bps, NY time, order id), run status with
+    "next run … 09:35 NY", costs provisional/frozen, revised closes.
+  - *Detail (`/forward-tests/nsdq100|spx500`):* candles with SMA50 and the demo orders marked (no
+    volume lane: eToro OneDay bars carry none), paper vs CFD hold with the demo account in USD on
+    a left axis, the day's reconcile status (drift / effective clean, findings, re-check), the
+    records table (bar, fill day, signal, action, demo action, order status, avg price, vs mid /
+    close bps, position after, account equity, recorded NY) and the raw JSON.
+  - *Risk:* halt banner (NY clock), the policy as chips (x1, 1,500 USD per order, one leg per
+    instrument per day, 5 % of equity, 10 % price deviation, cash session required, 20 % drawdown
+    review, 40 bps cost warning), the demo account, the shared operator controls (confirm with the
+    ledger name; the wording names the eToro executor and demo orders), per-book cards with meters
+    against the 5 % of equity and the 1,500 USD caps, the executor's last check, blocked days and
+    findings, and the **Risk report** card: VaR 99 % (USD and % of capital), historical VaR / ES,
+    implied correlation, net exposure, worst stress episode and index shocks, Monte Carlo
+    P(beats CFD hold) / P(beats ETF hold) / P(shallower DD) per book with a frozen/measured cost
+    toggle, attribution (net, realized, unrealized, tracking bps per book) and fill quality
+    (measured spread per leg vs the frozen 7.75 / 7.4 bps).
+  - *Data health:* the etorohealth checks with the same visuals (hero, worst-first list), the
+    thresholds (run at 09:35 NY, due by 10:00 NY, coverage window, intent grace) and the reconcile
+    reports newest first (clean / drift n / warnings, findings with codes, the operator's re-check,
+    "effective clean").
+  - *Strategies:* the kill switch names every target with its venue and its dialog says what the
+    eToro executor does when halted; the ledger cards carry the venue; intraday strategy
+    start/stop stays Bitso-only (disabled behind a note when the eToro ledger is selected).
+  - *Landing:* a second row under "Today" for the eToro forward test (both books: signal, distance
+    to the SMA, demo position, paper vs CFD hold, next run NY, the session clock) linking to the
+    list with `?ledger=etoro-demo`; the Bitso hero and tiles stay on a Bitso ledger even when the
+    URL selects the eToro one. *Market:* the eToro ledger gets the session, last closes and a link
+    to the candles (no live feed before P5c).
+- **Fixtures and mock.** `src/mocks/fixtures/etoro-demo/` (captured from P5a: forward tests,
+  ledger and candles per book, risk, health, reconcile, risk report, controls); `ledgers.json` and
+  `strategies.json` gained `venue` and the `etoro-demo` entry by hand (the Bitso fixtures are
+  byte-identical). MSW serves `/api/ui/etoro/*` from that directory, defaults to the first eToro
+  ledger like `pickVenue`, and refuses cross-venue requests with ui-api's message; the in-memory
+  halt from the controls mock shows in `/etoro/risk` too, and halt-all halts all three ledgers.
+- **Tests.** Vitest: every eToro fixture parses (`etoroSchemas.test.ts`), formatters (NY time on
+  both sides of DST, units, labels, CFD quotes) and `useVenue` resolution (`etoroFormat.test.tsx`),
+  every page with the eToro ledger selected (`etoroPages.test.tsx`); the Bitso suites updated for
+  the third ledger. Playwright `e2e/etoro.spec.ts` (8 scenarios × desktop + phone): picker with
+  venue, list (NSDQ100 flat, SPX500 long 0.140735 u, next run NY), spx500 detail, risk (5 % meter,
+  halt/resume with `etoro-demo`, the report's VaR 52.81 USD), data health (10-16 drift with a
+  clean re-check), kill switch across venues, landing row, market notice. The 14 smoke tests stay
+  green. Note: the vitest suite needs Node 22 (CI's version); on Node 24 undici rejects jsdom's
+  `AbortSignal` and MSW intercepts nothing.
+- **Known limits.** No live eToro quotes yet (Market shows the session and last closes; P5c adds
+  the rates poller and the provisional flip level). No Trade page yet (P5d: assisted prepare →
+  place, demo only). The risk report is read as written by P4 (as-of 2026-10-13 in the fixture); a
+  missing report shows an empty card, not an error. Studies the research index does not list
+  (e.g. the index-CFD pre-registration) open by direct link only.
+
 ---
 
 ## 9. How to run (local)

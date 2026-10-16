@@ -3,10 +3,11 @@
  * the 20-day volume context. Display only; nothing here feeds a decision.
  */
 import type { CandlePoint, Level, TapeTrade } from '../api/schemas'
+import { CFD_BOOKS } from './format'
 
-/** "btc_mxn" -> "mxn". */
+/** "btc_mxn" -> "mxn"; "nsdq100" -> "usd" (the index CFDs are USD accounts). */
 export function quoteOf(book: string): string {
-  return book.split('_')[1] ?? ''
+  return CFD_BOOKS[book]?.quote ?? book.split('_')[1] ?? ''
 }
 
 /** BTC size, trimmed to what matters for retail-sized levels: 0.00032901 -> "0.000329". */

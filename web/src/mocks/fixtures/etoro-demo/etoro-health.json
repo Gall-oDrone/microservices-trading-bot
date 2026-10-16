@@ -1,0 +1,58 @@
+{
+  "ledger": "etoro-demo",
+  "venue": "etoro",
+  "generated_at": "2026-10-16T17:42:58Z",
+  "status": "ok",
+  "due_date": "2026-10-16",
+  "ledger_path": "../strategy-executor/etoro-daily-data/demo/ledger.jsonl",
+  "checks": [
+    {
+      "id": "etoro.ledger",
+      "area": "executor",
+      "label": "eToro ledger",
+      "status": "ok",
+      "message": "10 records"
+    },
+    {
+      "id": "etoro.halted",
+      "area": "executor",
+      "label": "eToro halt file",
+      "status": "ok",
+      "message": "not halted"
+    },
+    {
+      "id": "etoro.coverage",
+      "area": "executor",
+      "label": "eToro ledger coverage",
+      "status": "ok",
+      "message": "every book recorded through 2026-10-16"
+    },
+    {
+      "id": "etoro.run",
+      "area": "executor",
+      "label": "eToro executor run",
+      "status": "ok",
+      "message": "run of 2026-10-16 13:35 UTC ended exit=0"
+    },
+    {
+      "id": "etoro.reconcile",
+      "area": "executor",
+      "label": "eToro reconcile",
+      "status": "ok",
+      "message": "2026-10-16: drift on the run, clean on the operator's re-check"
+    },
+    {
+      "id": "etoro.intents",
+      "area": "executor",
+      "label": "eToro intent journal",
+      "status": "ok",
+      "message": "3 intents, all in the ledger"
+    }
+  ],
+  "thresholds": {
+    "coverage_days": "3",
+    "due_by": "10:00 New York",
+    "intent_grace": "10m0s",
+    "run_at": "09:35 New York"
+  }
+}

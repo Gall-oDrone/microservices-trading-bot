@@ -83,6 +83,8 @@ function refreshControlViews(qc: QueryClient) {
   void qc.invalidateQueries({ queryKey: ['risk'] })
   void qc.invalidateQueries({ queryKey: ['forward-tests'] })
   void qc.invalidateQueries({ queryKey: ['strategies'] })
+  // The eToro venue's views (/api/ui/etoro/*) show the same halt file.
+  void qc.invalidateQueries({ queryKey: ['etoro'] })
 }
 
 function rememberToken(token: string) {

@@ -4,8 +4,10 @@ import { useLiveStream, type LiveState } from '../api/live'
 import type { ForwardTest } from '../api/schemas'
 import { LiveStrip } from '../components/live'
 import { Badge, Banner, CardSkeleton, Empty, ErrorState, LedgerBadge, SignalPill, Stat } from '../components/ui'
+import { VenueSwitch } from '../components/VenueSwitch'
 import { bookLabel, fmtBTC, fmtDate, fmtFrac, fmtMx, fmtPct, fmtPrice, fmtUTC } from '../lib/format'
 import { usePageTitle } from '../lib/usePageTitle'
+import { EtoroForwardTestsPage } from './etoro/EtoroForwardTestsPage'
 
 function WindowProgress({ ft }: { ft: ForwardTest }) {
   const m = ft.milestones
@@ -156,7 +158,12 @@ export function ForwardTestCard({ ft, live }: { ft: ForwardTest; live?: LiveStat
   )
 }
 
+/** The Forward tests page of the selected ledger: the Bitso view below, or the eToro view (pages/etoro). */
 export function ForwardTestsPage() {
+  return <VenueSwitch bitso={<BitsoForwardTestsPage />} etoro={<EtoroForwardTestsPage />} />
+}
+
+function BitsoForwardTestsPage() {
   usePageTitle('Forward tests')
   const q = useForwardTests()
   const live = useLiveStream(q.data?.books.map((b) => b.book) ?? [])

@@ -9,7 +9,7 @@
 import { useRef, useState } from 'react'
 import { useControls } from '../api/client'
 import { useControlMutation, type ControlAction } from '../api/controls'
-import type { AuditEntry, AuditOutcome, ControlResponse, ControlsInfo } from '../api/schemas'
+import type { AuditEntry, AuditOutcome, ControlResponse, ControlsInfo, Venue } from '../api/schemas'
 import { fmtMx, fmtUTC } from '../lib/format'
 import { ConfirmDialog } from './ConfirmDialog'
 import { IconBlock, IconCheck, IconShield } from './icons'
@@ -107,17 +107,20 @@ export function AuditLog({ info, empty, target = false }: { info: AuditSource; e
 function ControlDialog({
   action,
   info,
+  venue,
   onClose,
   onDone,
 }: {
   action: ControlAction
   info: ControlsInfo
+  venue: Venue
   onClose: () => void
   onDone: (r: ControlResponse) => void
 }) {
   const ledger = info.ledger
   const m = useControlMutation()
   const halt = action === 'halt'
+  const w = WORDS[venue]
   return (
     <ConfirmDialog<ControlResponse>
       tone={halt ? 'danger' : 'resume'}
@@ -126,8 +129,8 @@ function ControlDialog({
       sub={
         halt ? (
           <>
-            Writes a halt to <span className="num">{info.halt_file.path}</span>. The daily-executor blocks and records
-            every new stage order on <b>{ledger}</b> until someone resumes.
+            Writes a halt to <span className="num">{info.halt_file.path}</span>. The {w.executor} blocks and records
+            every new {w.order} on <b>{ledger}</b> until someone resumes.
           </>
         ) : (
           <>
@@ -147,7 +150,7 @@ function ControlDialog({
       confirmLabel="Ledger name"
       confirmWord={ledger}
       reasonPlaceholder={
-        halt ? 'e.g. Bitso API incident, pausing until resolved' : 'e.g. Incident resolved, checks green'
+        halt ? `e.g. ${w.venueName} API incident, pausing until resolved` : 'e.g. Incident resolved, checks green'
       }
       reasonHint="one line, kept in the halt file and the audit log"
       submitLabel={halt ? `Halt ${ledger}` : `Resume ${ledger}`}
@@ -161,8 +164,17 @@ function ControlDialog({
   )
 }
 
-/** The halt/resume card. `policyHalted` notes a policy halt, which only the policy file can lift. */
-export function OperatorControls({ policyHalted = false }: { policyHalted?: boolean }) {
+/** Per-venue wording; the request is the same (ui-api's controls are venue-neutral). */
+const WORDS: Record<Venue, { executor: string; order: string; venueName: string }> = {
+  bitso: { executor: 'daily-executor', order: 'stage order', venueName: 'Bitso' },
+  etoro: { executor: 'eToro executor', order: 'demo order', venueName: 'eToro' },
+}
+
+/**
+ * The halt/resume card. `policyHalted` notes a policy halt, which only the
+ * policy file can lift; `venue` only changes the wording.
+ */
+export function OperatorControls({ policyHalted = false, venue = 'bitso' }: { policyHalted?: boolean; venue?: Venue }) {
   const q = useControls()
   const [open, setOpen] = useState<ControlAction | null>(null)
   const [flash, setFlash] = useState<ControlResponse | null>(null)
@@ -202,7 +214,7 @@ export function OperatorControls({ policyHalted = false }: { policyHalted?: bool
             <IconShield className="controls-h-icon" /> Operator controls
           </h2>
           <div className="sub">
-            Halt or resume the daily-executor for this ledger. ui-api writes{' '}
+            Halt or resume the {WORDS[venue].executor} for this ledger. ui-api writes{' '}
             <span className="num">risk-state.json</span> and audits every attempt.
           </div>
         </div>
@@ -295,6 +307,7 @@ export function OperatorControls({ policyHalted = false }: { policyHalted?: bool
         <ControlDialog
           action={open}
           info={info}
+          venue={venue}
           onClose={closeDialog}
           onDone={(r) => {
             setFlash(r)

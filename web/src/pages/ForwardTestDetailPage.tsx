@@ -18,6 +18,7 @@ import {
   TradeDistributionSection,
 } from '../components/performance'
 import { Badge, Banner, CardSkeleton, Empty, ErrorState, LedgerBadge, SignalPill, Stat } from '../components/ui'
+import { VenueSwitch } from '../components/VenueSwitch'
 import {
   bookLabel,
   fmtBps,
@@ -32,6 +33,7 @@ import {
   fmtUTC,
 } from '../lib/format'
 import { usePageTitle } from '../lib/usePageTitle'
+import { EtoroForwardTestDetailPage } from './etoro/EtoroForwardTestDetailPage'
 
 const RANGES = [90, 180, 365] as const
 /** Stable fallback while the ledger loads: `fills` is a chart build dependency. */
@@ -184,7 +186,12 @@ function LedgerTable({ records, quote }: { records: LedgerRecord[]; quote: strin
   )
 }
 
+/** The detail page of the selected ledger: the Bitso view below, or the eToro view (pages/etoro). */
 export function ForwardTestDetailPage() {
+  return <VenueSwitch bitso={<BitsoForwardTestDetailPage />} etoro={<EtoroForwardTestDetailPage />} />
+}
+
+function BitsoForwardTestDetailPage() {
   const { book = '' } = useParams()
   usePageTitle(`${bookLabel(book)} forward test`)
   const [days, setDays] = useState<(typeof RANGES)[number]>(180)

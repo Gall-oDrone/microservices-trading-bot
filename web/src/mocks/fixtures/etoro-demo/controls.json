@@ -1,0 +1,15 @@
+{
+  "ledger": "etoro-demo",
+  "venue": "etoro",
+  "enabled": true,
+  "halt_file": {
+    "path": "../strategy-executor/etoro-daily-data/demo/risk-state.json",
+    "found": false,
+    "halted": false,
+    "reason": "",
+    "by": "",
+    "at": ""
+  },
+  "audit_path": "../strategy-executor/etoro-daily-data/demo/ui-audit.jsonl",
+  "audit": []
+}

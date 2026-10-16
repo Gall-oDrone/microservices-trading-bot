@@ -77,7 +77,7 @@ describe('Strategies page', () => {
     expect(stage).toHaveAttribute('data-state', 'running')
     expect(within(stage).getByText('trading allowed')).toBeInTheDocument()
     expect(screen.getByTestId('ledger-card-dry-run')).toHaveAttribute('data-state', 'running')
-    expect(screen.getByTestId('killswitch-count')).toHaveTextContent('2 of 2 to halt')
+    expect(screen.getByTestId('killswitch-count')).toHaveTextContent('3 of 3 to halt')
     expect(screen.getByTestId('kill-switch-open')).toBeEnabled()
 
     const card = screen.getByTestId('strategies-card')
@@ -98,7 +98,11 @@ describe('Strategies page', () => {
   it('links each ledger card to its Risk page', async () => {
     renderAt('/strategies')
     const links = await screen.findAllByRole('link', { name: /Open the Risk page/ })
-    expect(links.map((a) => a.getAttribute('href'))).toEqual(['/risk?ledger=stage', '/risk?ledger=dry-run'])
+    expect(links.map((a) => a.getAttribute('href'))).toEqual([
+      '/risk?ledger=stage',
+      '/risk?ledger=dry-run',
+      '/risk?ledger=etoro-demo',
+    ])
   })
 
   it('stops a running strategy: the confirm is checked, the hold shows and both audit lines appear', async () => {
@@ -192,18 +196,20 @@ describe('Strategies page', () => {
 
     await user.clear(screen.getByTestId('control-confirm'))
     await user.type(screen.getByTestId('control-confirm'), 'HALT ALL')
-    expect(screen.getByTestId('control-submit')).toHaveTextContent('Halt 2 ledgers')
+    expect(screen.getByTestId('control-submit')).toHaveTextContent('Halt 3 ledgers')
     await user.click(screen.getByTestId('control-submit'))
     const flash = await screen.findByTestId('halt-all-flash')
     expect(flash).toHaveTextContent(/stage halted/)
     expect(flash).toHaveTextContent(/dry-run halted/)
+    expect(flash).toHaveTextContent(/etoro-demo halted/)
     expect(sent[0].body).toEqual({ reason: 'Exchange incident, stopping all', by: 'diego', confirm: 'HALT ALL' })
 
     await waitFor(() => expect(screen.getByTestId('ledger-card-stage')).toHaveAttribute('data-state', 'halted'))
     expect(screen.getByTestId('ledger-card-dry-run')).toHaveAttribute('data-state', 'halted')
+    expect(screen.getByTestId('ledger-card-etoro-demo')).toHaveAttribute('data-state', 'halted')
     expect(screen.getByTestId('killswitch-count')).toHaveTextContent('all halted')
     expect(screen.getByTestId('kill-switch-open')).toBeDisabled()
-    expect(screen.getAllByRole('link', { name: /Resume on the Risk page/ })).toHaveLength(2)
+    expect(screen.getAllByRole('link', { name: /Resume on the Risk page/ })).toHaveLength(3)
 
     // Each ledger's own audit log has the grouped halt.
     const c = controlsInfoSchema.parse(await (await fetch(location.origin + '/api/ui/controls?ledger=stage')).json())

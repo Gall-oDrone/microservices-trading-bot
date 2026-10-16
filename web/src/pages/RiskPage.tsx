@@ -1,10 +1,13 @@
 import { useRisk } from '../api/client'
 import type { BookLimits, BookRisk, RiskResponse } from '../api/schemas'
 import { OperatorControls } from '../components/controls'
+import { HaltBanner } from '../components/halt'
 import { IconCheck, IconShield } from '../components/icons'
 import { Badge, Banner, CardSkeleton, ErrorState, FindingRow, LedgerBadge, Meter, Stat } from '../components/ui'
+import { VenueSwitch } from '../components/VenueSwitch'
 import { bookLabel, fmtBps, fmtBTC, fmtDate, fmtFrac, fmtMoney, fmtMx, fmtUTC } from '../lib/format'
 import { usePageTitle } from '../lib/usePageTitle'
+import { EtoroRiskPage } from './etoro/EtoroRiskPage'
 
 function NextOrderPanel({ b }: { b: BookRisk }) {
   const no = b.next_order
@@ -267,36 +270,12 @@ function PolicyTable({ r }: { r: RiskResponse }) {
   )
 }
 
-/** Who halted trading, when and why: from the policy, the ledger's halt file (R2), or both. */
-function HaltBanner({ r }: { r: RiskResponse }) {
-  const f = r.halt_file
-  const fromFile = r.halt_source === 'file' || r.halt_source === 'both'
-  const fromPolicy = r.halt_source === 'policy' || r.halt_source === 'both'
-  const title = fromFile && !fromPolicy ? 'Trading halted by operator' : 'Trading halted by policy'
-  return (
-    <Banner tone="block" title={title} id="banner-halt">
-      {fromFile ? (
-        <span data-testid="halt-file">
-          <b>{f.reason}</b> · by <b>{f.by}</b> · <span title={fmtUTC(f.at)}>{fmtMx(f.at)} Mexico City</span> ·{' '}
-          <span className="num faint">{f.path}</span>
-          {fromPolicy && <> · policy: {r.policy.halt_reason || 'no reason given'}</>}
-        </span>
-      ) : (
-        <>{r.halt_reason || 'No reason given.'}</>
-      )}{' '}
-      Every new stage order is blocked and recorded.{' '}
-      {fromFile ? (
-        <>
-          Resume from <a href="#operator-controls">Operator controls</a> below (or remove the file by hand).
-        </>
-      ) : (
-        <>Lift it in the policy to resume.</>
-      )}
-    </Banner>
-  )
+/** The Risk page of the selected ledger: the Bitso view below, or the eToro view (pages/etoro). */
+export function RiskPage() {
+  return <VenueSwitch bitso={<BitsoRiskPage />} etoro={<EtoroRiskPage />} />
 }
 
-export function RiskPage() {
+function BitsoRiskPage() {
   usePageTitle('Risk', 'Execution risk limits, exposure and realized costs for the forward tests.')
   const q = useRisk()
   const r = q.data

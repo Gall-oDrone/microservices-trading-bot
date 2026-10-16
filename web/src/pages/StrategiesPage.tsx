@@ -11,7 +11,7 @@
  */
 import { useRef, useState } from 'react'
 import { Link } from 'react-router'
-import { useStrategies } from '../api/client'
+import { useStrategies, useVenue } from '../api/client'
 import { useHaltAllMutation, useStrategyControlMutation, type StrategyAction } from '../api/controls'
 import type {
   HaltAllResponse,
@@ -23,7 +23,7 @@ import type {
 import { ConfirmDialog } from '../components/ConfirmDialog'
 import { AuditLog } from '../components/controls'
 import { IconArrowRight, IconBlock, IconCheck, IconGrid, IconShield } from '../components/icons'
-import { Badge, Banner, CardSkeleton, ErrorState, LedgerBadge, Stat } from '../components/ui'
+import { Badge, Banner, CardSkeleton, ErrorState, LedgerBadge, Stat, VenueTag } from '../components/ui'
 import { bookLabel, fmtFrac, fmtMoney, fmtMx, fmtUTC } from '../lib/format'
 import { usePageTitle } from '../lib/usePageTitle'
 
@@ -55,10 +55,16 @@ function LedgerCard({ l }: { l: LedgerControl }) {
   const st = ledgerState(l)
   const hf = l.halt_file
   return (
-    <article className={`card ledger-card is-${st}`} data-testid={`ledger-card-${l.name}`} data-state={st}>
+    <article
+      className={`card ledger-card is-${st} ${l.venue === 'etoro' ? 'venue-etoro' : ''}`}
+      data-testid={`ledger-card-${l.name}`}
+      data-state={st}
+      data-venue={l.venue}
+    >
       <div className="ledger-card-head">
         <span className={`controls-orb ${st === 'running' ? '' : st}`} aria-hidden />
-        <LedgerBadge name={l.name} />
+        <LedgerBadge name={l.name} venue={l.venue} />
+        <VenueTag venue={l.venue} />
         <span className="spacer" />
         <Badge tone={st === 'running' ? 'ok' : st === 'remote' ? 'flat' : st === 'invalid' ? 'warn' : 'block'} dot>
           {st === 'running'
@@ -101,6 +107,8 @@ function KillSwitch({ info, onResult }: { info: StrategiesInfo; onResult: (r: Ha
   const trigger = useRef<HTMLButtonElement>(null)
   const toHalt = ks.targets.filter((t) => !ks.already_halted.includes(t))
   const allHalted = ks.targets.length > 0 && toHalt.length === 0
+  const venueOf = (name: string) => info.ledgers.find((l) => l.name === name)?.venue ?? 'bitso'
+  const venues = Array.from(new Set(ks.targets.map(venueOf)))
   const close = () => {
     setOpen(false)
     m.reset()
@@ -119,18 +127,19 @@ function KillSwitch({ info, onResult }: { info: StrategiesInfo; onResult: (r: Ha
       <div className="killswitch-text">
         <h2 id="killswitch-h">Kill switch</h2>
         <p>
-          Halt every local ledger at once: ui-api writes <span className="num">risk-state.json</span> next to{' '}
+          Halt every local ledger at once{venues.length > 1 ? ', on every venue' : ''}: ui-api writes{' '}
+          <span className="num">risk-state.json</span> next to{' '}
           {ks.targets.length === 0 ? (
             'each local ledger'
           ) : (
-            <>
+            <span data-testid="killswitch-targets">
               {ks.targets.map((t, i) => (
-                <span key={t}>
+                <span key={t} data-testid={`killswitch-target-${t}`}>
                   {i > 0 && (i === ks.targets.length - 1 ? ' and ' : ', ')}
-                  <b className="num">{t}</b>
+                  <b className="num">{t}</b> <VenueTag venue={venueOf(t)} />
                 </span>
               ))}
-            </>
+            </span>
           )}
           . Ledgers already halted stay as they are. Resume them one by one on the Risk page.
         </p>
@@ -170,7 +179,8 @@ function KillSwitch({ info, onResult }: { info: StrategiesInfo; onResult: (r: Ha
                   <b className="num">{t}</b>
                 </span>
               ))}
-              . The daily-executor then blocks and records every new stage order on each until it is resumed.
+              . The daily-executor then blocks and records every new stage order on each until it is resumed
+              {venues.includes('etoro') ? '; the eToro executor records its demo orders as blocked' : ''}.
             </>
           }
           current={
@@ -314,6 +324,12 @@ function StrategyStatus({ s }: { s: StrategyView }) {
 
 function StrategiesCard({ info }: { info: StrategiesInfo }) {
   const ex = info.executor
+  // Intraday strategies run on Bitso through strategy-executor. With the
+  // eToro ledger selected the table stays readable, but start/stop is held
+  // back behind a note so an operator does not act on the wrong venue.
+  const venue = useVenue()
+  const bitsoOnly = venue === 'etoro'
+  const canControl = ex.controls_enabled && !bitsoOnly
   const [pending, setPending] = useState<Pending | null>(null)
   const [flash, setFlash] = useState<StrategyControlResponse | null>(null)
   const triggers = useRef(new Map<string, HTMLButtonElement>())
@@ -385,6 +401,12 @@ function StrategiesCard({ info }: { info: StrategiesInfo }) {
           It predates STRATEGY_HOLD_FILE: a stop is not persisted and a restart or the router can start the strategy
           again. Upgrade it before relying on stops.
         </Banner>
+      )}
+      {ex.reachable && bitsoOnly && (
+        <div className="panel controls-off" data-testid="strategies-bitso-only">
+          <b>Bitso only:</b> intraday strategies run on Bitso through strategy-executor; the eToro demo executor has
+          none. Switch the ledger picker to a Bitso ledger to start or stop them.
+        </div>
       )}
 
       {ex.reachable && (
@@ -501,7 +523,7 @@ function StrategiesCard({ info }: { info: StrategiesInfo }) {
                               className="btn btn-danger btn-sm"
                               id={`strategy-stop-${s.name}`}
                               data-testid={`strategy-stop-${s.name}`}
-                              disabled={!ex.controls_enabled}
+                              disabled={!canControl}
                               onClick={() => {
                                 setFlash(null)
                                 setPending({ s, action: 'stop' })
@@ -518,7 +540,7 @@ function StrategiesCard({ info }: { info: StrategiesInfo }) {
                               className="btn btn-ok btn-sm"
                               id={`strategy-start-${s.name}`}
                               data-testid={`strategy-start-${s.name}`}
-                              disabled={!ex.controls_enabled}
+                              disabled={!canControl}
                               onClick={() => {
                                 setFlash(null)
                                 setPending({ s, action: 'start' })

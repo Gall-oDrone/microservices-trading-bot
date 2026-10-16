@@ -2,6 +2,15 @@ import { useQuery } from '@tanstack/react-query'
 import { useSearchParams } from 'react-router'
 import type { z } from 'zod'
 import {
+  etoroCandlesResponseSchema,
+  etoroForwardTestsResponseSchema,
+  etoroHealthResponseSchema,
+  etoroLedgerResponseSchema,
+  etoroReconcileResponseSchema,
+  etoroRiskReportSchema,
+  etoroRiskResponseSchema,
+} from './etoroSchemas'
+import {
   candlesResponseSchema,
   capacityResponseSchema,
   preregResponseSchema,
@@ -19,6 +28,8 @@ import {
   strategiesInfoSchema,
   studiesResponseSchema,
   studyDocSchema,
+  type LedgerInfo,
+  type Venue,
 } from './schemas'
 
 /** Error from the API or from schema validation, with a message fit for the UI. */
@@ -95,6 +106,16 @@ export function withLedger(path: string, ledger: string): string {
   return `${path}${path.includes('?') ? '&' : '?'}ledger=${encodeURIComponent(ledger)}`
 }
 
+/**
+ * Per-hook overrides. `ledger` replaces the URL selection (the landing page
+ * shows both venues at once); `enabled: false` holds the request back, which
+ * the shell uses so a Bitso route is never asked about an eToro ledger.
+ */
+export interface LedgerOpts {
+  ledger?: string
+  enabled?: boolean
+}
+
 export const queryKeys = {
   forwardTests: (ledger: string) => ['forward-tests', ledger] as const,
   ledger: (ledger: string, book: string) => ['ledger', ledger, book] as const,
@@ -113,14 +134,57 @@ export const queryKeys = {
   monteCarlo: (ledger: string, book: string, q: string) => ['montecarlo', ledger, book, q] as const,
   capacity: (ledger: string, book: string) => ['capacity', ledger, book] as const,
   prereg: (book: string) => ['prereg', book] as const,
+  // /api/ui/etoro/* (P5a): the eToro ledger's own views.
+  etoroForwardTests: (ledger: string) => ['etoro', 'forward-tests', ledger] as const,
+  etoroLedger: (ledger: string, book: string) => ['etoro', 'ledger', ledger, book] as const,
+  etoroCandles: (ledger: string, book: string, days: number) => ['etoro', 'candles', ledger, book, days] as const,
+  etoroRisk: (ledger: string) => ['etoro', 'risk', ledger] as const,
+  etoroHealth: (ledger: string) => ['etoro', 'health', ledger] as const,
+  etoroReconcile: (ledger: string) => ['etoro', 'reconcile', ledger] as const,
+  etoroRiskReport: (ledger: string) => ['etoro', 'risk-report', ledger] as const,
 }
 
-export function useForwardTests() {
-  const ledger = useLedgerName()
+// --- Venue ---------------------------------------------------------------
+
+/** The ledger the URL selects (or the default), from the ledgers list; undefined while it loads or when unknown. */
+export function useSelectedLedger(): { info: LedgerInfo | undefined; loading: boolean; error: boolean } {
+  const name = useLedgerName()
+  const q = useLedgers()
+  const ledgers = q.data?.ledgers
+  let info: LedgerInfo | undefined
+  if (ledgers) {
+    info = name ? ledgers.find((l) => l.name === name) : (ledgers.find((l) => l.default) ?? ledgers[0])
+  }
+  return { info, loading: q.isPending, error: q.isError }
+}
+
+/**
+ * The venue of the selected ledger: 'bitso' or 'etoro'. Undefined only while
+ * the ledgers list is loading. An unknown ledger name, or a failed ledgers
+ * call, resolves to Bitso so the Bitso routes surface ui-api's own error
+ * ("unknown ledger …", "not reachable") instead of a blank page.
+ */
+export function useVenue(): Venue | undefined {
+  const { info, loading, error } = useSelectedLedger()
+  if (info) return info.venue
+  if (loading && !error) return undefined
+  return 'bitso'
+}
+
+/** The first configured eToro ledger, if any (the landing page shows it next to Bitso). */
+export function useEtoroLedgerName(): string | undefined {
+  const q = useLedgers()
+  return q.data?.ledgers.find((l) => l.venue === 'etoro')?.name
+}
+
+export function useForwardTests(opts: LedgerOpts = {}) {
+  const selected = useLedgerName()
+  const ledger = opts.ledger ?? selected
   return useQuery({
     queryKey: queryKeys.forwardTests(ledger),
     queryFn: ({ signal }) => fetchJSON(withLedger('/forward-tests', ledger), forwardTestsResponseSchema, signal),
     refetchInterval: REFRESH_MS,
+    enabled: opts.enabled ?? true,
   })
 }
 
@@ -134,8 +198,9 @@ export function useLedger(book: string) {
   })
 }
 
-export function useCandles(book: string, days: number) {
-  const ledger = useLedgerName()
+export function useCandles(book: string, days: number, opts: LedgerOpts = {}) {
+  const selected = useLedgerName()
+  const ledger = opts.ledger ?? selected
   return useQuery({
     queryKey: queryKeys.candles(ledger, book, days),
     queryFn: ({ signal }) =>
@@ -145,6 +210,7 @@ export function useCandles(book: string, days: number) {
         signal,
       ),
     staleTime: 5 * 60_000,
+    enabled: opts.enabled ?? true,
   })
 }
 
@@ -206,12 +272,14 @@ export function usePrereg(book: string) {
   })
 }
 
-export function useRisk() {
-  const ledger = useLedgerName()
+export function useRisk(opts: LedgerOpts = {}) {
+  const selected = useLedgerName()
+  const ledger = opts.ledger ?? selected
   return useQuery({
     queryKey: queryKeys.risk(ledger),
     queryFn: ({ signal }) => fetchJSON(withLedger('/risk', ledger), riskResponseSchema, signal),
     refetchInterval: REFRESH_MS,
+    enabled: opts.enabled ?? true,
   })
 }
 
@@ -299,11 +367,112 @@ export function useRun(date: string, name: string) {
  * ledger. ui-api caches the S3 listing for a minute, so polling faster gains
  * nothing.
  */
-export function useDataHealth() {
-  const ledger = useLedgerName()
+export function useDataHealth(opts: LedgerOpts = {}) {
+  const selected = useLedgerName()
+  const ledger = opts.ledger ?? selected
   return useQuery({
     queryKey: queryKeys.dataHealth(ledger),
     queryFn: ({ signal }) => fetchJSON(withLedger('/health/data', ledger), dataHealthSchema, signal),
     refetchInterval: REFRESH_MS,
+    enabled: opts.enabled ?? true,
+  })
+}
+
+// --- eToro venue (/api/ui/etoro/*, P5a) -----------------------------------
+// Same cadence as the Bitso peers: the ledger changes once a day (09:35 New
+// York), so a minute is plenty; candles are stable for longer.
+
+/** Per book: decision, paper, demo position, account, last order, run status, and the NYSE session. */
+export function useEtoroForwardTests(opts: LedgerOpts = {}) {
+  const selected = useLedgerName()
+  const ledger = opts.ledger ?? selected
+  return useQuery({
+    queryKey: queryKeys.etoroForwardTests(ledger),
+    queryFn: ({ signal }) =>
+      fetchJSON(withLedger('/etoro/forward-tests', ledger), etoroForwardTestsResponseSchema, signal),
+    refetchInterval: REFRESH_MS,
+    enabled: opts.enabled ?? true,
+  })
+}
+
+/** The book's ledger records and the paper-vs-demo equity series. */
+export function useEtoroLedger(book: string, opts: LedgerOpts = {}) {
+  const selected = useLedgerName()
+  const ledger = opts.ledger ?? selected
+  return useQuery({
+    queryKey: queryKeys.etoroLedger(ledger, book),
+    queryFn: ({ signal }) =>
+      fetchJSON(
+        withLedger(`/etoro/forward-tests/${encodeURIComponent(book)}/ledger`, ledger),
+        etoroLedgerResponseSchema,
+        signal,
+      ),
+    refetchInterval: REFRESH_MS,
+    enabled: opts.enabled ?? true,
+  })
+}
+
+/** The executor's daily candles with SMA50 (the Bitso candle shape). */
+export function useEtoroCandles(book: string, days: number, opts: LedgerOpts = {}) {
+  const selected = useLedgerName()
+  const ledger = opts.ledger ?? selected
+  return useQuery({
+    queryKey: queryKeys.etoroCandles(ledger, book, days),
+    queryFn: ({ signal }) =>
+      fetchJSON(
+        withLedger(`/etoro/forward-tests/${encodeURIComponent(book)}/candles?days=${days}`, ledger),
+        etoroCandlesResponseSchema,
+        signal,
+      ),
+    staleTime: 5 * 60_000,
+    enabled: opts.enabled ?? true,
+  })
+}
+
+/** EtoroDemoPolicy, the halt file, the demo account and per-book exposure. */
+export function useEtoroRisk(opts: LedgerOpts = {}) {
+  const selected = useLedgerName()
+  const ledger = opts.ledger ?? selected
+  return useQuery({
+    queryKey: queryKeys.etoroRisk(ledger),
+    queryFn: ({ signal }) => fetchJSON(withLedger('/etoro/risk', ledger), etoroRiskResponseSchema, signal),
+    refetchInterval: REFRESH_MS,
+    enabled: opts.enabled ?? true,
+  })
+}
+
+/** The etorohealth checks (ledger, halt, coverage, run, reconcile, intents). */
+export function useEtoroHealth(opts: LedgerOpts = {}) {
+  const selected = useLedgerName()
+  const ledger = opts.ledger ?? selected
+  return useQuery({
+    queryKey: queryKeys.etoroHealth(ledger),
+    queryFn: ({ signal }) => fetchJSON(withLedger('/etoro/health', ledger), etoroHealthResponseSchema, signal),
+    refetchInterval: REFRESH_MS,
+    enabled: opts.enabled ?? true,
+  })
+}
+
+/** The newest reconcile reports next to the ledger, with the operator's re-checks. */
+export function useEtoroReconcile(opts: LedgerOpts = {}) {
+  const selected = useLedgerName()
+  const ledger = opts.ledger ?? selected
+  return useQuery({
+    queryKey: queryKeys.etoroReconcile(ledger),
+    queryFn: ({ signal }) => fetchJSON(withLedger('/etoro/reconcile', ledger), etoroReconcileResponseSchema, signal),
+    refetchInterval: REFRESH_MS,
+    enabled: opts.enabled ?? true,
+  })
+}
+
+/** The latest P4 risk report (cfdrisk-report/v1); 404 until the first one is written. */
+export function useEtoroRiskReport(opts: LedgerOpts = {}) {
+  const selected = useLedgerName()
+  const ledger = opts.ledger ?? selected
+  return useQuery({
+    queryKey: queryKeys.etoroRiskReport(ledger),
+    queryFn: ({ signal }) => fetchJSON(withLedger('/etoro/risk-report', ledger), etoroRiskReportSchema, signal),
+    staleTime: 10 * 60_000,
+    enabled: opts.enabled ?? true,
   })
 }

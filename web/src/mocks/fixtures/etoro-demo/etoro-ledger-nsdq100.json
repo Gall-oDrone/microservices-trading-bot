@@ -1,0 +1,512 @@
+{
+  "ledger": "etoro-demo",
+  "venue": "etoro",
+  "book": "nsdq100",
+  "mode": "demo",
+  "records": [
+    {
+      "schema": "etoro-ledger/v1",
+      "recorded_at": "2026-10-12T13:35:09Z",
+      "code_version": "357928a1768f",
+      "mode": "demo",
+      "venue": "etoro",
+      "book": "nsdq100",
+      "instrument": {
+        "symbol": "NSDQ100",
+        "id": 28
+      },
+      "prereg": "FORWARD-TEST-PREREGISTRATION-SMA50-INDEX-CFD-2026-10-12.md",
+      "decision": {
+        "bar_date": "2026-10-09",
+        "fill_date": "2026-10-12",
+        "close": 30893.3,
+        "sma50": 29776.03040000005,
+        "signal": "long",
+        "prev_signal": "long",
+        "action": "hold"
+      },
+      "paper": {
+        "forward_start": "2026-10-13",
+        "started": false,
+        "days": 0,
+        "position": "flat",
+        "round_trips": 0,
+        "spread_rt_bps": 15.5,
+        "overnight_bps": 2.3,
+        "costs_status": "provisional (weekend capture 2026-10-10)",
+        "equity_if_closed": 1,
+        "hold_equity_if_closed": 1,
+        "max_drawdown": 0,
+        "financing_pct": 0,
+        "pending_action": "buy"
+      },
+      "candles": {
+        "source": "etoro live candles OneDay, instrument 28, NYSE trading days",
+        "first": "2022-12-21",
+        "last": "2026-10-09",
+        "bars": 953,
+        "missing_trading_days": 0,
+        "sha256_prefix": "4f5e46325f00cfe2"
+      },
+      "demo": {
+        "env": "demo",
+        "target": "long",
+        "action": "open",
+        "position_before": {
+          "state": "flat"
+        },
+        "position_after": {
+          "state": "long",
+          "position_id": "3616683146",
+          "units": 0.035799,
+          "amount": 1099.99,
+          "open_rate": 30726.899999999998,
+          "opened_at": "2026-10-12T13:35:06Z"
+        },
+        "account": {
+          "currency": "USD",
+          "cash": 99993.93,
+          "equity": 99993.93,
+          "exposure": 0
+        },
+        "quote": {
+          "bid": 30742.6,
+          "ask": 30743.3,
+          "at": "2026-10-12T13:33:59Z",
+          "spread_bps": 0.22769447954758007
+        },
+        "costs": {
+          "spread": 0.04,
+          "markup": 0,
+          "transaction_fee": 0,
+          "overnight_fee": 0.26,
+          "weekend_fee": 0
+        },
+        "risk": {
+          "policy_version": "etoro-demo-2026-10-10",
+          "order": {
+            "book": "nsdq100",
+            "side": "buy",
+            "qty_btc": 0.035780153724551365,
+            "price": 30743.3,
+            "ref_price": 30893.3,
+            "leverage": 1
+          },
+          "state": {
+            "position_btc": 0,
+            "orders_today": 0,
+            "equity": 99993.93
+          },
+          "allowed": true
+        },
+        "order": {
+          "kind": "open",
+          "client_ref": "sma50-nsdq100-2026-10-12-open",
+          "request_id": "4897b93a-1c2c-5206-a633-a21ea27820e7",
+          "order_id": "388031762",
+          "status": "executed",
+          "position_ids": [
+            "3616683146"
+          ],
+          "avg_price": 30726.899999999998,
+          "units": 0.035799,
+          "amount": 1099.99,
+          "spread_cost": 0.04,
+          "intent_at": "2026-10-12T13:35:05.372756342Z",
+          "started": "2026-10-12T13:35:05.372756342Z",
+          "finished": "2026-10-12T13:35:09.965314527Z",
+          "fill_vs_mid_bps": -5.220709138192423,
+          "fill_vs_close_bps": -53.86281167761342
+        }
+      }
+    },
+    {
+      "schema": "etoro-ledger/v1",
+      "recorded_at": "2026-10-13T13:35:04Z",
+      "code_version": "357928a1768f",
+      "mode": "demo",
+      "venue": "etoro",
+      "book": "nsdq100",
+      "instrument": {
+        "symbol": "NSDQ100",
+        "id": 28
+      },
+      "prereg": "FORWARD-TEST-PREREGISTRATION-SMA50-INDEX-CFD-2026-10-12.md",
+      "decision": {
+        "bar_date": "2026-10-12",
+        "fill_date": "2026-10-13",
+        "close": 30649.5,
+        "sma50": 29824.42480000006,
+        "signal": "long",
+        "prev_signal": "long",
+        "action": "hold"
+      },
+      "paper": {
+        "forward_start": "2026-10-13",
+        "started": false,
+        "days": 0,
+        "position": "flat",
+        "round_trips": 0,
+        "spread_rt_bps": 15.5,
+        "overnight_bps": 2.3,
+        "costs_status": "provisional (weekend capture 2026-10-10)",
+        "equity_if_closed": 1,
+        "hold_equity_if_closed": 1,
+        "max_drawdown": 0,
+        "financing_pct": 0,
+        "pending_action": "buy"
+      },
+      "candles": {
+        "source": "etoro live candles OneDay, instrument 28, NYSE trading days",
+        "first": "2022-12-22",
+        "last": "2026-10-12",
+        "bars": 953,
+        "missing_trading_days": 0,
+        "sha256_prefix": "b8e870f33bd1a947",
+        "revised_closes": 16,
+        "max_revision_bps": 1.2597631645240785
+      },
+      "demo": {
+        "env": "demo",
+        "target": "long",
+        "action": "none",
+        "position_before": {
+          "state": "long",
+          "position_id": "3616683146",
+          "units": 0.035799,
+          "amount": 1099.99,
+          "open_rate": 30726.899999999998,
+          "opened_at": "2026-10-12T13:35:06Z"
+        },
+        "position_after": {
+          "state": "long",
+          "position_id": "3616683146",
+          "units": 0.035799,
+          "amount": 1099.99,
+          "open_rate": 30726.899999999998,
+          "opened_at": "2026-10-12T13:35:06Z"
+        },
+        "account": {
+          "currency": "USD",
+          "cash": 97793.95,
+          "equity": 99981.23,
+          "exposure": 2187.29
+        }
+      }
+    },
+    {
+      "schema": "etoro-ledger/v1",
+      "recorded_at": "2026-10-14T13:35:05Z",
+      "code_version": "357928a1768f",
+      "mode": "demo",
+      "venue": "etoro",
+      "book": "nsdq100",
+      "instrument": {
+        "symbol": "NSDQ100",
+        "id": 28
+      },
+      "prereg": "FORWARD-TEST-PREREGISTRATION-SMA50-INDEX-CFD-2026-10-12.md",
+      "decision": {
+        "bar_date": "2026-10-13",
+        "fill_date": "2026-10-14",
+        "close": 30561.7,
+        "sma50": 29859.522200000058,
+        "signal": "long",
+        "prev_signal": "long",
+        "action": "hold"
+      },
+      "paper": {
+        "forward_start": "2026-10-13",
+        "started": true,
+        "days": 1,
+        "position": "long",
+        "round_trips": 1,
+        "spread_rt_bps": 15.5,
+        "overnight_bps": 2.3,
+        "costs_status": "provisional (weekend capture 2026-10-10)",
+        "equity_if_closed": 0.995899077060087,
+        "hold_equity_if_closed": 0.995899077060087,
+        "max_drawdown": 0.003328502529373334,
+        "financing_pct": 0,
+        "pending_action": "hold"
+      },
+      "candles": {
+        "source": "etoro live candles OneDay, instrument 28, NYSE trading days",
+        "first": "2022-12-23",
+        "last": "2026-10-13",
+        "bars": 953,
+        "missing_trading_days": 0,
+        "sha256_prefix": "2803d95edfbf6783",
+        "revised_closes": 16,
+        "max_revision_bps": 1.2597631645240785
+      },
+      "demo": {
+        "env": "demo",
+        "target": "long",
+        "action": "none",
+        "position_before": {
+          "state": "long",
+          "position_id": "3616683146",
+          "units": 0.035799,
+          "amount": 1099.99,
+          "open_rate": 30726.899999999998,
+          "opened_at": "2026-10-12T13:35:06Z"
+        },
+        "position_after": {
+          "state": "long",
+          "position_id": "3616683146",
+          "units": 0.035799,
+          "amount": 1099.99,
+          "open_rate": 30726.899999999998,
+          "opened_at": "2026-10-12T13:35:06Z"
+        },
+        "account": {
+          "currency": "USD",
+          "cash": 97793.95,
+          "equity": 99974.17,
+          "exposure": 2180.23
+        }
+      }
+    },
+    {
+      "schema": "etoro-ledger/v1",
+      "recorded_at": "2026-10-15T13:35:04Z",
+      "code_version": "357928a1768f",
+      "mode": "demo",
+      "venue": "etoro",
+      "book": "nsdq100",
+      "instrument": {
+        "symbol": "NSDQ100",
+        "id": 28
+      },
+      "prereg": "FORWARD-TEST-PREREGISTRATION-SMA50-INDEX-CFD-2026-10-12.md",
+      "decision": {
+        "bar_date": "2026-10-14",
+        "fill_date": "2026-10-15",
+        "close": 29917.2,
+        "sma50": 29863.59080000005,
+        "signal": "long",
+        "prev_signal": "long",
+        "action": "hold"
+      },
+      "paper": {
+        "forward_start": "2026-10-13",
+        "started": true,
+        "days": 2,
+        "position": "long",
+        "round_trips": 1,
+        "spread_rt_bps": 15.5,
+        "overnight_bps": 2.3,
+        "costs_status": "provisional (weekend capture 2026-10-10)",
+        "equity_if_closed": 0.9746678383042192,
+        "hold_equity_if_closed": 0.9746678383042192,
+        "max_drawdown": 0.024576030462694964,
+        "financing_pct": 0.02292344444182441,
+        "pending_action": "hold"
+      },
+      "candles": {
+        "source": "etoro live candles OneDay, instrument 28, NYSE trading days",
+        "first": "2022-12-27",
+        "last": "2026-10-14",
+        "bars": 953,
+        "missing_trading_days": 0,
+        "sha256_prefix": "fcf659f2c1521772"
+      },
+      "demo": {
+        "env": "demo",
+        "target": "long",
+        "action": "none",
+        "position_before": {
+          "state": "long",
+          "position_id": "3616683146",
+          "units": 0.035799,
+          "amount": 1099.99,
+          "open_rate": 30726.899999999998,
+          "opened_at": "2026-10-12T13:35:06Z"
+        },
+        "position_after": {
+          "state": "long",
+          "position_id": "3616683146",
+          "units": 0.035799,
+          "amount": 1099.99,
+          "open_rate": 30726.899999999998,
+          "opened_at": "2026-10-12T13:35:06Z"
+        },
+        "account": {
+          "currency": "USD",
+          "cash": 97793.95,
+          "equity": 99931.23,
+          "exposure": 2137.2799999999997
+        }
+      }
+    },
+    {
+      "schema": "etoro-ledger/v1",
+      "recorded_at": "2026-10-16T13:35:05Z",
+      "code_version": "357928a1768f",
+      "mode": "demo",
+      "venue": "etoro",
+      "book": "nsdq100",
+      "instrument": {
+        "symbol": "NSDQ100",
+        "id": 28
+      },
+      "prereg": "FORWARD-TEST-PREREGISTRATION-SMA50-INDEX-CFD-2026-10-12.md",
+      "decision": {
+        "bar_date": "2026-10-15",
+        "fill_date": "2026-10-16",
+        "close": 29868.7,
+        "sma50": 29871.959200000056,
+        "signal": "flat",
+        "prev_signal": "long",
+        "action": "sell"
+      },
+      "paper": {
+        "forward_start": "2026-10-13",
+        "started": true,
+        "days": 3,
+        "position": "long",
+        "round_trips": 1,
+        "spread_rt_bps": 15.5,
+        "overnight_bps": 2.3,
+        "costs_status": "provisional (weekend capture 2026-10-10)",
+        "equity_if_closed": 0.9728629924364185,
+        "hold_equity_if_closed": 0.9728629924364185,
+        "max_drawdown": 0.026382102125851015,
+        "financing_pct": 0.04536346813340405,
+        "pending_action": "sell"
+      },
+      "candles": {
+        "source": "etoro live candles OneDay, instrument 28, NYSE trading days",
+        "first": "2022-12-28",
+        "last": "2026-10-15",
+        "bars": 953,
+        "missing_trading_days": 0,
+        "sha256_prefix": "1764b216226496d9",
+        "revised_closes": 16,
+        "max_revision_bps": 1.2597631645240785
+      },
+      "demo": {
+        "env": "demo",
+        "target": "flat",
+        "action": "close",
+        "position_before": {
+          "state": "long",
+          "position_id": "3616683146",
+          "units": 0.035799,
+          "amount": 1099.99,
+          "open_rate": 30726.899999999998,
+          "opened_at": "2026-10-12T13:35:06Z"
+        },
+        "position_after": {
+          "state": "flat"
+        },
+        "account": {
+          "currency": "USD",
+          "cash": 97793.95,
+          "equity": 99949.9,
+          "exposure": 2155.95
+        },
+        "quote": {
+          "bid": 29787.3,
+          "ask": 29789.2,
+          "at": "2026-10-16T13:34:29Z",
+          "spread_bps": 0.6378353881149297
+        },
+        "risk": {
+          "policy_version": "etoro-demo-2026-10-10",
+          "order": {
+            "book": "nsdq100",
+            "side": "sell",
+            "qty_btc": 0.035799,
+            "price": 29787.3,
+            "ref_price": 29868.7,
+            "leverage": 1
+          },
+          "state": {
+            "position_btc": 0.035799,
+            "orders_today": 0,
+            "equity": 99949.9,
+            "exposure": 2155.95
+          },
+          "allowed": true
+        },
+        "order": {
+          "kind": "close",
+          "client_ref": "sma50-nsdq100-2026-10-16-close",
+          "request_id": "c8b55e0a-6ae5-5e93-b983-73663c8940c6",
+          "order_id": "389021477",
+          "status": "executed",
+          "position_ids": [
+            "3616683146"
+          ],
+          "avg_price": 29770.5,
+          "units": 0.035799,
+          "amount": 1099.99,
+          "intent_at": "2026-10-16T13:35:04.631651563Z",
+          "started": "2026-10-16T13:35:04.631651563Z",
+          "finished": "2026-10-16T13:35:05.881854517Z",
+          "fill_vs_mid_bps": 5.958725336332279,
+          "fill_vs_close_bps": 32.87722599242709
+        }
+      }
+    }
+  ],
+  "equity": [
+    {
+      "date": "2026-10-09",
+      "equity": 1,
+      "hold_equity": 1,
+      "max_drawdown": 0,
+      "signal": "long",
+      "close": 30893.3,
+      "sma50": 29776.03040000005,
+      "demo_equity": 99993.93,
+      "demo_exposure": 0
+    },
+    {
+      "date": "2026-10-12",
+      "equity": 1,
+      "hold_equity": 1,
+      "max_drawdown": 0,
+      "signal": "long",
+      "close": 30649.5,
+      "sma50": 29824.42480000006,
+      "demo_equity": 99981.23,
+      "demo_exposure": 2187.29
+    },
+    {
+      "date": "2026-10-13",
+      "equity": 0.995899077060087,
+      "hold_equity": 0.995899077060087,
+      "max_drawdown": 0.003328502529373334,
+      "signal": "long",
+      "close": 30561.7,
+      "sma50": 29859.522200000058,
+      "demo_equity": 99974.17,
+      "demo_exposure": 2180.23
+    },
+    {
+      "date": "2026-10-14",
+      "equity": 0.9746678383042192,
+      "hold_equity": 0.9746678383042192,
+      "max_drawdown": 0.024576030462694964,
+      "signal": "long",
+      "close": 29917.2,
+      "sma50": 29863.59080000005,
+      "demo_equity": 99931.23,
+      "demo_exposure": 2137.2799999999997
+    },
+    {
+      "date": "2026-10-15",
+      "equity": 0.9728629924364185,
+      "hold_equity": 0.9728629924364185,
+      "max_drawdown": 0.026382102125851015,
+      "signal": "flat",
+      "close": 29868.7,
+      "sma50": 29871.959200000056,
+      "demo_equity": 99949.9,
+      "demo_exposure": 2155.95
+    }
+  ]
+}

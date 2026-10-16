@@ -14,9 +14,11 @@ import type { BookSnapshot, Fill, Market, TapeTrade } from '../api/schemas'
 import { PriceChart } from '../components/charts'
 import { LiveBadge, TickPrice } from '../components/live'
 import { Badge, Banner, CardSkeleton, Empty, ErrorState, Stat } from '../components/ui'
+import { VenueSwitch } from '../components/VenueSwitch'
 import { ago, bookLabel, fmtDate, fmtPrice, fmtUTC } from '../lib/format'
 import { fmtSize, ladder, quoteOf, tapeStats, volumeContext, type LadderRow } from '../lib/market'
 import { usePageTitle } from '../lib/usePageTitle'
+import { EtoroMarketPage } from './etoro/EtoroMarketPage'
 
 /** The books ui-api streams; the forward-test list replaces this once loaded. */
 const DEFAULT_BOOKS = ['btc_mxn', 'btc_usd']
@@ -365,7 +367,12 @@ function CandlesCard({ book, snap, live }: { book: string; snap: BookSnapshot | 
   )
 }
 
+/** The Market page of the selected ledger: Bitso's live books below; the eToro ledger has no live feed before P5c. */
 export function MarketPage() {
+  return <VenueSwitch bitso={<BitsoMarketPage />} etoro={<EtoroMarketPage />} />
+}
+
+function BitsoMarketPage() {
   usePageTitle(
     'Market',
     'Live Bitso order books, spreads and trades for the forward-test books, with daily candles and volume. Display only.',

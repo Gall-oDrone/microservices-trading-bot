@@ -2,6 +2,7 @@
   "ledgers": [
     {
       "name": "stage",
+      "venue": "bitso",
       "remote": false,
       "controls_enabled": true,
       "halt_file": {
@@ -15,10 +16,25 @@
     },
     {
       "name": "dry-run",
+      "venue": "bitso",
       "remote": false,
       "controls_enabled": true,
       "halt_file": {
         "path": "../strategy-executor/daily-executor-data/risk-state.json",
+        "found": false,
+        "halted": false,
+        "reason": "",
+        "by": "",
+        "at": ""
+      }
+    },
+    {
+      "name": "etoro-demo",
+      "venue": "etoro",
+      "remote": false,
+      "controls_enabled": true,
+      "halt_file": {
+        "path": "../strategy-executor/etoro-daily-data/demo/risk-state.json",
         "found": false,
         "halted": false,
         "reason": "",
@@ -32,7 +48,8 @@
     "confirm": "HALT ALL",
     "targets": [
       "stage",
-      "dry-run"
+      "dry-run",
+      "etoro-demo"
     ],
     "already_halted": []
   },

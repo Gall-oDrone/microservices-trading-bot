@@ -8,6 +8,13 @@ import { z } from 'zod'
 export const signal = z.enum(['long', 'flat'])
 export type Signal = z.infer<typeof signal>
 
+/**
+ * The venue a ledger belongs to (api.Ledger.Venue, P5a). Absent in responses
+ * from ui-api builds before P5a and in older fixtures, so it defaults to Bitso.
+ */
+export const venueSchema = z.enum(['bitso', 'etoro']).default('bitso')
+export type Venue = z.infer<typeof venueSchema>
+
 export const decisionSchema = z.object({
   bar_date: z.string(),
   fill_date: z.string(),
@@ -443,6 +450,7 @@ export type StrategyView = z.infer<typeof strategyViewSchema>
 
 export const ledgerControlSchema = z.object({
   name: z.string(),
+  venue: venueSchema,
   remote: z.boolean(),
   controls_enabled: z.boolean(),
   disabled_reason: z.string().optional(),
@@ -519,6 +527,7 @@ export type Health = z.infer<typeof healthSchema>
 /** One configured ledger (ui-api -ledgers). The first is the default. */
 export const ledgerInfoSchema = z.object({
   name: z.string(),
+  venue: venueSchema,
   path: z.string(),
   default: z.boolean(),
   found: z.boolean(),
