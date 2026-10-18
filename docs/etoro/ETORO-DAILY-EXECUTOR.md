@@ -25,19 +25,22 @@ go build -o etoro-daily-data/etoro-daily-executor ./cmd/etoro-daily-executor
 go build -o etoro-daily-data/etoro-reconcile      ./cmd/etoro-reconcile
 ```
 
-Crontab (the executor skips NYSE holidays itself). The job must run at 09:35 New York time; two
-forms, depending on the host's cron:
+Crontab (the executor skips NYSE holidays itself). Since P6 (2026-10-17) `scripts/install-ops-cron.sh`
+installs the entry inside its managed `mtb-ops` block, builds the three binaries above (plus
+`etoro-risk-report`; `--rebuild-etoro` rebuilds them from the committed HEAD and keeps `.prev-<rev>`
+copies), schedules the weekly risk report (§7) and writes `ETORO_EXECUTOR_S3_URI`,
+`UI_API_ETORO_LEDGER`, `UI_ALERTS_ETORO_LEDGER` and `ETORO_RISK_REPORT_YAHOO` to `ops.env`
+(`--no-etoro` opts out). It also removes the hand-installed `mtb-etoro` block of P3. By hand, the
+job must run at 09:35 New York time; two forms, depending on the host's cron:
 
 ```cron
 # cron with CRON_TZ support (cronie, systemd-cron):
 CRON_TZ=America/New_York
 35 9 * * 1-5  /path/to/repo/scripts/ops-run.sh etoro
 
-# Debian/Ubuntu vixie cron (this ops host): CRON_TZ is silently ignored, so list both UTC
-# candidates and let only the one in the 09:xx New York hour through (correct across DST).
-# BEGIN mtb-etoro
+# Debian/Ubuntu vixie cron (this ops host; what the installer writes): CRON_TZ is silently ignored,
+# so list both UTC candidates and let only the one in the 09:xx New York hour through (correct across DST).
 35 13,14 * * 1-5 [ "$(TZ=America/New_York date +\%H)" = 09 ] && /path/to/repo/scripts/ops-run.sh etoro
-# END mtb-etoro
 ```
 
 > [!WARNING]
@@ -45,9 +48,10 @@ CRON_TZ=America/New_York
 > 09:35 New York start). With the first form on a cron that ignores `CRON_TZ`, the job runs
 > at 09:35 **UTC**, outside the cash session, and every day ends `needs the NYSE cash session`.
 
-Wiring the cron entry into `scripts/install-ops-cron.sh` is planned for phase P6. The **alerts**
-side is already wired: the installer writes `UI_ALERTS_ETORO_LEDGER` to `ops.env`, and the
-15-minute `ui-alerts` job checks this ledger directory (§3.1).
+With `ETORO_EXECUTOR_S3_URI` set, every run copies the ledger directory to
+`s3://<bucket>/daily-executor/etoro-demo/` (run log last) for the off-machine watchdog (§3.1);
+`scripts/etoro-daily-executor-run.sh --upload-only` sends it by hand (first upload, or after an
+`upload=failed`).
 
 ## 2. What a run does
 
@@ -127,9 +131,13 @@ every 12 h while it stays open, once when it resolves. Alerts are named `(etoro-
 | eToro order sent but not recorded | critical | An intent is on disk for more than 10 min with no ledger line for its reference (the run died between the order and the ledger). | The executor is re-run and records it. |
 | eToro trading halted | warning | `risk-state.json` says halted. Named together with any Bitso halt in the subject ("Trading halted (etoro-demo, stage)"). | The file is removed. |
 | eToro halt file | critical | `risk-state.json` exists but is invalid (the executor exits 2 before anything runs). | Fixed or removed. |
+| eToro ledger copy to S3 | warning | The newest run log says `upload=failed` (the off-machine watchdog cannot see that run). | The next run uploads, or `--upload-only` re-sends. |
 
-A missed 09:35 run is therefore in your inbox by about 10:15 New York. Not covered: the workstation
-being off (the Lambda watchdog covers only the Bitso ledger until P6 uploads this one to S3).
+A missed 09:35 run is therefore in your inbox by about 10:15 New York. **When the workstation is
+off**, the ledger watchdog (`infrastructure/lambda/ledger-watchdog`, since P6 with
+`etoro-demo=daily-executor/etoro-demo:nyse`) checks the S3 copy every hour: it pages when no run
+log follows the last NYSE trading day's 09:35 New York run within 6 h (a missed Monday run pages
+at about 15:35 New York), never on weekends or holidays, and once more when runs resume.
 
 ```bash
 # what would be sent right now, without sending or saving state
@@ -195,6 +203,14 @@ read-only, against the live ledger at 19:20:57Z: **CLEAN** (cash 98,859.70, equi
 nsdq100 flat, spx500 long 3616683295). The executor was not run; Monday 2026-10-19 09:35 is its
 first run with the new binary.
 
+**P6 installed 2026-10-18 01:50 UTC.** `install-ops-cron.sh` now owns the eToro cron entry (the
+hand-installed block is gone; schedule and guard unchanged) and the Monday risk-report job; the
+ledger directory's first copy went to `s3://…/daily-executor/etoro-demo/` (`--upload-only`), the
+watchdog Lambda was redeployed with `etoro-demo=…:nyse` (dry run: quiet, newest run Friday 13:35,
+due Friday), `ui-alerts` gained the `etoro.upload` check. The eToro binaries were not rebuilt. The
+`.prev` copies of the executor and reconcile are retired (deleted) by the operator after one clean
+week on the 2026-10-16 binaries, i.e. after Friday 2026-10-23's run.
+
 ## 7. Risk report
 
 `cmd/etoro-risk-report` (phase P4) reads the ledger, the saved candles, the Yahoo index histories
@@ -216,8 +232,11 @@ etoro-daily-data/etoro-risk-report -ledger ./etoro-daily-data/demo/ledger.jsonl 
 ```
 
 Output: `etoro-daily-data/demo/risk/<NY date>/risk.json` (schema `cfdrisk-report/v1`) and
-`risk.md` (also printed). Run it after each soak week (P6 schedules it after the Friday run). How
-to read it, and the first run's numbers, are in
+`risk.md` (also printed). `scripts/ops-run.sh etoro-risk` runs it every **Monday 15:00 UTC**
+(installed by `install-ops-cron.sh`): after the week's first run, so the newest candle file ends on
+Friday and the report covers the whole previous week; the output directory is copied to
+`$ETORO_EXECUTOR_S3_URI/risk/<date>/`, log in `~/.local/state/mtb-ops/etoro-risk.log`. How to read
+it, and the first run's numbers, are in
 [`docs/risk/MODEL-VALIDATION-ADDENDUM-ETORO-2026-10-13.md`](../risk/MODEL-VALIDATION-ADDENDUM-ETORO-2026-10-13.md).
 
 ## 8. Assisted trades from the console (P5d, 2026-10-16)

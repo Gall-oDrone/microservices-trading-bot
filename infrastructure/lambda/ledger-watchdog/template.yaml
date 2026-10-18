@@ -14,10 +14,15 @@ Parameters:
   Ledgers:
     Type: String
     Default: stage=daily-executor/stage
-    Description: name=prefix[,name=prefix...]; every prefix must be under daily-executor/.
+    Description: name=prefix[:nyse][,name=prefix[:nyse]...]; every prefix must be under daily-executor/. ":nyse" means the run happens at 09:35 New York on NYSE trading days (the eToro demo executor).
   MaxAgeHours:
     Type: Number
     Default: 30
+    Description: Daily ledgers are stale when the newest run log is older than this.
+  MaxAgeHoursNyse:
+    Type: Number
+    Default: 6
+    Description: NYSE ledgers are stale when no run log follows the last trading day's 09:35 New York run within this many hours.
   RepeatHours:
     Type: Number
     Default: 12
@@ -80,6 +85,7 @@ Resources:
           TOPIC_ARN: !Ref TopicArn
           LEDGERS: !Ref Ledgers
           MAX_AGE_HOURS: !Ref MaxAgeHours
+          MAX_AGE_HOURS_NYSE: !Ref MaxAgeHoursNyse
           REPEAT_HOURS: !Ref RepeatHours
           WINDOW_MINUTES: "62"
     DependsOn: LogGroup

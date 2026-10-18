@@ -95,6 +95,30 @@ Example `sma50_daily` request to backtesting `POST /api/v1/backtests` at Bitso b
 
 ---
 
+## eToro index-CFD demo executor and console (porting plan P3–P6)
+
+Runbook: `docs/etoro/ETORO-DAILY-EXECUTOR.md`. Everything is **demo only**: `ETORO_ENV=real` is
+refused by the executor, by ui-api's live feed and by the console's trade path.
+
+| Variable | Where | Meaning |
+|---|---|---|
+| `ETORO_PUBLIC_KEY`, `ETORO_PRIVATE_KEY`, `ETORO_ENV` | `~/.config/microservices-trading-bot/etoro-demo.env` (chmod 600), read by the executor, `etoro-reconcile`, ui-api (`-etoro-env-file`) | API keys (x-api-key / x-user-key) and environment. `ETORO_ENV` must be `demo`. Never committed (`scripts/check-no-etoro-secrets.sh`). In k8s, `trading-config/etoro-env` defaults to `demo` and the keys come from `trading-secrets` (`k8s/EXTERNAL-SECRETS-SETUP.md`). |
+| `ETORO_EXECUTOR_BIN`, `ETORO_RECONCILE_BIN`, `ETORO_RISK_REPORT_BIN` | `scripts/etoro-daily-executor-run.sh`, `scripts/ops-run.sh etoro-risk` | Binaries (default `services/strategy-executor/etoro-daily-data/<name>`; built by `scripts/install-ops-cron.sh`, rebuilt from the committed HEAD with `--rebuild-etoro`). |
+| `ETORO_EXECUTOR_LEDGER` | wrapper | The ledger (default `etoro-daily-data/demo/ledger.jsonl`); the halt file, intents, run logs, reconcile reports and risk reports live next to it. |
+| `ETORO_RECONCILE` | wrapper | `0` skips the read-only reconciliation after the run. |
+| `ETORO_EXECUTOR_DISABLED` | cron environment | `1` makes the run exit without trading (one day off). |
+| `ETORO_EXECUTOR_S3_URI` | `ops.env`, wrapper, `ops-run.sh etoro-risk` | Copy of the ledger directory for the off-machine watchdog, `s3://<bucket>/daily-executor/etoro-demo` (written by the installer with `--bucket`). The run log is uploaded last; `upload=ok\|failed` is in the run log and is a ui-alerts warning (`etoro.upload`). `scripts/etoro-daily-executor-run.sh --upload-only` re-sends. |
+| `ETORO_RISK_REPORT_YAHOO` | `ops.env`, `ops-run.sh etoro-risk` | Yahoo index histories for the weekly P4 risk report (default `docs/backtest-readiness/evidence-2026-10-10/data`). |
+| `UI_API_ETORO_LEDGER`, `UI_API_ETORO_NAME` | ui-api `-etoro-ledger`, `-etoro-name` | Registers the ledger as venue `etoro` (`etoro-demo`): `/api/ui/etoro/*`, halt/resume and halt-all reach its halt file. Empty: the console shows Bitso only. |
+| `UI_API_ETORO_LIVE`, `UI_API_ETORO_ENV_FILE` | ui-api `-etoro-live` (default on), `-etoro-env-file` | The read-only rates poller (one `GetRates` every 5 s = 12 reads/min) behind `/api/ui/etoro/live` and `/stream`; off when the env file is missing or not `demo`. |
+| `UI_API_ETORO_TRADING` | ui-api `-etoro-trading` (default **off**) | Assisted trades from the console (prepare → place). Needs the operator token, the local eToro ledger and the demo env file; a missing prerequisite is fatal at start. |
+| `UI_ALERTS_ETORO_LEDGER`, `UI_ALERTS_ETORO_NAME` | ui-alerts `-etoro-ledger`, `-etoro-name` | The 15-minute alerts check this ledger directory (missed or failed 09:35 New York run, drift, unrecorded order, halt, failed upload). Written by the installer. |
+| `LEDGERS`, `MAX_AGE_HOURS_NYSE` | `infrastructure/lambda/ledger-watchdog` (deploy with `--ledgers …,etoro-demo=daily-executor/etoro-demo:nyse`) | `:nyse` ledgers are stale when no run log follows the last NYSE trading day's 09:35 New York run within `MAX_AGE_HOURS_NYSE` (6 h); weekends and holidays never page. |
+
+Prometheus: the cron executor exposes no metrics; its alerting is ui-alerts (on the workstation) plus
+the watchdog (off it). The `trading-engine`'s `BROKER=etoro` path reuses the engine's existing
+metrics and rules (`monitoring/prometheus/rules/`), which carry no venue label.
+
 ## See also
 
 - **docs/ORDER-FLOW-AND-BITSO-TESTING.md** — when orders hit Bitso testing, how to validate the flow, and Bitso dashboard.

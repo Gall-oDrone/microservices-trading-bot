@@ -106,6 +106,25 @@ Deploy: `kubectl apply -k k8s/overlays/research`
 
 **Research → signals (operator gate):** set `RESEARCH_API_ENABLED=true` on `api-gateway` to list S3 memos and approve them into `trading.signals` with an `audit_id`. See `docs/agentic-ai/AGENTIC-AI-ETORO-IMPLEMENTATION-STATUS-2026-05-27.md`.
 
+## Operations (P6, 2026-10-17)
+
+- **Cron** (`scripts/install-ops-cron.sh`, managed `mtb-ops` block): the demo run at 09:35 New York on
+  weekdays (`ops-run.sh etoro`; two UTC candidates with a New York-hour guard, this host's cron
+  ignores `CRON_TZ`), the weekly P4 risk report on Monday 15:00 UTC (`ops-run.sh etoro-risk`), and
+  `ui-alerts` every 15 minutes over the eToro ledger directory. `--no-etoro` opts out;
+  `--rebuild-etoro` rebuilds the three binaries from the committed HEAD.
+- **S3 copy**: `s3://<bucket>/daily-executor/etoro-demo/` holds `ledger.jsonl`, `risk-state.json`
+  (while halted), `candles/`, `reconcile/`, `intents/`, `risk/<date>/` and every `run-<UTC>.log`
+  (uploaded last). `scripts/etoro-daily-executor-run.sh --upload-only` re-sends.
+- **Watchdog** (`infrastructure/lambda/ledger-watchdog`, `etoro-demo=daily-executor/etoro-demo:nyse`):
+  pages when no run log follows the last NYSE trading day's 09:35 New York run within 6 h; quiet on
+  weekends and holidays (NYSE calendar computed in the function, pinned to `mktcal`).
+- **Alerts** (`ui-alerts`, `internal/etorohealth`): coverage, run exit, reconcile (with the re-check
+  rule), unrecorded intents, halt, upload. Runbook §3.1.
+- **Assisted trades** are off unless ui-api runs with `-etoro-trading` (runbook §8).
+- Environment variables: [OPERATIONS-ENV-VARS.md](OPERATIONS-ENV-VARS.md). Weekly summary:
+  [OPERATIONS-UPDATE-2026-10-16.md](OPERATIONS-UPDATE-2026-10-16.md).
+
 ## Branch
 
 The original integration lives on `feat/etoro-api-integration` (based on `feat/k8s-deployment-manifests`). It was merged into `feat/etoro` together with `feat/operator-ui` on 2026-10-10.

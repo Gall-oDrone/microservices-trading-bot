@@ -8,7 +8,10 @@
 #
 # Every deploy runs the unit tests first and ends with one {"dry_run": true} invocation.
 #
-# Options: --ledgers name=prefix[,…] (default stage=daily-executor/stage), --max-age-hours N (30),
+# Options: --ledgers name=prefix[:nyse][,…] (default stage=daily-executor/stage; ":nyse" for a
+# ledger whose run is at 09:35 New York on NYSE trading days, e.g.
+# etoro-demo=daily-executor/etoro-demo:nyse), --max-age-hours N (30, daily ledgers),
+# --max-age-hours-nyse N (6, hours after the last trading day's 09:35 New York run),
 # --region R (us-east-1). The code zip is uploaded to s3://<bucket>/lambda-artifacts/ledger-watchdog/
 # by `aws cloudformation package`. Unit tests run first (python3 -m unittest).
 set -euo pipefail
@@ -16,17 +19,18 @@ export AWS_PAGER=""
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
 STACK=mtb-ledger-watchdog
-bucket="" topic="" ledgers="stage=daily-executor/stage" max_age=30 region=us-east-1 test=0 delete=0
+bucket="" topic="" ledgers="stage=daily-executor/stage" max_age=30 max_age_nyse=6 region=us-east-1 test=0 delete=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --bucket) bucket="$2"; shift 2 ;;
     --topic-arn) topic="$2"; shift 2 ;;
     --ledgers) ledgers="$2"; shift 2 ;;
     --max-age-hours) max_age="$2"; shift 2 ;;
+    --max-age-hours-nyse) max_age_nyse="$2"; shift 2 ;;
     --region) region="$2"; shift 2 ;;
     --test) test=1; shift ;;
     --delete) delete=1; shift ;;
-    -h | --help) sed -n '2,13p' "$0"; exit 0 ;;
+    -h | --help) sed -n '2,16p' "$0"; exit 0 ;;
     *) echo "unknown option $1" >&2; exit 2 ;;
   esac
 done
@@ -43,7 +47,11 @@ if [ -z "$bucket" ] || [ -z "$topic" ]; then
 fi
 IFS=, read -ra entries <<<"$ledgers"
 for e in "${entries[@]}"; do
-  case "${e#*=}" in
+  p="${e#*=}"
+  cal=""
+  case "$p" in *:*) cal="${p##*:}"; p="${p%:*}" ;; esac
+  case "$cal" in "" | nyse) ;; *) echo "--ledgers $e: unknown calendar '$cal' (want :nyse or none)" >&2; exit 2 ;; esac
+  case "$p" in
     daily-executor/?*) ;;
     *) echo "--ledgers $e: the prefix must be under daily-executor/ (the role can read only there)" >&2; exit 2 ;;
   esac
@@ -63,7 +71,7 @@ echo "== deploy stack $STACK"
 aws cloudformation deploy --region "$region" --stack-name "$STACK" \
   --template-file "$tmp/packaged.yaml" --capabilities CAPABILITY_NAMED_IAM \
   --no-fail-on-empty-changeset \
-  --parameter-overrides "Bucket=$bucket" "TopicArn=$topic" "Ledgers=$ledgers" "MaxAgeHours=$max_age"
+  --parameter-overrides "Bucket=$bucket" "TopicArn=$topic" "Ledgers=$ledgers" "MaxAgeHours=$max_age" "MaxAgeHoursNyse=$max_age_nyse"
 
 echo "== invoke {\"dry_run\": true}"
 aws lambda invoke --region "$region" --function-name "$STACK" --cli-binary-format raw-in-base64-out \

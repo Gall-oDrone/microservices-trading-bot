@@ -151,13 +151,14 @@ func TestDueDate(t *testing.T) {
 func TestCleanSoak(t *testing.T) {
 	d := soak(t)
 	checks := byID(Evaluate(Options{LedgerPath: d.ledger()}, ny(2026, 10, 14, 13, 0)))
-	for _, id := range []string{IDLedger, IDHalt, IDCoverage, IDRun, IDReconcile, IDIntents} {
+	for _, id := range []string{IDLedger, IDHalt, IDCoverage, IDRun, IDReconcile, IDIntents, IDUpload} {
 		if c := checks[id]; c.Status != datahealth.OK {
 			t.Errorf("%s: want ok, got %s %q", id, c.Status, c.Message)
 		}
 	}
 	want(t, checks[IDCoverage], datahealth.OK, "through 2026-10-14")
 	want(t, checks[IDIntents], datahealth.OK, "2 intents, all in the ledger")
+	want(t, checks[IDUpload], datahealth.OK, "not configured")
 
 	// Monday 10-12 alone: the drift report is covered by the clean re-check.
 	os.Remove(filepath.Join(d.path, "reconcile", "2026-10-13.json"))
@@ -258,4 +259,16 @@ func TestEmptyTree(t *testing.T) {
 	if c[IDLedger].Status != datahealth.Fail {
 		t.Fatalf("corrupt ledger: %+v", c[IDLedger])
 	}
+}
+
+func TestUploadCheck(t *testing.T) {
+	d := soak(t)
+	d.runLog(ny(2026, 10, 19, 9, 35), "reconcile=clean\nupload=ok s3://b/daily-executor/etoro-demo\nexit=0\n")
+	c := byID(Evaluate(Options{LedgerPath: d.ledger()}, ny(2026, 10, 19, 10, 0)))
+	want(t, c[IDUpload], datahealth.OK, "copied to S3")
+	d.runLog(ny(2026, 10, 19, 9, 40), "reconcile=clean\nupload=failed s3://b/daily-executor/etoro-demo\nexit=0\n")
+	c = byID(Evaluate(Options{LedgerPath: d.ledger()}, ny(2026, 10, 19, 10, 0)))
+	want(t, c[IDUpload], datahealth.Warn, "did not reach S3 (upload=failed)")
+	// The run itself is still fine: a failed copy never fails the run.
+	want(t, c[IDRun], datahealth.OK, "ended exit=0")
 }

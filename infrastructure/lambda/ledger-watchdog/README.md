@@ -4,11 +4,22 @@ The daily executor and the R3 alerts run from the operator's workstation
 (`scripts/install-ops-cron.sh`). If that machine is off, or its cron stops, nothing runs **and
 nothing alerts**. This Lambda closes that gap from AWS. Once an hour it checks the S3 copy that
 every run leaves under `s3://<bucket>/daily-executor/<ledger>/`. `scripts/daily-executor-run.sh`
-uploads `run-<UTC>.log` last, after its `exit=` line. When the newest run log is older than
-**30 h**, the Lambda publishes to the operators' SNS topic (`mtb-operator-alerts`, the same email
-as ui-alerts).
+and `scripts/etoro-daily-executor-run.sh` upload `run-<UTC>.log` last, after its `exit=` line.
+When a ledger is stale, the Lambda publishes to the operators' SNS topic (`mtb-operator-alerts`,
+the same email as ui-alerts). Two calendars:
 
-Plan: `docs/frontend/FRONTEND-UI-PLAN-2026-10-03.md` §8.10.
+- **daily** (`name=prefix`): the Bitso stage run, every day at 06:15 UTC; stale when the newest run
+  log is older than **30 h** (`MAX_AGE_HOURS`).
+- **nyse** (`name=prefix:nyse`, added 2026-10-17 for the eToro demo executor): the run happens at
+  **09:35 New York on NYSE trading days only**; stale when no run log follows the last trading
+  day's run within **6 h** (`MAX_AGE_HOURS_NYSE`). Weekends and holidays never page; a missed
+  Monday run pages at about 15:35 New York. The NYSE calendar is computed in the function (no
+  dependencies): weekends, the ten scheduled holidays with their observance rules, Good Friday via
+  the Gregorian Easter algorithm, mirroring `shared/pkg/mktcal`; the holiday lists for 2026 and
+  2027 are pinned in the tests against `mktcal`'s.
+
+Plan: `docs/frontend/FRONTEND-UI-PLAN-2026-10-03.md` §8.10; eToro runbook
+`docs/etoro/ETORO-DAILY-EXECUTOR.md` §3.1.
 
 ## Behaviour
 

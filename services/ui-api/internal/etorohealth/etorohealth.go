@@ -38,6 +38,7 @@ const (
 	IDRun       = "etoro.run"       // the newest run log ended with exit=0
 	IDReconcile = "etoro.reconcile" // the newest reconcile report is clean
 	IDIntents   = "etoro.intents"   // no order sent without a ledger line
+	IDUpload    = "etoro.upload"    // the newest run's S3 copy (P6) succeeded, when configured
 )
 
 // Check is one condition, with the statuses of package datahealth.
@@ -146,6 +147,7 @@ func Evaluate(o Options, now time.Time) []Check {
 	out = append(out, runCheck(dir, now))
 	out = append(out, reconcileCheck(dir, due))
 	out = append(out, intentsCheck(o.LedgerPath, demo, now, o.intentGrace()))
+	out = append(out, uploadCheck(dir))
 	return out
 }
 
@@ -235,6 +237,7 @@ type runLog struct {
 	Exit   int  // from the last "exit=N" line
 	Ended  bool // an "exit=" line was found
 	Failed []string
+	Upload string // "ok" | "failed" from the "upload=" line; empty when the run did not upload
 }
 
 func readRunLogs(dir string) ([]runLog, error) {
@@ -268,6 +271,12 @@ func readRunLogs(dir string) ([]runLog, error) {
 			}
 			if strings.Contains(line, "FAILED: ") {
 				rl.Failed = append(rl.Failed, strings.TrimSpace(line))
+			}
+			if strings.HasPrefix(line, "upload=") {
+				f := strings.Fields(strings.TrimPrefix(line, "upload="))
+				if len(f) > 0 {
+					rl.Upload = f[0]
+				}
 			}
 		}
 		f.Close()
@@ -430,4 +439,26 @@ func intentsCheck(ledgerPath string, demo []etoroledger.Record, now time.Time, g
 			strings.Join(open, ", ") + ": re-run the executor today to resume it (it resends the same reference and cannot open twice)"}
 	}
 	return Check{IDIntents, "eToro intent journal", datahealth.OK, fmt.Sprintf("%d intents, all in the ledger", len(intents))}
+}
+
+// uploadCheck reads the newest run log's "upload=" line (P6: the wrapper
+// copies the ledger directory to S3 for the off-machine watchdog). A failed
+// copy is a warning: the watchdog does not see that run, local alerting still
+// does, and the operator re-sends it with --upload-only. No "upload=" line
+// means the copy is not configured, which is not a fault.
+func uploadCheck(dir string) Check {
+	logs, err := readRunLogs(dir)
+	if err != nil || len(logs) == 0 {
+		return Check{IDUpload, "eToro ledger copy to S3", datahealth.OK, "no run log yet"}
+	}
+	last := logs[len(logs)-1]
+	at := last.At.UTC().Format("2006-01-02 15:04") + " UTC"
+	switch last.Upload {
+	case "":
+		return Check{IDUpload, "eToro ledger copy to S3", datahealth.OK, "not configured (ETORO_EXECUTOR_S3_URI unset for the run of " + at + ")"}
+	case "ok":
+		return Check{IDUpload, "eToro ledger copy to S3", datahealth.OK, "run of " + at + " copied to S3"}
+	}
+	return Check{IDUpload, "eToro ledger copy to S3", datahealth.Warn,
+		"the run of " + at + " did not reach S3 (upload=" + last.Upload + "): the off-machine watchdog cannot see it; re-send with scripts/etoro-daily-executor-run.sh --upload-only"}
 }

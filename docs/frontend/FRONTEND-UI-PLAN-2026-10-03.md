@@ -1173,6 +1173,15 @@ unfinished bar is labelled provisional. The decision path never reads live data.
 
 ### 8.10 Off-machine watchdog (as built, 2026-10-08)
 
+> [!NOTE]
+> **2026-10-17 (porting plan P6).** The eToro demo ledger is watched too, as
+> `etoro-demo=daily-executor/etoro-demo:nyse`: a `:nyse` ledger is stale when no run log follows the
+> last NYSE trading day's 09:35 New York run within `MAX_AGE_HOURS_NYSE` (6 h), so weekends and
+> holidays never page and a missed Monday pages at about 15:35 New York. The NYSE calendar is
+> computed in the function and pinned to `shared/pkg/mktcal` in the tests. The run time now comes
+> from the key name (`run-<UTC>.log`), not the object's upload time, so a bulk re-send
+> (`etoro-daily-executor-run.sh --upload-only`) cannot reset the clock. Redeployed 2026-10-18.
+
 - **What.** The Lambda `mtb-ledger-watchdog` (`infrastructure/lambda/ledger-watchdog/`, Python
   3.12). EventBridge runs it once per clock hour (`cron(5 * * * ? *)`). For every ledger prefix
   (default `stage=daily-executor/stage`) it finds the newest `run-*.log` in S3. The run wrapper

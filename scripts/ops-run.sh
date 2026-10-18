@@ -5,10 +5,18 @@
 #   scripts/ops-run.sh executor   the daily stage run (scripts/daily-executor-run.sh -stage),
 #                                 uploading to $DAILY_EXECUTOR_S3_URI when set
 #   scripts/ops-run.sh etoro      the eToro index-CFD demo run and its reconciliation
-#                                 (scripts/etoro-daily-executor-run.sh -demo; porting plan P3).
-#                                 Schedule at 09:35 New York time on weekdays
-#                                 (CRON_TZ=America/New_York); credentials from
-#                                 ~/.config/microservices-trading-bot/etoro-demo.env
+#                                 (scripts/etoro-daily-executor-run.sh -demo; porting plan P3),
+#                                 uploading to $ETORO_EXECUTOR_S3_URI when set (P6).
+#                                 Scheduled at 09:35 New York time on weekdays by the
+#                                 installer (a UTC guard: this cron ignores CRON_TZ);
+#                                 credentials from ~/.config/microservices-trading-bot/etoro-demo.env
+#   scripts/ops-run.sh etoro-risk the weekly eToro risk report (cmd/etoro-risk-report, P4;
+#                                 reporting only, no eToro call) into etoro-daily-data/demo/
+#                                 risk/<New York date>/, with the Yahoo histories from
+#                                 $ETORO_RISK_REPORT_YAHOO; the directory is copied to
+#                                 $ETORO_EXECUTOR_S3_URI/risk/<date>/ when set. Mondays
+#                                 15:00 UTC: after the week's first run, so the newest candle
+#                                 file ends on Friday
 #   scripts/ops-run.sh alerts     R3: services/ui-api/bin/ui-alerts (notify on new,
 #                                 escalated, reminder or resolved alerts)
 #   scripts/ops-run.sh compact    the archive compactor's non-destructive refresh
@@ -31,7 +39,8 @@
 #
 # Settings come from $MTB_OPS_ENV (default ~/.config/microservices-trading-bot/ops.env),
 # written by the installer: PATH (cron's is minimal), UI_ALERTS_NOTIFY, UI_API_ARCHIVE,
-# UI_API_LEDGER, DAILY_EXECUTOR_S3_URI, COMPACT_BUCKET. Output is appended to
+# UI_API_LEDGER, UI_API_ETORO_LEDGER, UI_ALERTS_ETORO_LEDGER, DAILY_EXECUTOR_S3_URI,
+# ETORO_EXECUTOR_S3_URI, ETORO_RISK_REPORT_YAHOO, COMPACT_BUCKET. Output is appended to
 # ${XDG_STATE_HOME:-~/.local/state}/mtb-ops/<job>.log (rotated at 5 MB).
 set -uo pipefail
 
@@ -49,9 +58,9 @@ mkdir -p "$STATE"
 job="${1:-}"
 shift || true
 case "$job" in
-  executor | etoro | alerts | compact | sampler | research | prereg) ;;
+  executor | etoro | etoro-risk | alerts | compact | sampler | research | prereg) ;;
   *)
-    echo "usage: $0 executor|etoro|alerts|compact|sampler|research|prereg [flags…]" >&2
+    echo "usage: $0 executor|etoro|etoro-risk|alerts|compact|sampler|research|prereg [flags…]" >&2
     exit 2
     ;;
 esac
@@ -75,6 +84,29 @@ case "$job" in
     "$ROOT/scripts/etoro-daily-executor-run.sh" -demo "$@"
     code=$?
     echo "== exit $code"
+    exit "$code"
+    ;;
+  etoro-risk)
+    echo "== $(date -u +%Y-%m-%dT%H:%M:%SZ) ops-run etoro-risk"
+    cd "$ROOT/services/strategy-executor" || exit 2
+    day="$(TZ=America/New_York date +%F)"
+    out="./etoro-daily-data/demo/risk/$day"
+    yahoo="${ETORO_RISK_REPORT_YAHOO:-$ROOT/docs/backtest-readiness/evidence-2026-10-10/data}"
+    "${ETORO_RISK_REPORT_BIN:-./etoro-daily-data/etoro-risk-report}" \
+      -ledger ./etoro-daily-data/demo/ledger.jsonl -candles ./etoro-daily-data/demo/candles \
+      -yahoo "$yahoo" -reconcile ./etoro-daily-data/demo/reconcile \
+      -size 1100 -capital 100000 -paths 2000 -seed 1 -out "$out" "$@"
+    code=$?
+    # The copy never changes the exit code (the report's); a failed copy is in this log.
+    if [ -n "${ETORO_EXECUTOR_S3_URI:-}" ] && [ -d "$out" ]; then
+      dest="${ETORO_EXECUTOR_S3_URI%/}/risk/$day/"
+      if aws s3 sync "$out" "$dest" --only-show-errors; then
+        echo "upload=ok $dest"
+      else
+        echo "upload=failed $dest"
+      fi
+    fi
+    echo "== exit $code ($out)"
     exit "$code"
     ;;
   alerts)

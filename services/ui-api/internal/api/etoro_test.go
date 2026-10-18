@@ -324,7 +324,7 @@ func TestEtoroRiskShowsHaltFile(t *testing.T) {
 func TestEtoroHealth(t *testing.T) {
 	ts := etoroServer(t, etoroNow, nil)
 	h := get[EtoroHealthResponse](t, ts, "/api/ui/etoro/health", 200)
-	if h.Ledger != "etoro-demo" || h.Venue != "etoro" || h.DueDate != "2026-10-16" || h.Status != datahealth.OK || len(h.Checks) != 6 {
+	if h.Ledger != "etoro-demo" || h.Venue != "etoro" || h.DueDate != "2026-10-16" || h.Status != datahealth.OK || len(h.Checks) != 7 {
 		t.Fatalf("health %+v", h)
 	}
 	want := map[string]string{
@@ -334,6 +334,7 @@ func TestEtoroHealth(t *testing.T) {
 		"etoro.run":       "run of 2026-10-16 13:35 UTC ended exit=0",
 		"etoro.reconcile": "2026-10-16: drift on the run, clean on the operator's re-check",
 		"etoro.intents":   "3 intents, all in the ledger",
+		"etoro.upload":    "not configured (ETORO_EXECUTOR_S3_URI unset for the run of 2026-10-16 13:35 UTC)",
 	}
 	for _, c := range h.Checks {
 		if c.Area != "executor" || c.Status != datahealth.OK || c.Message != want[c.ID] {
