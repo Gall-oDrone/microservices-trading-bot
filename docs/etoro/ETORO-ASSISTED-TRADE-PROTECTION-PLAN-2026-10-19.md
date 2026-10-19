@@ -1,0 +1,180 @@
+# Assisted trades: dynamic stop-loss / take-profit and system-owned protection
+
+Design and implementation plan · 2026-10-19 · branch `feat/etoro` · follows P6 (operations) and P5d
+(assisted trades, [ETORO-DAILY-EXECUTOR.md §8](ETORO-DAILY-EXECUTOR.md#8-assisted-trades-from-the-console-p5d-2026-10-16)).
+Status: **planned, nothing implemented yet**. Each phase below is ticked when it lands.
+
+## 0. Decisions (taken 2026-10-19)
+
+| Question | Decision |
+|---|---|
+| Stop on the executor's rule positions (pre-registered SMA50 forward test) | **Wide disaster stop only**, `max(4×ATR, 8%)`, set at open, documented as a forward-test addendum. The paper account stays the judged series. |
+| Where protection lives | **At eToro**: resting SL/TP on the position (survives our downtime, covers overnight gaps), plus a **daily ratchet** at the 09:35 run that only ever raises a stop. No intraday ratchet, no local close-at-market loop. |
+| Assisted open without a stop loss | **Blocked by the risk policy** (`stop_loss_required`). Take profit stays optional. |
+| Default risk-aversion profile | **Moderate**: SL 2.0×ATR, TP 4.0×ATR. |
+
+## 1. Where the code stands today
+
+The plumbing is mostly there and unused:
+
+| Layer | State |
+|---|---|
+| `shared/pkg/etoro` `OrderRequest` | has `StopLossRate` / `TakeProfitRate` |
+| `shared/pkg/broker` `OpenRequest` | has `StopLoss` / `TakeProfit`; `etorobroker.orderRequest` forwards them |
+| `ui-api` `preparePreview` / `tradePlace` | **never set them**: every assisted open goes out without a stop (eToro records `stopLossRate: 0.01`, i.e. none) |
+| `web` Trade page | no SL/TP inputs, no recommendation, no protection shown |
+| `risk.EtoroDemoPolicy` | no stop-loss rule at all |
+| `etoroledger.Position`, `broker.Position` | do not carry SL/TP, so nothing can tell a protected position from an unprotected one |
+| editing an existing position | **no client method**. eToro exposes `PATCH /api/v2/trading/{demo\|real}/positions/{positionId}` (`stopLossRate`, `takeProfitRate`, `stopLossType: fixed\|trailing`, `clearStopLoss`, `clearTakeProfit`; `x-request-id` required; async **202** with `operationId`; 404 unknown position, 409 closed). Default shared quota 60/min. |
+| volatility data | already on disk: daily OHLC CSVs in `<ledger>/candles/`, readable from `ui-api`'s `store.Candles(book)`; ATR needs no extra eToro call |
+
+Venue bounds from [evidence-2026-10-10/eligibility.json](evidence-2026-10-10/eligibility.json), x1 long CFD:
+NSDQ100 `minStopLossPercentage 1`, SPX500 `0`; `maxStopLossPercentage 100`; `maxTakeProfitPercentage 1000`;
+`allowEditStopLoss true`; **`allowTrailingStopLoss false` on both** (native trailing is unavailable; a
+trailing stop must be emulated as a ratchet).
+
+> [!IMPORTANT]
+> The hard part is not placing a stop, it is **surviving one**. Today a venue-side close makes the next
+> run stop on `ledger says long … but the account no longer holds it: resolve by hand`
+> (`cmd/etoro-daily-executor/demo.go`, reconcile step) and `etoro-reconcile` reports drift. Phase C
+> makes a stop-out a first-class, recorded event. Phases A–B can ship first only because a UI position
+> is brought back to the rule's target the next morning anyway; **Phase C must land before the
+> disaster stop is switched on for rule positions.**
+
+## 2. Risk model
+
+**Volatility unit.** ATR(14), Wilder smoothing, on the saved daily NYSE-day bars. `atr_pct = ATR / last close`.
+
+**Profiles** (distance from entry; long only, x1):
+
+| Profile | SL | TP | R:R | Intent |
+|---|---|---|---|---|
+| Conservative | 1.5 × ATR | 2.25 × ATR | 1.5 | tight, more whipsaw, small loss |
+| **Moderate (default)** | 2.0 × ATR | 4.0 × ATR | 2.0 | standard swing / trend sizing |
+| Aggressive | 3.0 × ATR | 6.0 × ATR | 2.0 | room for the trend, larger loss |
+| Custom | operator % | operator % | — | still clamped by the guards below |
+
+**Guards, applied to every profile in this order:**
+
+1. **Noise floor.** `SL% ≥ max(venue minStopLossPercentage, 2 × quoted spread% + 0.25%)`: a stop never sits inside the spread.
+2. **Loss cap (policy).** `SL% ≤ MaxStopLossPct` (10 % for the CFD books) and
+   `units × (entry − SL) ≤ MaxLossPctEquity × equity` (0.5 %): the "cannot lose the account" rule.
+3. **Venue ceiling.** `TP% ≤ maxTakeProfitPercentage`, `SL% ≤ maxStopLossPercentage`.
+4. **Rounding.** Rates to the instrument's tick (2 dp on both indices); SL rounded **down**, TP rounded **up** (never tighter than asked).
+
+**Context shown next to the numbers (never overrides them):**
+
+- ATR regime: today's ATR% against its 252-day median (`calm / normal / elevated / extreme`), so the operator sees why the stop is wide or tight.
+- Rule invalidation level: the latest SMA50. A stop above SMA50 is "tighter than the rule"; the page says so.
+- Cost to break even: spread + N nights of financing, from the existing cost preview.
+
+**Disaster stop (executor's rule positions).** `SL% = max(4 × ATR%, 8%)`, no TP (the rule exits on its
+signal). Ratchet at each 09:35 run with a held long: `candidate = close − 4×ATR`; if `candidate > held SL`
+by at least `0.25 × ATR`, PATCH it up. Never down. Never touches TP.
+
+**Trailing on assisted positions.** Same ratchet with the recorded profile's multiplier, applied to UI
+positions still held at the run and recorded in the ledger.
+
+## 3. Architecture
+
+```mermaid
+flowchart LR
+  subgraph shared
+    S["pkg/stops: ATR, profiles, guards (pure, stdlib)"]
+    R["pkg/risk: stop_loss rules"]
+    L["pkg/etoroledger: Position sl/tp, actions protect / venue_close"]
+    B["pkg/broker: Position sl/tp, ProtectionEditor"]
+    E["pkg/etoro: UpdatePosition (PATCH)"]
+  end
+  UI["web Trade page"] -->|GET recommend| A["ui-api trades.go"]
+  UI -->|prepare / place open with SL/TP| A
+  UI -->|prepare / place protect| A
+  A --> S
+  A --> R
+  A --> L
+  A --> B
+  B --> E
+  X["etoro-daily-executor"] -->|disaster stop on open, ratchet, venue-close detection| S
+  X --> L
+  X --> B
+  C["etoro-reconcile"] -->|stop-out is clean| L
+  C --> B
+```
+
+## 4. Phases
+
+### Phase A: foundation (no behaviour change; unit-tested)
+
+| # | Change | Where |
+|---|---|---|
+| A1 | New package `stops`: `ATR(rows, n)`, `Regime(...)`, `Recommend(Input{Entry, Side, Spread, Equity, Units, Bars, Eligibility, Policy}) → map[Profile]Levels`, `Levels{SLRate, SLPct, TPRate, TPPct, MaxLossUSD, TargetUSD, RR, Clamps []string}` | `shared/pkg/stops/` |
+| A2 | eToro client: `UpdatePositionRequest{StopLossRate, TakeProfitRate *float64; StopLossType string; ClearStopLoss, ClearTakeProfit *bool}`, `(*Client).UpdatePosition(ctx, positionID, req, requestID)`, route `/api/v2/trading/{demo\|real}/positions/{id}` (a write: the 18/min write budget, never retried). `stopLossRate ≤ 0.01` on a position reads as *no stop* | `shared/pkg/etoro/trading.go`, `paths.go` |
+| A3 | Broker: `Position` gains `StopLoss, TakeProfit float64` (0 = none); optional interface `ProtectionEditor{ SetProtection(ctx, ProtectionRequest) (ProtectionResult, error) }`; `etorobroker` implements it: PATCH, then poll the portfolio up to `Wait` until the position shows the new rates (same lag handling as an open) | `shared/pkg/broker`, `etorobroker` |
+| A4 | Risk: `BookLimits` + `RequireStopLoss bool`, `MaxStopLossPct`, `MinStopLossPct`, `MaxLossPctEquity`; `Order` + `StopLoss, TakeProfit`; rules `stop_loss_required`, `stop_loss_too_wide`, `stop_loss_too_tight`, `take_profit_below_entry`, `max_loss_pct_equity`; `EtoroDemoPolicy` → `etoro-demo-2026-10-19` with `RequireStopLoss: true, MaxStopLossPct: 0.10, MaxLossPctEquity: 0.005` | `shared/pkg/risk` |
+| A5 | Ledger: `Position` + `StopLossRate, TakeProfitRate float64, StopType string`; `ActionProtect = "protect"`, `ActionVenueClose = "venue_close"`; `Demo.Protection{Before, After Position; Reason, Profile string; ATR, ATRPct float64}`; `LegsOn` **excludes** protect records (no exposure added; must not consume the one-leg-per-day cap). Schema stays `etoro-ledger/v1` (additive, `omitempty`) | `shared/pkg/etoroledger` |
+
+### Phase B: assisted trade (recommend, open with SL/TP, protect an existing position)
+
+| # | Change |
+|---|---|
+| B1 | `GET /api/ui/etoro/trades/recommend?ledger=&book=&side=open\|protect&amount_usd=&position_id=` (read-only, the controls' gates): `{atr, atr_pct, regime, sma50, spread_bps, eligibility{min_sl_pct, max_sl_pct, max_tp_pct}, profiles{conservative, moderate, aggressive}, default_profile}` |
+| B2 | `TradePrepareRequest` + `stop_loss_pct`, `take_profit_pct` (0 = none), `profile`; new side `"protect"` (`position_id` required, `amount_usd` forbidden). Preview + `protection{sl_rate, sl_pct, tp_rate, tp_pct, max_loss_usd, target_usd, rr, profile, clamps[]}`. `risk.Check` sees the SL/TP. A protect runs halt → session → ledger/account agreement → `allowEditStopLoss` → venue bounds; **no** order-count or notional rules (it is not an order) |
+| B3 | Token claims bind `sl_rate`, `tp_rate`, `profile`. Confirmation phrase of a protect: `PROTECT NSDQ100` |
+| B4 | Place: an open passes `StopLoss/TakeProfit` on `broker.OpenRequest` (atomic with the order). A protect writes an intent (`ui-<book>-<date>-protect-<hex>`), audits `requested`, calls `SetProtection`, appends a ledger line `action: protect` with `position_after` = the same position with the new rates, `source: ui`. After either, read the position back and record the rates eToro holds (rounding may differ) |
+| B5 | `etoro/forward-tests` view: `demo_position` + `stop_loss_rate`, `take_profit_rate`, `protected` derived from the **live account**, so a position opened before this change is flagged too |
+| B6 | Web: `trades.ts` (`useRecommendation`, SL/TP/profile on prepare, `protect` side), `etoroSchemas.ts`; Trade page: **Protection** panel in the manual form (profile segmented control, SL% / TP% inputs pre-filled and recalculated live, chips `SL 23 456.10 (−2.1%) · max loss 23 USD` / `TP … (+4.2%) · target 46 USD`, R:R, ATR regime badge, SMA50 hint, clamp notes); preview card shows the protection block; proposals card shows an **Unprotected position** banner per held book with `Prepare protection`; outcome card shows the rates set |
+| B7 | Mocks, fixtures, vitest, Playwright: recommend fixture, prepare with SL/TP, protect flow, blocked-without-stop verdict |
+
+### Phase C: system-owned guardian (executor and reconcile)
+
+| # | Change |
+|---|---|
+| C1 | Executor `-protect` flag (default **on** once C3 is in; `ETORO_EXECUTOR_PROTECT=0` disables): a rule open carries the disaster stop; `position_after` records it |
+| C2 | Daily ratchet: for a held long (rule or UI) with no order planned, compute the candidate (4×ATR rule positions, the recorded profile for UI positions); if higher than the held stop by ≥ 0.25×ATR, PATCH and append a ledger line `action: protect`, `source: executor`. Never lowers a stop, never touches TP |
+| C3 | **Venue-close detection** (`demo.go` reconcile step): ledger says long, account does not hold it → read the trading history for that position id; classify by close rate: `≈ SL` → `stopped_out`, `≈ TP` → `took_profit`, else `venue_close` (margin close-out, manual); record `action: venue_close`, `position_after: flat`, realised P&L and fees; **continue planning from flat in the same run** (a rule `long` re-opens, one leg). Only a close not yet in the history keeps today's `resolve by hand` |
+| C4 | `etoro-reconcile`: a history row matching a `venue_close` ledger line is **clean**; an open position whose account stop is none while the ledger says it has one → finding `protection_drift` |
+| C5 | `etorohealth` / `ui-alerts`: warning `unprotected position` (a ledger position with no SL for more than 30 min, from the files alone); info `stop_out` |
+| C6 | `etoro-risk-report`: stop-outs, realised loss vs modelled, ratchet history |
+
+### Phase D: docs and evidence
+
+- `ETORO-DAILY-EXECUTOR.md` §9 "Protection": model, profiles, ratchet, how to read `protect` / `venue_close` lines, the manual-resolution table.
+- `docs/backtest-readiness/FORWARD-TEST-ADDENDUM-DISASTER-STOP-<date>.md`: the disaster stop is a risk-policy overlay outside the pre-registered rule; the paper account remains the judged series; how a stop-out day is reported.
+- `docs/etoro/evidence-<date>/`: first PATCH request and response on demo, first ratchet, first stop-out when it happens.
+
+## 5. Ledger line examples
+
+```json
+{"book":"nsdq100","source":"ui","decision":{"signal":"manual","action":"protect"},
+ "demo":{"action":"protect",
+         "position_before":{"state":"long","position_id":"3616683146","open_rate":29770.5},
+         "position_after":{"state":"long","position_id":"3616683146","open_rate":29770.5,
+                           "stop_loss_rate":29145.20,"take_profit_rate":31021.10,"stop_type":"fixed"},
+         "protection":{"profile":"moderate","atr":312.65,"atr_pct":0.0105,"reason":"set from the console"}}}
+```
+
+```json
+{"book":"spx500","decision":{"action":"hold"},
+ "demo":{"action":"venue_close",
+         "position_before":{"state":"long","position_id":"3616683295"},
+         "position_after":{"state":"flat"},
+         "order":{"kind":"venue_close","status":"executed","avg_price":6410.25,"units":0.1717},
+         "notes":["closed by eToro: close rate within 0.05% of stop_loss_rate 6410.30 -> stopped_out"]}}
+```
+
+## 6. Parameters fixed unless revisited
+
+| Parameter | Value | Why |
+|---|---|---|
+| Max loss per trade | 0.5 % of equity | ≈ 500 USD on the 100k demo; never binds at the 1,100 USD size, binds if sizes grow |
+| Ratchet step | ≥ 0.25 × ATR | avoids a PATCH every day for noise |
+| Protect while halted | blocked | consistent with "nothing is sent while halted"; close by hand if needed |
+| Stop-out classification tolerance | 0.05 % of the SL/TP rate | eToro fills a stop at the next available rate; gaps classify as `venue_close` with the gap noted |
+
+## 7. Order of work and verification
+
+A1→A5 (`go test ./shared/...`) → B1–B4 with `trades_test.go` fake-broker cases → B5–B7 (vitest, Playwright)
+→ **C3 first** (the safety net), then C1/C2, C4–C6 → D. Each phase ends with `go vet` and `go test ./...` in
+`shared`, `services/ui-api`, `services/strategy-executor`, and `npm run test && npm run build` in `web`.
+Nothing is enabled on the live demo ledger until Phase C is in and the binaries are rebuilt per
+[ETORO-DAILY-EXECUTOR.md §6](ETORO-DAILY-EXECUTOR.md#6-p3-soak-log).

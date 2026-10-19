@@ -322,3 +322,25 @@ opened, then move the intent file out of `intents/` (keep it with the day's note
 did execute, add the ledger line by hand from the audit `failed` line and the position (never edit
 past lines), or close the position and leave the ledger flat. The Trade page's outcome card says
 which case it is.
+
+## 9. Protection: stop-loss / take-profit (planned 2026-10-19)
+
+**Today no position carries a stop.** Neither the executor's rule positions nor the console's
+assisted opens set `stopLossRate` / `takeProfitRate` (eToro records `0.01`, i.e. none), and a close
+by eToro (margin close-out) is a `resolve by hand` case in §3 and §5. The design that changes this is
+[ETORO-ASSISTED-TRADE-PROTECTION-PLAN-2026-10-19.md](ETORO-ASSISTED-TRADE-PROTECTION-PLAN-2026-10-19.md):
+
+- assisted opens must carry a stop (risk policy `stop_loss_required`), with ATR-based recommended
+  levels per risk-aversion profile (Conservative / **Moderate** / Aggressive) and a take profit that
+  stays optional;
+- an existing unprotected position can be protected from the Trade page (`PROTECT NSDQ100`) through
+  eToro's `PATCH /api/v2/trading/demo/positions/{id}`;
+- the executor's rule positions get a **wide disaster stop** only (`max(4×ATR, 8%)`), outside the
+  pre-registered rule and documented as a forward-test addendum; the paper account stays the judged
+  series;
+- protection lives at eToro (resting SL/TP) and the 09:35 run ratchets a stop **up** only; a venue
+  close becomes a recorded `venue_close` ledger line (`stopped_out` / `took_profit`) instead of a drift.
+
+Until Phase C of that plan is in and the binaries are rebuilt, this section is a statement of intent:
+the behaviour described in §2–§5 and §8 is what runs.
+
