@@ -34,6 +34,18 @@ package api
 // The executor plans from the ledger: a console position against the rule
 // is brought back to the rule's target at the next 09:35 run unless the
 // ledger is halted (docs/etoro/ETORO-DAILY-EXECUTOR.md §8).
+//
+// Protection (2026-10-19, docs/etoro/ETORO-ASSISTED-TRADE-PROTECTION-PLAN-2026-10-19.md
+// phase B): an open carries a stop loss (required by
+// risk.EtoroDemoProtectedPolicy) and an optional take profit, chosen by a
+// risk-aversion profile (ATR-based, shared/pkg/stops) or typed as custom
+// distances, sent with the order in the same request; a third side,
+// "protect", sets or moves the stop and target of the ledger's held
+// position through the broker's ProtectionEditor (eToro PATCH position)
+// with the same prepare -> place flow, phrase "PROTECT NSDQ100", intent and
+// ledger line (action protect, not a leg). A request that names no stop
+// gets the default profile and says so in a warning. protection.go holds
+// the recommendation endpoint and the shared helpers.
 
 import (
 	"context"
@@ -59,6 +71,7 @@ import (
 	"bitso-trading-platform/shared/pkg/etoroledger"
 	"bitso-trading-platform/shared/pkg/mktcal"
 	"bitso-trading-platform/shared/pkg/risk"
+	"bitso-trading-platform/shared/pkg/stops"
 	"bitso-trading-platform/ui-api/internal/audit"
 	"bitso-trading-platform/ui-api/internal/etorolive"
 )
@@ -87,8 +100,9 @@ const (
 
 // tradePaths accept POST (isControlPath).
 var tradePaths = map[string]bool{
-	"/api/ui/etoro/trades/prepare": true,
-	"/api/ui/etoro/trades/place":   true,
+	"/api/ui/etoro/trades/prepare":   true,
+	"/api/ui/etoro/trades/place":     true,
+	"/api/ui/etoro/trades/recommend": true,
 }
 
 // EtoroTrading is the Server's assisted-trade dependency: the demo broker,
@@ -175,12 +189,19 @@ func tradeInstrument(book string) (etoroledger.Instrument, bool) {
 // TradePrepareRequest is the body of POST /api/ui/etoro/trades/prepare.
 type TradePrepareRequest struct {
 	Book string `json:"book"`
-	Side string `json:"side"` // TradeOpen | TradeClose
+	Side string `json:"side"` // TradeOpen | TradeClose | TradeProtect
 	// AmountUSD is the x1 exposure of an open; PositionID the ledger's
-	// position to close.
+	// position to close or protect.
 	AmountUSD  float64 `json:"amount_usd,omitempty"`
 	PositionID string  `json:"position_id,omitempty"`
 	Leverage   int     `json:"leverage"`
+	// Protection of an open or a protect (2026-10-19). Profile is a
+	// stops.Profile ("" = the default, moderate); "custom" takes
+	// StopLossPct (required) and TakeProfitPct (0 = none) as fractions of
+	// the entry. A named profile ignores the percentages.
+	Profile       string  `json:"profile,omitempty"`
+	StopLossPct   float64 `json:"stop_loss_pct,omitempty"`
+	TakeProfitPct float64 `json:"take_profit_pct,omitempty"`
 }
 
 func (r TradePrepareRequest) validate() error {
@@ -190,6 +211,31 @@ func (r TradePrepareRequest) validate() error {
 	if r.Leverage != 1 {
 		return errors.New("leverage: must be 1 (the policy allows x1 only)")
 	}
+	positionID := func() error {
+		if r.PositionID == "" || len(r.PositionID) > 32 || strings.Trim(r.PositionID, "0123456789") != "" {
+			return errors.New("position_id: the numeric id of the ledger's position")
+		}
+		return nil
+	}
+	protection := func() error {
+		p, err := stops.ParseProfile(r.Profile)
+		if err != nil {
+			return errors.New("profile: " + err.Error())
+		}
+		if math.IsNaN(r.StopLossPct) || math.IsInf(r.StopLossPct, 0) || r.StopLossPct < 0 || r.StopLossPct >= 1 {
+			return errors.New("stop_loss_pct: a fraction of the entry in [0, 1)")
+		}
+		if math.IsNaN(r.TakeProfitPct) || math.IsInf(r.TakeProfitPct, 0) || r.TakeProfitPct < 0 || r.TakeProfitPct > 10 {
+			return errors.New("take_profit_pct: a fraction of the entry in [0, 10]")
+		}
+		if p == stops.Custom && r.StopLossPct == 0 {
+			return errors.New("stop_loss_pct: required with the custom profile (the policy requires a stop)")
+		}
+		if p != stops.Custom && (r.StopLossPct != 0 || r.TakeProfitPct != 0) {
+			return fmt.Errorf("stop_loss_pct / take_profit_pct: only with profile \"custom\" (got profile %q)", p)
+		}
+		return nil
+	}
 	switch r.Side {
 	case TradeOpen:
 		if r.PositionID != "" {
@@ -198,25 +244,29 @@ func (r TradePrepareRequest) validate() error {
 		if math.IsNaN(r.AmountUSD) || r.AmountUSD < TradeMinAmount || r.AmountUSD > TradeMaxAmount {
 			return fmt.Errorf("amount_usd: must be between %d and %d USD", TradeMinAmount, TradeMaxAmount)
 		}
+		return protection()
 	case TradeClose:
 		if r.AmountUSD != 0 {
 			return errors.New("amount_usd: not for a close (the whole position is closed)")
 		}
-		if r.PositionID == "" || len(r.PositionID) > 32 || strings.Trim(r.PositionID, "0123456789") != "" {
-			return errors.New("position_id: the numeric id of the ledger's position")
+		if r.Profile != "" || r.StopLossPct != 0 || r.TakeProfitPct != 0 {
+			return errors.New("profile / stop_loss_pct / take_profit_pct: not for a close")
 		}
+		return positionID()
+	case TradeProtect:
+		if r.AmountUSD != 0 {
+			return errors.New("amount_usd: not for a protect (the held position is sized already)")
+		}
+		if err := positionID(); err != nil {
+			return err
+		}
+		return protection()
 	default:
-		return errors.New(`side: "open" or "close"`)
+		return errors.New(`side: "open", "close" or "protect"`)
 	}
-	return nil
 }
 
-func (r TradePrepareRequest) kind() string {
-	if r.Side == TradeOpen {
-		return etoroledger.ActionOpen
-	}
-	return etoroledger.ActionClose
-}
+func (r TradePrepareRequest) kind() string { return kindOf(r.Side) }
 
 // TradePreview is the answer to prepare: the checks' outcome and, when
 // allowed, the token to place it.
@@ -246,6 +296,9 @@ type TradePreview struct {
 	ClientRef    string  `json:"client_ref"`
 	RequestID    string  `json:"request_id"`
 	PreparedAt   string  `json:"prepared_at"`
+	// Protection is the stop and target the trade will carry (opens and
+	// protects; nil for a close). 2026-10-19.
+	Protection *TradeProtection `json:"protection,omitempty"`
 	// Token and ExpiresAt are set on an allow verdict only.
 	Token      string `json:"token,omitempty"`
 	ExpiresAt  string `json:"expires_at,omitempty"`
@@ -268,8 +321,17 @@ type tradeClaims struct {
 	Ask          float64 `json:"ask"`
 	RefPrice     float64 `json:"ref_price"`
 	Confirmation string  `json:"confirmation"`
-	Iat          int64   `json:"iat"`
-	Exp          int64   `json:"exp"`
+	// The protection the preview showed, bound so place sends exactly it.
+	SLRate   float64 `json:"sl_rate,omitempty"`
+	TPRate   float64 `json:"tp_rate,omitempty"`
+	Profile  string  `json:"profile,omitempty"`
+	ATR      float64 `json:"atr,omitempty"`
+	ATRPct   float64 `json:"atr_pct,omitempty"`
+	SLBefore float64 `json:"sl_before,omitempty"`
+	TPBefore float64 `json:"tp_before,omitempty"`
+	OpenRate float64 `json:"open_rate,omitempty"`
+	Iat      int64   `json:"iat"`
+	Exp      int64   `json:"exp"`
 }
 
 // key derives the signing key of an operator session.
@@ -376,6 +438,18 @@ func (s *Server) tradePrepare(w http.ResponseWriter, r *http.Request) {
 		c := tradeClaims{ID: newID(), Ledger: l.Name, ClientRef: pv.ClientRef, RequestID: pv.RequestID, Book: pv.Book, Side: pv.Side,
 			AmountUSD: pv.AmountUSD, PositionID: pv.PositionID, Units: pv.Units, Bid: pv.Quote.Bid, Ask: pv.Quote.Ask, RefPrice: pv.RefPrice,
 			Confirmation: pv.Confirmation, Iat: now.Unix(), Exp: exp.Unix()}
+		if p := pv.Protection; p != nil {
+			c.SLRate, c.TPRate, c.Profile = p.Levels.SLRate, p.Levels.TPRate, p.Profile
+			if p.Volatility != nil {
+				c.ATR, c.ATRPct = p.Volatility.ATR, p.Volatility.ATRPct
+			}
+			if p.Before != nil {
+				c.SLBefore, c.TPBefore = p.Before.StopLossRate, p.Before.TakeProfitRate
+			}
+			if pv.Side == TradeProtect {
+				c.OpenRate = p.Entry
+			}
+		}
 		tok, err := s.Trading.sign(c, s.OperatorToken)
 		if err != nil {
 			note(audit.Failed, "token: "+err.Error())
@@ -403,8 +477,11 @@ func (s *Server) tradePrepare(w http.ResponseWriter, r *http.Request) {
 }
 
 func tradeDetail(side, book string, amount float64, positionID string, units float64) string {
-	if side == TradeOpen {
+	switch side {
+	case TradeOpen:
 		return fmt.Sprintf("open %s %.0f USD x1 (%.6f units)", book, amount, units)
+	case TradeProtect:
+		return fmt.Sprintf("protect %s position %s (%.6f units)", book, positionID, units)
 	}
 	return fmt.Sprintf("close %s position %s (%.6f units)", book, positionID, units)
 }
@@ -420,9 +497,12 @@ func (s *Server) preparePreview(ctx context.Context, l Ledger, req TradePrepareR
 	bin := broker.Instrument{Venue: b.Venue(), Symbol: in.Symbol, ID: in.ID}
 	pv := TradePreview{Verdict: VerdictBlock, Reasons: []string{}, Warnings: []string{}, Ledger: l.Name, Book: req.Book, Side: req.Side,
 		Instrument: in, AmountUSD: req.AmountUSD, PositionID: req.PositionID, PreparedAt: now.Format(time.RFC3339)}
-	if req.Side == TradeOpen {
+	switch req.Side {
+	case TradeOpen:
 		pv.Confirmation = "PLACE " + in.Symbol
-	} else {
+	case TradeProtect:
+		pv.Confirmation = "PROTECT " + in.Symbol
+	default:
 		pv.Confirmation = "CLOSE " + in.Symbol
 	}
 
@@ -442,8 +522,9 @@ func (s *Server) preparePreview(ctx context.Context, l Ledger, req TradePrepareR
 	reasons, warnings := []string{}, []string{}
 
 	// 1. Halt file (merged into the policy like the executor does, so the
-	// halted finding is the first the risk check reports).
-	pol := risk.EtoroDemoPolicy()
+	// halted finding is the first the risk check reports). The protected
+	// policy: an open must carry a stop (2026-10-19).
+	pol := risk.EtoroDemoProtectedPolicy()
 	var halt *risk.HaltState
 	if h, found, herr := l.Store.Halt(); herr != nil {
 		reasons = append(reasons, "halt file invalid: "+herr.Error()+" (the executor refuses to run; fix or remove it by hand)")
@@ -472,52 +553,111 @@ func (s *Server) preparePreview(ctx context.Context, l Ledger, req TradePrepareR
 	}
 	pv.Quote = &etoroledger.Quote{Bid: q.Bid, Ask: q.Ask, At: q.At.UTC().Format(time.RFC3339), SpreadBps: q.SpreadBps()}
 
-	// 2. risk.Check with EtoroDemoPolicy, the executor's order and state.
+	// Protection levels (opens and protects), before the risk check so the
+	// check sees the stop. A request that names nothing gets the default
+	// profile; an infeasible level is a reason.
+	profile, _ := stops.ParseProfile(req.Profile)
+	var pc protectionCtx
+	if req.Side == TradeOpen || req.Side == TradeProtect {
+		pc = s.protectionInputs(ctx, l, req.Book, req.Side, q, acct, pos, req.AmountUSD, pol)
+		warnings = append(warnings, pc.warnings...)
+		if req.Profile == "" && req.Side == TradeOpen {
+			warnings = append(warnings, fmt.Sprintf("no stop requested: the %s profile's levels were applied (the policy requires a stop)", profile))
+		}
+		if req.Side == TradeProtect && pos.State != "long" {
+			// No entry to measure from; the eligibility step below says why.
+			pc.in.Entry, pc.in.Mark = q.Bid, q.Bid
+		}
+		lv, lerr := pc.levelsFor(profile, req.StopLossPct, req.TakeProfitPct)
+		if lerr != nil {
+			reasons = append(reasons, "protection: "+lerr.Error())
+		} else {
+			block := pc.block(string(profile), lv)
+			pv.Protection = &block
+			if !lv.Feasible {
+				reasons = append(reasons, "protection: "+lv.Reason)
+			}
+		}
+	}
+
+	// 2. risk.Check with the protected policy, the executor's order and
+	// state. A protect is not an order: only the halt applies to it.
 	ro := risk.Order{Book: req.Book, RefPrice: pv.RefPrice, Leverage: req.Leverage}
 	rs := risk.State{OrdersToday: etoroledger.LegsOn(recs, req.Book, today), Equity: acct.Equity, Exposure: pv.Account.Exposure,
 		MarketClosed: !mktcal.IsOpen(now)}
-	if req.Side == TradeOpen {
+	switch req.Side {
+	case TradeOpen:
 		ro.Side, ro.Price, ro.QtyBTC = "buy", q.Ask, req.AmountUSD/q.Ask
-	} else {
+		if pv.Protection != nil {
+			ro.StopLoss, ro.TakeProfit = pv.Protection.Levels.SLRate, pv.Protection.Levels.TPRate
+		}
+	case TradeClose:
 		ro.Side, ro.Price, ro.QtyBTC = "sell", q.Bid, pos.Units
+		rs.PositionBTC = pos.Units
+	case TradeProtect:
+		ro.Side, ro.Price, ro.QtyBTC = "protect", q.Bid, pos.Units
 		rs.PositionBTC = pos.Units
 	}
 	pv.Units = ro.QtyBTC
-	dec := risk.Check(pol, ro, rs)
-	pv.Risk = &etoroledger.RiskCheck{PolicyVersion: pol.Version, Order: ro, State: rs, Allowed: dec.Allowed, Findings: dec.Findings, Halt: halt}
-	for _, f := range dec.Findings {
-		if f.Severity == risk.Block {
+	if req.Side == TradeProtect {
+		dec := risk.Decision{Allowed: true, Findings: []risk.Finding{}}
+		if pol.Halted {
+			msg := "trading is halted"
+			if pol.HaltReason != "" {
+				msg += ": " + pol.HaltReason
+			}
+			dec = risk.Decision{Allowed: false, Findings: []risk.Finding{{Rule: risk.RuleHalted, Severity: risk.Block, Value: 1, Message: msg}}}
+		}
+		pv.Risk = &etoroledger.RiskCheck{PolicyVersion: pol.Version, Order: ro, State: rs, Allowed: dec.Allowed, Findings: dec.Findings, Halt: halt}
+		for _, f := range dec.Findings {
 			reasons = append(reasons, f.Rule+": "+f.Message)
-		} else {
-			warnings = append(warnings, f.Rule+": "+f.Message)
+		}
+	} else {
+		dec := risk.Check(pol, ro, rs)
+		pv.Risk = &etoroledger.RiskCheck{PolicyVersion: pol.Version, Order: ro, State: rs, Allowed: dec.Allowed, Findings: dec.Findings, Halt: halt}
+		for _, f := range dec.Findings {
+			if f.Severity == risk.Block {
+				reasons = append(reasons, f.Rule+": "+f.Message)
+			} else {
+				warnings = append(warnings, f.Rule+": "+f.Message)
+			}
 		}
 	}
 
 	// 3. Eligibility: the ledger and the account must agree, as the executor
 	// requires before it acts.
-	if req.Side == TradeOpen {
+	switch req.Side {
+	case TradeOpen:
 		if pos.State == "long" {
 			reasons = append(reasons, fmt.Sprintf("the ledger already holds position %s on %s (%.6f units): close it before opening again", pos.PositionID, in.Symbol, pos.Units))
 		} else if len(mine) > 0 {
 			reasons = append(reasons, fmt.Sprintf("the account holds %s on %s that the ledger does not: resolve by hand, nothing sent", tradeIDs(mine), in.Symbol))
 		}
-	} else {
+	default: // close, protect
+		verb := "close"
+		if req.Side == TradeProtect {
+			verb = "protect"
+		}
 		switch {
 		case pos.State != "long":
-			reasons = append(reasons, fmt.Sprintf("the ledger holds no position on %s to close", in.Symbol))
+			reasons = append(reasons, fmt.Sprintf("the ledger holds no position on %s to %s", in.Symbol, verb))
 		case req.PositionID != pos.PositionID:
 			reasons = append(reasons, fmt.Sprintf("position %s is not the ledger's position on %s (%s)", req.PositionID, in.Symbol, pos.PositionID))
 		default:
-			var held *broker.Position
-			for i := range mine {
-				if mine[i].ID == pos.PositionID {
-					held = &mine[i]
-				}
-			}
+			held := heldPosition(all, in.ID, pos.PositionID)
 			if held == nil {
 				reasons = append(reasons, fmt.Sprintf("the account no longer holds position %s (closed outside the executor?): resolve by hand", pos.PositionID))
 			} else if pos.Units > 0 && math.Abs(held.Units-pos.Units) > 1e-6*math.Max(1, pos.Units) {
-				warnings = append(warnings, fmt.Sprintf("position %s holds %.6f units at eToro, the ledger says %.6f (the whole position is closed)", pos.PositionID, held.Units, pos.Units))
+				warnings = append(warnings, fmt.Sprintf("position %s holds %.6f units at eToro, the ledger says %.6f", pos.PositionID, held.Units, pos.Units))
+			}
+			if req.Side == TradeProtect && pv.Protection != nil {
+				pv.Protection.Before = beforeOf(held)
+				if _, ok := b.(broker.ProtectionEditor); !ok {
+					reasons = append(reasons, "this broker cannot edit a position's stop loss / take profit")
+				}
+				if held != nil && held.StopLoss > 0 && pv.Protection.Levels.SLRate < held.StopLoss {
+					warnings = append(warnings, fmt.Sprintf("the new stop %.2f is below the current stop %.2f: this loosens the protection", pv.Protection.Levels.SLRate, held.StopLoss))
+				}
 			}
 		}
 	}
@@ -541,6 +681,8 @@ func (s *Server) preparePreview(ctx context.Context, l Ledger, req TradePrepareR
 		warnings = append(warnings, "the rule says flat: the executor closes this position at its next 09:35 New York run unless the ledger is halted")
 	case req.Side == TradeClose && ruleSignal == "long":
 		warnings = append(warnings, "the rule says long: the executor re-opens at its next 09:35 New York run unless the ledger is halted")
+	case req.Side == TradeProtect && pv.Protection != nil && pc.sma > 0 && pv.Protection.Levels.SLRate > pc.sma:
+		warnings = append(warnings, fmt.Sprintf("the stop %.2f sits above the rule's SMA50 %.2f: tighter than the rule's own exit", pv.Protection.Levels.SLRate, pc.sma))
 	}
 
 	ref, err := etoroledger.UIClientRef(req.Book, today, req.kind())
@@ -586,6 +728,11 @@ type TradePlaceResponse struct {
 	Audit          audit.Entry          `json:"audit"`
 	AuditError     string               `json:"audit_error,omitempty"`
 	Error          string               `json:"error,omitempty"`
+	// Protection is what the position carries after the place (opens and
+	// protects): the rates eToro reports when it could be read back, else
+	// the ones sent. Warnings carry a pending edit. 2026-10-19.
+	Protection *etoroledger.Protection `json:"protection,omitempty"`
+	Warnings   []string                `json:"warnings,omitempty"`
 }
 
 func (s *Server) tradePlace(w http.ResponseWriter, r *http.Request) {
@@ -655,7 +802,9 @@ func (s *Server) tradePlace(w http.ResponseWriter, r *http.Request) {
 	case found && h.Halted:
 		blocked(fmt.Sprintf("trading is halted: %s (halt file, by %s at %s)", h.Reason, h.By, h.At))
 		return
-	case !mktcal.IsOpen(now):
+	case c.Side != TradeProtect && !mktcal.IsOpen(now):
+		// A protect edits a resting order and is accepted around the clock;
+		// opens and closes trade in the cash session only.
 		blocked("the NYSE cash session is closed")
 		return
 	}
@@ -676,7 +825,7 @@ func (s *Server) tradePlace(w http.ResponseWriter, r *http.Request) {
 	case c.Side == TradeOpen && pos.State != "flat":
 		blocked(fmt.Sprintf("the ledger changed since the preview: it holds position %s on %s", pos.PositionID, in.Symbol))
 		return
-	case c.Side == TradeClose && (pos.State != "long" || pos.PositionID != c.PositionID):
+	case c.Side != TradeOpen && (pos.State != "long" || pos.PositionID != c.PositionID):
 		blocked(fmt.Sprintf("the ledger changed since the preview: it no longer holds position %s on %s", c.PositionID, in.Symbol))
 		return
 	}
@@ -688,17 +837,12 @@ func (s *Server) tradePlace(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	mine := tradeOnInstrument(all, in.ID)
-	var held *broker.Position
-	for i := range mine {
-		if mine[i].ID == pos.PositionID {
-			held = &mine[i]
-		}
-	}
+	held := heldPosition(all, in.ID, pos.PositionID)
 	switch {
 	case c.Side == TradeOpen && len(mine) > 0:
 		blocked(fmt.Sprintf("the account holds %s on %s that the ledger does not: resolve by hand", tradeIDs(mine), in.Symbol))
 		return
-	case c.Side == TradeClose && held == nil:
+	case c.Side != TradeOpen && held == nil:
 		blocked(fmt.Sprintf("the account no longer holds position %s", c.PositionID))
 		return
 	}
@@ -730,11 +874,17 @@ func (s *Server) tradePlace(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if c.Side == TradeProtect {
+		s.placeProtect(w, ctx, placeEnv{l: l, led: led, ap: ap, base: base, c: c, in: in, bin: bin, pos: pos, held: held, account: account, intent: intent, now: now, today: today})
+		return
+	}
+
 	var bo broker.Order
 	var oerr error
 	if c.Side == TradeOpen {
-		s.Log.Printf("trade.place ledger=%s open %s %.2f USD x1 ref=%s by=%q", l.Name, in.Symbol, c.AmountUSD, c.ClientRef, base.By)
-		bo, oerr = s.Trading.Broker.Open(ctx, broker.OpenRequest{Instrument: bin, Side: broker.Long, Amount: c.AmountUSD, Leverage: 1, ClientRef: c.ClientRef, IntentAt: intent.IntentAt})
+		s.Log.Printf("trade.place ledger=%s open %s %.2f USD x1 sl=%.2f tp=%.2f ref=%s by=%q", l.Name, in.Symbol, c.AmountUSD, c.SLRate, c.TPRate, c.ClientRef, base.By)
+		bo, oerr = s.Trading.Broker.Open(ctx, broker.OpenRequest{Instrument: bin, Side: broker.Long, Amount: c.AmountUSD, Leverage: 1,
+			StopLoss: c.SLRate, TakeProfit: c.TPRate, ClientRef: c.ClientRef, IntentAt: intent.IntentAt})
 	} else {
 		s.Log.Printf("trade.place ledger=%s close %s position %s ref=%s by=%q", l.Name, in.Symbol, c.PositionID, c.ClientRef, base.By)
 		bo, oerr = s.Trading.Broker.Close(ctx, broker.CloseRequest{Instrument: bin, PositionID: c.PositionID, ClientRef: c.ClientRef})
@@ -783,10 +933,28 @@ func (s *Server) tradePlace(w http.ResponseWriter, r *http.Request) {
 		rsState.Equity, rsState.Exposure = account.Equity, account.Exposure
 	}
 	if c.Side == TradeOpen {
-		ro.Side, ro.Price = "buy", c.Ask
+		ro.Side, ro.Price, ro.StopLoss, ro.TakeProfit = "buy", c.Ask, c.SLRate, c.TPRate
 		d.Target = "long"
 		d.PositionAfter = etoroledger.Position{State: "long", PositionID: bo.PositionIDs[0], Units: bo.Units, Amount: bo.Amount,
 			OpenRate: bo.AvgPrice, OpenedAt: bo.At.UTC().Format(time.RFC3339)}
+		if c.SLRate > 0 {
+			d.PositionAfter.StopLossRate, d.PositionAfter.StopType = c.SLRate, broker.StopFixed
+		}
+		d.PositionAfter.TakeProfitRate = c.TPRate
+		// What eToro holds, when the portfolio already shows the position
+		// (it may round the rates).
+		if ps, err := s.Trading.Broker.Positions(ctx); err == nil {
+			if hp := heldPosition(ps, in.ID, bo.PositionIDs[0]); hp != nil && hp.StopLoss > 0 {
+				d.PositionAfter.StopLossRate, d.PositionAfter.TakeProfitRate, d.PositionAfter.StopType = hp.StopLoss, hp.TakeProfit, hp.StopType
+			}
+		}
+		if c.SLRate > 0 {
+			d.Protection = &etoroledger.Protection{Profile: c.Profile, ATR: c.ATR, ATRPct: c.ATRPct,
+				MaxLossUSD: bo.Units * (bo.AvgPrice - d.PositionAfter.StopLossRate), Reason: "set with the open from the console"}
+			resp.Protection = d.Protection
+		} else {
+			d.Notes = append(d.Notes, "opened without a stop loss")
+		}
 		o.FillVsMidBps, o.FillVsCloseBps = tradeCostBps("buy", bo.AvgPrice, mid), tradeCostBps("buy", bo.AvgPrice, c.RefPrice)
 	} else {
 		ro.Side, ro.Price = "sell", c.Bid
@@ -799,7 +967,7 @@ func (s *Server) tradePlace(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	// The check as it was passed at prepare (same policy, state as of now).
-	d.Risk = &etoroledger.RiskCheck{PolicyVersion: risk.EtoroDemoPolicy().Version, Order: ro, State: rsState, Allowed: true}
+	d.Risk = &etoroledger.RiskCheck{PolicyVersion: risk.EtoroDemoProtectedPolicy().Version, Order: ro, State: rsState, Allowed: true}
 	var ruleSignal string
 	var ruleSMA float64
 	for _, rr := range led.Records() {
@@ -839,10 +1007,145 @@ func (s *Server) tradePlace(w http.ResponseWriter, r *http.Request) {
 }
 
 func kindOf(side string) string {
-	if side == TradeOpen {
+	switch side {
+	case TradeOpen:
 		return etoroledger.ActionOpen
+	case TradeProtect:
+		return etoroledger.ActionProtect
 	}
 	return etoroledger.ActionClose
+}
+
+// placeEnv is what placeProtect needs from tradePlace after the shared
+// checks, the intent and the "requested" audit line.
+type placeEnv struct {
+	l       Ledger
+	led     *etoroledger.Ledger
+	ap      string
+	base    audit.Entry
+	c       tradeClaims
+	in      etoroledger.Instrument
+	bin     broker.Instrument
+	pos     etoroledger.Position
+	held    *broker.Position
+	account *etoroledger.Account
+	intent  etoroledger.Intent
+	now     time.Time
+	today   string
+}
+
+// placeProtect sends the stop loss / take profit edit of a held position
+// and records it: a ledger line with action protect (source ui, not a leg)
+// whose position_after carries the rates eToro reports (executed) or the
+// ones sent (pending: the portfolio had not shown them within the
+// adapter's wait; a warning says so and reconcile's protection check
+// confirms later). A rejection is a failed place like an order's: the
+// intent stays on disk.
+func (s *Server) placeProtect(w http.ResponseWriter, ctx context.Context, e placeEnv) {
+	c, l, base := e.c, e.l, e.base
+	resp := TradePlaceResponse{Book: c.Book, Side: c.Side, ClientRef: c.ClientRef, RequestID: c.RequestID, PositionIDs: []string{c.PositionID},
+		Units: e.pos.Units, AmountUSD: e.pos.Amount, AvgPrice: e.pos.OpenRate, PositionAfter: e.pos, AuditPath: e.ap, Warnings: []string{}}
+	fail := func(status int, msg string) {
+		msg += fmt.Sprintf(" (the intent %s stays on disk; etoro-reconcile and the data-health page report it until it is resolved by hand)", c.ClientRef)
+		ae := base
+		ae.Outcome, ae.Error = audit.Failed, msg
+		if err := audit.Append(e.ap, ae); err != nil {
+			s.Log.Printf("audit %s: %v", e.ap, err)
+			resp.AuditError = err.Error()
+		}
+		resp.Audit, resp.Error = ae, msg
+		if resp.Status == "" {
+			resp.Status = string(broker.StatusUnknown)
+		}
+		writeJSON(w, status, resp)
+	}
+	ed, ok := s.Trading.Broker.(broker.ProtectionEditor)
+	if !ok {
+		resp.Status = string(broker.StatusRejected)
+		fail(http.StatusNotImplemented, "this broker cannot edit a position's stop loss / take profit")
+		return
+	}
+	s.Log.Printf("trade.place ledger=%s protect %s position %s sl=%.2f tp=%.2f ref=%s by=%q", l.Name, e.in.Symbol, c.PositionID, c.SLRate, c.TPRate, c.ClientRef, base.By)
+	res, perr := ed.SetProtection(ctx, broker.ProtectionRequest{Instrument: e.bin, PositionID: c.PositionID, StopLoss: c.SLRate, TakeProfit: c.TPRate, ClientRef: c.ClientRef})
+	finished := s.Now().UTC()
+	resp.Status, resp.OrderID = string(res.Status), res.OperationID
+	switch {
+	case perr != nil:
+		fail(http.StatusBadGateway, fmt.Sprintf("protect %s: %v", c.ClientRef, perr))
+		return
+	case res.Status != broker.StatusExecuted && res.Status != broker.StatusPending:
+		fail(http.StatusBadGateway, fmt.Sprintf("protect %s is %s at eToro: %s", c.ClientRef, res.Status, res.Error))
+		return
+	}
+
+	// The ledger line: the position with its new rates.
+	after := e.pos
+	after.StopLossRate, after.TakeProfitRate, after.StopType = c.SLRate, c.TPRate, broker.StopFixed
+	if c.SLRate == 0 && e.held != nil {
+		after.StopLossRate, after.StopType = e.held.StopLoss, e.held.StopType
+	}
+	if c.TPRate == 0 && e.held != nil {
+		after.TakeProfitRate = e.held.TakeProfit
+	}
+	if res.Status == broker.StatusExecuted && res.Position.ID == c.PositionID {
+		after.StopLossRate, after.TakeProfitRate = res.Position.StopLoss, res.Position.TakeProfit
+		if res.Position.StopType != "" {
+			after.StopType = res.Position.StopType
+		}
+	} else {
+		resp.Warnings = append(resp.Warnings, "eToro accepted the edit but the position did not show the new rates within the adapter's wait: recorded as sent; check the position (reconcile reports a protection drift if it never applies)")
+	}
+	before := e.pos
+	if e.held != nil {
+		before.StopLossRate, before.TakeProfitRate, before.StopType = e.held.StopLoss, e.held.TakeProfit, e.held.StopType
+	}
+	o := etoroledger.Order{Kind: etoroledger.ActionProtect, ClientRef: c.ClientRef, RequestID: c.RequestID, OrderID: res.OperationID, Status: string(res.Status),
+		PositionIDs: []string{c.PositionID}, Units: e.pos.Units, Amount: e.pos.Amount, IntentAt: e.intent.IntentAt, Started: e.now, Finished: finished}
+	prot := &etoroledger.Protection{Profile: c.Profile, ATR: c.ATR, ATRPct: c.ATRPct, StopLossBefore: before.StopLossRate, TakeProfitBefore: before.TakeProfitRate,
+		OperationID: res.OperationID, Reason: "set from the console"}
+	if after.StopLossRate > 0 && e.pos.OpenRate > 0 {
+		prot.MaxLossUSD = e.pos.Units * (e.pos.OpenRate - after.StopLossRate)
+	}
+	d := &etoroledger.Demo{Env: "demo", Target: "long", Action: etoroledger.ActionProtect, PositionBefore: before, PositionAfter: after, Account: e.account,
+		Quote:      &etoroledger.Quote{Bid: c.Bid, Ask: c.Ask, At: time.Unix(c.Iat, 0).UTC().Format(time.RFC3339), SpreadBps: broker.Quote{Bid: c.Bid, Ask: c.Ask}.SpreadBps()},
+		Order:      &o,
+		Protection: prot,
+		Notes:      []string{"protection set from the console (ui-api): the position's stop loss / take profit at eToro; not a leg"},
+	}
+	if e.held != nil {
+		d.FinancingToDate = e.held.Fees
+	}
+	var ruleSignal string
+	var ruleSMA float64
+	for _, rr := range e.led.Records() {
+		if rr.Book == c.Book && !rr.IsUI() {
+			ruleSignal, ruleSMA = rr.Decision.Signal, rr.Decision.SMA
+		}
+	}
+	rec := etoroledger.Record{
+		Schema: etoroledger.Schema, RecordedAt: finished.Format(time.RFC3339), CodeVersion: "ui-api " + s.Version,
+		Mode: etoroledger.ModeDemo, Venue: etorobroker.Venue, Book: c.Book, Instrument: e.in,
+		Decision: etoroledger.Decision{BarDate: e.today, FillDate: e.today, Close: c.RefPrice, SMA: ruleSMA, Signal: etoroledger.SignalManual, PrevSignal: ruleSignal, Action: etoroledger.ActionProtect},
+		Demo:     d, Source: etoroledger.SourceUI, Operator: &etoroledger.Operator{By: base.By, Reason: base.Reason},
+	}
+	resp.PositionAfter, resp.Protection = after, prot
+	done := base
+	done.Outcome = audit.Done
+	done.Detail += fmt.Sprintf(" -> %s: stop %.2f -> %.2f, target %.2f -> %.2f (operation %s)", res.Status, before.StopLossRate, after.StopLossRate, before.TakeProfitRate, after.TakeProfitRate, res.OperationID)
+	if err := e.led.Append(rec); err != nil {
+		resp.LedgerError = err.Error()
+		done.Error = "protection set but the ledger line could not be written: " + err.Error() + " (the intent is on disk; reconcile reports it)"
+		s.Log.Printf("trade.place ledger=%s %s: %s", l.Name, c.ClientRef, done.Error)
+	} else {
+		resp.LedgerRecorded = true
+	}
+	if err := audit.Append(e.ap, done); err != nil {
+		s.Log.Printf("audit %s: %v", e.ap, err)
+		resp.AuditError = err.Error()
+	}
+	resp.Audit = done
+	s.Log.Printf("trade.place ledger=%s protect %s %s: stop %.2f target %.2f (recorded=%v) id=%s", l.Name, e.in.Symbol, res.Status, after.StopLossRate, after.TakeProfitRate, resp.LedgerRecorded, done.ID)
+	writeJSON(w, http.StatusOK, resp)
 }
 
 // lockLedger takes the executor's exclusive, non-blocking flock on the

@@ -49,6 +49,15 @@ type fakeTradeBroker struct {
 	closeErr  error
 	quoteErr  error
 	costsErr  error
+	// Protection (phase B): protects records SetProtection calls;
+	// protectErr is returned instead; protectPending answers pending
+	// without applying; limitsErr fails ProtectionLimits; noEditor hides
+	// the ProtectionEditor interface (see protectBroker).
+	protects       []broker.ProtectionRequest
+	protectErr     error
+	protectPending bool
+	limitsErr      error
+	limitsCalls    int
 }
 
 func newFakeTradeBroker() *fakeTradeBroker {
@@ -84,10 +93,65 @@ func (f *fakeTradeBroker) Open(ctx context.Context, req broker.OpenRequest) (bro
 	o := broker.Order{OrderID: "o" + id, ClientRef: req.ClientRef, Status: broker.StatusExecuted, PositionIDs: []string{id},
 		AvgPrice: ask + 0.5, Units: units, Amount: req.Amount, SpreadCost: 0.04, At: tradeNow.Add(3 * time.Second)}
 	f.byRef[req.ClientRef] = o
-	f.positions = append(f.positions, broker.Position{ID: id, Instrument: req.Instrument, Side: broker.Long, Units: units,
-		OpenRate: o.AvgPrice, Amount: req.Amount, Leverage: 1, Exposure: req.Amount})
+	p := broker.Position{ID: id, Instrument: req.Instrument, Side: broker.Long, Units: units,
+		OpenRate: o.AvgPrice, Amount: req.Amount, Leverage: 1, Exposure: req.Amount}
+	if req.StopLoss > 0 {
+		p.StopLoss, p.StopType = req.StopLoss, broker.StopFixed
+	}
+	p.TakeProfit = req.TakeProfit
+	f.positions = append(f.positions, p)
 	f.cash -= req.Amount
 	return o, nil
+}
+
+// SetProtection implements broker.ProtectionEditor: applies the rates to
+// the held position (or answers pending / an error when told to).
+func (f *fakeTradeBroker) SetProtection(ctx context.Context, req broker.ProtectionRequest) (broker.ProtectionResult, error) {
+	f.protects = append(f.protects, req)
+	res := broker.ProtectionResult{PositionID: req.PositionID, ClientRef: req.ClientRef, Status: broker.StatusUnknown, OperationID: "op-" + req.ClientRef}
+	if err := req.Validate(); err != nil {
+		return res, err
+	}
+	if f.protectErr != nil {
+		res.Status = broker.StatusRejected
+		return res, f.protectErr
+	}
+	for i := range f.positions {
+		if f.positions[i].ID != req.PositionID {
+			continue
+		}
+		if f.protectPending {
+			res.Status, res.Position = broker.StatusPending, f.positions[i]
+			return res, nil
+		}
+		if req.StopLoss > 0 {
+			f.positions[i].StopLoss, f.positions[i].StopType = req.StopLoss, broker.StopFixed
+		}
+		if req.TakeProfit > 0 {
+			f.positions[i].TakeProfit = req.TakeProfit
+		}
+		if req.ClearTakeProfit {
+			f.positions[i].TakeProfit = 0
+		}
+		res.Status, res.Position, res.At = broker.StatusExecuted, f.positions[i], tradeNow.Add(2*time.Second)
+		return res, nil
+	}
+	res.Status = broker.StatusRejected
+	return res, broker.ErrPositionNotOpen
+}
+
+// ProtectionLimits implements broker.ProtectionLimitsReader with the
+// evidence of 2026-10-10: NSDQ100 needs 1 %, SPX500 0 %.
+func (f *fakeTradeBroker) ProtectionLimits(ctx context.Context, in broker.Instrument, side broker.Side, leverage int) (broker.ProtectionLimits, error) {
+	f.limitsCalls++
+	if f.limitsErr != nil {
+		return broker.ProtectionLimits{}, f.limitsErr
+	}
+	min := 0.0
+	if in.ID == 28 {
+		min = 0.01
+	}
+	return broker.ProtectionLimits{MinStopLossPct: min, MaxStopLossPct: 1, MaxTakeProfitPct: 10, AllowEdit: true, Tick: 0.01}, nil
 }
 func (f *fakeTradeBroker) Close(ctx context.Context, req broker.CloseRequest) (broker.Order, error) {
 	f.closes = append(f.closes, req)
@@ -149,7 +213,7 @@ func tradeServer(t *testing.T, now time.Time) *tradeHarness {
 	h.srv = &Server{
 		Ledgers: []Ledger{
 			{Name: "stage", Store: stage},
-			{Name: "etoro-demo", Store: store.New(filepath.Join(h.dir, "ledger.jsonl"), ""), Venue: VenueEtoro},
+			{Name: "etoro-demo", Store: store.New(filepath.Join(h.dir, "ledger.jsonl"), filepath.Join(etoroTestdata, "candles")), Venue: VenueEtoro},
 		},
 		Store: stage, Policy: risk.DefaultPolicy(), PolicySrc: "test", Version: "test",
 		Now: func() time.Time { return h.now }, Log: log.New(io.Discard, "", 0), OperatorToken: testToken, Trading: tr,

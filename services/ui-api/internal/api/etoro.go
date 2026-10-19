@@ -13,11 +13,9 @@ package api
 // eToro ledger is the file the executor writes, never an S3 copy.
 
 import (
-	"encoding/csv"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"io/fs"
 	"net/http"
 	"os"
@@ -225,78 +223,11 @@ func (s *Server) etoroCandles(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, EtoroCandlesResponse{Ledger: l.Name, Venue: VenueEtoro, Book: b, File: filepath.Base(path), Candles: buildCandles(rows, days)})
 }
 
-// etoroCandleRows reads the newest candle file for book with the tolerant
-// parser (no cache: the file is under a thousand short rows).
+// etoroCandleRows reads the newest candle file for book through the
+// store (cached). Since 2026-10-19 store.ParseCandles reads eToro's empty
+// volume as 0, so the former tolerant copy of the parser is gone.
 func etoroCandleRows(st *store.Store, book string) ([]store.Candle, string, error) {
-	path, err := st.LatestCandlesFile(book)
-	if err != nil {
-		return nil, "", err
-	}
-	b, err := st.ReadFile(path)
-	if err != nil {
-		return nil, "", err
-	}
-	rows, err := parseEtoroCandles(strings.NewReader(string(b)))
-	if err != nil {
-		return nil, "", fmt.Errorf("%s: %w", st.Where(path), err)
-	}
-	return rows, path, nil
-}
-
-// parseEtoroCandles reads the executor's candle CSV (shared/pkg/etorodaily:
-// date,book,open,high,low,close,volume,vwap,trade_count,bucket_start_utc).
-// eToro's daily candles carry no volume, so volume and vwap are empty
-// fields: they read as 0 here, where store.ParseCandles (the Bitso files,
-// which always have a volume) would fail.
-func parseEtoroCandles(r io.Reader) ([]store.Candle, error) {
-	cr := csv.NewReader(r)
-	cr.FieldsPerRecord = -1
-	head, err := cr.Read()
-	if err != nil {
-		return nil, fmt.Errorf("header: %w", err)
-	}
-	col := map[string]int{}
-	for i, h := range head {
-		col[strings.TrimSpace(strings.ToLower(h))] = i
-	}
-	for _, need := range []string{"date", "open", "high", "low", "close"} {
-		if _, ok := col[need]; !ok {
-			return nil, fmt.Errorf("missing column %q", need)
-		}
-	}
-	out := []store.Candle{}
-	for line := 2; ; line++ {
-		rec, err := cr.Read()
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			return nil, fmt.Errorf("line %d: %w", line, err)
-		}
-		num := func(name string) (float64, error) {
-			i, ok := col[name]
-			if !ok || i >= len(rec) || strings.TrimSpace(rec[i]) == "" {
-				return 0, nil
-			}
-			return strconv.ParseFloat(strings.TrimSpace(rec[i]), 64)
-		}
-		c := store.Candle{Date: strings.TrimSpace(rec[col["date"]])}
-		for _, f := range []struct {
-			name string
-			dst  *float64
-		}{{"open", &c.Open}, {"high", &c.High}, {"low", &c.Low}, {"close", &c.Close}, {"volume", &c.Volume}} {
-			v, err := num(f.name)
-			if err != nil {
-				return nil, fmt.Errorf("line %d %s: %w", line, f.name, err)
-			}
-			*f.dst = v
-		}
-		if tc, err := num("trade_count"); err == nil {
-			c.TradeCount = int(tc)
-		}
-		out = append(out, c)
-	}
-	return out, nil
+	return st.Candles(book)
 }
 
 // EtoroRiskResponse is GET /api/ui/etoro/risk.

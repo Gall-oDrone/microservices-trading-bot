@@ -36,10 +36,11 @@ type fakeClient struct {
 	history [][]etoro.ClosedTrade
 	// updates records UpdatePosition calls; updateErr is returned instead;
 	// updateLag delays the rates showing on the position by N portfolio reads.
-	updates   []etoro.UpdatePositionRequest
-	updateErr error
-	updateLag int
-	pendingSL map[int64]etoro.UpdatePositionRequest
+	updates          []etoro.UpdatePositionRequest
+	updateErr        error
+	updateLag        int
+	pendingSL        map[int64]etoro.UpdatePositionRequest
+	eligibilityCalls int
 }
 
 func newFake(clock *time.Time) *fakeClient {
@@ -582,5 +583,46 @@ func TestSetProtectionRejections(t *testing.T) {
 	}
 	if len(f.updates) != 0 {
 		t.Fatal("invalid requests reached the client")
+	}
+}
+
+func (f *fakeClient) Eligibility(ctx context.Context, ids []int64) ([]etoro.Eligibility, error) {
+	f.eligibilityCalls++
+	// NSDQ100 x1 long per evidence-2026-10-10/eligibility.json.
+	return []etoro.Eligibility{{InstrumentID: 28, Symbol: "NSDQ100", AllowTrailingStopLoss: false,
+		LeverageConfigs: []etoro.LeverageConfig{
+			{SettlementType: "cfd", Direction: "long", LeverageValues: []int{1}, AllowEditStopLoss: true, AllowStopLossTakeProfit: true,
+				MinStopLossPercentage: 1, MaxStopLossPercentage: 100, MaxTakeProfitPercentage: 1000},
+			{SettlementType: "cfd", Direction: "long", LeverageValues: []int{2, 5}, AllowEditStopLoss: true, AllowStopLossTakeProfit: true,
+				MinStopLossPercentage: 1, MaxStopLossPercentage: 50, MaxTakeProfitPercentage: 1000},
+		}}}, nil
+}
+
+func TestProtectionLimitsFromEligibility(t *testing.T) {
+	a, f, now := newAdapter(t)
+	l, err := a.ProtectionLimits(context.Background(), nsdq, broker.Long, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if l.MinStopLossPct != 0.01 || l.MaxStopLossPct != 1 || l.MaxTakeProfitPct != 10 || !l.AllowEdit || l.AllowTrailing || l.Tick != 0.01 {
+		t.Fatalf("limits %+v", l)
+	}
+	// Cached within the TTL, re-read after it.
+	if _, err := a.ProtectionLimits(context.Background(), nsdq, broker.Long, 1); err != nil || f.eligibilityCalls != 1 {
+		t.Fatalf("cache: calls %d err %v", f.eligibilityCalls, err)
+	}
+	*now = now.Add(2 * time.Hour)
+	if _, err := a.ProtectionLimits(context.Background(), nsdq, broker.Long, 1); err != nil || f.eligibilityCalls != 2 {
+		t.Fatalf("ttl: calls %d err %v", f.eligibilityCalls, err)
+	}
+	// x2 divides the distances (percent of the invested amount).
+	if l2, err := a.ProtectionLimits(context.Background(), nsdq, broker.Long, 2); err != nil || l2.MaxStopLossPct != 0.25 {
+		t.Fatalf("x2 %+v %v", l2, err)
+	}
+	if _, err := a.ProtectionLimits(context.Background(), nsdq, broker.Long, 3); err == nil {
+		t.Fatal("x3 is not an allowed configuration")
+	}
+	if _, err := a.ProtectionLimits(context.Background(), broker.Instrument{Venue: Venue, ID: 27}, broker.Long, 1); err == nil {
+		t.Fatal("an instrument the eligibility does not list")
 	}
 }

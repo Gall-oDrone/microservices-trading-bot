@@ -210,6 +210,24 @@ type ProtectionEditor interface {
 	SetProtection(ctx context.Context, req ProtectionRequest) (ProtectionResult, error)
 }
 
+// ProtectionLimits are the venue's rules for stops and targets on an
+// instrument and direction (eToro: eligibility leverageConfigs[]), as
+// fractions of the entry. Zero disables a bound; Tick is the price step.
+type ProtectionLimits struct {
+	MinStopLossPct   float64 `json:"min_sl_pct"`
+	MaxStopLossPct   float64 `json:"max_sl_pct"`
+	MaxTakeProfitPct float64 `json:"max_tp_pct"`
+	AllowEdit        bool    `json:"allow_edit"`
+	AllowTrailing    bool    `json:"allow_trailing"`
+	Tick             float64 `json:"tick"`
+}
+
+// ProtectionLimitsReader is implemented by adapters that can read those
+// rules. Optional.
+type ProtectionLimitsReader interface {
+	ProtectionLimits(ctx context.Context, in Instrument, side Side, leverage int) (ProtectionLimits, error)
+}
+
 // ClosedPosition is one row of the venue's trading history.
 type ClosedPosition struct {
 	ID         string     `json:"id"`

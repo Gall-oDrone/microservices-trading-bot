@@ -259,7 +259,13 @@ func ParseCandles(r io.Reader) ([]Candle, error) {
 			if !ok || i >= len(rec) {
 				return 0, nil
 			}
-			return strconv.ParseFloat(strings.TrimSpace(rec[i]), 64)
+			s := strings.TrimSpace(rec[i])
+			if s == "" {
+				// eToro's index-CFD candles carry no volume or trade count
+				// (the executor writes an empty field): read as 0.
+				return 0, nil
+			}
+			return strconv.ParseFloat(s, 64)
 		}
 		c := Candle{Date: rec[col["date"]]}
 		for _, f := range []struct {

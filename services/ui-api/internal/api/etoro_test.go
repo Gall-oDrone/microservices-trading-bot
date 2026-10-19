@@ -239,10 +239,10 @@ func TestEtoroLedgerAndCandles(t *testing.T) {
 		t.Fatalf("spx500 candles %s %d", c30.File, len(c30.Candles))
 	}
 	get[errorBody](t, ts, "/api/ui/etoro/forward-tests/nsdq100/candles?days=0", 400)
-	// store.ParseCandles rejects the empty volume; the tolerant parser is
-	// the reason this route exists.
-	if _, _, err := store.New(filepath.Join(etoroTestdata, "ledger.jsonl"), "").Candles("nsdq100"); err == nil {
-		t.Fatal("store.ParseCandles unexpectedly accepts the eToro CSV; the tolerant parser can go")
+	// store.ParseCandles reads eToro's empty volume as 0 (2026-10-19), so
+	// this route and the protection recommendation share the store's cache.
+	if rows, _, err := store.New(filepath.Join(etoroTestdata, "ledger.jsonl"), "").Candles("nsdq100"); err != nil || len(rows) != 120 {
+		t.Fatalf("store.ParseCandles must accept the eToro CSV: %d rows, %v", len(rows), err)
 	}
 }
 
@@ -571,16 +571,16 @@ func TestEtoroHaltAndResume(t *testing.T) {
 }
 
 func TestParseEtoroCandles(t *testing.T) {
-	rows, err := parseEtoroCandles(strings.NewReader("date,book,open,high,low,close,volume,vwap,trade_count,bucket_start_utc\n" +
+	rows, err := store.ParseCandles(strings.NewReader("date,book,open,high,low,close,volume,vwap,trade_count,bucket_start_utc\n" +
 		"2026-10-14,NSDQ100,30580.3,30675.1,29860.5,29917.2,,,0,2026-10-14T00:00:00Z\n" +
 		"2026-10-15,NSDQ100,29911.9,29989,29406.3,29868.7,12.5,29800,3,2026-10-15T00:00:00Z\n"))
 	if err != nil || len(rows) != 2 || rows[0].Volume != 0 || rows[0].Close != 29917.2 || rows[1].Volume != 12.5 || rows[1].TradeCount != 3 {
 		t.Fatalf("%+v %v", rows, err)
 	}
-	if _, err := parseEtoroCandles(strings.NewReader("date,open\n2026-10-14,1\n")); err == nil {
+	if _, err := store.ParseCandles(strings.NewReader("date,open\n2026-10-14,1\n")); err == nil {
 		t.Fatal("missing columns must fail")
 	}
-	if _, err := parseEtoroCandles(strings.NewReader("date,open,high,low,close\n2026-10-14,x,1,1,1\n")); err == nil {
+	if _, err := store.ParseCandles(strings.NewReader("date,open,high,low,close,volume\n2026-10-14,x,1,1,1,\n")); err == nil {
 		t.Fatal("a non-numeric price must fail")
 	}
 }

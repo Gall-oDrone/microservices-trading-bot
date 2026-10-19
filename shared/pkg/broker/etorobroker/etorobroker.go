@@ -16,6 +16,8 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
+	"strings"
+	"sync"
 	"time"
 
 	"bitso-trading-platform/shared/pkg/broker"
@@ -42,6 +44,7 @@ type Client interface {
 	Costs(ctx context.Context, req etoro.OrderRequest) (etoro.CostPreview, error)
 	TradingHistory(ctx context.Context, minDate time.Time, page, pageSize int) ([]etoro.ClosedTrade, error)
 	UpdatePosition(ctx context.Context, positionID int64, req etoro.UpdatePositionRequest, requestID string) (etoro.UpdatePositionAccepted, error)
+	Eligibility(ctx context.Context, instrumentIDs []int64) ([]etoro.Eligibility, error)
 }
 
 // Adapter implements broker.Broker on eToro.
@@ -53,17 +56,29 @@ type Adapter struct {
 	Poll  time.Duration
 	sleep func(context.Context, time.Duration) error
 	now   func() time.Time
+	// limits caches eligibility per (instrument, direction, leverage) for
+	// LimitsTTL (the route has a dedicated 20/min quota).
+	LimitsTTL time.Duration
+	limitsMu  sync.Mutex
+	limits    map[string]cachedLimits
+}
+
+type cachedLimits struct {
+	at time.Time
+	l  broker.ProtectionLimits
 }
 
 // New wraps a client.
 func New(c Client) *Adapter {
-	return &Adapter{c: c, Wait: 30 * time.Second, Poll: 2 * time.Second, sleep: sleepCtx, now: time.Now}
+	return &Adapter{c: c, Wait: 30 * time.Second, Poll: 2 * time.Second, sleep: sleepCtx, now: time.Now,
+		LimitsTTL: time.Hour, limits: map[string]cachedLimits{}}
 }
 
 var (
-	_ broker.Broker           = (*Adapter)(nil)
-	_ broker.HistoryReader    = (*Adapter)(nil)
-	_ broker.ProtectionEditor = (*Adapter)(nil)
+	_ broker.Broker                 = (*Adapter)(nil)
+	_ broker.HistoryReader          = (*Adapter)(nil)
+	_ broker.ProtectionEditor       = (*Adapter)(nil)
+	_ broker.ProtectionLimitsReader = (*Adapter)(nil)
 )
 
 // Venue implements broker.Broker.
@@ -504,6 +519,58 @@ func abs(x float64) float64 {
 		return -x
 	}
 	return x
+}
+
+// indexTick is the price step of eToro's index CFDs (quotes to 2 dp).
+const indexTick = 0.01
+
+// ProtectionLimits implements broker.ProtectionLimitsReader from the
+// eligibility route: the leverage config of (direction, leverage) gives the
+// stop and target bounds in percent of the invested amount, which at x1 is
+// the distance from the entry. Cached for LimitsTTL.
+func (a *Adapter) ProtectionLimits(ctx context.Context, in broker.Instrument, side broker.Side, leverage int) (broker.ProtectionLimits, error) {
+	if in.ID <= 0 {
+		return broker.ProtectionLimits{}, errors.Join(broker.ErrInvalidRequest, errors.New("etoro needs an instrument id"))
+	}
+	if leverage < 1 {
+		leverage = 1
+	}
+	key := fmt.Sprintf("%d|%s|%d", in.ID, side, leverage)
+	a.limitsMu.Lock()
+	if c, ok := a.limits[key]; ok && a.LimitsTTL > 0 && a.now().Sub(c.at) < a.LimitsTTL {
+		a.limitsMu.Unlock()
+		return c.l, nil
+	}
+	a.limitsMu.Unlock()
+	els, err := a.c.Eligibility(ctx, []int64{in.ID})
+	if err != nil {
+		return broker.ProtectionLimits{}, err
+	}
+	for _, e := range els {
+		if e.InstrumentID != in.ID {
+			continue
+		}
+		lc, ok := e.Config(strings.ToLower(string(side)), leverage)
+		if !ok {
+			return broker.ProtectionLimits{}, fmt.Errorf("etorobroker: %s x%d is not an allowed configuration on instrument %d", side, leverage, in.ID)
+		}
+		l := broker.ProtectionLimits{
+			MinStopLossPct:   lc.MinStopLossPercentage / 100 / float64(leverage),
+			MaxStopLossPct:   lc.MaxStopLossPercentage / 100 / float64(leverage),
+			MaxTakeProfitPct: lc.MaxTakeProfitPercentage / 100 / float64(leverage),
+			AllowEdit:        lc.AllowEditStopLoss && lc.AllowStopLossTakeProfit,
+			AllowTrailing:    e.AllowTrailingStopLoss,
+			Tick:             indexTick,
+		}
+		a.limitsMu.Lock()
+		if a.limits == nil {
+			a.limits = map[string]cachedLimits{}
+		}
+		a.limits[key] = cachedLimits{at: a.now(), l: l}
+		a.limitsMu.Unlock()
+		return l, nil
+	}
+	return broker.ProtectionLimits{}, fmt.Errorf("etorobroker: eligibility has no entry for instrument %d", in.ID)
 }
 
 // historyPages bounds ClosedPositions (200 rows per page).
