@@ -1563,7 +1563,8 @@ unfinished bar is labelled provisional. The decision path never reads live data.
   audit of every attempt) plus: trading is **off unless `-etoro-trading`** and every prerequisite is
   present (fatal at start otherwise); the broker is built for the demo environment only and
   `NewEtoroTrading` refuses anything else; prepare **never sends** and runs the checks in the plan's
-  order (halt file → `risk.Check` with `EtoroDemoPolicy` → eligibility ledger vs account → live
+  order (halt file → the protection levels (§8.17) → `risk.Check` with `EtoroDemoProtectedPolicy`
+  (`EtoroDemoPolicy` until 2026-10-19) → eligibility ledger vs account → live
   quote → cost preview → cash), a block verdict carries no token; the token is **HMAC-SHA256** over
   the preview (client ref, request id, book, side, amount or position, units, bid/ask, expiry)
   with a per-process random secret keyed by SHA-256 of the operator token (bound to this process
@@ -1608,6 +1609,56 @@ unfinished bar is labelled provisional. The decision path never reads live data.
   The audit log's clock column reads Mexico City on every page (the shared component). The
   `trading` block of the stage/dry-run controls fixtures is absent (pinned captures; the schema
   makes it optional).
+
+### 8.17 Protection on the Trade page (as built, 2026-10-19; protection plan phase B)
+
+- **What it is.** Every assisted open now carries a stop loss (the policy requires one) and an
+  optional take profit, recommended per **risk-aversion profile** from the instrument's ATR, and a
+  third side, **protect**, sets or moves the stop / target of the ledger's held position without
+  trading it. Design, decisions and status:
+  [`docs/etoro/ETORO-ASSISTED-TRADE-PROTECTION-PLAN-2026-10-19.md`](../etoro/ETORO-ASSISTED-TRADE-PROTECTION-PLAN-2026-10-19.md);
+  operator view: runbook §9. The executor's own positions are still unprotected (phase C).
+- **Page.** (a) *Proposals* gain a `no stop` / `protected` badge from the forward-tests
+  `demo_position` (`stop_loss_rate` / `take_profit_rate`, ledger truth: positions opened before
+  this change read as unprotected) and a primary **Prepare protection** button on a held position
+  without a stop (`deriveProposals` returns kind `protect`); the open / close proposals are
+  unchanged. (b) *Manual form*: `protect` in the side control (position read-only, as close); for
+  open and protect a **Protection panel** (`components/etoro/protection.tsx`) fed by a debounced
+  `POST /trades/recommend` on every book / side / amount change: the volatility badge (ATR, ATR %,
+  regime tone), the profile picker (Conservative / **Moderate** default / Aggressive / Custom with
+  stop % and target % inputs), one selectable row per profile with stop and target rates, their
+  distances in % and ATR, max loss and gain in USD and R:R, the clamp notes (what the guards moved
+  and why), the bounds source (venue / fallback), the rule's SMA50 and, on a protect, what the
+  position holds now. (c) *Preview*: `ProtectionFacts` (profile, stop, target, max loss, R:R,
+  clamps, warnings such as "no stop requested: the moderate profile's levels were applied") next to
+  the existing facts; an infeasible level is a block reason. (d) *Dialog and outcome*: the phrase is
+  `PROTECT <SYMBOL>` for a protect; the outcome card shows the stop / target recorded, the
+  `pending` warning when eToro accepted the edit but the portfolio had not shown the rates within
+  the adapter's wait, and the position's units and amount unchanged.
+- **Contracts.** `POST /api/ui/etoro/trades/recommend` `{book, side: open|protect, amount_usd |
+  position_id}` → `TradeRecommendation` (`tradeRecommendationSchema`: `profiles` keyed by name,
+  `default_profile`, `context` = a `tradeProtectionSchema` block with `levels`, `volatility`,
+  `entry`, `mark`, `bounds`, `limits`, `bounds_source`, `sma50`, `before`); prepare gains
+  `profile` and, for custom, `stop_loss_pct` / `take_profit_pct` (fractions); `TradePreview` gains
+  `protection`, `TradePlaceResponse` gains `protection` and `warnings`; `tradeSide` accepts `protect`;
+  `etoroPositionSchema` carries the rates (`isProtected()`); the ledger schemas accept the actions
+  `protect` / `venue_close`, `demo.protection` and `demo.venue_close`, and the risk order's
+  `stop_loss` / `take_profit`. `src/api/trades.ts`: `recommendTrade`,
+  `useRecommendTradeMutation`; `src/lib/protection.ts`: `PROFILES`, `pct`, `regimeTone` (kept out
+  of the component file for `react-refresh/only-export-components`).
+- **Mock and tests.** `src/mocks/trades.ts` answers recommend with a copy of the guard chain
+  (`buildLevels`: noise floor, 10 % / 0.5 %-of-equity caps, venue bounds, tick rounding), sends
+  the levels with an open, and a protect edits the mock's held position (not a leg: the one-leg
+  cap ignores it). vitest `trade.test.tsx` (19): the schemas, `deriveProposals` with protected /
+  unprotected positions, recommend, default / custom / clamped opens, the protect flow end to end,
+  the page test following the new proposal; the suite is 238 green on **Node 22** (Node 24 breaks
+  vitest's fetch stack: `nvm use 22`). Visual check in mock mode. Backend: `protection_test.go`
+  and the `trades_test.go` fake broker with `SetProtection` / `ProtectionLimits` and failure
+  knobs. Not yet: a Playwright scenario for the protect flow in `e2e/etoro.spec.ts`.
+- **Known limits.** The forward-tests view stays file-only, so the `protected` badge is the
+  ledger's view, not the account's; recommend / prepare show the account's rates (`before`).
+  Trailing stops are not offered (eToro's `allowTrailingStopLoss` is false on these CFDs); the
+  planned daily ratchet is the emulation. The regime badge is context only.
 
 ## 9. How to run (local)
 

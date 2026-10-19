@@ -2,7 +2,7 @@
 
 Design and implementation plan · 2026-10-19 · branch `feat/etoro` · follows P6 (operations) and P5d
 (assisted trades, [ETORO-DAILY-EXECUTOR.md §8](ETORO-DAILY-EXECUTOR.md#8-assisted-trades-from-the-console-p5d-2026-10-16)).
-Status: **Phases A and B landed 2026-10-19** (shared packages; ui-api + web). C–D not started. Each phase
+Status: **Phases A and B landed 2026-10-19** (shared packages; ui-api + web; docs: runbook §8–§9, `ETORO-INTEGRATION.md`, frontend plan §8.17). C–D not started. Each phase
 below is ticked when it lands.
 
 ## 0. Decisions (taken 2026-10-19)
@@ -139,7 +139,7 @@ flowchart LR
 
 ### Phase D: docs and evidence
 
-- `ETORO-DAILY-EXECUTOR.md` §9 "Protection": model, profiles, ratchet, how to read `protect` / `venue_close` lines, the manual-resolution table.
+- `ETORO-DAILY-EXECUTOR.md` §9 "Protection": model, profiles, ratchet, how to read `protect` / `venue_close` lines, the manual-resolution table. *(2026-10-19: written for phases A–B — levels, console flow, `protect` lines, the by-hand table; the ratchet and `venue_close` parts are stated as pending and get filled in with Phase C.)*
 - `docs/backtest-readiness/FORWARD-TEST-ADDENDUM-DISASTER-STOP-<date>.md`: the disaster stop is a risk-policy overlay outside the pre-registered rule; the paper account remains the judged series; how a stop-out day is reported.
 - `docs/etoro/evidence-<date>/`: first PATCH request and response on demo, first ratchet, first stop-out when it happens.
 
