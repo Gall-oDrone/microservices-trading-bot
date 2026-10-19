@@ -2,8 +2,10 @@
 
 Design and implementation plan · 2026-10-19 · branch `feat/etoro` · follows P6 (operations) and P5d
 (assisted trades, [ETORO-DAILY-EXECUTOR.md §8](ETORO-DAILY-EXECUTOR.md#8-assisted-trades-from-the-console-p5d-2026-10-16)).
-Status: **Phases A and B landed 2026-10-19** (shared packages; ui-api + web; docs: runbook §8–§9, `ETORO-INTEGRATION.md`, frontend plan §8.17). C–D not started. Each phase
-below is ticked when it lands.
+Status: **Phases A, B and C landed 2026-10-19** (shared packages; ui-api + web; executor, reconcile, etorohealth,
+risk report; docs: runbook §8–§9, `ETORO-INTEGRATION.md`, frontend plan §8.17, the forward-test addendum). D: docs
+done, the evidence directory fills in with the first live PATCH / ratchet / stop-out after the binaries are rebuilt
+(runbook §9.6). Each phase below is ticked when it lands.
 
 ## 0. Decisions (taken 2026-10-19)
 
@@ -126,22 +128,24 @@ flowchart LR
 | B6 ✅ | Web: `etoroSchemas.ts` (levels, volatility, protection, recommendation, protect side, SL/TP on positions, protect/venue_close kinds), `trades.ts` (`recommendTrade`, profile/custom on prepare, protect proposals), `components/etoro/protection.tsx` + `lib/protection.ts` (profile picker, level rows, volatility badge, panel, facts), Trade page (Protection panel fed by a debounced recommend, protect side, `no stop`/`protected` badge on proposals with a primary **Prepare protection** button, protection facts on the preview, stop/target on the outcome, dialog copy), `index.css` |
 | B7 ✅ | Mock mode mirrors the backend (recommend handler, a copy of the guard chain, protect place); vitest: proposals (an unprotected held position is a protect proposal), recommend, default/custom/clamped opens, the protect flow; the page test follows the new proposal. Playwright e2e for the protect flow: **still to add** (the vitest page test covers the DOM) |
 
-### Phase C: system-owned guardian (executor and reconcile)
+### Phase C: system-owned guardian (executor and reconcile) — ✅ landed 2026-10-19
 
 | # | Change |
 |---|---|
-| C1 | Executor `-protect` flag (default **on** once C3 is in; `ETORO_EXECUTOR_PROTECT=0` disables): a rule open carries the disaster stop; `position_after` records it |
-| C2 | Daily ratchet: for a held long (rule or UI) with no order planned, compute the candidate (4×ATR rule positions, the recorded profile for UI positions); if higher than the held stop by ≥ 0.25×ATR, PATCH and append a ledger line `action: protect`, `source: executor`. Never lowers a stop, never touches TP |
-| C3 | **Venue-close detection** (`demo.go` reconcile step): ledger says long, account does not hold it → read the trading history for that position id; classify by close rate: `≈ SL` → `stopped_out`, `≈ TP` → `took_profit`, else `venue_close` (margin close-out, manual); record `action: venue_close`, `position_after: flat`, realised P&L and fees; **continue planning from flat in the same run** (a rule `long` re-opens, one leg). Only a close not yet in the history keeps today's `resolve by hand` |
-| C4 | `etoro-reconcile`: a history row matching a `venue_close` ledger line is **clean**; an open position whose account stop is none while the ledger says it has one → finding `protection_drift` |
-| C5 | `etorohealth` / `ui-alerts`: warning `unprotected position` (a ledger position with no SL for more than 30 min, from the files alone); info `stop_out` |
-| C6 | `etoro-risk-report`: stop-outs, realised loss vs modelled, ratchet history |
+| C1 ✅ | Executor `-protect` flag (default **on**; `ETORO_EXECUTOR_PROTECT=0` or `-protect=false` disables): a rule open carries the disaster stop through `stops.Build` (noise floor, policy caps, venue bounds or the 2026-10-10 fallback, tick), is risk-checked with it under `EtoroDemoProtectedPolicy` (now the executor's default policy when protect is on; an infeasible stop leaves the order bare and `stop_loss_required` blocks the day); `position_after` records the stop as sent, `demo.protection` the profile `disaster`, ATR and max loss |
+| C2 ✅ | Daily ratchet at a hold run with a held long: the account's resting rates are copied onto the ledger first (self-heal, drift noted), then `candidate = decision close − k × ATR` (k = 4 for a rule position or one opened before phase C; the recorded profile's SL multiple for a console position; **custom console stops are left alone**), clamped to the noise floor from the bid and the tick, sent through `broker.ProtectionEditor` only when ≥ 0.25 × ATR above the held stop. Recorded as `action: protect` with ref `sma50-<book>-<fill date>-protect`, eToro's operation id, before/after, max loss; a first stop on an unprotected position is `profile: disaster`. Never lowers, never touches TP. **No intent file for a protect** (an edit of a resting order changes no exposure; a re-run re-sends the same stop); a refused or unconfirmed edit is recorded with the error and fails the run |
+| C3 ✅ | **Venue-close detection** in `runDemo`'s reconcile step: ledger long, account flat → the trading history; found → `action: venue_close`, `position_after: flat`, `demo.venue_close{kind, rates, close_rate, gap_bps, closed_at, net_profit, fees}`, the history's fill and fees on the order. **Classification (deviation from the §6 table):** close at or *through* the stop → `stopped_out` with the gap noted (a close below the stop can only be the stop firing), at or beyond the target → `took_profit`, strictly between → `venue_close`; the history's rates win over the ledger's. Not listed yet → nothing recorded, `re-run later today`. **Deviation from the draft:** no re-entry in the same run; one line and one action per decision day, the rule re-opens at the next trading day's run from flat (one day out of the market after a stop-out is accepted) |
+| C4 ✅ | `etoro-reconcile`: a `venue_close` line is verified against the history like a close (`close_not_in_history` / `close_price_differs`) and its position is expected absent in the settle logic; `protection_drift` (drift) when the ledger recorded a stop and the account holds none (eToro's 0.01 placeholder included); `protection_unrecorded` (warn) when the account's stop differs from or is missing in the ledger |
+| C5 ✅ | `etorohealth` / `ui-alerts`: `etoro.protection` warns when a held position has carried no stop on the ledger for more than 30 min (`UnprotectedGrace`); `etoro.stop_out` reports a venue close of the due day or the one before (informational). The data-health view shows both (9 checks) |
+| C6 ✅ | `etoro-risk-report` section 6 / `risk.json` `protection` (M15): held stops vs open, mark and ATR; every edit (console / executor) with profile, before → after, ATR, operation id; every venue close with kind, gap, realised vs the loss the stop modelled; a summary and a note on unprotected positions. Golden regenerated (the diff is the new block) |
+
+Tests: 9 executor tests (`protect_test.go`), 2 reconcile, 5 etorohealth subtests, 1 risk-report unit test plus the fixture; the ui-api health test expects the new checks.
 
 ### Phase D: docs and evidence
 
-- `ETORO-DAILY-EXECUTOR.md` §9 "Protection": model, profiles, ratchet, how to read `protect` / `venue_close` lines, the manual-resolution table. *(2026-10-19: written for phases A–B — levels, console flow, `protect` lines, the by-hand table; the ratchet and `venue_close` parts are stated as pending and get filled in with Phase C.)*
-- `docs/backtest-readiness/FORWARD-TEST-ADDENDUM-DISASTER-STOP-<date>.md`: the disaster stop is a risk-policy overlay outside the pre-registered rule; the paper account remains the judged series; how a stop-out day is reported.
-- `docs/etoro/evidence-<date>/`: first PATCH request and response on demo, first ratchet, first stop-out when it happens.
+- ✅ `ETORO-DAILY-EXECUTOR.md` §9 "Protection": model, profiles, the executor's C1–C3 behaviour (§9.3), how to read `open` / `protect` / `venue_close` / hold lines (§9.4), the by-hand table reduced to what is left (§9.5), the switch-on procedure and kill switch (§9.6). *(2026-10-19, after phase C.)*
+- ✅ [`docs/backtest-readiness/FORWARD-TEST-ADDENDUM-DISASTER-STOP-2026-10-19.md`](../backtest-readiness/FORWARD-TEST-ADDENDUM-DISASTER-STOP-2026-10-19.md): the disaster stop is a risk-policy overlay on the demo account outside the pre-registered rule; the paper account remains the judged series; how a stop-out day is reported; what is deliberately not covered; the evidence list.
+- ⏳ `docs/etoro/evidence-<date>/`: first open with a stop, first PATCH request and response on demo, first ratchet, first stop-out — **after the binaries are rebuilt on the ops host** (runbook §9.6, the operator's call) and when each first happens.
 
 ## 5. Ledger line examples
 

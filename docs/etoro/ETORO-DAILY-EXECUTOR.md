@@ -355,17 +355,22 @@ did execute, add the ledger line by hand from the audit `failed` line and the po
 past lines), or close the position and leave the ledger flat. The Trade page's outcome card says
 which case it is.
 
-## 9. Protection: stop-loss / take-profit (console as built 2026-10-19; executor pending)
+## 9. Protection: stop-loss / take-profit (console 2026-10-19; executor phase C built 2026-10-19)
 
 Design and status: [ETORO-ASSISTED-TRADE-PROTECTION-PLAN-2026-10-19.md](ETORO-ASSISTED-TRADE-PROTECTION-PLAN-2026-10-19.md)
-(phases A and B landed 2026-10-19; C and D not yet). The short version for the operator:
+(phases A, B and C landed 2026-10-19; D is this section, the forward-test addendum and the
+evidence that comes with the first live PATCH). The short version for the operator:
 
-**What holds today.** A position opened from the console carries a resting stop loss at eToro (and
-a take profit when one was chosen); a position the console `protect`ed does too. **The executor's
-rule positions still carry no stop** (eToro reports `stopLossRate 0.01`, i.e. none), and the 09:35
-run does not yet set, ratchet or recognise a stop: a position eToro closes on its own (a stop, a
-target, a margin close-out) is still the `resolve by hand` case of §3 and §5 until Phase C lands
-and the binaries are rebuilt (§6). Nothing in this section changes what §2–§5 describe.
+**What holds.** A position opened from the console carries a resting stop loss at eToro (and a
+take profit when one was chosen); a position the console `protect`ed does too. **With the phase C
+binaries, the executor owns protection** (`-protect`, on by default): a rule open carries the
+disaster stop `max(4 × ATR %, 8 %)`, every 09:35 run with a held long raises the stop when the
+close minus k × ATR has moved up by at least 0.25 × ATR (never down, never the target), and a
+position eToro closed on its own is read from the trading history and recorded as a `venue_close`
+line instead of stopping the run. **Until the binaries on the ops host are rebuilt (§9.6) the
+running executor is the 2026-10-16 build:** rule positions carry no stop and a venue close is
+still the `resolve by hand` case of §3 and §5. Nothing in this section changes what §2–§5
+describe about the rule, the paper account or the pre-registration.
 
 ### 9.1 The levels (shared/pkg/stops)
 
@@ -405,35 +410,98 @@ and the binaries are rebuilt (§6). Nothing in this section changes what §2–�
   button for a held position without a stop, the protection facts on the preview, and the stop /
   target on the outcome card.
 
-### 9.3 Reading a protection line
+### 9.3 What the 09:35 run does with stops (phase C, `cmd/etoro-daily-executor/protect.go`)
+
+- **C1, a rule open carries the disaster stop.** `SL % = max(4 × ATR %, 8 %)` of the ask, through
+  the same guards as the console (noise floor, the policy's 10 % cap and 0.5 % of equity, the
+  venue's bounds or the 2026-10-10 fallback, tick rounding down), no take profit: the rule exits on
+  its signal. The open is risk-checked **with** the stop under `EtoroDemoProtectedPolicy`
+  (`etoro-demo-2026-10-19`, now the executor's default policy); an infeasible stop leaves the order
+  bare and `stop_loss_required` blocks the day (recorded as `blocked`). At the 2026-10-19 ATR
+  (1.7 % NSDQ100, 0.9 % SPX500) the 8 % floor decides: about 88 USD at risk per 1,100 USD leg.
+- **C2, the daily ratchet.** At a run that holds a long and plans no order, the account's resting
+  rates are first copied onto the ledger (a self-heal: a stop the ledger never learned, or lost, is
+  noted). Then `candidate = decision close − k × ATR`, k = 4 for a rule position (also for a
+  position opened before phase C: it gets its first stop this way, `profile: disaster`) and the
+  recorded profile's multiple for a console position (1.5 / 2.0 / 3.0; a **custom** console stop
+  is left as the operator set it). The candidate is kept below the bid by the noise floor and
+  rounded to the tick; it is sent (`PATCH`, ref `sma50-<book>-<fill date>-protect`) only when it is
+  **≥ 0.25 × ATR above the held stop**. Never lower, never the take profit. The day is recorded as
+  `action: protect` (not a leg). A refused or unconfirmed edit is recorded with the error, the
+  position keeps its previous stop, and the run exits 1 so `etoro.run` fails until the next clean
+  run.
+- **C3, a venue close.** When the ledger says long and the account does not hold the position, the
+  run reads the trading history. Listed: the day is recorded as `action: venue_close`, position
+  flat, with the history's fill, P&L and fees and the kind: close rate at or **through** the stop
+  → `stopped_out` (the gap in bps is noted), at or beyond the target → `took_profit`, strictly
+  between the two → `venue_close` (closed in the app, or a margin close-out). The history's rates
+  win over the ledger's. Not listed yet (eToro lagged a close by up to 3 h on 2026-10-16): nothing
+  is recorded, the run exits 1 with `re-run later today`, and the wrapper's next attempt or a
+  by-hand `ops-run.sh etoro` records it. **No re-entry in the same run** (a deviation from the plan,
+  stated in `protect.go`): one line and one action per decision day; if the rule still says long
+  the next trading day's run opens from flat, with a stop.
+- **Reconcile (C4)** verifies a `venue_close` line against the history like a close of ours and
+  adds `protection_drift` (drift: the ledger recorded a stop, the account holds none) and
+  `protection_unrecorded` (warn: the account's stop differs from or is missing in the ledger; the
+  next run copies it). **Alerts (C5)**: `etoro.protection` warns when a held position has carried
+  no stop on the ledger for more than 30 minutes; `etoro.stop_out` reports a venue close of the
+  last two trading days (informational). **Risk report (C6)**: section 6 lists held stops against
+  the mark and the ATR, every edit, every venue close with the realised result next to the loss
+  the stop modelled.
+
+### 9.4 Reading a protection line
 
 - An **open** line (`demo.action: open`) now has `position_after.stop_loss_rate` (and
   `take_profit_rate`, `stop_type: fixed`) and `demo.protection: {profile, atr, atr_pct,
   max_loss_usd, reason}`; `demo.risk.order` carries `stop_loss` / `take_profit` and the policy
-  version `etoro-demo-2026-10-19`.
-- A **protect** line (`decision.action` and `demo.action: protect`, `demo.order.kind: protect`,
-  `status: executed|pending`, `order_id` = eToro's `operationId`) is **not a leg**: `LegsOn` and
-  the one-leg-per-day cap ignore it; `position_before` has the rates the account showed,
+  version `etoro-demo-2026-10-19`. The executor's opens say `profile: disaster`.
+- A **protect** line (`demo.action: protect`, `demo.order.kind: protect`, `status:
+  executed|pending`, `order_id` = eToro's `operationId`) is **not a leg**: `LegsOn` and the
+  one-leg-per-day cap ignore it; `position_before` has the rates the account showed,
   `position_after` the new ones (eToro's when the portfolio showed them; the ones sent when it was
-  still `pending` after the adapter's wait, with a warning on the outcome card);
-  `demo.protection.stop_loss_before` / `take_profit_before` keep the old rates. The position's
-  units and amount are unchanged.
+  still `pending` after the adapter's wait, with a note); `demo.protection.stop_loss_before` /
+  `take_profit_before` keep the old rates. The executor's say `profile: ratchet` (or `disaster`
+  for a first stop) and `reason: daily ratchet: close C − k × ATR A`. Units and amount are
+  unchanged. A console protect has `source: "ui"` and the operator.
+- A **venue_close** line (`demo.action: venue_close`, `demo.order.kind: venue_close`, no client
+  ref of ours, `avg_price` = the history's close rate, `fees` = the history's) has
+  `position_after: flat` and `demo.venue_close: {kind, stop_loss_rate, take_profit_rate,
+  close_rate, gap_bps, closed_at, net_profit, fees}`; `demo.notes` says in words why it was
+  classified as it was. `decision` is the day's rule decision as usual; the paper block is
+  untouched (the paper account never had a stop).
+- A **hold** line on a protected position now carries the account's current rates on
+  `position_after` and, when the ratchet did not move, a note saying how far the candidate was.
 - `demo.protection.max_loss_usd` is `units × (open rate − stop)`: the most the position can lose at
   the stop before gap and fees.
 
-### 9.4 Still by hand until Phase C
+### 9.5 Still by hand
 
 | What you see | What happened | What to do |
 |---|---|---|
-| Run log `ledger says long … but the account no longer holds it … resolve by hand`, no `venue_close` line | eToro closed the position (stop, target or margin), or someone closed it on the portal | Check the demo trading history; add the close line by hand from it (never edit past lines) or leave the ledger flat after confirming; the next run plans from the ledger |
-| `prepare` blocks with `the account no longer holds position …` on a protect or close | Same as above, seen from the console | Same |
-| A console-opened position shows a stop in the ledger but none on the portal | The PATCH / order rates did not apply, or were cleared on the portal | Protect it again from the Trade page (the preview's `before` shows what the account holds) |
-| Executor-opened position with `no stop` on the Trade page | Expected: the rule positions are unprotected until Phase C | Optional: protect it from the console; the executor ignores the stop and still closes on the rule's signal |
+| Run log `… the trading history does not list it yet …: re-run later today`, exit 1, no line for the day | eToro closed the position and its history lags (minutes to hours) | Nothing until the afternoon: `scripts/ops-run.sh etoro` again (the wrapper's second UTC slot already does this on some days); it records the `venue_close` line. Still absent by the close: check the portal's history and add the line by hand from it (never edit past lines) |
+| Run log `account holds position(s) … besides the executor's position …` | A second position on the instrument the ledger does not know (opened in the app) | Close it on the portal or record it; the executor never touches an untracked position |
+| `protection_drift` in reconcile, or `etoro.protection` warning on a position the ledger shows protected | The venue dropped or never applied the stop | The next 09:35 run sets it again (ratchet from `current = none`); to protect it now, the console's Trade page |
+| Run log `protect … not confirmed … (recorded; the position keeps its previous stop …)`, exit 1 | eToro refused or did not confirm the PATCH | Read the error in the day's line (`demo.order.error`); the position still has its previous stop (or none). Re-run today to retry, or protect from the console |
+| `prepare` blocks with `the account no longer holds position …` on a protect or close | eToro closed it and the executor has not run yet | Wait for the 09:35 run (or run it by hand); it records the venue close |
 
-What Phase C adds (plan §4): a disaster stop `max(4 × ATR, 8 %)` on the executor's opens (behind
-`-protect`, documented as a forward-test addendum, the paper account unchanged), a daily
-**raise-only** ratchet at 09:35 (step ≥ 0.25 × ATR), `venue_close` ledger lines
-(`stopped_out` / `took_profit` / `other`) written from eToro's history so a stop-out is no longer a
-hand case, a `protection_drift` finding in `etoro-reconcile`, an `unprotected position` alert and
-stop-out counts in the risk report.
+### 9.6 Switching phase C on (operator)
+
+The cron executor runs the binaries under `etoro-daily-data/`; code changes reach it only when they
+are rebuilt. Phase C is on by default in the code (`-protect`, `ETORO_EXECUTOR_PROTECT=0` or
+`-protect=false` turns it off; `ETORO_EXECUTOR_DISABLED=1` still stops the run entirely).
+
+```bash
+# ops host: rebuild etoro-daily-executor, etoro-reconcile and etoro-risk-report from the committed
+# HEAD (previous binaries kept as .prev-<rev>); the installer rebuilds ui-alerts (the C5 checks) too
+scripts/install-ops-cron.sh --rebuild-etoro
+# dry run of the new executor against the live ledger: nothing recorded, no order, prints "protect on"
+(cd services/strategy-executor && etoro-daily-data/etoro-daily-executor -no-record)
+```
+
+Before the first run on the new binaries read the forward-test addendum
+([FORWARD-TEST-ADDENDUM-DISASTER-STOP-2026-10-19.md](../backtest-readiness/FORWARD-TEST-ADDENDUM-DISASTER-STOP-2026-10-19.md)):
+the disaster stop is a risk-policy overlay on the demo account, outside the pre-registered rule;
+the paper account stays the judged series. Evidence to keep when it happens (plan phase D):
+the first PATCH request and response on demo, the first ratchet line, the first stop-out, under
+`docs/etoro/evidence-<date>/`.
 
