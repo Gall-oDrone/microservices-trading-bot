@@ -87,8 +87,17 @@ export const etoroPositionSchema = z.object({
   amount: z.number().optional(),
   open_rate: z.number().optional(),
   opened_at: z.string().optional(),
+  // Protection (2026-10-19): the resting rates at eToro after the record; absent = none.
+  stop_loss_rate: z.number().optional(),
+  take_profit_rate: z.number().optional(),
+  stop_type: z.string().optional(),
 })
 export type EtoroPosition = z.infer<typeof etoroPositionSchema>
+
+/** Whether a ledger position carries a stop loss. */
+export function isProtected(p: EtoroPosition | null | undefined): boolean {
+  return !!p && p.state === 'long' && (p.stop_loss_rate ?? 0) > 0
+}
 
 /** etoroledger.Account: the demo account before the run's order (USD). */
 export const etoroAccountSchema = z.object({
@@ -119,12 +128,15 @@ export const etoroRiskCheckSchema = z.object({
   policy_version: z.string(),
   order: z.object({
     book: z.string(),
-    side: z.enum(['buy', 'sell']),
+    /** "protect" (2026-10-19) is a recorded check of a stop edit: only the halt applies. */
+    side: z.enum(['buy', 'sell', 'protect']),
     /** Base quantity: instrument units on a CFD book (the field name is shared with Bitso). */
     qty_btc: z.number(),
     price: z.number(),
     ref_price: z.number(),
     leverage: z.number().optional(),
+    stop_loss: z.number().optional(),
+    take_profit: z.number().optional(),
   }),
   state: z.object({
     position_btc: z.number(),
@@ -139,9 +151,9 @@ export const etoroRiskCheckSchema = z.object({
 })
 export type EtoroRiskCheck = z.infer<typeof etoroRiskCheckSchema>
 
-/** etoroledger.Order: one demo order (open or close) and its outcome. */
+/** etoroledger.Order: one demo order (open or close) and its outcome; since 2026-10-19 also a protect or a venue close. */
 export const etoroOrderSchema = z.object({
-  kind: z.enum(['open', 'close']),
+  kind: z.enum(['open', 'close', 'protect', 'venue_close']),
   client_ref: z.string(),
   request_id: z.string(),
   order_id: z.string().optional(),
@@ -165,8 +177,20 @@ export const etoroOrderSchema = z.object({
 })
 export type EtoroOrder = z.infer<typeof etoroOrderSchema>
 
-export const etoroDemoAction = z.enum(['open', 'close', 'none', 'blocked'])
+export const etoroDemoAction = z.enum(['open', 'close', 'none', 'blocked', 'protect', 'venue_close'])
 export type EtoroDemoAction = z.infer<typeof etoroDemoAction>
+
+/** etoroledger.VenueClose: eToro closed the position (stop, target, margin). */
+export const etoroVenueCloseSchema = z.object({
+  kind: z.enum(['stopped_out', 'took_profit', 'venue_close']),
+  stop_loss_rate: z.number().optional(),
+  take_profit_rate: z.number().optional(),
+  close_rate: z.number(),
+  gap_bps: z.number().optional(),
+  closed_at: z.string(),
+  net_profit: z.number(),
+  fees: z.number(),
+})
 
 /** etoroledger.Demo: the demo-account part of a record. */
 export const etoroDemoSchema = z.object({
@@ -182,6 +206,19 @@ export const etoroDemoSchema = z.object({
   order: etoroOrderSchema.optional(),
   financing_to_date: z.number().optional(),
   notes: z.array(z.string()).optional(),
+  protection: z
+    .object({
+      profile: z.string(),
+      atr: z.number().optional(),
+      atr_pct: z.number().optional(),
+      stop_loss_before: z.number().optional(),
+      take_profit_before: z.number().optional(),
+      max_loss_usd: z.number().optional(),
+      reason: z.string().optional(),
+      operation_id: z.string().optional(),
+    })
+    .optional(),
+  venue_close: etoroVenueCloseSchema.optional(),
 })
 export type EtoroDemo = z.infer<typeof etoroDemoSchema>
 
@@ -646,10 +683,115 @@ export const etoroSessionEventSchema = etoroSessionSchema
 
 // --- Assisted trades (services/ui-api/internal/api/trades.go, P5d) ---------
 
-export const tradeSide = z.enum(['open', 'close'])
+export const tradeSide = z.enum(['open', 'close', 'protect'])
 export type TradeSide = z.infer<typeof tradeSide>
 
 export const tradeVerdict = z.enum(['allow', 'block'])
+
+// --- Protection (services/ui-api/internal/api/protection.go, 2026-10-19) ---
+
+export const stopProfile = z.enum(['conservative', 'moderate', 'aggressive', 'custom'])
+export type StopProfile = z.infer<typeof stopProfile>
+
+/** stops.Levels: a stop and target after the guards, as rates and fractions of the entry. */
+export const stopLevelsSchema = z.object({
+  profile: stopProfile,
+  sl_rate: z.number(),
+  sl_pct: z.number(),
+  tp_rate: z.number().optional(),
+  tp_pct: z.number().optional(),
+  sl_atr: z.number().optional(),
+  tp_atr: z.number().optional(),
+  max_loss_usd: z.number(),
+  target_usd: z.number().optional(),
+  rr: z.number().optional(),
+  clamps: list(z.string()),
+  feasible: z.boolean(),
+  reason: z.string().optional(),
+})
+export type StopLevels = z.infer<typeof stopLevelsSchema>
+
+/** stops.Volatility: ATR(14) and the regime against its own history. */
+export const volatilitySchema = z.object({
+  period: z.number(),
+  atr: z.number(),
+  atr_pct: z.number(),
+  close: z.number(),
+  bars: z.number(),
+  regime: z.enum(['calm', 'normal', 'elevated', 'extreme', 'unknown']),
+  regime_ratio: z.number().optional(),
+  median_atr_pct: z.number().optional(),
+  regime_lookback: z.number().optional(),
+})
+export type Volatility = z.infer<typeof volatilitySchema>
+
+export const stopBoundsSchema = z.object({
+  min_sl_pct: z.number(),
+  max_sl_pct: z.number(),
+  max_tp_pct: z.number(),
+  tick: z.number(),
+})
+export const stopLimitsSchema = z.object({
+  min_sl_pct: z.number(),
+  max_sl_pct: z.number(),
+  max_loss_pct_equity: z.number(),
+})
+
+/** api.ProtectionBefore: the position's protection as the account reports it. */
+export const protectionBeforeSchema = z.object({
+  stop_loss_rate: z.number().optional(),
+  take_profit_rate: z.number().optional(),
+  stop_type: z.string().optional(),
+  protected: z.boolean(),
+})
+
+/** api.TradeProtection: the levels a trade will carry and where they came from. */
+export const tradeProtectionSchema = z.object({
+  profile: z.string(),
+  levels: stopLevelsSchema,
+  volatility: volatilitySchema.nullable().optional(),
+  entry: z.number(),
+  mark: z.number(),
+  bounds: stopBoundsSchema,
+  limits: stopLimitsSchema,
+  bounds_source: z.enum(['venue', 'fallback']),
+  sma50: z.number().optional(),
+  before: protectionBeforeSchema.nullable().optional(),
+})
+export type TradeProtection = z.infer<typeof tradeProtectionSchema>
+
+/** api.TradeRecommendation: POST /api/ui/etoro/trades/recommend. */
+export const tradeRecommendationSchema = z.object({
+  ledger: z.string(),
+  book: z.string(),
+  side: z.enum(['open', 'protect']),
+  instrument: etoroInstrumentSchema,
+  quote: etoroQuoteSchema.nullable(),
+  account: etoroAccountSchema.nullable(),
+  position: etoroPositionSchema,
+  rule_signal: orEmpty(signal),
+  amount_usd: z.number().optional(),
+  units: z.number(),
+  profiles: z.record(z.string(), stopLevelsSchema),
+  default_profile: z.string(),
+  context: tradeProtectionSchema,
+  policy_version: z.string(),
+  warnings: list(z.string()),
+  prepared_at: z.string(),
+})
+export type TradeRecommendation = z.infer<typeof tradeRecommendationSchema>
+
+/** etoroledger.Protection: the protect block of a ledger line / place response. */
+export const ledgerProtectionSchema = z.object({
+  profile: z.string(),
+  atr: z.number().optional(),
+  atr_pct: z.number().optional(),
+  stop_loss_before: z.number().optional(),
+  take_profit_before: z.number().optional(),
+  max_loss_usd: z.number().optional(),
+  reason: z.string().optional(),
+  operation_id: z.string().optional(),
+})
 
 /**
  * api.TradePreview: POST /api/ui/etoro/trades/prepare. The checks' outcome
@@ -679,6 +821,7 @@ export const tradePreviewSchema = z.object({
   client_ref: z.string(),
   request_id: z.string(),
   prepared_at: z.string(),
+  protection: tradeProtectionSchema.nullable().optional(),
   token: z.string().optional(),
   expires_at: z.string().optional(),
   expires_in_s: z.number().optional(),
@@ -706,5 +849,7 @@ export const tradePlaceResponseSchema = z.object({
   audit: auditEntrySchema,
   audit_error: z.string().optional(),
   error: z.string().optional(),
+  protection: ledgerProtectionSchema.nullable().optional(),
+  warnings: list(z.string()).optional(),
 })
 export type TradePlaceResponse = z.infer<typeof tradePlaceResponseSchema>

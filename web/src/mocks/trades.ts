@@ -26,7 +26,12 @@ interface Position {
   amount?: number
   open_rate?: number
   opened_at?: string
+  stop_loss_rate?: number
+  take_profit_rate?: number
+  stop_type?: string
 }
+
+type Side = 'open' | 'close' | 'protect'
 
 interface Claims {
   id: string
@@ -34,7 +39,7 @@ interface Claims {
   client_ref: string
   request_id: string
   book: string
-  side: 'open' | 'close'
+  side: Side
   amount_usd: number
   position_id: string
   units: number
@@ -43,10 +48,14 @@ interface Claims {
   ref_price: number
   confirmation: string
   exp: number
+  sl_rate: number
+  tp_rate: number
+  profile: string
+  max_loss_usd: number
 }
 
 interface LastOrder {
-  kind: 'open' | 'close'
+  kind: Side
   client_ref: string
   request_id: string
   order_id: string
@@ -64,6 +73,169 @@ interface LastOrder {
   fill_date: string
   source: 'ui'
   by: string
+}
+
+// --- Protection (phase B): a small copy of shared/pkg/stops for mock mode.
+
+interface Levels {
+  profile: string
+  sl_rate: number
+  sl_pct: number
+  tp_rate?: number
+  tp_pct?: number
+  sl_atr?: number
+  tp_atr?: number
+  max_loss_usd: number
+  target_usd?: number
+  rr?: number
+  clamps: string[]
+  feasible: boolean
+  reason?: string
+}
+
+const MULT: Record<string, { sl: number; tp: number }> = {
+  conservative: { sl: 1.5, tp: 2.25 },
+  moderate: { sl: 2, tp: 4 },
+  aggressive: { sl: 3, tp: 6 },
+}
+/** ATR(14) as a fraction of price per book (the fixture's October regime). */
+const ATR_PCT: Record<string, number> = { nsdq100: 0.0105, spx500: 0.0092 }
+const BOUNDS: Record<string, { min_sl_pct: number; max_sl_pct: number; max_tp_pct: number; tick: number }> = {
+  nsdq100: { min_sl_pct: 0.01, max_sl_pct: 1, max_tp_pct: 10, tick: 0.01 },
+  spx500: { min_sl_pct: 0, max_sl_pct: 1, max_tp_pct: 10, tick: 0.01 },
+}
+const LIMITS = { min_sl_pct: 0, max_sl_pct: 0.1, max_loss_pct_equity: 0.005 }
+
+function volatilityOf(book: string, close: number) {
+  const atrPct = ATR_PCT[book] ?? 0.01
+  return {
+    period: 14,
+    atr: Math.round(atrPct * close * 100) / 100,
+    atr_pct: atrPct,
+    close,
+    bars: 120,
+    regime: 'normal' as const,
+    regime_ratio: 1.08,
+    median_atr_pct: atrPct / 1.08,
+    regime_lookback: 106,
+  }
+}
+
+/** The guard chain of stops.build: floor, caps, venue, rounding, mark. */
+function buildLevels(
+  book: string,
+  profile: string,
+  entry: number,
+  mark: number,
+  units: number,
+  spreadPct: number,
+  equity: number,
+  slPctIn: number,
+  tpPctIn: number,
+): Levels {
+  const b = BOUNDS[book] ?? BOUNDS.spx500
+  const atr = (ATR_PCT[book] ?? 0.01) * entry
+  const clamps: string[] = []
+  let slPct = slPctIn
+  let tpPct = tpPctIn
+  if (profile !== 'custom') {
+    const m = MULT[profile] ?? MULT.moderate
+    slPct = (entry - (mark - m.sl * atr)) / entry
+    tpPct = (mark + m.tp * atr - entry) / entry
+  }
+  const floor = Math.max(b.min_sl_pct, 2 * spreadPct + 0.0025, LIMITS.min_sl_pct)
+  if (slPct < floor) {
+    clamps.push(
+      `stop widened from ${(slPct * 100).toFixed(2)}% to the ${(floor * 100).toFixed(2)}% floor (twice the spread + 0.25%, the venue's minimum, or the policy's minimum)`,
+    )
+    slPct = floor
+  }
+  let ceiling = LIMITS.max_sl_pct
+  let why = `the policy's ${(LIMITS.max_sl_pct * 100).toFixed(1)}% maximum stop distance`
+  if (equity > 0 && units > 0) {
+    const maxLoss = LIMITS.max_loss_pct_equity * equity
+    const byEq = maxLoss / (units * entry)
+    if (byEq < ceiling) {
+      ceiling = byEq
+      why = `the policy's maximum loss of ${(LIMITS.max_loss_pct_equity * 100).toFixed(2)}% of equity (${maxLoss.toFixed(2)})`
+    }
+  }
+  let feasible = true
+  let reason: string | undefined
+  if (slPct > ceiling) {
+    if (ceiling < floor) {
+      feasible = false
+      reason = `no stop satisfies both the ${(floor * 100).toFixed(2)}% floor and ${why} (${(ceiling * 100).toFixed(2)}%)`
+    } else {
+      clamps.push(`stop tightened from ${(slPct * 100).toFixed(2)}% to ${(ceiling * 100).toFixed(2)}%: ${why}`)
+    }
+    slPct = ceiling
+  }
+  if (tpPct > b.max_tp_pct) {
+    clamps.push(
+      `target lowered from ${(tpPct * 100).toFixed(2)}% to the venue's ${(b.max_tp_pct * 100).toFixed(0)}% maximum`,
+    )
+    tpPct = b.max_tp_pct
+  }
+  const slRate = Math.floor((entry * (1 - slPct)) / b.tick + 1e-9) * b.tick
+  const tpRate = tpPct > 0 ? Math.ceil((entry * (1 + tpPct)) / b.tick - 1e-9) * b.tick : 0
+  const sl = Math.round(slRate * 100) / 100
+  const tp = Math.round(tpRate * 100) / 100
+  if (sl >= mark) {
+    feasible = false
+    reason = `the stop ${sl.toFixed(2)} is not below the current price ${mark.toFixed(2)} (the position is already past it)`
+  }
+  const lv: Levels = {
+    profile,
+    sl_rate: sl,
+    sl_pct: (entry - sl) / entry,
+    max_loss_usd: units * (entry - sl),
+    clamps,
+    feasible,
+    ...(reason ? { reason } : {}),
+    ...(atr > 0 ? { sl_atr: (mark - sl) / atr } : {}),
+  }
+  if (tp > 0) {
+    lv.tp_rate = tp
+    lv.tp_pct = (tp - entry) / entry
+    lv.target_usd = units * (tp - entry)
+    lv.rr = lv.max_loss_usd > 0 ? lv.target_usd / lv.max_loss_usd : 0
+    if (atr > 0) lv.tp_atr = (tp - mark) / atr
+  }
+  return lv
+}
+
+function protectionContext(
+  book: string,
+  side: 'open' | 'protect',
+  entry: number,
+  mark: number,
+  profile: string,
+  lv: Levels,
+  before?: Position,
+) {
+  const { close } = refClose(book)
+  const b = forwardTests.books.find((x) => x.book === book)
+  return {
+    profile,
+    levels: lv,
+    volatility: volatilityOf(book, close),
+    entry,
+    mark,
+    bounds: BOUNDS[book] ?? BOUNDS.spx500,
+    limits: LIMITS,
+    bounds_source: 'venue',
+    sma50: b?.decision.sma50 ?? 0,
+    ...(side === 'protect' && before
+      ? {
+          before: {
+            ...(before.stop_loss_rate ? { stop_loss_rate: before.stop_loss_rate, stop_type: 'fixed' } : {}),
+            ...(before.take_profit_rate ? { take_profit_rate: before.take_profit_rate } : {}),
+            protected: (before.stop_loss_rate ?? 0) > 0,
+          },
+        }
+      : {}),
+  }
 }
 
 const BOOKS: Record<string, { symbol: string; id: number }> = {
@@ -199,6 +371,55 @@ function auth(request: Request): Response | null {
 const BY = /^[A-Za-z0-9][A-Za-z0-9 ._@-]{0,63}$/
 
 export const tradeHandlers = [
+  http.post('/api/ui/etoro/trades/recommend', async ({ request }) => {
+    const flag = flagOf(request)
+    if (flag === 'trading-off')
+      return HttpResponse.json({ error: mockTradingInfo(request).disabled_reason }, { status: 403 })
+    const denied = auth(request)
+    if (denied) return denied
+    let body: Json
+    try {
+      body = (await request.json()) as Json
+    } catch {
+      return HttpResponse.json({ error: 'body: invalid JSON' }, { status: 400 })
+    }
+    const book = String(body.book ?? '')
+    const side = body.side === 'protect' ? 'protect' : body.side === 'open' ? 'open' : null
+    const inst = BOOKS[book]
+    if (!inst || !side) return HttpResponse.json({ error: 'side: "open" or "protect"' }, { status: 400 })
+    const pos = state.positions.get(book) ?? { state: 'flat' as const }
+    if (side === 'protect' && pos.state !== 'long')
+      return HttpResponse.json({ error: `the ledger holds no position on ${inst.symbol} to protect` }, { status: 409 })
+    const q = quoteOf(book)
+    const spreadPct = q.spread_bps / 1e4
+    const amount = side === 'open' ? Number(body.amount_usd) || DEFAULT_AMOUNT : 0
+    const units = side === 'open' ? amount / q.ask : (pos.units ?? 0)
+    const entry = side === 'open' ? q.ask : (pos.open_rate ?? q.bid)
+    const mark = q.bid
+    const profiles: Record<string, Levels> = {}
+    for (const p of Object.keys(MULT))
+      profiles[p] = buildLevels(book, p, entry, mark, units, spreadPct, account.equity, 0, 0)
+    const { signal } = refClose(book)
+    return HttpResponse.json({
+      ledger: new URL(request.url).searchParams.get('ledger') || 'etoro-demo',
+      book,
+      side,
+      instrument: inst,
+      quote: q,
+      account: { ...account, exposure: exposure() },
+      position: pos,
+      rule_signal: signal,
+      ...(side === 'open' ? { amount_usd: amount } : {}),
+      units,
+      profiles,
+      default_profile: 'moderate',
+      context: protectionContext(book, side, entry, mark, 'moderate', profiles.moderate, pos),
+      policy_version: 'etoro-demo-2026-10-19',
+      warnings: [],
+      prepared_at: new Date().toISOString(),
+    })
+  }),
+
   http.post('/api/ui/etoro/trades/prepare', async ({ request }) => {
     const ledger = new URL(request.url).searchParams.get('ledger') || 'etoro-demo'
     const flag = flagOf(request)
@@ -230,26 +451,55 @@ export const tradeHandlers = [
       return HttpResponse.json({ error: 'body: invalid JSON' }, { status: 400 })
     }
     const unknown = Object.keys(body).find(
-      (k) => !['book', 'side', 'amount_usd', 'position_id', 'leverage'].includes(k),
+      (k) =>
+        ![
+          'book',
+          'side',
+          'amount_usd',
+          'position_id',
+          'leverage',
+          'profile',
+          'stop_loss_pct',
+          'take_profit_pct',
+        ].includes(k),
     )
     if (unknown) return HttpResponse.json({ error: `body: json: unknown field "${unknown}"` }, { status: 400 })
     const book = String(body.book ?? '')
-    const side = body.side === 'close' ? 'close' : body.side === 'open' ? 'open' : null
+    const side: Side | null =
+      body.side === 'close' ? 'close' : body.side === 'open' ? 'open' : body.side === 'protect' ? 'protect' : null
     const inst = BOOKS[book]
     if (!inst || !side || body.leverage !== 1) {
       log({ outcome: 'refused', error: 'book, side or leverage invalid' })
-      return HttpResponse.json({ error: 'book, side ("open" | "close") and leverage 1 are required' }, { status: 400 })
+      return HttpResponse.json(
+        { error: 'book, side ("open" | "close" | "protect") and leverage 1 are required' },
+        { status: 400 },
+      )
     }
     const amount = side === 'open' ? Number(body.amount_usd) : 0
-    const positionId = side === 'close' ? String(body.position_id ?? '') : ''
+    const positionId = side !== 'open' ? String(body.position_id ?? '') : ''
     if (side === 'open' && (!(amount >= MIN) || !(amount <= MAX))) {
       log({ outcome: 'refused', error: 'amount_usd out of bounds' })
       return HttpResponse.json({ error: `amount_usd: must be between ${MIN} and ${MAX} USD` }, { status: 400 })
     }
-    if (side === 'close' && !/^\d{1,32}$/.test(positionId)) {
+    if (side !== 'open' && !/^\d{1,32}$/.test(positionId)) {
       log({ outcome: 'refused', error: 'position_id missing' })
       return HttpResponse.json({ error: 'position_id: the numeric id of the ledger’s position' }, { status: 400 })
     }
+    const profile = String(body.profile ?? '') || 'moderate'
+    const slPctIn = Number(body.stop_loss_pct ?? 0)
+    const tpPctIn = Number(body.take_profit_pct ?? 0)
+    if (!['conservative', 'moderate', 'aggressive', 'custom'].includes(profile))
+      return HttpResponse.json({ error: `profile: unknown profile "${profile}"` }, { status: 400 })
+    if (side !== 'close' && profile === 'custom' && !(slPctIn > 0))
+      return HttpResponse.json(
+        { error: 'stop_loss_pct: required with the custom profile (the policy requires a stop)' },
+        { status: 400 },
+      )
+    if (side !== 'close' && profile !== 'custom' && (slPctIn || tpPctIn))
+      return HttpResponse.json(
+        { error: `stop_loss_pct / take_profit_pct: only with profile "custom" (got profile "${profile}")` },
+        { status: 400 },
+      )
 
     const pos = state.positions.get(book) ?? { state: 'flat' as const }
     const q = quoteOf(book)
@@ -260,7 +510,7 @@ export const tradeHandlers = [
     const halt = s.halt?.halted ? s.halt : null
     if (halt) reasons.push(`halted: trading is halted: ${halt.reason} (halt file, by ${halt.by} at ${halt.at})`)
     const marketClosed = flag === 'market-closed'
-    if (marketClosed) reasons.push(`market_closed: the market for ${book} is closed`)
+    if (marketClosed && side !== 'protect') reasons.push(`market_closed: the market for ${book} is closed`)
     const legs = state.legs.get(book) ?? 0
     if (side === 'open' && legs >= 1) reasons.push(`max_orders_per_day: would be order ${legs + 1} today, max 1`)
     const exp = exposure() + (side === 'open' ? amount : 0)
@@ -270,15 +520,31 @@ export const tradeHandlers = [
       )
     }
     const dev = close > 0 ? Math.abs((side === 'open' ? q.ask : q.bid) / close - 1) * 1e4 : 0
-    if (dev > 1000)
+    if (dev > 1000 && side !== 'protect')
       reasons.push(`max_price_deviation_bps: price is ${dev.toFixed(0)} bps from reference ${close} (max 1000)`)
+
+    // Protection levels (opens and protects).
+    let protection: Json | null = null
+    if (side !== 'close') {
+      if (!body.profile && side === 'open')
+        warnings.push("no stop requested: the moderate profile's levels were applied (the policy requires a stop)")
+      const entry = side === 'open' ? q.ask : (pos.open_rate ?? q.bid)
+      const lv = buildLevels(book, profile, entry, q.bid, units, q.spread_bps / 1e4, account.equity, slPctIn, tpPctIn)
+      if (!lv.feasible) reasons.push(`protection: ${lv.reason}`)
+      protection = protectionContext(book, side, entry, q.bid, profile, lv, pos)
+      if (side === 'protect' && pos.stop_loss_rate && lv.sl_rate < pos.stop_loss_rate)
+        warnings.push(
+          `the new stop ${lv.sl_rate.toFixed(2)} is below the current stop ${pos.stop_loss_rate.toFixed(2)}: this loosens the protection`,
+        )
+    }
+
     if (side === 'open') {
       if (pos.state === 'long')
         reasons.push(
           `the ledger already holds position ${pos.position_id} on ${inst.symbol} (${(pos.units ?? 0).toFixed(6)} units): close it before opening again`,
         )
     } else if (pos.state !== 'long') {
-      reasons.push(`the ledger holds no position on ${inst.symbol} to close`)
+      reasons.push(`the ledger holds no position on ${inst.symbol} to ${side}`)
     } else if (positionId !== pos.position_id) {
       reasons.push(`position ${positionId} is not the ledger's position on ${inst.symbol} (${pos.position_id})`)
     }
@@ -296,9 +562,10 @@ export const tradeHandlers = [
 
     const ref = `ui-${book}-${nyDate(now)}-${side}-${hex6()}`
     const requestId = requestIdFor(ref)
-    const confirmation = `${side === 'open' ? 'PLACE' : 'CLOSE'} ${inst.symbol}`
+    const confirmation = `${side === 'open' ? 'PLACE' : side === 'protect' ? 'PROTECT' : 'CLOSE'} ${inst.symbol}`
     const allow = reasons.length === 0
     const ttl = flag === 'short-ttl' ? 3 : TTL_S
+    const lv = protection ? (protection.levels as Levels) : null
     const preview: Json = {
       verdict: allow ? 'allow' : 'block',
       reasons,
@@ -314,17 +581,20 @@ export const tradeHandlers = [
         side === 'open' ? { spread: 0.04, markup: 0, transaction_fee: 0, overnight_fee: 0.26, weekend_fee: 0 } : null,
       account: { ...account, cash, exposure: exposure() },
       risk: {
-        policy_version: 'etoro-demo-2026-10-10',
+        policy_version: 'etoro-demo-2026-10-19',
         order: {
           book,
-          side: side === 'open' ? 'buy' : 'sell',
+          side: side === 'open' ? 'buy' : side === 'close' ? 'sell' : 'protect',
           qty_btc: units,
           price: side === 'open' ? q.ask : q.bid,
           ref_price: close,
           leverage: 1,
+          ...(lv && side === 'open'
+            ? { stop_loss: lv.sl_rate, ...(lv.tp_rate ? { take_profit: lv.tp_rate } : {}) }
+            : {}),
         },
         state: {
-          position_btc: side === 'close' ? units : 0,
+          position_btc: side !== 'open' ? units : 0,
           orders_today: legs,
           equity: account.equity,
           exposure: exposure(),
@@ -342,6 +612,7 @@ export const tradeHandlers = [
       client_ref: ref,
       request_id: requestId,
       prepared_at: now.toISOString(),
+      ...(protection ? { protection } : {}),
     }
     if (allow) {
       const id = nextMockId()
@@ -360,6 +631,10 @@ export const tradeHandlers = [
         ref_price: close,
         confirmation,
         exp: now.getTime() + ttl * 1000,
+        sl_rate: lv?.sl_rate ?? 0,
+        tp_rate: lv?.tp_rate ?? 0,
+        profile: lv ? profile : '',
+        max_loss_usd: lv?.max_loss_usd ?? 0,
       }
       state.tokens.set(id, c)
       preview.token = `mock.${id}`
@@ -369,7 +644,7 @@ export const tradeHandlers = [
     const detail =
       side === 'open'
         ? `open ${book} ${amount.toFixed(0)} USD x1 (${units.toFixed(6)} units)`
-        : `close ${book} position ${positionId} (${units.toFixed(6)} units)`
+        : `${side} ${book} position ${positionId} (${units.toFixed(6)} units)`
     log(
       allow
         ? { outcome: 'done', detail: `${detail} -> allow` }
@@ -437,7 +712,8 @@ export const tradeHandlers = [
         who,
       )
     }
-    if (flag === 'market-closed') return fail(422, 'refused', 'the NYSE cash session is closed; nothing sent', who)
+    if (flag === 'market-closed' && c.side !== 'protect')
+      return fail(422, 'refused', 'the NYSE cash session is closed; nothing sent', who)
     const pos = state.positions.get(c.book) ?? { state: 'flat' as const }
     if (c.side === 'open' && pos.state !== 'flat')
       return fail(
@@ -446,7 +722,7 @@ export const tradeHandlers = [
         `the ledger changed since the preview: it holds position ${pos.position_id}; nothing sent`,
         who,
       )
-    if (c.side === 'close' && (pos.state !== 'long' || pos.position_id !== c.position_id)) {
+    if (c.side !== 'open' && (pos.state !== 'long' || pos.position_id !== c.position_id)) {
       return fail(
         422,
         'refused',
@@ -457,7 +733,7 @@ export const tradeHandlers = [
     const detail =
       c.side === 'open'
         ? `open ${c.book} ${c.amount_usd.toFixed(0)} USD x1 (${c.units.toFixed(6)} units)`
-        : `close ${c.book} position ${c.position_id} (${c.units.toFixed(6)} units)`
+        : `${c.side} ${c.book} position ${c.position_id} (${c.units.toFixed(6)} units)`
     const req1 = log({ outcome: 'requested', ...who, detail })
     if (flag === 'broker-down') {
       const err = `${c.side} ${c.client_ref}: broker: order outcome unknown: context deadline exceeded (the intent ${c.client_ref} stays on disk; etoro-reconcile and the data-health page report it until it is resolved by hand)`
@@ -487,6 +763,76 @@ export const tradeHandlers = [
     }
     const mid = (c.bid + c.ask) / 2
     const finished = new Date(now.getTime() + 2400)
+
+    // A protect edits the held position: not a leg, no fill.
+    if (c.side === 'protect') {
+      const before = { stop_loss_rate: pos.stop_loss_rate ?? 0, take_profit_rate: pos.take_profit_rate ?? 0 }
+      const after: Position = {
+        ...pos,
+        ...(c.sl_rate > 0 ? { stop_loss_rate: c.sl_rate, stop_type: 'fixed' } : {}),
+        ...(c.tp_rate > 0 ? { take_profit_rate: c.tp_rate } : {}),
+      }
+      state.positions.set(c.book, after)
+      const opId = `op-${c.client_ref}`
+      const today = nyDate(now)
+      state.lastOrder.set(c.book, {
+        kind: 'protect',
+        client_ref: c.client_ref,
+        request_id: c.request_id,
+        order_id: opId,
+        status: 'executed',
+        position_ids: [c.position_id],
+        avg_price: 0,
+        units: c.units,
+        amount: pos.amount ?? 0,
+        intent_at: now.toISOString(),
+        started: now.toISOString(),
+        finished: finished.toISOString(),
+        fill_vs_mid_bps: 0,
+        fill_vs_close_bps: 0,
+        bar_date: today,
+        fill_date: today,
+        source: 'ui',
+        by: who.by,
+      })
+      const protection = {
+        profile: c.profile,
+        atr: volatilityOf(c.book, c.ref_price).atr,
+        atr_pct: volatilityOf(c.book, c.ref_price).atr_pct,
+        ...(before.stop_loss_rate ? { stop_loss_before: before.stop_loss_rate } : {}),
+        ...(before.take_profit_rate ? { take_profit_before: before.take_profit_rate } : {}),
+        max_loss_usd: c.max_loss_usd,
+        reason: 'set from the console',
+        operation_id: opId,
+      }
+      const done = log({
+        outcome: 'done',
+        ...who,
+        detail: `${detail} -> executed: stop ${before.stop_loss_rate.toFixed(2)} -> ${(after.stop_loss_rate ?? 0).toFixed(2)}, target ${before.take_profit_rate.toFixed(2)} -> ${(after.take_profit_rate ?? 0).toFixed(2)} (operation ${opId})`,
+      })
+      done.id = req1.id
+      return HttpResponse.json({
+        status: 'executed',
+        book: c.book,
+        side: c.side,
+        client_ref: c.client_ref,
+        request_id: c.request_id,
+        order_id: opId,
+        position_ids: [c.position_id],
+        avg_price: pos.open_rate ?? 0,
+        units: c.units,
+        amount_usd: pos.amount ?? 0,
+        fill_vs_mid_bps: 0,
+        fill_vs_close_bps: 0,
+        position_after: after,
+        ledger_recorded: true,
+        audit_path: '../strategy-executor/etoro-daily-data/demo/ui-audit.jsonl',
+        audit: done,
+        protection,
+        warnings: [],
+      })
+    }
+
     let after: Position
     let avg: number
     let positionIds: string[]
@@ -499,7 +845,16 @@ export const tradeHandlers = [
       units = c.amount_usd / avg
       amount = c.amount_usd
       positionIds = [pid]
-      after = { state: 'long', position_id: pid, units, amount, open_rate: avg, opened_at: finished.toISOString() }
+      after = {
+        state: 'long',
+        position_id: pid,
+        units,
+        amount,
+        open_rate: avg,
+        opened_at: finished.toISOString(),
+        ...(c.sl_rate > 0 ? { stop_loss_rate: c.sl_rate, stop_type: 'fixed' } : {}),
+        ...(c.tp_rate > 0 ? { take_profit_rate: c.tp_rate } : {}),
+      }
     } else {
       avg = c.bid - 0.2
       units = pos.units ?? c.units
@@ -561,6 +916,17 @@ export const tradeHandlers = [
       ledger_recorded: true,
       audit_path: '../strategy-executor/etoro-daily-data/demo/ui-audit.jsonl',
       audit: done,
+      ...(c.side === 'open' && c.sl_rate > 0
+        ? {
+            protection: {
+              profile: c.profile,
+              atr: volatilityOf(c.book, c.ref_price).atr,
+              atr_pct: volatilityOf(c.book, c.ref_price).atr_pct,
+              max_loss_usd: units * (avg - c.sl_rate),
+              reason: 'set with the open from the console',
+            },
+          }
+        : {}),
     })
   }),
 ]

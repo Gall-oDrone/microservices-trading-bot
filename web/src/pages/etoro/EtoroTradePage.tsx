@@ -15,7 +15,14 @@
  */
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { ApiError, useControls, useEtoroForwardTests, useLedgerName } from '../../api/client'
-import type { EtoroForwardTest, TradePlaceResponse, TradePreview, TradeSide } from '../../api/etoroSchemas'
+import type {
+  EtoroForwardTest,
+  StopProfile,
+  TradePlaceResponse,
+  TradePreview,
+  TradeRecommendation,
+  TradeSide,
+} from '../../api/etoroSchemas'
 import type { TradingInfo } from '../../api/schemas'
 import {
   deriveProposals,
@@ -24,12 +31,22 @@ import {
   secondsLeft,
   usePlaceTradeMutation,
   usePrepareTradeMutation,
+  useRecommendTradeMutation,
   type Proposal,
 } from '../../api/trades'
 import { ConfirmDialog, Field } from '../../components/ConfirmDialog'
 import { AuditLog } from '../../components/controls'
 import { SessionClock } from '../../components/etoro/parts'
-import { IconAlert, IconArrowRight, IconBlock, IconCheck, IconRefresh, IconTrend } from '../../components/icons'
+import { ProtectionFacts, ProtectionPanel } from '../../components/etoro/protection'
+import {
+  IconAlert,
+  IconArrowRight,
+  IconBlock,
+  IconCheck,
+  IconRefresh,
+  IconShield,
+  IconTrend,
+} from '../../components/icons'
 import { Badge, Banner, CardSkeleton, ErrorState, LedgerBadge, Stat } from '../../components/ui'
 import { bookLabel, bookSymbol, fmtBps, fmtMoney, fmtNY, fmtPrice, fmtUnits, fmtUTC } from '../../lib/format'
 import { usePageTitle } from '../../lib/usePageTitle'
@@ -59,6 +76,10 @@ interface Form {
   side: TradeSide
   amount: string
   positionId: string
+  /** Protection (opens and protects): the profile, and the custom distances in percent. */
+  profile: StopProfile
+  slPct: string
+  tpPct: string
 }
 
 /** The note shown wherever a trade is offered or reported. */
@@ -117,26 +138,49 @@ function Proposals({
             key={p.book}
             data-testid={`trade-proposal-${p.book}`}
             data-kind={p.kind}
+            data-protected={p.protected}
           >
             <div className="trade-proposal-head">
               <b>{p.symbol}</b>
               <Badge tone={p.ruleSignal === 'long' ? 'long' : 'flat'}>rule {p.ruleSignal || 'n/a'}</Badge>
               <span className="faint">demo {p.positionText}</span>
+              {p.protected !== undefined && (
+                <Badge
+                  tone={p.protected ? 'ok' : 'block'}
+                  dot
+                  title={p.protected ? 'a stop loss rests at eToro' : 'no stop loss at eToro (per the ledger)'}
+                >
+                  <span data-testid={`trade-protected-${p.book}`}>{p.protected ? 'protected' : 'no stop'}</span>
+                </Badge>
+              )}
             </div>
-            <div className="trade-proposal-text" data-testid={`trade-proposal-text-${p.book}`}>
-              {p.kind === 'none' ? <IconCheck style={{ color: 'var(--long)' }} /> : <IconArrowRight />}
+            <div
+              className={`trade-proposal-text ${p.kind === 'protect' ? 'protect' : ''}`}
+              data-testid={`trade-proposal-text-${p.book}`}
+            >
+              {p.kind === 'none' ? (
+                <IconCheck style={{ color: 'var(--long)' }} />
+              ) : p.kind === 'protect' ? (
+                <IconShield />
+              ) : (
+                <IconArrowRight />
+              )}
               {p.text}
             </div>
             {p.kind !== 'none' && trading.enabled && (
               <button
                 type="button"
-                className="btn btn-ghost"
+                className={`btn ${p.kind === 'protect' ? 'btn-primary' : 'btn-ghost'}`}
                 id={`trade-propose-${p.book}`}
                 data-testid={`trade-propose-${p.book}`}
                 disabled={busy}
                 onClick={() => onPropose(p)}
               >
-                Prepare {p.kind === 'open' ? `open ${p.amountUsd?.toLocaleString('en-US')} USD` : 'close'}
+                {p.kind === 'open'
+                  ? `Prepare open ${p.amountUsd?.toLocaleString('en-US')} USD`
+                  : p.kind === 'protect'
+                    ? 'Prepare protection'
+                    : 'Prepare close'}
               </button>
             )}
           </div>
@@ -193,6 +237,8 @@ function PreviewCard({
       <Reasons items={pv.reasons} tone="block" testId="trade-reasons" />
       <Reasons items={pv.warnings} tone="warn" testId="trade-warnings" />
 
+      {pv.protection && <ProtectionFacts p={pv.protection} book={pv.book} />}
+
       <div className="trade-facts">
         <Stat
           label="Quote"
@@ -221,6 +267,8 @@ function PreviewCard({
               </span>
             ) : pv.side === 'close' ? (
               'none to preview'
+            ) : pv.side === 'protect' ? (
+              'none'
             ) : (
               '—'
             )
@@ -234,7 +282,9 @@ function PreviewCard({
                 }`
               : pv.side === 'close'
                 ? 'a close pays the spread only'
-                : 'cost preview failed'
+                : pv.side === 'protect'
+                  ? 'editing a stop costs nothing'
+                  : 'cost preview failed'
           }
         />
         <Stat
@@ -332,7 +382,9 @@ function PreviewCard({
 }
 
 function OutcomeCard({ r }: { r: TradePlaceResponse }) {
-  const ok = r.status === 'executed'
+  const protect = r.side === 'protect'
+  const ok = r.status === 'executed' || (protect && r.status === 'pending')
+  const pa = r.position_after
   return (
     <section
       className="card venue-etoro trade-outcome"
@@ -355,29 +407,99 @@ function OutcomeCard({ r }: { r: TradePlaceResponse }) {
         </Badge>
       </div>
       <div className="trade-facts">
-        <Stat label="Order" value={<span className="num">{r.order_id || '—'}</span>} hint="eToro order id" />
+        <Stat
+          label={protect ? 'Operation' : 'Order'}
+          value={<span className="num">{r.order_id || '—'}</span>}
+          hint={protect ? 'eToro edit operation id' : 'eToro order id'}
+        />
         <Stat
           label="Position"
           value={<span className="num">{r.position_ids.join(', ') || '—'}</span>}
-          hint={r.position_after.state === 'long' ? `now long ${fmtUnits(r.position_after.units ?? 0)}` : 'now flat'}
+          hint={pa.state === 'long' ? `now long ${fmtUnits(pa.units ?? 0)}` : 'now flat'}
         />
-        <Stat
-          label="Fill"
-          value={<span className="num">{r.avg_price ? fmtPrice(r.avg_price, 'usd', r.book) : '—'}</span>}
-          hint={`${fmtUnits(r.units)} · ${fmtMoney(r.amount_usd, 'usd')}`}
-        />
-        <Stat
-          label="vs mid / vs close"
-          value={
-            <span className="num" data-testid="trade-fill-quality">
-              {fmtBps(r.fill_vs_mid_bps, true)} / {fmtBps(r.fill_vs_close_bps, true)}
-            </span>
-          }
-          hint="positive is worse than the reference"
-        />
+        {protect ? (
+          <>
+            <Stat
+              label="Stop loss"
+              value={
+                <span className="num" data-testid="trade-outcome-stop">
+                  {pa.stop_loss_rate ? fmtPrice(pa.stop_loss_rate, 'usd', r.book) : 'none'}
+                </span>
+              }
+              tone={pa.stop_loss_rate ? 'pos' : 'neg'}
+              hint={
+                r.protection?.stop_loss_before
+                  ? `was ${fmtPrice(r.protection.stop_loss_before, 'usd', r.book)}`
+                  : 'was none'
+              }
+            />
+            <Stat
+              label="Take profit"
+              value={
+                <span className="num">
+                  {pa.take_profit_rate ? fmtPrice(pa.take_profit_rate, 'usd', r.book) : 'none'}
+                </span>
+              }
+              hint={
+                r.protection?.max_loss_usd ? `max loss at the stop ${fmtMoney(r.protection.max_loss_usd, 'usd')}` : ''
+              }
+            />
+          </>
+        ) : (
+          <>
+            <Stat
+              label="Fill"
+              value={<span className="num">{r.avg_price ? fmtPrice(r.avg_price, 'usd', r.book) : '—'}</span>}
+              hint={`${fmtUnits(r.units)} · ${fmtMoney(r.amount_usd, 'usd')}`}
+            />
+            <Stat
+              label="vs mid / vs close"
+              value={
+                <span className="num" data-testid="trade-fill-quality">
+                  {fmtBps(r.fill_vs_mid_bps, true)} / {fmtBps(r.fill_vs_close_bps, true)}
+                </span>
+              }
+              hint="positive is worse than the reference"
+            />
+          </>
+        )}
       </div>
+      {!protect && pa.state === 'long' && (
+        <p className={`protect-outcome ${pa.stop_loss_rate ? 'ok' : 'warn'}`} data-testid="trade-outcome-protection">
+          <IconShield />{' '}
+          {pa.stop_loss_rate ? (
+            <>
+              Protected: stop <b className="num">{fmtPrice(pa.stop_loss_rate, 'usd', r.book)}</b>
+              {pa.take_profit_rate ? (
+                <>
+                  {' '}
+                  · target <b className="num">{fmtPrice(pa.take_profit_rate, 'usd', r.book)}</b>
+                </>
+              ) : (
+                ' · no target'
+              )}
+              {r.protection?.max_loss_usd ? <> · max loss {fmtMoney(r.protection.max_loss_usd, 'usd')}</> : null}
+              {r.protection?.profile ? <span className="faint"> · {r.protection.profile} profile</span> : null}
+            </>
+          ) : (
+            <>This position has no stop loss. Prepare a protection from the proposals card.</>
+          )}
+        </p>
+      )}
+      {r.warnings?.map((w) => (
+        <Banner key={w} tone="warn" title="Pending at eToro">
+          {w}
+        </Banner>
+      ))}
       {r.ledger_error && (
-        <Banner tone="block" title="The order went through but the ledger line could not be written">
+        <Banner
+          tone="block"
+          title={
+            protect
+              ? 'The edit went through but the ledger line could not be written'
+              : 'The order went through but the ledger line could not be written'
+          }
+        >
           {r.ledger_error}. The intent is on disk; reconcile reports it until the line is added by hand.
         </Banner>
       )}
@@ -417,13 +539,23 @@ export function EtoroTradePage() {
   const trading = controls.data?.trading ?? (controls.data ? DEFAULT_TRADING : undefined)
   const books = ft.data?.books ?? []
 
-  const [form, setForm] = useState<Form>({ book: 'nsdq100', side: 'open', amount: '', positionId: '' })
+  const [form, setForm] = useState<Form>({
+    book: 'nsdq100',
+    side: 'open',
+    amount: '',
+    positionId: '',
+    profile: 'moderate',
+    slPct: '',
+    tpPct: '',
+  })
   const [token, setToken] = useState(getOperatorToken)
   const [preview, setPreview] = useState<TradePreview | null>(null)
   const [refused, setRefused] = useState<string | null>(null)
   const [outcome, setOutcome] = useState<TradePlaceResponse | null>(null)
   const [dialog, setDialog] = useState(false)
   const [tried, setTried] = useState(false)
+  const [rec, setRec] = useState<TradeRecommendation | null>(null)
+  const recommend = useRecommendTradeMutation()
   const placeBtn = useRef<HTMLButtonElement>(null)
   const left = useCountdown(preview?.expires_at)
 
@@ -432,6 +564,9 @@ export function EtoroTradePage() {
   const selected = books.find((b) => b.book === form.book)
   const selectedPos = selected?.demo_position
   const positionId = form.positionId || (selectedPos?.state === 'long' ? (selectedPos.position_id ?? '') : '')
+  const protectionSide = form.side === 'open' || form.side === 'protect'
+  const slFrac = form.slPct === '' ? 0 : Number(form.slPct) / 100
+  const tpFrac = form.tpPct === '' ? 0 : Number(form.tpPct) / 100
 
   const problems: string[] = []
   if (trading) {
@@ -444,8 +579,39 @@ export function EtoroTradePage() {
       )
     }
     if (form.side === 'close' && !positionId) problems.push('Close: the ledger holds no position on this book.')
+    if (form.side === 'protect' && !positionId) problems.push('Protect: the ledger holds no position on this book.')
+    if (protectionSide && form.profile === 'custom') {
+      if (!Number.isFinite(slFrac) || slFrac <= 0 || slFrac >= 1)
+        problems.push('Stop loss: a percentage above 0 and below 100 (the policy caps it at 10%).')
+      if (!Number.isFinite(tpFrac) || tpFrac < 0 || tpFrac > 1000)
+        problems.push('Take profit: a percentage from 0 (none) upward.')
+    }
     if (!token.trim()) problems.push('Operator token: required (the token in ui-api’s -operator-token-file).')
   }
+
+  // The recommendation follows the form (book, side, amount) once a token
+  // is there, lightly debounced; it sends nothing and only guides the pick.
+  const recAmount = form.side === 'open' ? amount : 0
+  const recOk =
+    !!trading?.enabled &&
+    protectionSide &&
+    !!token.trim() &&
+    (form.side === 'open' ? Number.isFinite(recAmount) : !!positionId)
+  useEffect(() => {
+    if (!recOk) {
+      setRec(null)
+      return
+    }
+    const id = setTimeout(() => {
+      recommend.mutate(
+        { book: form.book, side: form.side as 'open' | 'protect', amountUsd: recAmount, positionId, token },
+        { onSuccess: setRec, onError: () => setRec(null) },
+      )
+    }, 250)
+    return () => clearTimeout(id)
+    // recommend is a stable mutation object; the inputs are what matter.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [recOk, form.book, form.side, recAmount, positionId, token])
 
   const runPrepare = (f: Form, tok: string) => {
     setOutcome(null)
@@ -453,8 +619,18 @@ export function EtoroTradePage() {
     setPreview(null)
     const amt = f.amount === '' ? amountDefault : Number(f.amount)
     const pid = f.positionId || (books.find((b) => b.book === f.book)?.demo_position?.position_id ?? '')
+    const prot =
+      f.side === 'close'
+        ? {}
+        : f.profile === 'custom'
+          ? {
+              profile: 'custom' as const,
+              stopLossPct: Number(f.slPct) / 100,
+              takeProfitPct: f.tpPct === '' ? 0 : Number(f.tpPct) / 100,
+            }
+          : { profile: f.profile }
     prep.mutate(
-      { book: f.book, side: f.side, amountUsd: amt, positionId: pid, token: tok },
+      { book: f.book, side: f.side, amountUsd: amt, positionId: pid, token: tok, ...prot },
       {
         onSuccess: (pv) => setPreview(pv),
         onError: (e) => {
@@ -472,11 +648,15 @@ export function EtoroTradePage() {
   }
 
   const propose = (p: Proposal) => {
+    const side: TradeSide = p.kind === 'open' ? 'open' : p.kind === 'protect' ? 'protect' : 'close'
     const f: Form = {
       book: p.book,
-      side: p.kind === 'open' ? 'open' : 'close',
+      side,
       amount: p.kind === 'open' ? String(p.amountUsd ?? amountDefault) : '',
-      positionId: p.kind === 'close' ? (p.positionId ?? '') : '',
+      positionId: p.kind === 'open' ? '' : (p.positionId ?? ''),
+      profile: form.profile === 'custom' ? 'moderate' : form.profile,
+      slPct: '',
+      tpPct: '',
     }
     setForm(f)
     setTried(true)
@@ -562,7 +742,8 @@ export function EtoroTradePage() {
                   <h2 id="trade-manual-h">Manual</h2>
                   <div className="sub">
                     An open of {trading.min_amount_usd.toLocaleString('en-US')}–
-                    {trading.max_amount_usd.toLocaleString('en-US')} USD x1, or a close of the ledger&apos;s position.
+                    {trading.max_amount_usd.toLocaleString('en-US')} USD x1 with a stop, a close of the ledger&apos;s
+                    position, or a protect that sets its stop and target.
                   </div>
                 </div>
               </div>
@@ -585,24 +766,18 @@ export function EtoroTradePage() {
                   </Field>
                   <Field id="trade-side" label="Side">
                     <div className="seg" role="group" aria-label="Side" id="trade-side">
-                      <button
-                        type="button"
-                        id="trade-side-open"
-                        data-testid="trade-side-open"
-                        aria-pressed={form.side === 'open'}
-                        onClick={() => setForm({ ...form, side: 'open' })}
-                      >
-                        open
-                      </button>
-                      <button
-                        type="button"
-                        id="trade-side-close"
-                        data-testid="trade-side-close"
-                        aria-pressed={form.side === 'close'}
-                        onClick={() => setForm({ ...form, side: 'close' })}
-                      >
-                        close
-                      </button>
+                      {(['open', 'close', 'protect'] as TradeSide[]).map((s) => (
+                        <button
+                          type="button"
+                          key={s}
+                          id={`trade-side-${s}`}
+                          data-testid={`trade-side-${s}`}
+                          aria-pressed={form.side === s}
+                          onClick={() => setForm({ ...form, side: s })}
+                        >
+                          {s}
+                        </button>
+                      ))}
                     </div>
                   </Field>
                 </div>
@@ -631,11 +806,21 @@ export function EtoroTradePage() {
                   ) : (
                     <Field
                       id="trade-position"
-                      label="Position to close"
-                      error={tried ? problems.find((p) => p.startsWith('Close')) : undefined}
+                      label={form.side === 'protect' ? 'Position to protect' : 'Position to close'}
+                      error={
+                        tried
+                          ? problems.find((p) => p.startsWith(form.side === 'protect' ? 'Protect' : 'Close'))
+                          : undefined
+                      }
                       hint={
                         selectedPos?.state === 'long'
-                          ? `the ledger's position, ${fmtUnits(selectedPos.units ?? 0)}`
+                          ? `the ledger's position, ${fmtUnits(selectedPos.units ?? 0)}${
+                              form.side === 'protect'
+                                ? selectedPos.stop_loss_rate
+                                  ? ` · stop ${fmtPrice(selectedPos.stop_loss_rate, 'usd', form.book)}`
+                                  : ' · no stop yet'
+                                : ''
+                            }`
                           : 'the ledger is flat on this book'
                       }
                     >
@@ -668,6 +853,30 @@ export function EtoroTradePage() {
                     />
                   </Field>
                 </div>
+                {protectionSide && (
+                  <ProtectionPanel
+                    side={form.side as 'open' | 'protect'}
+                    book={form.book}
+                    profile={form.profile}
+                    onProfile={(p) => setForm({ ...form, profile: p })}
+                    slPct={form.slPct}
+                    tpPct={form.tpPct}
+                    onSlPct={(v) => setForm({ ...form, slPct: v })}
+                    onTpPct={(v) => setForm({ ...form, tpPct: v })}
+                    rec={rec}
+                    loading={recommend.isPending}
+                    error={recommend.isError && !rec ? (recommend.error as Error).message : null}
+                    busy={prep.isPending}
+                    errors={
+                      tried
+                        ? {
+                            sl: problems.find((p) => p.startsWith('Stop loss')),
+                            tp: problems.find((p) => p.startsWith('Take profit')),
+                          }
+                        : undefined
+                    }
+                  />
+                )}
                 {prep.isError && (
                   <div className="modal-error" role="alert" data-testid="trade-prepare-error">
                     <b>Prepare failed.</b> {(prep.error as Error).message}
@@ -719,20 +928,43 @@ export function EtoroTradePage() {
       {dialog && preview && preview.token && (
         <ConfirmDialog<TradePlaceResponse>
           tone="danger"
-          icon={<IconBlock />}
-          title={`Place ${preview.side} ${preview.instrument.symbol} on the demo account`}
+          icon={preview.side === 'protect' ? <IconShield /> : <IconBlock />}
+          title={`${preview.side === 'protect' ? 'Protect' : 'Place ' + preview.side} ${preview.instrument.symbol} on the demo account`}
           sub={
             <>
-              Sends{' '}
-              {preview.side === 'open'
-                ? `a market buy of ${fmtMoney(preview.amount_usd, 'usd', 0)} x1`
-                : `a close of position ${preview.position_id}`}{' '}
-              ({fmtUnits(preview.units)}) to eToro&apos;s DEMO account and records it in the <b>{ledger}</b> ledger with
-              source <span className="num">ui</span>. The token expires in {fmtCountdown(left)}.
+              {preview.side === 'protect' ? (
+                <>
+                  Sets the stop loss{preview.protection?.levels.tp_rate ? ' and take profit' : ''} of position{' '}
+                  {preview.position_id} ({fmtUnits(preview.units)}) at eToro&apos;s DEMO account
+                </>
+              ) : (
+                <>
+                  Sends{' '}
+                  {preview.side === 'open'
+                    ? `a market buy of ${fmtMoney(preview.amount_usd, 'usd', 0)} x1${preview.protection ? ' with its stop loss' : ''}`
+                    : `a close of position ${preview.position_id}`}{' '}
+                  ({fmtUnits(preview.units)}) to eToro&apos;s DEMO account
+                </>
+              )}{' '}
+              and records it in the <b>{ledger}</b> ledger with source <span className="num">ui</span>. The token
+              expires in {fmtCountdown(left)}.
             </>
           }
           current={
             <>
+              {preview.protection ? (
+                <>
+                  Stop <span className="num">{fmtPrice(preview.protection.levels.sl_rate, 'usd', preview.book)}</span>
+                  {preview.protection.levels.tp_rate ? (
+                    <>
+                      {' '}
+                      · target{' '}
+                      <span className="num">{fmtPrice(preview.protection.levels.tp_rate, 'usd', preview.book)}</span>
+                    </>
+                  ) : null}{' '}
+                  · max loss {fmtMoney(preview.protection.levels.max_loss_usd, 'usd')} ·{' '}
+                </>
+              ) : null}
               Quote{' '}
               {preview.quote
                 ? `${fmtPrice(preview.quote.bid, 'usd', preview.book)} / ${fmtPrice(preview.quote.ask, 'usd', preview.book)}`
@@ -742,10 +974,16 @@ export function EtoroTradePage() {
           }
           confirmLabel="Confirmation phrase"
           confirmWord={preview.confirmation}
-          reasonPlaceholder="e.g. Re-entering by hand after the incident review"
+          reasonPlaceholder={
+            preview.side === 'protect'
+              ? 'e.g. Stop on the open position before the weekend'
+              : 'e.g. Re-entering by hand after the incident review'
+          }
           reasonHint="one line, kept in the ledger line and the audit log"
-          submitLabel={`Place · ${preview.confirmation}`}
-          pendingLabel="Placing (eToro answers within 30 s)…"
+          submitLabel={`${preview.side === 'protect' ? 'Protect' : 'Place'} · ${preview.confirmation}`}
+          pendingLabel={
+            preview.side === 'protect' ? 'Setting (eToro answers within 30 s)…' : 'Placing (eToro answers within 30 s)…'
+          }
           pending={place.isPending}
           error={place.error}
           errorTitle={(e) =>

@@ -9,11 +9,15 @@
 import { useMutation, useQueryClient, type QueryClient } from '@tanstack/react-query'
 import { ApiError, fetchJSON, useLedgerName, withLedger } from './client'
 import {
+  isProtected,
   tradePlaceResponseSchema,
   tradePreviewSchema,
+  tradeRecommendationSchema,
   type EtoroForwardTest,
+  type StopProfile,
   type TradePlaceResponse,
   type TradePreview,
+  type TradeRecommendation,
   type TradeSide,
 } from './etoroSchemas'
 import { getOperatorToken, setOperatorToken } from './controls'
@@ -21,10 +25,18 @@ import { getOperatorToken, setOperatorToken } from './controls'
 export interface PrepareInput {
   book: string
   side: TradeSide
-  /** USD exposure of an open (x1); ignored for a close. */
+  /** USD exposure of an open (x1); ignored for a close or a protect. */
   amountUsd?: number
-  /** The ledger's position to close; ignored for an open. */
+  /** The ledger's position to close or protect; ignored for an open. */
   positionId?: string
+  /**
+   * Protection (opens and protects, 2026-10-19): a named profile, or
+   * 'custom' with the distances as fractions of the entry (tpPct 0 = none).
+   * Omitted: ui-api applies the default profile and says so.
+   */
+  profile?: StopProfile
+  stopLossPct?: number
+  takeProfitPct?: number
   /** The operator token (bearer); required by ui-api's admit gate. */
   token: string
 }
@@ -33,7 +45,35 @@ export function prepareTrade(i: PrepareInput, ledger: string): Promise<TradePrev
   const body: Record<string, unknown> = { book: i.book, side: i.side, leverage: 1 }
   if (i.side === 'open') body.amount_usd = i.amountUsd
   else body.position_id = i.positionId
+  if (i.side !== 'close' && i.profile) {
+    body.profile = i.profile
+    if (i.profile === 'custom') {
+      body.stop_loss_pct = i.stopLossPct
+      if (i.takeProfitPct) body.take_profit_pct = i.takeProfitPct
+    }
+  }
   return fetchJSON(withLedger('/etoro/trades/prepare', ledger), tradePreviewSchema, undefined, post(i.token, body))
+}
+
+export interface RecommendInput {
+  book: string
+  side: 'open' | 'protect'
+  amountUsd?: number
+  positionId?: string
+  token: string
+}
+
+/** The stop / target levels per profile for an open or the held position (read-only). */
+export function recommendTrade(i: RecommendInput, ledger: string): Promise<TradeRecommendation> {
+  const body: Record<string, unknown> = { book: i.book, side: i.side }
+  if (i.side === 'open' && i.amountUsd) body.amount_usd = i.amountUsd
+  if (i.side === 'protect' && i.positionId) body.position_id = i.positionId
+  return fetchJSON(
+    withLedger('/etoro/trades/recommend', ledger),
+    tradeRecommendationSchema,
+    undefined,
+    post(i.token, body),
+  )
 }
 
 export interface PlaceInput {
@@ -103,6 +143,16 @@ export function usePlaceTradeMutation() {
   })
 }
 
+/** Recommend stop / target levels (nothing is sent, nothing is audited unless refused). */
+export function useRecommendTradeMutation() {
+  const ledger = useLedgerName()
+  return useMutation({
+    mutationFn: (i: RecommendInput) => recommendTrade(i, ledger),
+    onSuccess: (_r, i) => rememberToken(i.token),
+    onError: forgetRejectedToken,
+  })
+}
+
 export { getOperatorToken }
 
 // --- Pure helpers (vitest) -------------------------------------------------
@@ -125,7 +175,9 @@ export function fmtCountdown(seconds: number): string {
 /**
  * A proposal from the rule for one book: what the executor would do at its
  * next run given the rule's latest signal and the demo position, so the
- * operator can do it now (or see there is nothing to do).
+ * operator can do it now (or see there is nothing to do). Since 2026-10-19
+ * a held position without a stop loss is a 'protect' proposal: the
+ * position is in line with the rule but unprotected.
  */
 export interface Proposal {
   book: string
@@ -136,6 +188,8 @@ export interface Proposal {
   positionText: string
   amountUsd?: number
   positionId?: string
+  /** Set on a held position: whether it carries a stop at eToro (per the ledger). */
+  protected?: boolean
 }
 
 /** Derives one proposal per book (etoro/forward-tests): rule signal vs demo position. */
@@ -146,14 +200,20 @@ export function deriveProposals(books: EtoroForwardTest[], defaultAmountUsd: num
     const long = pos?.state === 'long'
     const positionText = long ? `long ${(pos?.units ?? 0).toFixed(6)} u` : 'flat'
     const rule = b.decision.signal
-    const base = { book: b.book, symbol, ruleSignal: rule, positionText }
+    const base = {
+      book: b.book,
+      symbol,
+      ruleSignal: rule,
+      positionText,
+      protected: long ? isProtected(pos) : undefined,
+    }
     if (rule === 'long' && !long) {
       const amount = defaultAmountUsd
       return {
         ...base,
         kind: 'open' as const,
         amountUsd: amount,
-        text: `rule says long, demo is flat → open ${amount.toLocaleString('en-US')} USD x1`,
+        text: `rule says long, demo is flat → open ${amount.toLocaleString('en-US')} USD x1 (with a stop)`,
       }
     }
     if (rule === 'flat' && long) {
@@ -165,6 +225,17 @@ export function deriveProposals(books: EtoroForwardTest[], defaultAmountUsd: num
       }
     }
     if (rule === '') return { ...base, kind: 'none' as const, text: 'no rule record yet, nothing to propose' }
+    if (long && !isProtected(pos)) {
+      return {
+        ...base,
+        kind: 'protect' as const,
+        positionId: pos?.position_id,
+        text: `in line (rule long, demo long) but position ${pos?.position_id ?? ''} has no stop loss → protect it`.replace(
+          '  ',
+          ' ',
+        ),
+      }
+    }
     return {
       ...base,
       kind: 'none' as const,

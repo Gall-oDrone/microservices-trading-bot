@@ -5151,3 +5151,200 @@ table.data tr.current td {
     grid-template-columns: 1fr 1fr;
   }
 }
+
+/* ------------------------------------------------------------
+   Protection (plan phase B, 2026-10-19): the stop-loss / take-
+   profit panel in the manual form, the selectable profile rows,
+   the clamp notes, and the preview / outcome blocks.
+   ------------------------------------------------------------ */
+.protect-panel {
+  display: grid;
+  gap: 10px;
+  padding: 12px 14px;
+  border: 1px solid var(--venue-etoro-line);
+  border-radius: var(--radius);
+  background: linear-gradient(180deg, var(--venue-etoro-soft), transparent 70%);
+}
+.protect-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.protect-head h3 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+}
+.protect-head h3 svg {
+  width: 16px;
+  height: 16px;
+  color: var(--venue-etoro);
+}
+.protect-sub {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--text-2);
+}
+.protect-seg {
+  height: 34px;
+}
+.protect-rows {
+  display: grid;
+  gap: 6px;
+}
+.protect-row-wrap {
+  display: grid;
+  grid-template-columns: 110px minmax(0, 1fr);
+  align-items: stretch;
+  gap: 8px;
+}
+.protect-row-label {
+  display: flex;
+  align-items: center;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-2);
+}
+.protect-row-label.selected {
+  color: var(--venue-etoro);
+}
+.protect-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1.6fr);
+  gap: 6px 14px;
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--panel, transparent);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: default;
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease,
+    transform 0.15s ease;
+}
+button.protect-row {
+  cursor: pointer;
+}
+button.protect-row:hover {
+  border-color: var(--venue-etoro);
+  transform: translateY(-1px);
+}
+.protect-row.selected {
+  border-color: var(--venue-etoro);
+  box-shadow: 0 0 0 2px var(--venue-etoro-soft);
+}
+.protect-row.infeasible {
+  border-color: var(--loss);
+  opacity: 0.85;
+}
+.protect-level {
+  font-size: 12.5px;
+  line-height: 1.4;
+}
+.protect-level b,
+.protect-level .num {
+  white-space: nowrap;
+}
+.protect-level b {
+  font-weight: 600;
+}
+.protect-infeasible {
+  grid-column: 1 / -1;
+  display: flex;
+  gap: 6px;
+  align-items: flex-start;
+  color: var(--loss);
+}
+.protect-infeasible svg {
+  width: 14px;
+  height: 14px;
+  flex: none;
+  margin-top: 2px;
+}
+.protect-clamps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 4px;
+}
+.protect-clamps li {
+  display: flex;
+  gap: 6px;
+  align-items: flex-start;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--text-2);
+}
+.protect-clamps li svg {
+  width: 13px;
+  height: 13px;
+  flex: none;
+  margin-top: 2px;
+  color: var(--venue-etoro);
+}
+.protect-custom {
+  margin-top: 2px;
+}
+.protect-facts {
+  margin: 4px 0 10px;
+  padding: 10px 12px 2px;
+  border-left: 3px solid var(--venue-etoro);
+  border-radius: 0 var(--radius) var(--radius) 0;
+  background: var(--venue-etoro-soft);
+}
+.protect-facts .trade-facts {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin: 0 0 8px;
+}
+.protect-outcome {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: 0 0 10px;
+  padding: 8px 12px;
+  border-radius: var(--radius);
+  font-size: 13px;
+}
+.protect-outcome svg {
+  width: 15px;
+  height: 15px;
+  flex: none;
+}
+.protect-outcome.ok {
+  background: var(--long-soft, hsl(150 60% 45% / 0.12));
+  color: var(--long);
+}
+.protect-outcome.warn {
+  background: var(--loss-soft, hsl(6 80% 50% / 0.12));
+  color: var(--loss);
+}
+.trade-proposal-text.protect {
+  color: var(--text);
+}
+.trade-proposal-text.protect svg {
+  color: var(--venue-etoro);
+}
+@media (max-width: 720px) {
+  .protect-row-wrap {
+    grid-template-columns: 1fr;
+    gap: 4px;
+  }
+  .protect-row {
+    grid-template-columns: 1fr;
+  }
+  .protect-facts .trade-facts {
+    grid-template-columns: 1fr 1fr;
+  }
+}
