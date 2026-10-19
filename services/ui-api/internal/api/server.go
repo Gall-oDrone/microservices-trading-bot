@@ -98,6 +98,9 @@ type Server struct {
 	StrategyAuditPath string
 	// mc caches Monte Carlo runs per candle file and parameters (§6.4.11).
 	mc mcCache
+	// posCache holds the live layer of GET /api/ui/etoro/positions per
+	// ledger for positionsCacheTTL (positions.go).
+	posCache positionsCache
 	// BookSamplesDir holds the hourly book samples (<dir>/<book>.jsonl,
 	// strategy-executor cmd/book-sampler) behind the capacity page's
 	// distribution (§6.4.13); empty or missing means none.
@@ -298,6 +301,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/ui/etoro/health", s.etoroHealth)
 	mux.HandleFunc("GET /api/ui/etoro/reconcile", s.etoroReconcile)
 	mux.HandleFunc("GET /api/ui/etoro/risk-report", s.etoroRiskReport)
+	mux.HandleFunc("GET /api/ui/etoro/positions", s.etoroPositions)
 	// Live quotes from the rates poller (P5c), display only. See etoro_live.go.
 	mux.HandleFunc("GET /api/ui/etoro/live", s.etoroLiveSnapshot)
 	mux.HandleFunc("GET /api/ui/etoro/stream", s.etoroStream)

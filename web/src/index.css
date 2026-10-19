@@ -5348,3 +5348,116 @@ button.protect-row:hover {
     grid-template-columns: 1fr 1fr;
   }
 }
+
+/* Positions & round trips (components/etoro/positions.tsx, 2026-10-19). */
+.positions-card .card-head h2 svg {
+  width: 16px;
+  height: 16px;
+  color: var(--venue-etoro);
+  vertical-align: -3px;
+  margin-right: 4px;
+}
+.positions-strip {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--venue-etoro-line);
+  border-radius: var(--radius);
+  background: linear-gradient(180deg, var(--venue-etoro-soft), transparent 70%);
+}
+.positions-table tbody tr.positions-row {
+  cursor: pointer;
+  transition: background 120ms ease;
+}
+.positions-table tbody tr.positions-row:hover,
+.positions-table tbody tr.positions-row.open {
+  background: var(--venue-etoro-soft);
+}
+.positions-id {
+  display: grid;
+  gap: 3px;
+}
+.positions-id b {
+  font-weight: 600;
+}
+.positions-pnl {
+  display: inline-grid;
+  justify-items: end;
+  gap: 1px;
+  line-height: 1.2;
+}
+.positions-pnl small {
+  font-size: 11px;
+  color: var(--text-3);
+}
+.positions-pnl.pos b {
+  color: var(--long);
+}
+.positions-pnl.neg b {
+  color: var(--loss);
+}
+.positions-detail-row td {
+  padding: 0 0 12px;
+  background: var(--bg-raised);
+}
+.positions-details {
+  display: grid;
+  gap: 10px;
+  padding: 12px 14px;
+  border-left: 2px solid var(--venue-etoro);
+  margin: 0 8px;
+  animation: positions-in 160ms ease-out;
+}
+@keyframes positions-in {
+  from {
+    opacity: 0;
+    transform: translateY(-3px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.positions-facts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px 18px;
+}
+.positions-fact {
+  display: grid;
+  gap: 2px;
+  font-size: 12.5px;
+  line-height: 1.45;
+  white-space: normal;
+}
+.positions-notes,
+.positions-warnings {
+  margin: 0;
+  padding: 8px 12px 8px 28px;
+  border-radius: var(--radius);
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+.positions-notes {
+  background: var(--warn-soft);
+  color: var(--text);
+}
+.positions-warnings {
+  background: var(--warn-soft);
+  color: var(--text);
+}
+.positions-foot {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-3);
+}
+@media (max-width: 900px) {
+  .positions-strip {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .positions-facts {
+    grid-template-columns: 1fr;
+  }
+}

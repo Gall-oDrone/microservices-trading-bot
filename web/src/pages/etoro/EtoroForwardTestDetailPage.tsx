@@ -15,6 +15,7 @@ import {
 import type { EtoroLedgerRecord, EtoroReconcileReport } from '../../api/etoroSchemas'
 import { EtoroEquityChart, PriceChart, type FillMarker } from '../../components/charts'
 import { DemoStrip, NextRun, OrderLine, RunBadge, SessionClock } from '../../components/etoro/parts'
+import { PositionsCard } from '../../components/etoro/positions'
 import { ReconcileBadge, ReconcileFindings } from '../../components/etoro/reconcile'
 import { Badge, Banner, CardSkeleton, Empty, ErrorState, LedgerBadge, SignalPill, Stat } from '../../components/ui'
 import {
@@ -436,6 +437,8 @@ export function EtoroForwardTestDetailPage() {
           <ReconcileCard fillDate={ft.run.last_fill_date || ft.decision.fill_date} book={book} />
         </div>
       )}
+
+      {ft && <PositionsCard book={book} title={`Positions & round trips · ${bookSymbol(book)}`} />}
 
       <section className="card" aria-labelledby="ledger-h">
         <div className="card-head">

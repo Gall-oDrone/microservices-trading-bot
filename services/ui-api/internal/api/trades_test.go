@@ -58,6 +58,12 @@ type fakeTradeBroker struct {
 	protectPending bool
 	limitsErr      error
 	limitsCalls    int
+	// History (positions view): closed is what ClosedPositions answers;
+	// histErr fails it; histCalls counts the reads; posErr fails Positions.
+	closed    []broker.ClosedPosition
+	histErr   error
+	histCalls int
+	posErr    error
 }
 
 func newFakeTradeBroker() *fakeTradeBroker {
@@ -170,7 +176,25 @@ func (f *fakeTradeBroker) Close(ctx context.Context, req broker.CloseRequest) (b
 	return broker.Order{ClientRef: req.ClientRef, Status: broker.StatusRejected, ErrorCode: 741}, broker.ErrPositionNotOpen
 }
 func (f *fakeTradeBroker) Positions(ctx context.Context) ([]broker.Position, error) {
+	if f.posErr != nil {
+		return nil, f.posErr
+	}
 	return append([]broker.Position(nil), f.positions...), nil
+}
+
+// ClosedPositions implements broker.HistoryReader.
+func (f *fakeTradeBroker) ClosedPositions(ctx context.Context, since time.Time) ([]broker.ClosedPosition, error) {
+	f.histCalls++
+	if f.histErr != nil {
+		return nil, f.histErr
+	}
+	var out []broker.ClosedPosition
+	for _, c := range f.closed {
+		if !c.ClosedAt.Before(since) {
+			out = append(out, c)
+		}
+	}
+	return out, nil
 }
 func (f *fakeTradeBroker) Account(ctx context.Context) (broker.Account, error) {
 	return broker.Account{Currency: "USD", Cash: f.cash, Equity: f.equity}, nil

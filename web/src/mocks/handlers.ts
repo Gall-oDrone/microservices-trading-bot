@@ -6,7 +6,7 @@
 import { http, HttpResponse } from 'msw'
 import { controlHandlers, withMockHalt } from './controls'
 import { strategyHandlers } from './strategies'
-import { mockTradingInfo, tradeHandlers, withMockTrades } from './trades'
+import { mockPositions, mockTradingInfo, tradeHandlers, withMockTrades } from './trades'
 import healthz from './fixtures/healthz.json'
 import etoroLive from './fixtures/etoro-demo/etoro-live.json'
 import ledgers from './fixtures/ledgers.json'
@@ -227,4 +227,6 @@ export const handlers = [
   http.get('/api/ui/etoro/health', ({ request }) => etoro(request, 'etoro-health')),
   http.get('/api/ui/etoro/reconcile', ({ request }) => etoro(request, 'etoro-reconcile')),
   http.get('/api/ui/etoro/risk-report', ({ request }) => etoro(request, 'etoro-risk-report')),
+  // Positions & round trips (2026-10-19): the fixture's rows moved by the mock's console trades.
+  http.get('/api/ui/etoro/positions', ({ request }) => mockPositions(request)),
 ]

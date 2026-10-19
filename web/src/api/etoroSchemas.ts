@@ -853,3 +853,112 @@ export const tradePlaceResponseSchema = z.object({
   warnings: list(z.string()).optional(),
 })
 export type TradePlaceResponse = z.infer<typeof tradePlaceResponseSchema>
+
+// --- Positions & round trips (GET /api/ui/etoro/positions, 2026-10-19) -------
+
+export const tradeStatus = z.enum(['open', 'closed', 'unknown'])
+export type TradeStatus = z.infer<typeof tradeStatus>
+export const tradeSource = z.enum(['rule', 'manual', 'unknown'])
+export const closedBy = z.enum(['rule', 'operator', 'venue', 'outside', 'unknown'])
+export type ClosedBy = z.infer<typeof closedBy>
+
+/** api.EtoroTrade: one position's life as the ledger and the account tell it. */
+export const etoroTradeSchema = z.object({
+  book: z.string(),
+  symbol: z.string(),
+  position_id: z.string(),
+  status: tradeStatus,
+  source: tradeSource,
+  operator: etoroOperatorSchema.optional(),
+  recorded_open: z.boolean(),
+  opened_at: z.string().optional(),
+  open_rate: z.number(),
+  units: z.number(),
+  amount: z.number(),
+  open_client_ref: z.string().optional(),
+  open_bar_date: z.string().optional(),
+  open_fill_vs_mid_bps: z.number().optional(),
+  open_costs: etoroCostsSchema.optional(),
+  stop_loss_rate: z.number().optional(),
+  take_profit_rate: z.number().optional(),
+  stop_type: z.string().optional(),
+  protect_edits: z.number().optional(),
+  financing_to_date: z.number().optional(),
+  // Open rows, from the account when live.
+  account_holds: z.boolean().optional(),
+  mark_source: z.string().optional(),
+  mark_rate: z.number().optional(),
+  unrealized_pnl: z.number().optional(),
+  unrealized_pct: z.number().optional(),
+  fees_to_date: z.number().optional(),
+  account_stop_loss_rate: z.number().optional(),
+  account_take_profit_rate: z.number().optional(),
+  protection_drift: z.boolean().optional(),
+  held_days: z.number().optional(),
+  // Closed rows.
+  recorded_close: z.boolean().optional(),
+  closed_at: z.string().optional(),
+  close_rate: z.number().optional(),
+  closed_by: closedBy.optional(),
+  close_kind: z.string().optional(),
+  close_reason: z.string().optional(),
+  close_client_ref: z.string().optional(),
+  close_bar_date: z.string().optional(),
+  close_fill_vs_mid_bps: z.number().optional(),
+  gross_pnl: z.number().optional(),
+  return_pct: z.number().optional(),
+  venue_confirmed: z.boolean().optional(),
+  net_profit: z.number().optional(),
+  fees: z.number().optional(),
+  net: z.number().optional(),
+  venue_close_rate: z.number().optional(),
+  notes: list(z.string()).optional(),
+})
+export type EtoroTrade = z.infer<typeof etoroTradeSchema>
+
+export const etoroTradeSummarySchema = z.object({
+  open: z.number(),
+  closed: z.number(),
+  unknown: z.number(),
+  open_exposure: z.number(),
+  unrealized_pnl: z.number(),
+  fees_to_date: z.number(),
+  realized_gross: z.number(),
+  realized_net: z.number(),
+  realized_confirmed: z.number(),
+})
+export type EtoroTradeSummary = z.infer<typeof etoroTradeSummarySchema>
+
+export const etoroLiveAccountSchema = z.object({
+  currency: z.string(),
+  cash: z.number(),
+  equity: z.number(),
+  unrealized_pnl: z.number(),
+  at: z.string(),
+})
+
+export const etoroPositionsResponseSchema = z.object({
+  ledger: z.string(),
+  venue: z.string(),
+  generated_at: z.string(),
+  live: z.boolean(),
+  live_reason: z.string().optional(),
+  cached: z.boolean().optional(),
+  cached_at: z.string().optional(),
+  account: etoroLiveAccountSchema.nullable().optional(),
+  summary: etoroTradeSummarySchema,
+  trades: list(etoroTradeSchema),
+  warnings: list(z.string()),
+})
+export type EtoroPositionsResponse = z.infer<typeof etoroPositionsResponseSchema>
+
+/** The P&L a row shows: eToro's net when confirmed, else the gross from the fills, else the unrealised. */
+export function tradePnL(t: EtoroTrade): { value: number; kind: 'net' | 'gross' | 'unrealized' } | null {
+  if (t.status === 'closed') {
+    if (t.net != null) return { value: t.net, kind: 'net' }
+    if (t.gross_pnl != null) return { value: t.gross_pnl, kind: 'gross' }
+    return null
+  }
+  if (t.status === 'open' && t.mark_source === 'account') return { value: t.unrealized_pnl ?? 0, kind: 'unrealized' }
+  return null
+}

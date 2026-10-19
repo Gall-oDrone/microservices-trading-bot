@@ -6,6 +6,7 @@ import {
   etoroForwardTestsResponseSchema,
   etoroHealthResponseSchema,
   etoroLedgerResponseSchema,
+  etoroPositionsResponseSchema,
   etoroReconcileResponseSchema,
   etoroRiskReportSchema,
   etoroRiskResponseSchema,
@@ -155,6 +156,7 @@ export const queryKeys = {
   etoroHealth: (ledger: string) => ['etoro', 'health', ledger] as const,
   etoroReconcile: (ledger: string) => ['etoro', 'reconcile', ledger] as const,
   etoroRiskReport: (ledger: string) => ['etoro', 'risk-report', ledger] as const,
+  etoroPositions: (ledger: string, book: string) => ['etoro', 'positions', ledger, book] as const,
 }
 
 // --- Venue ---------------------------------------------------------------
@@ -486,6 +488,28 @@ export function useEtoroRiskReport(opts: LedgerOpts = {}) {
     queryKey: queryKeys.etoroRiskReport(ledger),
     queryFn: ({ signal }) => fetchJSON(withLedger('/etoro/risk-report', ledger), etoroRiskReportSchema, signal),
     staleTime: 10 * 60_000,
+    enabled: opts.enabled ?? true,
+  })
+}
+
+/**
+ * Positions & round trips: one row per position the ledger has seen, with
+ * the account's live figures when ui-api has the demo broker. Polled every
+ * 30 s (the server caches the live reads for 15 s); book '' = every book.
+ */
+export function useEtoroPositions(book = '', opts: LedgerOpts = {}) {
+  const selected = useLedgerName()
+  const ledger = opts.ledger ?? selected
+  return useQuery({
+    queryKey: queryKeys.etoroPositions(ledger, book),
+    queryFn: ({ signal }) =>
+      fetchJSON(
+        withLedger(book ? `/etoro/positions?book=${encodeURIComponent(book)}` : '/etoro/positions', ledger),
+        etoroPositionsResponseSchema,
+        signal,
+      ),
+    staleTime: 15_000,
+    refetchInterval: 30_000,
     enabled: opts.enabled ?? true,
   })
 }

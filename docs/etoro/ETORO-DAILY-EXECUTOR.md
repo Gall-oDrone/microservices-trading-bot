@@ -304,6 +304,26 @@ with the executor's `book|bar_date` line for the same bar (written the next morn
 `Ledger.Get(book, bar_date)` still returns the executor's line only. The web ledger table shows it
 as `manual` with the operator.
 
+**Where to see what became of a trade (2026-10-19).** The **Positions & round trips** card on the
+Trade page (every book) and on a book's forward-test page (that book), behind
+`GET /api/ui/etoro/positions?ledger=etoro-demo[&book=…]`: one row per position id, paired from the
+ledger's open / protect / close / `venue_close` lines whoever wrote them. A row is `open` (opened
+NY time, open fill, units, amount, stop / target, source `rule` or `manual` with the operator and
+reason, days held) or `closed` (close fill, who closed it: `rule`, `operator`, `eToro · stop` /
+`eToro · target`, `outside the ledger`). Two layers, named on the card: the **ledger** gives the
+fills, the gross P&L `units × (close − open)` and the financing eToro had charged at the last run;
+the **account** (only when ui-api runs with `-etoro-trading`, so it has the demo broker; three
+reads, cached 15 s per ledger) gives the open rows' unrealised P&L and fees to date (the mark shown
+is implied from it), the account's cash / equity, and for closed rows eToro's trading history:
+`net profit` (price P&L, spread included) and `fees` (financing), `net = net profit − fees`, marked
+*eToro* when confirmed, *gross, fills* until the history lists it (it lags minutes to hours). A
+ledger position the account no longer holds is looked up in the history: at the stop or the
+target it reads `closed · unrecorded` by eToro, elsewhere `outside the ledger`, not listed yet
+`unknown` — all three are the §9.4 by-hand cases until Phase C. Click a row for the fills' quality
+(bps vs mid), the cost preview, both protection views (ledger and account; `!` when they differ),
+the client refs and the notes. The audit log on the same page is the attempts, not the trade: it
+never shows prices or P&L.
+
 **What the executor does next.** It plans from `LastDemoPosition`, which now orders by
 `(bar_date, recorded_at)`: the console line of day D (recorded at D 11:00) is newer than the
 run's bar D-1 line (recorded D 09:35) and older than its bar D line (recorded D+1 09:35). So a

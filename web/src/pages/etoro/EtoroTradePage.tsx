@@ -15,6 +15,7 @@
  */
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { ApiError, useControls, useEtoroForwardTests, useLedgerName } from '../../api/client'
+import { PositionsCard } from '../../components/etoro/positions'
 import type {
   EtoroForwardTest,
   StopProfile,
@@ -915,6 +916,8 @@ export function EtoroTradePage() {
         />
       )}
       {outcome && <OutcomeCard r={outcome} />}
+
+      {ft.data && <PositionsCard />}
 
       {tradeAudit && (
         <section className="card venue-etoro" aria-label="Trade audit" data-testid="trade-audit">

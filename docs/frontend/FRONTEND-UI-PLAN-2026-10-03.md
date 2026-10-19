@@ -1660,6 +1660,47 @@ unfinished bar is labelled provisional. The decision path never reads live data.
   Trailing stops are not offered (eToro's `allowTrailingStopLoss` is false on these CFDs); the
   planned daily ratchet is the emulation. The regime badge is context only.
 
+### 8.18 Positions & round trips (as built, 2026-10-19)
+
+- **Why.** After placing a console trade the operator had no single place to read whether it was
+  still open, at what price it closed and what it made: the ledger table shows one line per order
+  and the audit log shows attempts. `components/etoro/positions.tsx` pairs the lines into one row
+  per position, on the Trade page (every book, under the outcome card) and on a book's
+  forward-test page (that book, above the ledger table). Runbook §8 "Where to see what became of
+  a trade".
+- **Card.** A summary strip (open count and exposure; unrealised P&L and fees to date; realised —
+  net after fees when eToro confirmed every closed row, else gross from the fills with the
+  confirmed count; the account's equity, cash and read time) and a table: position (symbol,
+  `rule` / `manual` / `unknown` badge, id), opened NY, open fill, mark (≈, implied from the
+  account's unrealised P&L) or close fill, P&L with its source named (*net, eToro* / *gross,
+  fills* / *unrealised*; green / red), stop / target (`no stop` badge on an unprotected open row,
+  `!` when the account's rates differ from the ledger's), closed by (`rule`, `operator`,
+  `eToro · stop`, `eToro · target`, `outside the ledger`) or days held, and the status badge
+  (`open`, `closed`, `closed · unrecorded`, `unknown`). A click expands the row: units and amount,
+  open and close fills with bps vs mid and the cost preview, both protection views, the account's
+  figures or why they are missing, the P&L breakdown (gross, eToro's net profit, fees, net), who
+  closed it and why, the operator, the client refs, and the server's notes (drift, closed outside
+  the ledger, not in the history yet). The head says `ledger + account (live)` or `ledger only —
+  <reason>`; the server's warnings (a failed account, positions or history read) are listed.
+- **Contract.** `GET /api/ui/etoro/positions?ledger=&book=` → `etoroPositionsResponseSchema`
+  (`live`, `live_reason`, `cached`, `account`, `summary`, `trades: etoroTradeSchema[]`,
+  `warnings`); `useEtoroPositions(book)` polls every 30 s (the server caches the live reads 15 s
+  per ledger; several tabs stay inside the 60 reads/min). `tradePnL` picks the figure the row
+  shows. Place invalidates `['etoro']`, so the card follows a console trade at once (the mock moves
+  its rows the same way: a new `manual` open row, a protect moving the stop, a close turning the
+  row into an operator close with the gross).
+- **Tests.** vitest `positions.test.tsx` (5): the fixture against the schema, `tradePnL`, the mock
+  endpoint (filter by book, a console close, the trading-off shape), the card on the Trade page
+  with the expanded details, the book page in ledger-only mode. Backend: `positions_test.go` (the
+  pairing on the testdata ledger, a manual open → protect → close, an unrecorded position and a
+  `venue_close` line; the live layer with a fake broker: account figures, history net, the cache
+  and its TTL, book filter, trading off, a position the account no longer holds found at its stop
+  / away from it / not yet, history and positions reads failing).
+- **Known limits.** eToro's history lags the close by minutes to hours, so a fresh close reads
+  *gross, fills* first. The mark is implied, not quoted (`open + unrealised / units`). Fixture
+  `etoro-positions.json` is hand-written from the Go test's shapes (`capture-fixtures.sh` cannot
+  capture it: the dev backend has no broker).
+
 ## 9. How to run (local)
 
 ```bash

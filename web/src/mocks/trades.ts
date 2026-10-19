@@ -16,6 +16,8 @@ import { http, HttpResponse } from 'msw'
 import { ledgerState, nextMockId, type Entry } from './controls'
 import etoroLive from './fixtures/etoro-demo/etoro-live.json'
 import forwardTests from './fixtures/etoro-demo/etoro-forward-tests.json'
+import positionsFixture from './fixtures/etoro-demo/etoro-positions.json'
+import type { EtoroTrade, EtoroTradeSummary } from '../api/etoroSchemas'
 
 type Json = Record<string, unknown>
 
@@ -257,6 +259,9 @@ const state = {
   used: new Set<string>(),
   lastOrder: new Map<string, LastOrder>(),
   nextPos: 3616700000,
+  // The positions view (GET /etoro/positions): the fixture's rows, moved by
+  // every console open / protect / close placed through the mock.
+  trades: [] as EtoroTrade[],
 }
 
 function seed() {
@@ -266,6 +271,7 @@ function seed() {
     state.positions.set(b.book, (b.demo_position as Position | null) ?? { state: 'flat' })
     state.legs.set(b.book, b.last_order && b.last_order.fill_date === forwardTests.session.date ? 1 : 0)
   }
+  state.trades = (positionsFixture.trades as EtoroTrade[]).map((t) => ({ ...t }))
 }
 seed()
 
@@ -369,6 +375,81 @@ function auth(request: Request): Response | null {
 }
 
 const BY = /^[A-Za-z0-9][A-Za-z0-9 ._@-]{0,63}$/
+
+/** The summary the server computes, from the mock's rows. */
+function summarizeTrades(ts: EtoroTrade[]): EtoroTradeSummary {
+  const s: EtoroTradeSummary = {
+    open: 0,
+    closed: 0,
+    unknown: 0,
+    open_exposure: 0,
+    unrealized_pnl: 0,
+    fees_to_date: 0,
+    realized_gross: 0,
+    realized_net: 0,
+    realized_confirmed: 0,
+  }
+  for (const t of ts) {
+    if (t.status === 'open') {
+      s.open++
+      s.open_exposure += t.amount
+      s.unrealized_pnl += t.unrealized_pnl ?? 0
+      s.fees_to_date += t.fees_to_date ?? 0
+    } else if (t.status === 'closed') {
+      s.closed++
+      s.realized_gross += t.gross_pnl ?? 0
+      if (t.net != null) {
+        s.realized_net += t.net
+        s.realized_confirmed++
+      }
+    } else s.unknown++
+  }
+  return s
+}
+
+/**
+ * GET /api/ui/etoro/positions in mock mode: the fixture's shape with the
+ * mock's rows (moved by console trades), filtered by ?book. With
+ * `?mock=trading-off` the account is not read: the rows lose their live
+ * figures and `live` is false, as ui-api answers without -etoro-trading.
+ */
+export function mockPositions(request: Request): Response {
+  const url = new URL(request.url)
+  const book = url.searchParams.get('book') ?? ''
+  const off = flagOf(request) === 'trading-off'
+  let trades = state.trades.filter((t) => !book || t.book === book)
+  if (off) {
+    trades = trades.map((t) => {
+      if (t.status !== 'open') return t
+      const rest: EtoroTrade = { ...t }
+      delete rest.account_holds
+      delete rest.mark_source
+      delete rest.mark_rate
+      delete rest.unrealized_pnl
+      delete rest.unrealized_pct
+      delete rest.fees_to_date
+      delete rest.account_stop_loss_rate
+      delete rest.account_take_profit_rate
+      return rest
+    })
+  }
+  const { account, live: _live, ...fixture } = positionsFixture
+  void _live
+  return HttpResponse.json({
+    ...fixture,
+    generated_at: new Date().toISOString(),
+    live: !off,
+    ...(off
+      ? {
+          live_reason:
+            'the account is not read (assisted trading is off: start ui-api with -etoro-trading): the figures are the ledger\u2019s',
+        }
+      : { account: { ...account, at: new Date().toISOString() }, cached: false }),
+    summary: summarizeTrades(trades),
+    trades,
+    warnings: [],
+  })
+}
 
 export const tradeHandlers = [
   http.post('/api/ui/etoro/trades/recommend', async ({ request }) => {
@@ -775,6 +856,16 @@ export const tradeHandlers = [
       state.positions.set(c.book, after)
       const opId = `op-${c.client_ref}`
       const today = nyDate(now)
+      const tr = state.trades.find((t) => t.position_id === c.position_id)
+      if (tr) {
+        if (c.sl_rate > 0) tr.stop_loss_rate = c.sl_rate
+        if (c.tp_rate > 0) tr.take_profit_rate = c.tp_rate
+        tr.stop_type = 'fixed'
+        tr.protect_edits = (tr.protect_edits ?? 0) + 1
+        tr.account_stop_loss_rate = tr.stop_loss_rate
+        tr.account_take_profit_rate = tr.take_profit_rate
+        tr.protection_drift = false
+      }
       state.lastOrder.set(c.book, {
         kind: 'protect',
         client_ref: c.client_ref,
@@ -873,6 +964,61 @@ export const tradeHandlers = [
     state.legs.set(c.book, (state.legs.get(c.book) ?? 0) + 1)
     const orderId = `o${state.nextPos + 100}`
     const today = nyDate(now)
+    if (c.side === 'open') {
+      state.trades.unshift({
+        book: c.book,
+        symbol: BOOKS[c.book].symbol,
+        position_id: positionIds[0],
+        status: 'open',
+        source: 'manual',
+        operator: { by: who.by, reason: who.reason },
+        recorded_open: true,
+        opened_at: finished.toISOString(),
+        open_rate: avg,
+        units,
+        amount,
+        open_client_ref: c.client_ref,
+        open_bar_date: today,
+        open_fill_vs_mid_bps: fillVsMid,
+        open_costs: { spread: 0.04, markup: 0, transaction_fee: 0, overnight_fee: 0.26, weekend_fee: 0 },
+        ...(c.sl_rate > 0 ? { stop_loss_rate: c.sl_rate, stop_type: 'fixed', account_stop_loss_rate: c.sl_rate } : {}),
+        ...(c.tp_rate > 0 ? { take_profit_rate: c.tp_rate, account_take_profit_rate: c.tp_rate } : {}),
+        account_holds: true,
+        mark_source: 'account',
+        mark_rate: c.bid,
+        unrealized_pnl: units * (c.bid - avg),
+        unrealized_pct: (units * (c.bid - avg)) / amount,
+        fees_to_date: 0,
+        held_days: 0,
+      })
+    } else {
+      const tr = state.trades.find((t) => t.position_id === c.position_id)
+      if (tr) {
+        const gross = tr.units * (avg - tr.open_rate)
+        Object.assign(tr, {
+          status: 'closed',
+          recorded_close: true,
+          closed_at: finished.toISOString(),
+          close_rate: avg,
+          closed_by: 'operator',
+          close_reason: who.reason,
+          close_client_ref: c.client_ref,
+          close_bar_date: today,
+          close_fill_vs_mid_bps: fillVsMid,
+          gross_pnl: gross,
+          return_pct: tr.amount > 0 ? gross / tr.amount : 0,
+          held_days: tr.opened_at
+            ? Math.round((finished.getTime() - new Date(tr.opened_at).getTime()) / 86_400_000)
+            : 0,
+          financing_to_date: tr.fees_to_date ?? 0,
+          mark_source: undefined,
+          mark_rate: undefined,
+          unrealized_pnl: undefined,
+          unrealized_pct: undefined,
+          account_holds: undefined,
+        } satisfies Partial<EtoroTrade>)
+      }
+    }
     state.lastOrder.set(c.book, {
       kind: c.side,
       client_ref: c.client_ref,
