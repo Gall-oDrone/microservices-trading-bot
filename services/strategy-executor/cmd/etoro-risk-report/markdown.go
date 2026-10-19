@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"bitso-trading-platform/shared/pkg/cfdrisk"
+	"bitso-trading-platform/shared/pkg/etoroledger"
 	"bitso-trading-platform/shared/pkg/montecarlo"
 )
 
@@ -162,6 +163,57 @@ func renderMarkdown(r *Report) string {
 			statS(bq.SpreadCost), statS(bq.Latency), bq.PortfolioLags, bq.MeasuredSpreadPerLegBps, bq.FrozenSpreadPerLegBps, bq.MeasuredVsFrozen)
 	}
 	p("\nThe cost-model check uses eToro's own spread cost per leg; half the quoted spread at check time was %.2f bps (all fills). A negative fill-vs-mid is a fill better than the quote's mid, i.e. the market moved between the quote and the fill.\n\n", q.All.HalfQuotedSpreadBps)
+
+	p("## 6. Protection (M15)\n\n")
+	pr := r.Protection
+	p("From the ledger: the stop each held position carries, every stop edit (a console protect or the executor's daily ratchet), and every close eToro made (stop, target, other) with the realised result next to the loss the stop modelled. Reporting only.\n\n")
+	if len(pr.Positions) == 0 {
+		p("No position held.\n\n")
+	} else {
+		p("| Book | Position | Source | Open | Units | Stop | Type | %% below open | Max loss USD | Mark | %% below mark | ATRs below mark | Target |\n")
+		p("|---|---|---|---:|---:|---:|---|---:|---:|---:|---:|---:|---:|\n")
+		for _, x := range pr.Positions {
+			stop, typ, pctOpen, maxLoss, pctMark, atrs := "**none**", "", "", "", "", ""
+			if x.Protected {
+				stop, typ = fmt.Sprintf("%.2f", x.StopLossRate), stopTypeLabel(x.StopType)
+				pctOpen, maxLoss, pctMark = fmt.Sprintf("%.2f %%", x.StopPctOfOpen*100), fmt.Sprintf("%.2f", x.MaxLossUSD), fmt.Sprintf("%.2f %%", x.StopPctOfMark*100)
+				if x.StopATRs > 0 {
+					atrs = fmt.Sprintf("%.1f", x.StopATRs)
+				}
+			}
+			tp := ""
+			if x.TakeProfitRate > 0 {
+				tp = fmt.Sprintf("%.2f", x.TakeProfitRate)
+			}
+			p("| %s | %s | %s | %.2f | %.6f | %s | %s | %s | %s | %.2f | %s | %s | %s |\n", x.Book, x.PositionID, x.Source, x.OpenRate, x.Units, stop, typ, pctOpen, maxLoss, x.Mark, pctMark, atrs, tp)
+		}
+		p("\n")
+	}
+	if len(pr.Edits) > 0 {
+		p("| Edit (fill date) | Book | Position | Source | Profile | Stop before → after | Target before → after | ATR | Max loss USD | Status | Reason |\n")
+		p("|---|---|---|---|---|---|---|---:|---:|---|---|\n")
+		for _, e := range pr.Edits {
+			p("| %s | %s | %s | %s | %s | %s → %s | %s → %s | %s | %s | %s | %s |\n", e.FillDate, e.Book, e.PositionID, e.Source, e.Profile,
+				rateOrNone(e.StopBefore), rateOrNone(e.StopAfter), rateOrNone(e.TPBefore), rateOrNone(e.TPAfter), optF(e.ATR), optF(e.MaxLossUSD), e.Status, e.Reason)
+		}
+		p("\n")
+	}
+	if len(pr.VenueCloses) > 0 {
+		p("| Venue close (fill date) | Book | Position | Kind | Open | Stop / target | Close rate | Gap bps | Closed at | Net profit | Fees | Realised | Modelled at the stop | Realised − modelled |\n")
+		p("|---|---|---|---|---:|---|---:|---:|---|---:|---:|---:|---:|---:|\n")
+		for _, v := range pr.VenueCloses {
+			modelled, diff := "", ""
+			if v.Kind == etoroledger.VenueCloseStoppedOut && v.StopLossRate > 0 {
+				modelled, diff = fmt.Sprintf("%.2f", v.ModelledAtStop), fmt.Sprintf("%+.2f", v.VsModelled)
+			}
+			p("| %s | %s | %s | **%s** | %.2f | %s / %s | %.2f | %s | %s | %.2f | %.2f | **%.2f** | %s | %s |\n", v.FillDate, v.Book, v.PositionID, v.Kind, v.OpenRate,
+				rateOrNone(v.StopLossRate), rateOrNone(v.TakeProfitRate), v.CloseRate, bps(v.GapBps), v.ClosedAt, v.NetProfit, v.Fees, v.Realized, modelled, diff)
+		}
+		p("\n")
+	}
+	s := pr.Summary
+	p("Held %d (protected %d) · stop edits %d (executor ratchets %d) · venue closes: stop-outs %d, take-profits %d, other %d · realised at venue closes %.2f USD, modelled at the stops %.2f USD, worst stop gap %.1f bps.\n\n",
+		s.Held, s.HeldProtected, s.Edits, s.Ratchets, s.StopOuts, s.TakeProfits, s.OtherCloses, s.RealizedUSD, s.ModelledUSD, s.WorstGapBps)
 
 	if len(r.Notes) > 0 {
 		p("## Notes\n\n")

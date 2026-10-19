@@ -111,7 +111,7 @@ func TestRunOnFixture(t *testing.T) {
 		t.Fatalf("cost check %+v", q.All)
 	}
 	md := renderMarkdown(rep)
-	for _, s := range []string{"## 1. Positions and VaR", "## 2. Stress", "## 3. Monte Carlo", "## 4. Attribution", "## 5. Fill quality", "2008-09-lehman", "3616683146", "FROZEN (test)"} {
+	for _, s := range []string{"## 1. Positions and VaR", "## 2. Stress", "## 3. Monte Carlo", "## 4. Attribution", "## 5. Fill quality", "## 6. Protection (M15)", "Held 2 (protected 0)", "2008-09-lehman", "3616683146", "FROZEN (test)"} {
 		if !strings.Contains(md, s) {
 			t.Errorf("markdown lacks %q", s)
 		}

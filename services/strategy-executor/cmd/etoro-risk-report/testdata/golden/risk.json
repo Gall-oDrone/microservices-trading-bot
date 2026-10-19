@@ -1261,9 +1261,47 @@
       "measured_vs_frozen": 0.04800523689129248
     }
   },
+  "protection": {
+    "positions": [
+      {
+        "book": "nsdq100",
+        "position_id": "3616683146",
+        "source": "rule",
+        "open_rate": 30726.899999999998,
+        "units": 0.035799,
+        "protected": false,
+        "mark": 30649.5,
+        "atr": 450.85418064103584
+      },
+      {
+        "book": "spx500",
+        "position_id": "3616683295",
+        "source": "rule",
+        "open_rate": 7816.069999999999,
+        "units": 0.140735,
+        "protected": false,
+        "mark": 7806.65,
+        "atr": 72.02387834181373
+      }
+    ],
+    "edits": [],
+    "venue_closes": [],
+    "summary": {
+      "held": 2,
+      "held_protected": 0,
+      "edits": 0,
+      "ratchets": 0,
+      "stop_outs": 0,
+      "take_profits": 0,
+      "other_closes": 0,
+      "venue_close_realized_usd": 0,
+      "stop_out_modelled_usd": 0
+    }
+  },
   "notes": [
     "financing_charged from testdata/reconcile/2026-10-13.json",
     "no -yahoo: stress episodes from the embedded paths; Monte Carlo resamples eToro's own bars only",
+    "2 of 2 held positions carry no stop on the ledger (opened before protection phase C, or the venue dropped it)",
     "nsdq100 marked at the 2026-10-12 close 30649.50 (the last closed bar on or before 2026-10-13)",
     "spx500 marked at the 2026-10-12 close 7806.65 (the last closed bar on or before 2026-10-13)"
   ]

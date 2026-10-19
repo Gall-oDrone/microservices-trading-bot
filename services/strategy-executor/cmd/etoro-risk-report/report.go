@@ -19,6 +19,7 @@ import (
 	"bitso-trading-platform/shared/pkg/etorodaily"
 	"bitso-trading-platform/shared/pkg/etoroledger"
 	"bitso-trading-platform/shared/pkg/mktcal"
+	"bitso-trading-platform/shared/pkg/stops"
 	"bitso-trading-platform/shared/pkg/varmodel"
 	"bitso-trading-platform/shared/pkg/yahoodaily"
 )
@@ -65,7 +66,90 @@ type Report struct {
 	MonteCarlo  []MCScenario        `json:"monte_carlo"`
 	Attribution cfdrisk.Attribution `json:"attribution"`
 	FillQuality cfdrisk.FillQuality `json:"fill_quality"`
+	Protection  ProtectionSection   `json:"protection"`
 	Notes       []string            `json:"notes"`
+}
+
+// ProtectionSection (M15, plan phase C6, 2026-10-19) is what the ledger
+// says about stops: the held positions' stops against the mark and the
+// ATR, every stop edit (console protect, executor ratchet), and every
+// venue close with the realised loss next to the loss the stop modelled.
+type ProtectionSection struct {
+	Positions   []ProtectedPosition `json:"positions"`
+	Edits       []ProtectionEdit    `json:"edits"`
+	VenueCloses []VenueCloseRow     `json:"venue_closes"`
+	Summary     ProtectionSummary   `json:"summary"`
+}
+
+// ProtectedPosition is a held position's stop as the ledger records it.
+type ProtectedPosition struct {
+	Book           string  `json:"book"`
+	PositionID     string  `json:"position_id"`
+	Source         string  `json:"source"` // rule | manual
+	OpenRate       float64 `json:"open_rate"`
+	Units          float64 `json:"units"`
+	StopLossRate   float64 `json:"stop_loss_rate,omitempty"`
+	TakeProfitRate float64 `json:"take_profit_rate,omitempty"`
+	StopType       string  `json:"stop_type,omitempty"`
+	Protected      bool    `json:"protected"`
+	StopPctOfOpen  float64 `json:"stop_pct_of_open,omitempty"` // (open - stop) / open
+	MaxLossUSD     float64 `json:"max_loss_usd,omitempty"`     // units x (open - stop)
+	Mark           float64 `json:"mark"`                       // last close on or before as-of
+	StopPctOfMark  float64 `json:"stop_pct_of_mark,omitempty"` // (mark - stop) / mark
+	ATR            float64 `json:"atr,omitempty"`
+	StopATRs       float64 `json:"stop_atrs,omitempty"` // (mark - stop) / ATR
+}
+
+// ProtectionEdit is one action-protect record.
+type ProtectionEdit struct {
+	FillDate    string  `json:"fill_date"`
+	Book        string  `json:"book"`
+	PositionID  string  `json:"position_id"`
+	Source      string  `json:"source"` // rule | manual
+	Profile     string  `json:"profile"`
+	StopBefore  float64 `json:"stop_before,omitempty"`
+	StopAfter   float64 `json:"stop_after,omitempty"`
+	TPBefore    float64 `json:"tp_before,omitempty"`
+	TPAfter     float64 `json:"tp_after,omitempty"`
+	ATR         float64 `json:"atr,omitempty"`
+	MaxLossUSD  float64 `json:"max_loss_usd,omitempty"`
+	Status      string  `json:"status"`
+	OperationID string  `json:"operation_id,omitempty"`
+	Reason      string  `json:"reason,omitempty"`
+}
+
+// VenueCloseRow is one action-venue_close record.
+type VenueCloseRow struct {
+	FillDate       string  `json:"fill_date"`
+	Book           string  `json:"book"`
+	PositionID     string  `json:"position_id"`
+	Kind           string  `json:"kind"`
+	OpenRate       float64 `json:"open_rate"`
+	Units          float64 `json:"units"`
+	StopLossRate   float64 `json:"stop_loss_rate,omitempty"`
+	TakeProfitRate float64 `json:"take_profit_rate,omitempty"`
+	CloseRate      float64 `json:"close_rate"`
+	GapBps         float64 `json:"gap_bps,omitempty"`
+	ClosedAt       string  `json:"closed_at,omitempty"`
+	NetProfit      float64 `json:"net_profit"`
+	Fees           float64 `json:"fees"`
+	Realized       float64 `json:"realized_usd"`              // net profit - fees
+	ModelledAtStop float64 `json:"modelled_at_stop_usd"`      // -(units x (open - stop)) for a stop-out; 0 otherwise
+	VsModelled     float64 `json:"vs_modelled_usd,omitempty"` // realized - modelled (negative: worse than the stop promised)
+}
+
+// ProtectionSummary counts the above.
+type ProtectionSummary struct {
+	Held          int     `json:"held"`
+	HeldProtected int     `json:"held_protected"`
+	Edits         int     `json:"edits"`
+	Ratchets      int     `json:"ratchets"` // executor edits
+	StopOuts      int     `json:"stop_outs"`
+	TakeProfits   int     `json:"take_profits"`
+	OtherCloses   int     `json:"other_closes"`
+	RealizedUSD   float64 `json:"venue_close_realized_usd"`
+	ModelledUSD   float64 `json:"stop_out_modelled_usd"`
+	WorstGapBps   float64 `json:"worst_stop_gap_bps,omitempty"`
 }
 
 // Inputs fingerprints what was read.
@@ -401,6 +485,20 @@ func run(o options, now time.Time) (*Report, error) {
 	}
 	if o.yahoo == "" {
 		rep.Notes = append(rep.Notes, "no -yahoo: stress episodes from the embedded paths; Monte Carlo resamples eToro's own bars only")
+	}
+	atrs := map[string]float64{}
+	for _, l := range books {
+		sb := make([]stops.Bar, 0, len(l.rows))
+		for _, r := range l.rows {
+			sb = append(sb, stops.Bar{High: r.High, Low: r.Low, Close: r.Close})
+		}
+		if a, ok := stops.ATR(sb, stops.DefaultATRPeriod); ok {
+			atrs[l.spec.Book] = a
+		}
+	}
+	rep.Protection = protectionSection(recs, marks, atrs)
+	if rep.Protection.Summary.Held > rep.Protection.Summary.HeldProtected {
+		rep.Notes = append(rep.Notes, fmt.Sprintf("%d of %d held positions carry no stop on the ledger (opened before protection phase C, or the venue dropped it)", rep.Protection.Summary.Held-rep.Protection.Summary.HeldProtected, rep.Protection.Summary.Held))
 	}
 	for _, p := range rep.Positions {
 		if p.State == "long" && p.LastDate != "" {
