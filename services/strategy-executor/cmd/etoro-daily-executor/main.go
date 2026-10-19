@@ -90,6 +90,10 @@ type options struct {
 	amount                 float64
 	policy                 risk.Policy
 	halt                   *risk.HaltState
+	// protect: phase C of the protection plan (2026-10-19). On, a rule open
+	// carries the disaster stop and a held long's stop is ratcheted daily;
+	// the risk policy defaults to EtoroDemoProtectedPolicy.
+	protect bool
 }
 
 func main() {
@@ -103,6 +107,7 @@ func main() {
 	asOf := flag.String("as-of", "", "RFC3339 time to run as (default now); dry run only")
 	riskPolicy := flag.String("risk-policy", "", "JSON risk policy (default: built-in shared/pkg/risk.EtoroDemoPolicy)")
 	envFile := flag.String("env-file", defaultEnvFile(), "file with ETORO_PUBLIC_KEY / ETORO_PRIVATE_KEY (chmod 600)")
+	flag.BoolVar(&o.protect, "protect", os.Getenv("ETORO_EXECUTOR_PROTECT") != "0", "rule opens carry the disaster stop max(4xATR, 8%) and held stops are ratcheted daily; the risk policy defaults to the protected one (ETORO_EXECUTOR_PROTECT=0 turns it off)")
 	flag.Parse()
 
 	if os.Getenv("ETORO_EXECUTOR_DISABLED") == "1" {
@@ -145,6 +150,9 @@ func main() {
 		usage("no instruments")
 	}
 	policy := risk.EtoroDemoPolicy()
+	if o.protect {
+		policy = risk.EtoroDemoProtectedPolicy()
+	}
 	if *riskPolicy != "" {
 		p, err := risk.LoadPolicy(*riskPolicy)
 		if err != nil {
@@ -173,8 +181,12 @@ func main() {
 		mode = etoroledger.ModeDemo
 	}
 	version := codeVersion()
-	fmt.Printf("etoro-daily-executor %s | as of %s (New York %s) | mode %s | ledger %s | risk policy %s | %.0f USD x1\n",
-		version, now.Format(time.RFC3339), now.In(mktcal.NewYork).Format("2006-01-02 15:04"), mode, o.ledgerPath, o.policy.Version, o.amount)
+	protectMode := "protect off"
+	if o.protect {
+		protectMode = "protect on (disaster stop, daily ratchet)"
+	}
+	fmt.Printf("etoro-daily-executor %s | as of %s (New York %s) | mode %s | ledger %s | risk policy %s | %.0f USD x1 | %s\n",
+		version, now.Format(time.RFC3339), now.In(mktcal.NewYork).Format("2006-01-02 15:04"), mode, o.ledgerPath, o.policy.Version, o.amount, protectMode)
 	if o.halt != nil {
 		fmt.Printf("HALTED by %s: %s (by %s at %s); demo orders will be blocked and recorded\n",
 			risk.HaltPath(o.ledgerPath), o.halt.Reason, o.halt.By, o.halt.At)
@@ -201,7 +213,7 @@ func main() {
 		fail(err)
 	}
 	de := demoEnv{b: etorobroker.New(c), led: led, intents: etoroledger.IntentDir(o.ledgerPath), policy: o.policy,
-		halt: o.halt, amount: o.amount, now: time.Now}
+		halt: o.halt, amount: o.amount, now: time.Now, protect: o.protect}
 
 	ctx := context.Background()
 	failed := false
@@ -310,6 +322,7 @@ func runBook(ctx context.Context, o options, de demoEnv, s instSpec, fetch func(
 		fmt.Printf("[%s] ledger: recorded (dry run, no order placed)\n", s.Book)
 		return nil
 	}
+	de.bars, de.protect = bars, o.protect
 	return runDemo(ctx, de, s, rec)
 }
 

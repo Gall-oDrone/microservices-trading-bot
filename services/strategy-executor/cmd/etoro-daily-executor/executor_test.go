@@ -35,6 +35,10 @@ type fakeBroker struct {
 	openErr   error
 	landOnErr bool
 	closeErr  error
+	// protectErr is returned by the next SetProtection; protects logs the
+	// edits received.
+	protectErr error
+	protects   []broker.ProtectionRequest
 }
 
 func newFakeBroker() *fakeBroker {
@@ -54,7 +58,7 @@ func (f *fakeBroker) place(req broker.OpenRequest) broker.Order {
 		AvgPrice: f.ask, Units: units, Amount: req.Amount, SpreadCost: 0.85, At: time.Date(2026, 10, 12, 13, 40, 2, 0, time.UTC)}
 	f.byRef[req.ClientRef] = o
 	f.positions = append(f.positions, broker.Position{ID: id, Instrument: req.Instrument, Side: broker.Long, Units: units,
-		OpenRate: f.ask, Amount: req.Amount, Leverage: 1, Exposure: req.Amount, Fees: 0})
+		OpenRate: f.ask, Amount: req.Amount, Leverage: 1, Exposure: req.Amount, Fees: 0, StopLoss: req.StopLoss, TakeProfit: req.TakeProfit})
 	return o
 }
 
@@ -82,7 +86,7 @@ func (f *fakeBroker) Close(ctx context.Context, req broker.CloseRequest) (broker
 		if p.ID == req.PositionID {
 			f.positions = append(f.positions[:i], f.positions[i+1:]...)
 			f.closed = append(f.closed, broker.ClosedPosition{ID: p.ID, Instrument: p.Instrument, Side: p.Side, Units: p.Units,
-				OpenRate: p.OpenRate, CloseRate: f.bid, Amount: p.Amount})
+				OpenRate: p.OpenRate, CloseRate: f.bid, Amount: p.Amount, StopLoss: p.StopLoss, TakeProfit: p.TakeProfit})
 			return broker.Order{OrderID: "c" + p.ID, ClientRef: req.ClientRef, Status: broker.StatusExecuted, PositionIDs: []string{p.ID},
 				AvgPrice: f.bid, Units: p.Units, Amount: p.Amount, At: time.Date(2026, 10, 12, 13, 40, 3, 0, time.UTC)}, nil
 		}
@@ -101,6 +105,41 @@ func (f *fakeBroker) PreviewOpen(ctx context.Context, req broker.OpenRequest) (b
 }
 func (f *fakeBroker) ClosedPositions(ctx context.Context, since time.Time) ([]broker.ClosedPosition, error) {
 	return f.closed, nil
+}
+
+// SetProtection edits the position's resting rates (broker.ProtectionEditor).
+func (f *fakeBroker) SetProtection(ctx context.Context, req broker.ProtectionRequest) (broker.ProtectionResult, error) {
+	f.protects = append(f.protects, req)
+	if err := f.protectErr; err != nil {
+		f.protectErr = nil
+		return broker.ProtectionResult{PositionID: req.PositionID, ClientRef: req.ClientRef, Status: broker.StatusRejected, Error: err.Error()}, err
+	}
+	for i := range f.positions {
+		if f.positions[i].ID == req.PositionID {
+			if req.StopLoss > 0 {
+				f.positions[i].StopLoss, f.positions[i].StopType = req.StopLoss, broker.StopFixed
+			}
+			if req.TakeProfit > 0 {
+				f.positions[i].TakeProfit = req.TakeProfit
+			}
+			return broker.ProtectionResult{PositionID: req.PositionID, ClientRef: req.ClientRef, OperationID: "op-" + req.ClientRef, Status: broker.StatusExecuted, Position: f.positions[i]}, nil
+		}
+	}
+	return broker.ProtectionResult{PositionID: req.PositionID, ClientRef: req.ClientRef, Status: broker.StatusRejected, ErrorCode: 404}, broker.ErrPositionNotOpen
+}
+
+// venueClose simulates eToro closing position id at rate (a stop, a target,
+// the app): it leaves the portfolio and enters the trading history with the
+// rates it carried.
+func (f *fakeBroker) venueClose(id string, rate float64, netProfit, fees float64, at time.Time) {
+	for i, p := range f.positions {
+		if p.ID == id {
+			f.positions = append(f.positions[:i], f.positions[i+1:]...)
+			f.closed = append(f.closed, broker.ClosedPosition{ID: p.ID, Instrument: p.Instrument, Side: p.Side, Units: p.Units,
+				OpenRate: p.OpenRate, CloseRate: rate, Amount: p.Amount, ClosedAt: at, NetProfit: netProfit, Fees: fees, StopLoss: p.StopLoss, TakeProfit: p.TakeProfit})
+			return
+		}
+	}
 }
 
 // rising NYSE-day bars from 2026-05-01 to last; a final close override

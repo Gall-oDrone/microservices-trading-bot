@@ -8,10 +8,12 @@ import (
 	"time"
 
 	"bitso-trading-platform/shared/pkg/broker"
+	"bitso-trading-platform/shared/pkg/dailyrule"
 	"bitso-trading-platform/shared/pkg/etoro"
 	"bitso-trading-platform/shared/pkg/etoroledger"
 	"bitso-trading-platform/shared/pkg/mktcal"
 	"bitso-trading-platform/shared/pkg/risk"
+	"bitso-trading-platform/shared/pkg/stops"
 )
 
 // demoEnv is what a demo leg needs. Every venue call goes through b, so
@@ -25,6 +27,13 @@ type demoEnv struct {
 	amount  float64
 	now     func() time.Time
 	logf    func(format string, args ...any)
+	// protect (phase C, 2026-10-19): a rule open carries the disaster stop
+	// and a held long's stop is ratcheted at each run (protect.go). Off,
+	// opens go out bare and stops are left as they are; venue-close
+	// detection (C3) is on regardless, it only reads.
+	protect bool
+	// bars are the closed NYSE-day bars the decision came from, for the ATR.
+	bars []dailyrule.Bar
 }
 
 // errNotRecorded marks a failure after which nothing was written, so a
@@ -102,7 +111,17 @@ func runDemo(ctx context.Context, e demoEnv, s instSpec, rec *etoroledger.Record
 			return notRecorded("account holds %s on %s besides the executor's position %s: resolve by hand, nothing sent", ids(other), s.Symbol, pos.PositionID)
 		}
 		if held == nil && !(action == etoroledger.ActionClose && started) {
-			return notRecorded("ledger says long %s but the account no longer holds it (closed outside the executor?): resolve by hand", pos.PositionID)
+			// C3: eToro may have closed it (stop loss, take profit, margin
+			// call, the app). The trading history says; until it lists the
+			// close nothing is recorded and a later re-run resolves it.
+			found, err := e.venueClose(ctx, d, pos)
+			if err != nil {
+				return notRecorded("ledger says long %s but the account does not hold it: %v", pos.PositionID, err)
+			}
+			if !found {
+				return notRecorded("ledger says long %s but the account no longer holds it and the trading history does not list it yet (closed outside the executor?): re-run later today, or resolve by hand", pos.PositionID)
+			}
+			return e.record(rec, d)
 		}
 		if held != nil {
 			d.FinancingToDate = held.Fees
@@ -111,6 +130,18 @@ func runDemo(ctx context.Context, e demoEnv, s instSpec, rec *etoroledger.Record
 
 	if action == etoroledger.ActionNone {
 		e.logf("demo: rule says %s, executor holds %s -> nothing to do", target, pos.State)
+		if e.protect && pos.State == "long" {
+			for i := range mine {
+				if mine[i].ID == pos.PositionID {
+					if perr := e.ratchet(ctx, in, s.Book, rec, d, mine[i], e.bars); perr != nil {
+						if err := e.record(rec, d); err != nil {
+							return err
+						}
+						return perr
+					}
+				}
+			}
+		}
 		return e.record(rec, d)
 	}
 	if action == etoroledger.ActionClose && started && len(mine) == 0 {
@@ -142,10 +173,31 @@ func runDemo(ctx context.Context, e demoEnv, s instSpec, rec *etoroledger.Record
 	ro := risk.Order{Book: s.Book, RefPrice: rec.Decision.Close, Leverage: 1}
 	rs := risk.State{OrdersToday: etoroledger.LegsOn(e.led.Records(), s.Book, rec.Decision.FillDate),
 		Equity: acct.Equity, Exposure: d.Account.Exposure, MarketClosed: marketClosed}
+	var levels stops.Levels
 	if action == etoroledger.ActionOpen {
 		ro.Side, ro.Price = "buy", q.Ask
 		if q.Ask > 0 {
 			ro.QtyBTC = e.amount / q.Ask
+		}
+		if e.protect {
+			// C1: the disaster stop goes out with the order and through the
+			// risk check; an infeasible stop leaves the order bare and the
+			// policy (stop_loss_required) blocks it.
+			var vol *stops.Volatility
+			var notes []string
+			levels, vol, notes = e.disasterStop(ctx, in, s.Book, q, acct.Equity, e.bars)
+			d.Notes = append(d.Notes, notes...)
+			if levels.Feasible {
+				ro.StopLoss = levels.SLRate
+				d.Protection = &etoroledger.Protection{Profile: profileDisaster, MaxLossUSD: levels.MaxLossUSD,
+					Reason: fmt.Sprintf("disaster stop set with the open: max(%.0f x ATR%%, %.0f%%) = %.2f%%", stops.DisasterATRMult, stops.DisasterFloorPct*100, levels.SLPct*100)}
+				if vol != nil {
+					d.Protection.ATR, d.Protection.ATRPct = vol.ATR, vol.ATRPct
+				}
+				e.logf("protect: open carries the disaster %s", describeLevels(levels))
+			} else {
+				d.Notes = append(d.Notes, "disaster stop infeasible: "+levels.Reason)
+			}
 		}
 	} else {
 		ro.Side, ro.Price, ro.QtyBTC = "sell", q.Bid, pos.Units
@@ -197,8 +249,12 @@ func runDemo(ctx context.Context, e demoEnv, s instSpec, rec *etoroledger.Record
 	var bo broker.Order
 	var oerr error
 	if action == etoroledger.ActionOpen {
-		e.logf("demo: open %s %.2f USD x1 (ask %.2f, ref %s)", s.Symbol, e.amount, q.Ask, ref)
-		bo, oerr = e.b.Open(ctx, broker.OpenRequest{Instrument: in, Side: broker.Long, Amount: e.amount, Leverage: 1, ClientRef: ref, IntentAt: intent.IntentAt})
+		if ro.StopLoss > 0 {
+			e.logf("demo: open %s %.2f USD x1 (ask %.2f, stop %.2f, ref %s)", s.Symbol, e.amount, q.Ask, ro.StopLoss, ref)
+		} else {
+			e.logf("demo: open %s %.2f USD x1 (ask %.2f, ref %s)", s.Symbol, e.amount, q.Ask, ref)
+		}
+		bo, oerr = e.b.Open(ctx, broker.OpenRequest{Instrument: in, Side: broker.Long, Amount: e.amount, Leverage: 1, ClientRef: ref, IntentAt: intent.IntentAt, StopLoss: ro.StopLoss})
 	} else {
 		bo, oerr = e.closeLeg(ctx, in, pos, ref, intent, started, mine)
 	}
@@ -228,6 +284,14 @@ func runDemo(ctx context.Context, e demoEnv, s instSpec, rec *etoroledger.Record
 		}
 		d.PositionAfter = etoroledger.Position{State: "long", PositionID: bo.PositionIDs[0], Units: bo.Units, Amount: bo.Amount,
 			OpenRate: bo.AvgPrice, OpenedAt: bo.At.UTC().Format(time.RFC3339)}
+		if ro.StopLoss > 0 {
+			// As sent; the next run reads the account's rate back (ratchet)
+			// and reconcile reports protection_drift if the venue lost it.
+			d.PositionAfter.StopLossRate, d.PositionAfter.StopType = ro.StopLoss, broker.StopFixed
+			if d.Protection != nil && bo.Units > 0 {
+				d.Protection.MaxLossUSD = bo.Units * (bo.AvgPrice - ro.StopLoss)
+			}
+		}
 		o.FillVsMidBps = costBps("buy", bo.AvgPrice, q.Mid())
 		o.FillVsCloseBps = costBps("buy", bo.AvgPrice, rec.Decision.Close)
 	} else {
