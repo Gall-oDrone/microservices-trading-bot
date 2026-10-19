@@ -59,9 +59,11 @@ The other jobs (Bitso executor 06:15, compaction, sampler, research, prereg) are
 
 ## 4. What comes next
 
-1. Forward-test results report (`FORWARD-TEST-RESULTS-SMA50-INDEX-CFD-<date>.md`): the frozen costs
-   next to the measured ones (15.5 / 14.8 bps frozen vs 0.36 bps per leg paid), the lag incidents,
-   the console trades if any; the pre-registration says results go in a separate dated report.
+1. ~~Forward-test results report~~ **Done 2026-10-19:**
+   [`FORWARD-TEST-RESULTS-SMA50-INDEX-CFD-2026-10-19.md`](backtest-readiness/FORWARD-TEST-RESULTS-SMA50-INDEX-CFD-2026-10-19.md)
+   (week-1 execution report: 0.18 bps measured per leg vs 7.4–7.75 frozen, the three lag incidents,
+   the first console trade). Left pending there: the overnight fee from the trading history (none
+   is visible in the demo cash over 11 position-nights) and the fate of the console position.
 2. P7 is running on paper since 2026-10-13 (weekly `prereg` job). Interim look 2027-04-12.
 3. Housekeeping: `go fmt` on the pre-existing unformatted files under `shared/pkg/{config,indicators,
    metrics,models}` and `strategy-executor/internal/*` (not touched by this work); the vitest suite
