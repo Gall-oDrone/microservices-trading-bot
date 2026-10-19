@@ -34,6 +34,12 @@ type fakeClient struct {
 	portfolioLag int
 	// history pages returned by TradingHistory (page n = history[n-1]).
 	history [][]etoro.ClosedTrade
+	// updates records UpdatePosition calls; updateErr is returned instead;
+	// updateLag delays the rates showing on the position by N portfolio reads.
+	updates   []etoro.UpdatePositionRequest
+	updateErr error
+	updateLag int
+	pendingSL map[int64]etoro.UpdatePositionRequest
 }
 
 func newFake(clock *time.Time) *fakeClient {
@@ -128,7 +134,49 @@ func (f *fakeClient) GetPortfolio(ctx context.Context) (*etoro.Portfolio, error)
 		f.portfolioLag--
 		return &etoro.Portfolio{Credit: 99000, AccountCurrencyID: 1}, nil
 	}
+	if f.updateLag > 0 {
+		f.updateLag--
+	} else {
+		for pid, u := range f.pendingSL {
+			for i := range f.positions {
+				if f.positions[i].PositionID != pid {
+					continue
+				}
+				if u.StopLossRate != nil {
+					f.positions[i].StopLossRate, f.positions[i].IsNoStopLoss = *u.StopLossRate, false
+				}
+				if u.TakeProfitRate != nil {
+					f.positions[i].TakeProfitRate, f.positions[i].IsNoTakeProfit = *u.TakeProfitRate, false
+				}
+				if u.ClearTakeProfit != nil && *u.ClearTakeProfit {
+					f.positions[i].TakeProfitRate, f.positions[i].IsNoTakeProfit = 0, true
+				}
+			}
+			delete(f.pendingSL, pid)
+		}
+	}
 	return &etoro.Portfolio{Credit: 99000, UnrealizedPnL: -1.49, AccountCurrencyID: 1, Positions: f.positions, OrdersForOpen: f.pending}, nil
+}
+
+func (f *fakeClient) UpdatePosition(ctx context.Context, pid int64, req etoro.UpdatePositionRequest, rid string) (etoro.UpdatePositionAccepted, error) {
+	f.updates = append(f.updates, req)
+	if f.updateErr != nil {
+		return etoro.UpdatePositionAccepted{}, f.updateErr
+	}
+	found := false
+	for _, p := range f.positions {
+		if p.PositionID == pid {
+			found = true
+		}
+	}
+	if !found {
+		return etoro.UpdatePositionAccepted{}, &etoro.APIError{StatusCode: 404, Message: "Position not found."}
+	}
+	if f.pendingSL == nil {
+		f.pendingSL = map[int64]etoro.UpdatePositionRequest{}
+	}
+	f.pendingSL[pid] = req
+	return etoro.UpdatePositionAccepted{OperationID: "op-" + rid[:8], PositionID: pid, ReferenceID: rid}, nil
 }
 
 func (f *fakeClient) Costs(ctx context.Context, req etoro.OrderRequest) (etoro.CostPreview, error) {
@@ -382,5 +430,157 @@ func TestClosedPositionsPages(t *testing.T) {
 	if last.ID != "3616261792" || last.Instrument.ID != 28 || last.Side != broker.Long || last.CloseRate != 30919 ||
 		last.NetProfit != -1.42 || last.Amount != 999.98 || last.ClosedAt != time.Date(2026, 10, 10, 2, 8, 16, 607e6, time.UTC) {
 		t.Fatalf("row %+v", last)
+	}
+}
+
+// --- Protection (plan phase A3) --------------------------------------------
+
+func TestPositionsMapProtection(t *testing.T) {
+	a, f, now := newAdapter(t)
+	f.positions = []etoro.Position{
+		// The demo shape of an unprotected position: stopLossRate 0.01, isNoStopLoss.
+		{PositionID: 1, InstrumentID: 28, IsBuy: true, Units: 0.03, OpenRate: 30963, Amount: 1000, Leverage: 1,
+			StopLossRate: 0.01, IsNoStopLoss: true, TakeProfitRate: 0, IsNoTakeProfit: true, OpenDateTime: now.Format(time.RFC3339Nano)},
+		{PositionID: 2, InstrumentID: 27, IsBuy: true, Units: 0.17, OpenRate: 6500, Amount: 1100, Leverage: 1,
+			StopLossRate: 6410.3, TakeProfitRate: 6900, OpenDateTime: now.Format(time.RFC3339Nano)},
+	}
+	ps, err := a.Positions(context.Background())
+	if err != nil || len(ps) != 2 {
+		t.Fatal(ps, err)
+	}
+	if ps[0].Protected() || ps[0].StopLoss != 0 || ps[0].TakeProfit != 0 || ps[0].StopType != "" {
+		t.Fatalf("placeholder stop must read as none: %+v", ps[0])
+	}
+	if !ps[1].Protected() || ps[1].StopLoss != 6410.3 || ps[1].TakeProfit != 6900 || ps[1].StopType != broker.StopFixed {
+		t.Fatalf("protected position: %+v", ps[1])
+	}
+	f.history = [][]etoro.ClosedTrade{{
+		{PositionID: 3, InstrumentID: 27, IsBuy: true, OpenRate: 6500, CloseRate: 6410.25, StopLossRate: 6410.3, TakeProfitRate: 0, Units: 0.17, Investment: 1100, NetProfit: -15.3},
+		{PositionID: 4, InstrumentID: 28, IsBuy: true, OpenRate: 30000, CloseRate: 30500, StopLossRate: 0.01},
+	}}
+	cps, err := a.ClosedPositions(context.Background(), now.Add(-24*time.Hour))
+	if err != nil || len(cps) != 2 {
+		t.Fatal(cps, err)
+	}
+	if cps[0].StopLoss != 6410.3 || cps[0].TakeProfit != 0 || cps[1].StopLoss != 0 {
+		t.Fatalf("history protection: %+v %+v", cps[0], cps[1])
+	}
+}
+
+func protectReq(ref string) broker.ProtectionRequest {
+	return broker.ProtectionRequest{Instrument: nsdq, PositionID: "3877532010", StopLoss: 29145.2, TakeProfit: 31021.1, ClientRef: ref}
+}
+
+func TestSetProtectionExecutes(t *testing.T) {
+	a, f, now := newAdapter(t)
+	if _, err := a.Open(context.Background(), openReq("r1", *now)); err != nil {
+		t.Fatal(err)
+	}
+	f.updateLag = 2 // the portfolio shows the edit on the third read
+	res, err := a.SetProtection(context.Background(), protectReq("ui-nsdq100-2026-10-19-protect-1"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Status != broker.StatusExecuted || res.OperationID == "" || res.PositionID != "3877532010" {
+		t.Fatalf("result %+v", res)
+	}
+	if res.Position.StopLoss != 29145.2 || res.Position.TakeProfit != 31021.1 || res.Position.StopType != broker.StopFixed {
+		t.Fatalf("position read back %+v", res.Position)
+	}
+	if len(f.updates) != 1 || f.updates[0].StopLossType != etoro.StopFixed || *f.updates[0].StopLossRate != 29145.2 || *f.updates[0].TakeProfitRate != 31021.1 || f.updates[0].ClearTakeProfit != nil {
+		t.Fatalf("request sent %+v", f.updates)
+	}
+	if now.Sub(time.Date(2026, 10, 12, 13, 35, 0, 0, time.UTC)) != 2*a.Poll {
+		t.Fatalf("polled %v, want two sleeps", now.Sub(time.Date(2026, 10, 12, 13, 35, 0, 0, time.UTC)))
+	}
+}
+
+func TestSetProtectionPendingAfterWait(t *testing.T) {
+	a, f, now := newAdapter(t)
+	if _, err := a.Open(context.Background(), openReq("r1", *now)); err != nil {
+		t.Fatal(err)
+	}
+	f.updateLag = 1000
+	res, err := a.SetProtection(context.Background(), protectReq("p"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Status != broker.StatusPending || res.Position.ID != "3877532010" || res.Position.StopLoss != 0 {
+		t.Fatalf("result %+v", res)
+	}
+	if len(f.updates) != 1 {
+		t.Fatalf("the edit must be sent once, got %d", len(f.updates))
+	}
+}
+
+func TestSetProtectionStopOnly(t *testing.T) {
+	a, f, now := newAdapter(t)
+	if _, err := a.Open(context.Background(), openReq("r1", *now)); err != nil {
+		t.Fatal(err)
+	}
+	req := protectReq("p")
+	req.TakeProfit = 0
+	res, err := a.SetProtection(context.Background(), req)
+	if err != nil || res.Status != broker.StatusExecuted || res.Position.TakeProfit != 0 {
+		t.Fatalf("%+v %v", res, err)
+	}
+	if f.updates[0].TakeProfitRate != nil {
+		t.Fatal("a stop-only edit must not touch the take profit")
+	}
+	// Clear the target.
+	req = broker.ProtectionRequest{Instrument: nsdq, PositionID: "3877532010", ClearTakeProfit: true, ClientRef: "c"}
+	res, err = a.SetProtection(context.Background(), req)
+	if err != nil || res.Status != broker.StatusExecuted || f.updates[1].ClearTakeProfit == nil || f.updates[1].StopLossRate != nil {
+		t.Fatalf("%+v %v %+v", res, err, f.updates[1])
+	}
+}
+
+func TestSetProtectionRejections(t *testing.T) {
+	a, f, now := newAdapter(t)
+	// Unknown position: 404 -> ErrPositionNotOpen, rejected.
+	res, err := a.SetProtection(context.Background(), protectReq("p"))
+	if !errors.Is(err, broker.ErrPositionNotOpen) || res.Status != broker.StatusRejected {
+		t.Fatalf("404: %+v %v", res, err)
+	}
+	// Closed position: 409.
+	if _, err := a.Open(context.Background(), openReq("r1", *now)); err != nil {
+		t.Fatal(err)
+	}
+	f.updateErr = &etoro.APIError{StatusCode: 409, Message: "Position is closed and cannot be edited."}
+	res, err = a.SetProtection(context.Background(), protectReq("p"))
+	if !errors.Is(err, broker.ErrPositionNotOpen) || res.Status != broker.StatusRejected || res.Error == "" {
+		t.Fatalf("409: %+v %v", res, err)
+	}
+	// 503: may have landed, never re-sent.
+	f.updateErr = &etoro.APIError{StatusCode: 503}
+	f.updates = nil
+	res, err = a.SetProtection(context.Background(), protectReq("p"))
+	if !errors.Is(err, broker.ErrOutcomeUnknown) || res.Status != broker.StatusUnknown || len(f.updates) != 1 {
+		t.Fatalf("503: %+v %v updates %d", res, err, len(f.updates))
+	}
+	// A plain 400 is a definite rejection without ErrPositionNotOpen.
+	f.updateErr = &etoro.APIError{StatusCode: 400, Message: "stop loss too close"}
+	res, err = a.SetProtection(context.Background(), protectReq("p"))
+	if err == nil || errors.Is(err, broker.ErrPositionNotOpen) || errors.Is(err, broker.ErrOutcomeUnknown) || res.Status != broker.StatusRejected {
+		t.Fatalf("400: %+v %v", res, err)
+	}
+	// Local validation.
+	f.updateErr = nil
+	f.updates = nil
+	bad := []broker.ProtectionRequest{
+		{Instrument: nsdq, PositionID: "1", ClientRef: "x"},                // nothing to change
+		{Instrument: nsdq, PositionID: "", StopLoss: 1, ClientRef: "x"},    // no position
+		{Instrument: nsdq, PositionID: "1", StopLoss: 1},                   // no ref
+		{Instrument: nsdq, PositionID: "abc", StopLoss: 1, ClientRef: "x"}, // not numeric
+		{Instrument: nsdq, PositionID: "1", TakeProfit: 1, ClearTakeProfit: true, ClientRef: "x"},
+		{Instrument: nsdq, PositionID: "1", StopLoss: 1, StopType: "ratchet", ClientRef: "x"},
+	}
+	for i, r := range bad {
+		if _, err := a.SetProtection(context.Background(), r); !errors.Is(err, broker.ErrInvalidRequest) {
+			t.Errorf("bad %d: %v", i, err)
+		}
+	}
+	if len(f.updates) != 0 {
+		t.Fatal("invalid requests reached the client")
 	}
 }

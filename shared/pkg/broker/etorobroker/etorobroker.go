@@ -41,6 +41,7 @@ type Client interface {
 	GetPortfolio(ctx context.Context) (*etoro.Portfolio, error)
 	Costs(ctx context.Context, req etoro.OrderRequest) (etoro.CostPreview, error)
 	TradingHistory(ctx context.Context, minDate time.Time, page, pageSize int) ([]etoro.ClosedTrade, error)
+	UpdatePosition(ctx context.Context, positionID int64, req etoro.UpdatePositionRequest, requestID string) (etoro.UpdatePositionAccepted, error)
 }
 
 // Adapter implements broker.Broker on eToro.
@@ -60,8 +61,9 @@ func New(c Client) *Adapter {
 }
 
 var (
-	_ broker.Broker        = (*Adapter)(nil)
-	_ broker.HistoryReader = (*Adapter)(nil)
+	_ broker.Broker           = (*Adapter)(nil)
+	_ broker.HistoryReader    = (*Adapter)(nil)
+	_ broker.ProtectionEditor = (*Adapter)(nil)
 )
 
 // Venue implements broker.Broker.
@@ -369,25 +371,139 @@ func (a *Adapter) Positions(ctx context.Context) ([]broker.Position, error) {
 		if pos.MirrorID != 0 {
 			continue
 		}
-		side := broker.Long
-		if !pos.IsBuy {
-			side = broker.Short
-		}
-		out = append(out, broker.Position{
-			ID:            strconv.FormatInt(pos.PositionID, 10),
-			Instrument:    broker.Instrument{Venue: Venue, ID: pos.InstrumentID},
-			Side:          side,
-			Units:         pos.Units,
-			OpenRate:      pos.OpenRate,
-			Amount:        pos.Amount,
-			Leverage:      pos.Leverage,
-			OpenedAt:      pos.OpenedAt(),
-			UnrealizedPnL: pos.UnrealizedPnL.PnL,
-			Fees:          pos.TotalFees,
-			Exposure:      pos.UnrealizedPnL.ExposureInAccountCurrency,
-		})
+		out = append(out, toPosition(pos))
 	}
 	return out, nil
+}
+
+// toPosition maps a portfolio position. eToro reports stopLossRate 0.01
+// (and isNoStopLoss) on a position with no stop: that reads as 0 here.
+func toPosition(pos etoro.Position) broker.Position {
+	side := broker.Long
+	if !pos.IsBuy {
+		side = broker.Short
+	}
+	out := broker.Position{
+		ID:            strconv.FormatInt(pos.PositionID, 10),
+		Instrument:    broker.Instrument{Venue: Venue, ID: pos.InstrumentID},
+		Side:          side,
+		Units:         pos.Units,
+		OpenRate:      pos.OpenRate,
+		Amount:        pos.Amount,
+		Leverage:      pos.Leverage,
+		OpenedAt:      pos.OpenedAt(),
+		UnrealizedPnL: pos.UnrealizedPnL.PnL,
+		Fees:          pos.TotalFees,
+		Exposure:      pos.UnrealizedPnL.ExposureInAccountCurrency,
+	}
+	if !pos.IsNoStopLoss && pos.StopLossRate > etoro.NoStopLossRate {
+		out.StopLoss, out.StopType = pos.StopLossRate, broker.StopFixed
+	}
+	if !pos.IsNoTakeProfit && pos.TakeProfitRate > 0 {
+		out.TakeProfit = pos.TakeProfitRate
+	}
+	return out
+}
+
+// SetProtection implements broker.ProtectionEditor: PATCH the position's
+// stop loss / take profit (x-request-id RequestIDFor(ClientRef)), then
+// poll the portfolio up to Wait until the position shows the requested
+// rates. eToro's 404 (unknown position) and 409 (closed) are definite
+// rejections surfaced as ErrPositionNotOpen; a transport error, 5xx or 429
+// is ErrOutcomeUnknown (the edit may have landed: read Positions). The
+// request is never re-sent here.
+func (a *Adapter) SetProtection(ctx context.Context, req broker.ProtectionRequest) (broker.ProtectionResult, error) {
+	res := broker.ProtectionResult{PositionID: req.PositionID, ClientRef: req.ClientRef, Status: broker.StatusUnknown}
+	if err := req.Validate(); err != nil {
+		return res, err
+	}
+	pid, err := strconv.ParseInt(req.PositionID, 10, 64)
+	if err != nil || pid <= 0 {
+		return res, errors.Join(broker.ErrInvalidRequest, fmt.Errorf("etoro needs a numeric position id, got %q", req.PositionID))
+	}
+	var er etoro.UpdatePositionRequest
+	if req.StopLoss > 0 {
+		sl := req.StopLoss
+		er.StopLossRate = &sl
+		er.StopLossType = req.StopType
+		if er.StopLossType == "" {
+			er.StopLossType = etoro.StopFixed
+		}
+	}
+	if req.TakeProfit > 0 {
+		tp := req.TakeProfit
+		er.TakeProfitRate = &tp
+	}
+	if req.ClearTakeProfit {
+		yes := true
+		er.ClearTakeProfit = &yes
+	}
+	acc, err := a.c.UpdatePosition(ctx, pid, er, etoro.RequestIDFor(req.ClientRef))
+	if err != nil {
+		res.Error, res.ErrorCode = err.Error(), apiCode(err)
+		switch {
+		case etoro.IsNotFound(err) || etoro.StatusCode(err) == 409 || notOpenCodes[apiCode(err)]:
+			res.Status = broker.StatusRejected
+			return res, errors.Join(broker.ErrPositionNotOpen, err)
+		case mayHaveLanded(err):
+			return res, errors.Join(broker.ErrOutcomeUnknown, err)
+		}
+		res.Status = broker.StatusRejected
+		return res, err
+	}
+	res.OperationID = acc.OperationID
+	res.Status = broker.StatusPending
+	res.At = a.now().UTC()
+
+	// The edit is asynchronous: wait for the portfolio to show it.
+	deadline := a.now().Add(a.Wait)
+	for {
+		p, perr := a.c.GetPortfolio(ctx)
+		if perr == nil {
+			if pos := p.PositionByID(pid); pos != nil {
+				res.Position = toPosition(*pos)
+				if protectionApplied(req, res.Position) {
+					res.Status = broker.StatusExecuted
+					res.At = a.now().UTC()
+					return res, nil
+				}
+			} else if len(p.Positions) > 0 || p.Credit > 0 {
+				// A real read without the position: it was closed meanwhile.
+				res.Status = broker.StatusRejected
+				res.Error = "position " + req.PositionID + " is no longer open"
+				return res, fmt.Errorf("%w: %s", broker.ErrPositionNotOpen, res.Error)
+			}
+		}
+		if !a.now().Before(deadline) {
+			return res, nil // accepted, not yet visible: pending
+		}
+		if err := a.sleep(ctx, a.Poll); err != nil {
+			return res, nil
+		}
+	}
+}
+
+// protectionApplied reports whether the position shows every rate the
+// request asked for (to the cent; eToro may round).
+func protectionApplied(req broker.ProtectionRequest, pos broker.Position) bool {
+	const tol = 0.006
+	if req.StopLoss > 0 && !(pos.StopLoss > 0 && abs(pos.StopLoss-req.StopLoss) <= tol) {
+		return false
+	}
+	if req.TakeProfit > 0 && !(pos.TakeProfit > 0 && abs(pos.TakeProfit-req.TakeProfit) <= tol) {
+		return false
+	}
+	if req.ClearTakeProfit && pos.TakeProfit > 0 {
+		return false
+	}
+	return true
+}
+
+func abs(x float64) float64 {
+	if x < 0 {
+		return -x
+	}
+	return x
 }
 
 // historyPages bounds ClosedPositions (200 rows per page).
@@ -413,6 +529,7 @@ func (a *Adapter) ClosedPositions(ctx context.Context, since time.Time) ([]broke
 				Side:       side, Units: r.Units, OpenRate: r.OpenRate, CloseRate: r.CloseRate,
 				OpenedAt: parseTime(r.OpenTimestamp), ClosedAt: parseTime(r.CloseTimestamp),
 				Amount: r.Investment, NetProfit: r.NetProfit, Fees: r.Fees,
+				StopLoss: stopOrZero(r.StopLossRate), TakeProfit: r.TakeProfitRate,
 			})
 		}
 		if len(rows) < 200 {
@@ -474,6 +591,14 @@ func apiCode(err error) int {
 	var ae *etoro.APIError
 	if errors.As(err, &ae) {
 		return ae.Code
+	}
+	return 0
+}
+
+// stopOrZero maps eToro's no-stop placeholder (0.01) to 0.
+func stopOrZero(rate float64) float64 {
+	if rate > etoro.NoStopLossRate {
+		return rate
 	}
 	return 0
 }

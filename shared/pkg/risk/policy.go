@@ -62,6 +62,21 @@ type BookLimits struct {
 	// RequireMarketOpen blocks every order, closes included, while
 	// State.MarketClosed is set (the executor acts in the cash session only).
 	RequireMarketOpen bool `json:"require_market_open,omitempty"`
+
+	// Protection (added 2026-10-19, docs/etoro/ETORO-ASSISTED-TRADE-PROTECTION-PLAN-2026-10-19.md).
+	// These apply to orders that add exposure and carry Order.StopLoss /
+	// Order.TakeProfit; closes are never trapped by them. Fractions of the
+	// order price; zero disables.
+	//
+	// RequireStopLoss blocks an open that carries no stop loss.
+	RequireStopLoss bool `json:"require_stop_loss,omitempty"`
+	// MinStopLossPct / MaxStopLossPct bound the stop's distance from the
+	// order price: too tight sits in the spread, too wide is not a stop.
+	MinStopLossPct float64 `json:"min_stop_loss_pct,omitempty"`
+	MaxStopLossPct float64 `json:"max_stop_loss_pct,omitempty"`
+	// MaxLossPctEquity caps the loss at the stop, qty x (price - stop), as
+	// a fraction of State.Equity. Needs State.Equity.
+	MaxLossPctEquity float64 `json:"max_loss_pct_equity,omitempty"`
 }
 
 // PortfolioLimits apply across every book (firm-wide). Zero disables.
@@ -118,6 +133,10 @@ func DefaultPolicy() Policy {
 // instrument per trading day, an order notional cap a little above the
 // 1,100 USD forward-test size, total exposure at most 5 % of equity, the
 // cash session only, and the same 10 % fat-finger guard as the default.
+//
+// It carries no stop-loss rule: the executor's rule positions are opened
+// without one until the protection plan's phase C. Use
+// EtoroDemoProtectedPolicy where a stop is required.
 func EtoroDemoPolicy() Policy {
 	cfd := BookLimits{
 		MaxOrderNotional: 1500, MaxOrdersPerDay: 1, MaxPriceDeviationBps: 1000,
@@ -130,6 +149,24 @@ func EtoroDemoPolicy() Policy {
 		// Anything else on the account is refused outright.
 		Default: BookLimits{MaxOrderNotional: 1, MaxOrdersPerDay: 1, MaxLeverage: 1, RequireMarketOpen: true},
 	}
+}
+
+// EtoroDemoProtectedPolicy is EtoroDemoPolicy plus the protection rules
+// decided on 2026-10-19 (plan §0, §2): an open must carry a stop loss, at
+// most 10 % from the price and losing at most 0.5 % of equity at the stop;
+// no minimum distance here (the venue's minStopLossPercentage and the
+// noise floor live in shared/pkg/stops). The console's assisted opens use
+// it from the plan's phase B; the executor from phase C with -protect.
+func EtoroDemoProtectedPolicy() Policy {
+	p := EtoroDemoPolicy()
+	p.Version = "etoro-demo-2026-10-19"
+	for _, b := range p.BookNames() {
+		l := p.Books[b]
+		l.RequireStopLoss, l.MaxStopLossPct, l.MaxLossPctEquity = true, 0.10, 0.005
+		p.Books[b] = l
+	}
+	p.Default.RequireStopLoss = true
+	return p
 }
 
 // For returns the limits that apply to book.
@@ -164,6 +201,12 @@ func (p Policy) Validate() error {
 			return fmt.Errorf("%s: max_exposure_pct_equity must be >= 0", name)
 		case l.MaxPositionBTC > 0 && l.MaxOrderBTC > l.MaxPositionBTC:
 			return fmt.Errorf("%s: max_order_btc %v exceeds max_position_btc %v", name, l.MaxOrderBTC, l.MaxPositionBTC)
+		case l.MinStopLossPct < 0 || l.MinStopLossPct >= 1 || l.MaxStopLossPct < 0 || l.MaxStopLossPct > 1:
+			return fmt.Errorf("%s: min_stop_loss_pct must be in [0, 1) and max_stop_loss_pct in [0, 1]", name)
+		case l.MaxStopLossPct > 0 && l.MinStopLossPct > l.MaxStopLossPct:
+			return fmt.Errorf("%s: min_stop_loss_pct %v exceeds max_stop_loss_pct %v", name, l.MinStopLossPct, l.MaxStopLossPct)
+		case l.MaxLossPctEquity < 0 || l.MaxLossPctEquity >= 1:
+			return fmt.Errorf("%s: max_loss_pct_equity must be in [0, 1)", name)
 		}
 		return nil
 	}

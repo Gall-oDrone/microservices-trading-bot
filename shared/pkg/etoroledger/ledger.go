@@ -47,6 +47,22 @@ const (
 	ActionClose   = "close"
 	ActionNone    = "none"
 	ActionBlocked = "blocked"
+	// ActionProtect (2026-10-19): the position's stop loss / take profit
+	// was set or moved (console protect, or the executor's daily ratchet).
+	// Not a leg: it adds no exposure and LegsOn does not count it.
+	ActionProtect = "protect"
+	// ActionVenueClose (2026-10-19): eToro closed the position (stop loss,
+	// take profit, margin call), found through the trading history; the
+	// record's Order has Kind ActionVenueClose and the fill, PositionAfter
+	// is flat, and Demo.VenueClose says which.
+	ActionVenueClose = "venue_close"
+)
+
+// Venue-close kinds (Demo.VenueClose.Kind).
+const (
+	VenueCloseStoppedOut = "stopped_out"
+	VenueCloseTookProfit = "took_profit"
+	VenueCloseOther      = "venue_close" // margin call, manual, unknown
 )
 
 // Sources of a record.
@@ -164,10 +180,54 @@ type Position struct {
 	Amount     float64 `json:"amount,omitempty"`
 	OpenRate   float64 `json:"open_rate,omitempty"`
 	OpenedAt   string  `json:"opened_at,omitempty"`
+	// StopLossRate / TakeProfitRate are the protective rates the position
+	// carries at eToro after this record (0 = none); StopType "fixed" or
+	// "trailing". Added 2026-10-19; older lines read as unprotected.
+	StopLossRate   float64 `json:"stop_loss_rate,omitempty"`
+	TakeProfitRate float64 `json:"take_profit_rate,omitempty"`
+	StopType       string  `json:"stop_type,omitempty"`
 }
+
+// Protected reports whether the position carries a stop loss.
+func (p Position) Protected() bool { return p.State == "long" && p.StopLossRate > 0 }
 
 // Flat is the empty position.
 func Flat() Position { return Position{State: "flat"} }
+
+// Protection describes an ActionProtect record: what the stop and target
+// were before and after, who asked for it and on what basis.
+type Protection struct {
+	// Profile is the stops.Profile used (conservative | moderate |
+	// aggressive | custom | disaster | ratchet).
+	Profile string `json:"profile"`
+	// ATR / ATRPct are the volatility the levels came from (0 when custom).
+	ATR    float64 `json:"atr,omitempty"`
+	ATRPct float64 `json:"atr_pct,omitempty"`
+	// StopLossBefore / TakeProfitBefore are the rates held before the edit.
+	StopLossBefore   float64 `json:"stop_loss_before,omitempty"`
+	TakeProfitBefore float64 `json:"take_profit_before,omitempty"`
+	// MaxLossUSD is units x (open rate - stop) after the edit.
+	MaxLossUSD float64 `json:"max_loss_usd,omitempty"`
+	Reason     string  `json:"reason,omitempty"`
+	// OperationID is eToro's correlation id for the edit.
+	OperationID string `json:"operation_id,omitempty"`
+}
+
+// VenueClose describes an ActionVenueClose record.
+type VenueClose struct {
+	Kind string `json:"kind"` // VenueCloseStoppedOut | VenueCloseTookProfit | VenueCloseOther
+	// StopLossRate / TakeProfitRate were the position's protective rates;
+	// CloseRate is where eToro closed it; GapBps is how far the close rate
+	// was from the matching rate (positive = worse than the rate).
+	StopLossRate   float64 `json:"stop_loss_rate,omitempty"`
+	TakeProfitRate float64 `json:"take_profit_rate,omitempty"`
+	CloseRate      float64 `json:"close_rate"`
+	GapBps         float64 `json:"gap_bps,omitempty"`
+	ClosedAt       string  `json:"closed_at"`
+	// NetProfit and Fees are the history's figures (account currency).
+	NetProfit float64 `json:"net_profit"`
+	Fees      float64 `json:"fees"`
+}
 
 // Account is the demo account before the run's order.
 type Account struct {
@@ -204,9 +264,12 @@ type RiskCheck struct {
 	Halt          *risk.HaltState `json:"halt,omitempty"`
 }
 
-// Order is one demo order (open or close) and its outcome.
+// Order is one demo order (open or close) and its outcome. Since
+// 2026-10-19 it also carries a protect (Kind ActionProtect: OrderID is
+// eToro's operationId, no fill) and a venue close (Kind ActionVenueClose:
+// the fill as the trading history reports it, no ClientRef of ours).
 type Order struct {
-	Kind        string    `json:"kind"` // ActionOpen | ActionClose
+	Kind        string    `json:"kind"` // ActionOpen | ActionClose | ActionProtect | ActionVenueClose
 	ClientRef   string    `json:"client_ref"`
 	RequestID   string    `json:"request_id"` // x-request-id sent to eToro
 	OrderID     string    `json:"order_id,omitempty"`
@@ -238,7 +301,7 @@ type Order struct {
 type Demo struct {
 	Env            string     `json:"env"` // "demo"
 	Target         string     `json:"target"`
-	Action         string     `json:"action"` // ActionOpen | ActionClose | ActionNone | ActionBlocked
+	Action         string     `json:"action"` // ActionOpen | ActionClose | ActionNone | ActionBlocked | ActionProtect | ActionVenueClose
 	PositionBefore Position   `json:"position_before"`
 	PositionAfter  Position   `json:"position_after"`
 	Account        *Account   `json:"account,omitempty"`
@@ -250,6 +313,10 @@ type Demo struct {
 	// this run's order (position totalFees), account currency.
 	FinancingToDate float64  `json:"financing_to_date,omitempty"`
 	Notes           []string `json:"notes,omitempty"`
+	// Protection is set on ActionProtect records (and on an open that
+	// carried a stop); VenueClose on ActionVenueClose records. 2026-10-19.
+	Protection *Protection `json:"protection,omitempty"`
+	VenueClose *VenueClose `json:"venue_close,omitempty"`
 }
 
 // Ledger is keyed by (book, bar_date) for the executor's lines (a decision
@@ -359,13 +426,21 @@ func Newer(a, b Record) bool {
 
 // LegsOn counts the book's demo orders on a fill date, the executor's and
 // the console's alike: one leg per instrument per trading day is policy
-// (risk.EtoroDemoPolicy MaxOrdersPerDay), whoever sends it.
+// (risk.EtoroDemoPolicy MaxOrdersPerDay), whoever sends it. Only orders we
+// sent that change exposure count: an open or a close. A protect (an edit
+// of the stop) and a venue close (eToro's own exit) are not legs, so a
+// stop-out never blocks the re-entry the rule may ask for the same day.
 func LegsOn(recs []Record, book, fillDate string) int {
 	n := 0
 	for _, r := range recs {
-		if r.Book == book && r.Decision.FillDate == fillDate && r.Demo != nil && r.Demo.Order != nil {
-			n++
+		if r.Book != book || r.Decision.FillDate != fillDate || r.Demo == nil || r.Demo.Order == nil {
+			continue
 		}
+		switch r.Demo.Order.Kind {
+		case ActionProtect, ActionVenueClose:
+			continue
+		}
+		n++
 	}
 	return n
 }

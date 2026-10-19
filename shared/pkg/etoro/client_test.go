@@ -521,21 +521,85 @@ func TestRoutesDemoVsReal(t *testing.T) {
 		{"close-info", demo.closeOrderInfoPath(9), real.closeOrderInfoPath(9)},
 		{"pnl", demo.pnlPath(), real.pnlPath()},
 		{"history", demo.historyPath(), real.historyPath()},
+		{"update-position", demo.updatePositionPath(11), real.updatePositionPath(11)},
 	}
 	want := map[string][2]string{
-		"orders":      {"/api/v2/trading/execution/demo/orders", "/api/v2/trading/execution/orders"},
-		"lookup":      {"/api/v2/trading/info/demo/orders:lookup", "/api/v2/trading/info/orders:lookup"},
-		"costs":       {"/api/v2/trading/info/demo/costs", "/api/v2/trading/info/costs"},
-		"eligibility": {"/api/v2/trading/info/demo/eligibility", "/api/v2/trading/info/eligibility"},
-		"close":       {"/api/v1/trading/execution/demo/market-close-orders/positions/7", "/api/v1/trading/execution/market-close-orders/positions/7"},
-		"close-info":  {"/api/v1/trading/info/demo/close-orders/9", "/api/v1/trading/info/real/close-orders/9"},
-		"pnl":         {"/api/v1/trading/info/demo/pnl", "/api/v1/trading/info/real/pnl"},
-		"history":     {"/api/v1/trading/info/trade/demo/history", "/api/v1/trading/info/trade/history"},
+		"orders":          {"/api/v2/trading/execution/demo/orders", "/api/v2/trading/execution/orders"},
+		"lookup":          {"/api/v2/trading/info/demo/orders:lookup", "/api/v2/trading/info/orders:lookup"},
+		"costs":           {"/api/v2/trading/info/demo/costs", "/api/v2/trading/info/costs"},
+		"eligibility":     {"/api/v2/trading/info/demo/eligibility", "/api/v2/trading/info/eligibility"},
+		"close":           {"/api/v1/trading/execution/demo/market-close-orders/positions/7", "/api/v1/trading/execution/market-close-orders/positions/7"},
+		"close-info":      {"/api/v1/trading/info/demo/close-orders/9", "/api/v1/trading/info/real/close-orders/9"},
+		"pnl":             {"/api/v1/trading/info/demo/pnl", "/api/v1/trading/info/real/pnl"},
+		"history":         {"/api/v1/trading/info/trade/demo/history", "/api/v1/trading/info/trade/history"},
+		"update-position": {"/api/v2/trading/demo/positions/11", "/api/v2/trading/positions/11"},
 	}
 	for _, tc := range cases {
 		if w := want[tc.name]; tc.demo != w[0] || tc.real != w[1] {
 			t.Errorf("%s: demo %s real %s, want %v", tc.name, tc.demo, tc.real, w)
 		}
+	}
+}
+
+func TestUpdatePositionPatch(t *testing.T) {
+	ref := RequestIDFor("ui-nsdq100-2026-10-19-protect-abc123")
+	status := 202
+	c, calls := newTestClient(t, EnvDemo, func(w http.ResponseWriter, r *http.Request, rec recorded) {
+		if status != 202 {
+			writeJSON(w, status, []byte(`{"title":"Conflict","status":409,"detail":"Position is closed and cannot be edited."}`))
+			return
+		}
+		// The documented 202 example shape.
+		writeJSON(w, 202, []byte(`{"operationId":"a1b2c3d4-e5f6-7890-abcd-ef1234567890","positionId":3616683295,"referenceId":"`+rec.header.Get("x-request-id")+`"}`))
+	})
+	sl, tp := 6410.3, 6900.0
+	acc, err := c.UpdatePosition(context.Background(), 3616683295, UpdatePositionRequest{StopLossRate: &sl, TakeProfitRate: &tp, StopLossType: StopFixed}, ref)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := (*calls)[0]
+	if got.method != "PATCH" || got.path != "/api/v2/trading/demo/positions/3616683295" {
+		t.Fatalf("%s %s", got.method, got.path)
+	}
+	if string(got.body) != `{"stopLossRate":6410.3,"takeProfitRate":6900,"stopLossType":"fixed"}` {
+		t.Fatalf("body %s (clear flags must be omitted when unset)", got.body)
+	}
+	if got.header.Get("x-request-id") != ref || acc.ReferenceID != ref || acc.PositionID != 3616683295 || acc.OperationID == "" {
+		t.Fatalf("accepted %+v header %q", acc, got.header.Get("x-request-id"))
+	}
+
+	// A closed position: 409, a definite answer, never retried.
+	status = 409
+	*calls = nil
+	_, err = c.UpdatePosition(context.Background(), 3616683295, UpdatePositionRequest{StopLossRate: &sl}, ref)
+	if err == nil || len(*calls) != 1 || StatusCode(err) != 409 || IsRetryable(err) {
+		t.Fatalf("409: err %v calls %d", err, len(*calls))
+	}
+
+	// Local validation never reaches the server.
+	*calls = nil
+	yes, zero := true, 0.0
+	bad := []UpdatePositionRequest{
+		{},
+		{StopLossRate: &zero},
+		{StopLossType: "ratchet"},
+		{StopLossRate: &sl, ClearStopLoss: &yes},
+		{TakeProfitRate: &tp, ClearTakeProfit: &yes},
+	}
+	for i, r := range bad {
+		if _, err := c.UpdatePosition(context.Background(), 1, r, ""); err == nil {
+			t.Errorf("bad request %d accepted: %+v", i, r)
+		}
+	}
+	if _, err := c.UpdatePosition(context.Background(), 0, UpdatePositionRequest{StopLossRate: &sl}, ""); err == nil {
+		t.Error("position id 0 accepted")
+	}
+	if len(*calls) != 0 {
+		t.Fatalf("invalid requests were sent: %d calls", len(*calls))
+	}
+	// Clearing is a valid request on its own.
+	if err := (UpdatePositionRequest{ClearTakeProfit: &yes}).Validate(); err != nil {
+		t.Fatal(err)
 	}
 }
 

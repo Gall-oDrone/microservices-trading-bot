@@ -2,7 +2,8 @@
 
 Design and implementation plan · 2026-10-19 · branch `feat/etoro` · follows P6 (operations) and P5d
 (assisted trades, [ETORO-DAILY-EXECUTOR.md §8](ETORO-DAILY-EXECUTOR.md#8-assisted-trades-from-the-console-p5d-2026-10-16)).
-Status: **planned, nothing implemented yet**. Each phase below is ticked when it lands.
+Status: **Phase A landed 2026-10-19** (shared packages, behaviour-neutral); B–D not started. Each phase
+below is ticked when it lands.
 
 ## 0. Decisions (taken 2026-10-19)
 
@@ -103,15 +104,15 @@ flowchart LR
 
 ## 4. Phases
 
-### Phase A: foundation (no behaviour change; unit-tested)
+### Phase A: foundation (no behaviour change; unit-tested) — ✅ landed 2026-10-19
 
 | # | Change | Where |
 |---|---|---|
-| A1 | New package `stops`: `ATR(rows, n)`, `Regime(...)`, `Recommend(Input{Entry, Side, Spread, Equity, Units, Bars, Eligibility, Policy}) → map[Profile]Levels`, `Levels{SLRate, SLPct, TPRate, TPPct, MaxLossUSD, TargetUSD, RR, Clamps []string}` | `shared/pkg/stops/` |
-| A2 | eToro client: `UpdatePositionRequest{StopLossRate, TakeProfitRate *float64; StopLossType string; ClearStopLoss, ClearTakeProfit *bool}`, `(*Client).UpdatePosition(ctx, positionID, req, requestID)`, route `/api/v2/trading/{demo\|real}/positions/{id}` (a write: the 18/min write budget, never retried). `stopLossRate ≤ 0.01` on a position reads as *no stop* | `shared/pkg/etoro/trading.go`, `paths.go` |
-| A3 | Broker: `Position` gains `StopLoss, TakeProfit float64` (0 = none); optional interface `ProtectionEditor{ SetProtection(ctx, ProtectionRequest) (ProtectionResult, error) }`; `etorobroker` implements it: PATCH, then poll the portfolio up to `Wait` until the position shows the new rates (same lag handling as an open) | `shared/pkg/broker`, `etorobroker` |
-| A4 | Risk: `BookLimits` + `RequireStopLoss bool`, `MaxStopLossPct`, `MinStopLossPct`, `MaxLossPctEquity`; `Order` + `StopLoss, TakeProfit`; rules `stop_loss_required`, `stop_loss_too_wide`, `stop_loss_too_tight`, `take_profit_below_entry`, `max_loss_pct_equity`; `EtoroDemoPolicy` → `etoro-demo-2026-10-19` with `RequireStopLoss: true, MaxStopLossPct: 0.10, MaxLossPctEquity: 0.005` | `shared/pkg/risk` |
-| A5 | Ledger: `Position` + `StopLossRate, TakeProfitRate float64, StopType string`; `ActionProtect = "protect"`, `ActionVenueClose = "venue_close"`; `Demo.Protection{Before, After Position; Reason, Profile string; ATR, ATRPct float64}`; `LegsOn` **excludes** protect records (no exposure added; must not consume the one-leg-per-day cap). Schema stays `etoro-ledger/v1` (additive, `omitempty`) | `shared/pkg/etoroledger` |
+| A1 ✅ | Package `stops`: `ATR`, `ATRSeries`, `Measure` (ATR% regime vs the 252-day median), `Recommend(Input) → map[Profile]Levels`, `Build` (custom distances), `DisasterStopPct`, `Ratchet`, `HasStop`. `Levels{SLRate, SLPct, TPRate, TPPct, SLATR, TPATR, MaxLossUSD, TargetUSD, RR, Clamps, Feasible, Reason}`. Distances are measured from the mark (current price) and expressed against the entry, so protecting an under-water position works | `shared/pkg/stops/` |
+| A2 ✅ | eToro client: `UpdatePositionRequest`, `UpdatePositionAccepted`, `(*Client).UpdatePosition` on `PATCH /api/v2/trading/{demo\|real}/positions/{id}` (write budget, never retried, local validation), `StopFixed` / `StopTrailing`, `NoStopLossRate = 0.01` | `shared/pkg/etoro/trading.go`, `paths.go` |
+| A3 ✅ | Broker: `Position.StopLoss/TakeProfit/StopType` + `Protected()`, `ClosedPosition.StopLoss/TakeProfit`, `ProtectionRequest` / `ProtectionResult` / `ProtectionEditor`. `etorobroker` maps the 0.01 placeholder to 0 and implements `SetProtection`: PATCH, then poll the portfolio up to `Wait` until the rates show (`executed`), else `pending`; 404/409 → `ErrPositionNotOpen`, 5xx/429/transport → `ErrOutcomeUnknown` | `shared/pkg/broker`, `etorobroker` |
+| A4 ✅ | Risk: `BookLimits.RequireStopLoss / MinStopLossPct / MaxStopLossPct / MaxLossPctEquity`, `Order.StopLoss / TakeProfit`, rules `stop_loss_required`, `stop_loss_invalid`, `stop_loss_too_tight`, `stop_loss_too_wide`, `take_profit_invalid`, `max_loss_pct_equity` (exposure-adding orders only; closes untouched). **Deviation from the first draft:** `EtoroDemoPolicy()` (`etoro-demo-2026-10-10`) is byte-identical, because the live executor opens without a stop until Phase C and a `RequireStopLoss` there would block its next open. The rules live in a new `EtoroDemoProtectedPolicy()` (`etoro-demo-2026-10-19`, `RequireStopLoss`, 10 %, 0.5 % of equity) that ui-api adopts in Phase B and the executor in Phase C with `-protect` | `shared/pkg/risk` |
+| A5 ✅ | Ledger: `Position.StopLossRate / TakeProfitRate / StopType` + `Protected()`; `ActionProtect`, `ActionVenueClose`; `Demo.Protection`, `Demo.VenueClose` (`stopped_out` / `took_profit` / `venue_close`, gap in bps, history P&L); `LegsOn` counts open/close orders only. Schema stays `etoro-ledger/v1`, every addition `omitempty` (verified by a round-trip test) | `shared/pkg/etoroledger` |
 
 ### Phase B: assisted trade (recommend, open with SL/TP, protect an existing position)
 

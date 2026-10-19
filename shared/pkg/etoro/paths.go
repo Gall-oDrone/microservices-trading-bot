@@ -45,6 +45,13 @@ func (c *Client) closeOrderInfoPath(orderID int64) string {
 		"/api/v1/trading/info/real/close-orders/%d"), orderID)
 }
 
+// updatePositionPath: PATCH stop loss / take profit of an open position
+// (portal OpenAPI "Modify stop-loss and take-profit settings on an open
+// position", read 2026-10-19; not yet exercised on the demo account).
+func (c *Client) updatePositionPath(positionID int64) string {
+	return fmt.Sprintf(c.pick("/api/v2/trading/demo/positions/%d", "/api/v2/trading/positions/%d"), positionID)
+}
+
 func (c *Client) pnlPath() string {
 	return c.pick("/api/v1/trading/info/demo/pnl", "/api/v1/trading/info/real/pnl")
 }

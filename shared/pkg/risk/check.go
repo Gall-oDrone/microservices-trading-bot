@@ -34,6 +34,14 @@ const (
 	RuleMaxLeverage          = "max_leverage"
 	RuleMaxExposurePctEquity = "max_exposure_pct_equity"
 	RuleMarketClosed         = "market_closed"
+
+	// Protection rules (2026-10-19), on orders that add exposure.
+	RuleStopLossRequired  = "stop_loss_required"
+	RuleStopLossInvalid   = "stop_loss_invalid"
+	RuleStopLossTooTight  = "stop_loss_too_tight"
+	RuleStopLossTooWide   = "stop_loss_too_wide"
+	RuleTakeProfitInvalid = "take_profit_invalid"
+	RuleMaxLossPctEquity  = "max_loss_pct_equity"
 )
 
 // Finding is one limit that was hit (or nearly hit, for warnings).
@@ -57,6 +65,10 @@ type Order struct {
 	RefPrice float64 `json:"ref_price"`
 	// Leverage of a position-based order (0: not applicable).
 	Leverage int `json:"leverage,omitempty"`
+	// StopLoss / TakeProfit are the protective rates an open carries (0:
+	// none). Checked by the protection rules on orders that add exposure.
+	StopLoss   float64 `json:"stop_loss,omitempty"`
+	TakeProfit float64 `json:"take_profit,omitempty"`
 }
 
 // State is what the executor holds before the order. The fields added on
@@ -158,6 +170,7 @@ func Check(p Policy, o Order, s State) Decision {
 					after, pct*100, s.Equity, l.MaxExposurePctEquity*100)
 			}
 		}
+		f = append(f, checkProtection(l, o, s)...)
 	}
 	if dev, ok := DeviationBps(o.Price, o.RefPrice); ok && l.MaxPriceDeviationBps > 0 && dev > l.MaxPriceDeviationBps {
 		block(RulePriceDeviation, l.MaxPriceDeviationBps, dev, "price %.2f is %.0f bps from reference %.2f (max %.0f)", o.Price, dev, o.RefPrice, l.MaxPriceDeviationBps)
@@ -172,6 +185,54 @@ func DeviationBps(price, ref float64) (float64, bool) {
 		return 0, false
 	}
 	return math.Abs(price/ref-1) * 1e4, true
+}
+
+// checkProtection applies the stop-loss / take-profit rules to an order
+// that adds exposure. Long orders only carry meaning here (a buy's stop is
+// below the price, its target above); a sell that adds exposure (a short)
+// is checked with the signs reversed.
+func checkProtection(l BookLimits, o Order, s State) []Finding {
+	var f []Finding
+	block := func(rule string, limit, value float64, format string, args ...any) {
+		f = append(f, Finding{Rule: rule, Severity: Block, Limit: limit, Value: value, Message: fmt.Sprintf(format, args...)})
+	}
+	if o.StopLoss <= 0 {
+		if l.RequireStopLoss {
+			block(RuleStopLossRequired, 1, 0, "an open on %s must carry a stop loss (policy)", o.Book)
+		}
+	} else if o.Price > 0 {
+		dist := (o.Price - o.StopLoss) / o.Price // fraction below the price for a buy
+		if o.Side == "sell" {
+			dist = -dist
+		}
+		switch {
+		case math.IsNaN(o.StopLoss) || math.IsInf(o.StopLoss, 0) || dist <= 0:
+			block(RuleStopLossInvalid, 0, o.StopLoss, "stop loss %.2f is not on the losing side of the %s price %.2f", o.StopLoss, o.Side, o.Price)
+		default:
+			if l.MinStopLossPct > 0 && dist < l.MinStopLossPct-1e-12 {
+				block(RuleStopLossTooTight, l.MinStopLossPct, dist, "stop loss %.2f is %.2f%% from the price, under the %.2f%% minimum", o.StopLoss, dist*100, l.MinStopLossPct*100)
+			}
+			if l.MaxStopLossPct > 0 && dist > l.MaxStopLossPct+1e-12 {
+				block(RuleStopLossTooWide, l.MaxStopLossPct, dist, "stop loss %.2f is %.2f%% from the price, over the %.2f%% maximum", o.StopLoss, dist*100, l.MaxStopLossPct*100)
+			}
+			if l.MaxLossPctEquity > 0 && s.Equity > 0 {
+				loss := o.QtyBTC * math.Abs(o.Price-o.StopLoss)
+				if pct := loss / s.Equity; pct > l.MaxLossPctEquity+1e-12 {
+					block(RuleMaxLossPctEquity, l.MaxLossPctEquity, pct, "loss at the stop %.2f is %.2f%% of equity %.2f (max %.2f%%)", loss, pct*100, s.Equity, l.MaxLossPctEquity*100)
+				}
+			}
+		}
+	}
+	if o.TakeProfit > 0 && o.Price > 0 {
+		gain := (o.TakeProfit - o.Price) / o.Price
+		if o.Side == "sell" {
+			gain = -gain
+		}
+		if math.IsNaN(o.TakeProfit) || math.IsInf(o.TakeProfit, 0) || gain <= 0 {
+			block(RuleTakeProfitInvalid, 0, o.TakeProfit, "take profit %.2f is not on the winning side of the %s price %.2f", o.TakeProfit, o.Side, o.Price)
+		}
+	}
+	return f
 }
 
 // AssessDrawdown returns a warning when the observed max drawdown (fraction)

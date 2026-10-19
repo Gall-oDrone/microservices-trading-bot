@@ -370,6 +370,88 @@ func (c *Client) GetCloseOrder(ctx context.Context, orderID int64) (CloseOrderIn
 	return info, err
 }
 
+// Stop-loss types of UpdatePositionRequest.StopLossType.
+const (
+	StopFixed    = "fixed"
+	StopTrailing = "trailing" // only where eligibility allowTrailingStopLoss is true
+)
+
+// NoStopLossRate is what a position with no stop reports as stopLossRate
+// (demo evidence 2026-10-10). A rate at or below it means no stop.
+const NoStopLossRate = 0.01
+
+// UpdatePositionRequest is the body of PATCH
+// /api/v2/trading[/demo]/positions/{positionId} (portal OpenAPI v1.395,
+// read 2026-10-19): set or clear the stop loss and take profit of an open
+// position. At least one field must be set. Deepening a stop beyond the
+// allowed maximum moves funds from the balance into the position's margin.
+type UpdatePositionRequest struct {
+	StopLossRate    *float64 `json:"stopLossRate,omitempty"`
+	TakeProfitRate  *float64 `json:"takeProfitRate,omitempty"`
+	StopLossType    string   `json:"stopLossType,omitempty"` // StopFixed | StopTrailing
+	ClearStopLoss   *bool    `json:"clearStopLoss,omitempty"`
+	ClearTakeProfit *bool    `json:"clearTakeProfit,omitempty"`
+}
+
+// Validate applies the documented rules locally.
+func (r UpdatePositionRequest) Validate() error {
+	if r.StopLossRate == nil && r.TakeProfitRate == nil && r.StopLossType == "" && r.ClearStopLoss == nil && r.ClearTakeProfit == nil {
+		return fmt.Errorf("update position: at least one of stopLossRate, takeProfitRate, stopLossType, clearStopLoss, clearTakeProfit is required")
+	}
+	for name, p := range map[string]*float64{"stopLossRate": r.StopLossRate, "takeProfitRate": r.TakeProfitRate} {
+		if p != nil && (!(*p > 0) || math.IsInf(*p, 0)) {
+			return fmt.Errorf("update position: %s must be a positive number", name)
+		}
+	}
+	if r.StopLossType != "" && r.StopLossType != StopFixed && r.StopLossType != StopTrailing {
+		return fmt.Errorf("update position: stopLossType must be %s or %s, got %q", StopFixed, StopTrailing, r.StopLossType)
+	}
+	if r.StopLossRate != nil && r.ClearStopLoss != nil && *r.ClearStopLoss {
+		return fmt.Errorf("update position: stopLossRate and clearStopLoss are exclusive")
+	}
+	if r.TakeProfitRate != nil && r.ClearTakeProfit != nil && *r.ClearTakeProfit {
+		return fmt.Errorf("update position: takeProfitRate and clearTakeProfit are exclusive")
+	}
+	return nil
+}
+
+// UpdatePositionAccepted is the 202 answer: the edit is queued; read the
+// position back (GetPortfolio) to see the rates it holds.
+type UpdatePositionAccepted struct {
+	OperationID string `json:"operationId"`
+	PositionID  int64  `json:"positionId"`
+	ReferenceID string `json:"referenceId"` // echoes the x-request-id
+}
+
+// UpdatePosition edits the stop loss / take profit of an open position. It
+// is a write: it spends the write budget and is never retried here. eToro
+// answers 404 for an unknown position and 409 for a closed one
+// (IsNotFound / IsConflict). The edit is asynchronous: poll the portfolio
+// until the position shows the new rates.
+func (c *Client) UpdatePosition(ctx context.Context, positionID int64, req UpdatePositionRequest, requestID string) (UpdatePositionAccepted, error) {
+	if positionID <= 0 {
+		return UpdatePositionAccepted{}, fmt.Errorf("update position: positionID is required")
+	}
+	if err := req.Validate(); err != nil {
+		return UpdatePositionAccepted{}, err
+	}
+	if requestID == "" {
+		requestID = NewRequestID()
+	}
+	var resp UpdatePositionAccepted
+	err := c.do(ctx, call{method: "PATCH", path: c.updatePositionPath(positionID), body: req, requestID: requestID, write: true}, &resp)
+	if err != nil {
+		return UpdatePositionAccepted{}, err
+	}
+	if resp.ReferenceID == "" {
+		resp.ReferenceID = requestID
+	}
+	if resp.PositionID == 0 {
+		resp.PositionID = positionID
+	}
+	return resp, nil
+}
+
 // Cost is one component of a what-if cost preview, in the order currency.
 type Cost struct {
 	Type     string  `json:"costType"` // markup | marketSpread | transactionFee | overnightFee | overWeekendFee | sdrt

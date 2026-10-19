@@ -1,6 +1,7 @@
 package etoroledger
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -216,5 +217,81 @@ func TestNewer(t *testing.T) {
 	c := Record{Decision: Decision{BarDate: "2026-10-15"}, RecordedAt: "2026-10-17T00:00:00Z"}
 	if !Newer(a, b) || Newer(b, a) || !Newer(b, c) || Newer(c, a) {
 		t.Fatal("ordering")
+	}
+}
+
+// Protection (2026-10-19): a protect line carries the new rates in
+// position_after and is not a leg; a venue close is not a leg either; the
+// new fields are omitted on lines without them.
+func TestProtectRecordsAreNotLegs(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "ledger.jsonl")
+	l, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	long := Position{State: "long", PositionID: "3616683146", Units: 0.035, Amount: 1100, OpenRate: 29770.5}
+	if long.Protected() {
+		t.Fatal("no stop yet")
+	}
+	protected := long
+	protected.StopLossRate, protected.TakeProfitRate, protected.StopType = 29145.2, 31021.1, "fixed"
+	if !protected.Protected() || Flat().Protected() {
+		t.Fatal("Protected")
+	}
+	open := uiRec("nsdq100", "2026-10-19", "2026-10-19T14:00:00Z", ActionOpen, "ui-nsdq100-2026-10-19-open-aaaaaa", long)
+	protect := uiRec("nsdq100", "2026-10-19", "2026-10-19T14:30:00Z", ActionProtect, "ui-nsdq100-2026-10-19-protect-bbbbbb", protected)
+	protect.Demo.PositionBefore = long
+	protect.Demo.Protection = &Protection{Profile: "moderate", ATR: 312.65, ATRPct: 0.0105, MaxLossUSD: 21.9, Reason: "set from the console", OperationID: "op-1"}
+	for _, r := range []Record{open, protect} {
+		if err := l.Append(r); err != nil {
+			t.Fatal(err)
+		}
+	}
+	rs := l.Records()
+	if n := LegsOn(rs, "nsdq100", "2026-10-19"); n != 1 {
+		t.Fatalf("legs %d: a protect is not a leg", n)
+	}
+	if got := l.LastDemoPosition("nsdq100"); !got.Protected() || got.StopLossRate != 29145.2 || got.PositionID != "3616683146" {
+		t.Fatalf("latest position %+v: the protect line must carry the rates", got)
+	}
+
+	// A venue close the executor records the next morning.
+	vc := exRec("nsdq100", "2026-10-19", "2026-10-20", "2026-10-20T13:35:00Z", "flat")
+	vc.Demo.Action = ActionVenueClose
+	vc.Demo.PositionBefore = protected
+	vc.Demo.Order = &Order{Kind: ActionVenueClose, Status: "executed", AvgPrice: 29140.0, Units: 0.035}
+	vc.Demo.VenueClose = &VenueClose{Kind: VenueCloseStoppedOut, StopLossRate: 29145.2, CloseRate: 29140.0, GapBps: 1.8, ClosedAt: "2026-10-20T08:12:00Z", NetProfit: -22.1, Fees: 0.4}
+	if err := l.Append(vc); err != nil {
+		t.Fatal(err)
+	}
+	if n := LegsOn(l.Records(), "nsdq100", "2026-10-20"); n != 0 {
+		t.Fatalf("legs on the stop-out day %d: a venue close is not a leg (the rule may re-enter)", n)
+	}
+	if got := l.LastDemoPosition("nsdq100"); got.State != "flat" {
+		t.Fatalf("after the venue close %+v", got)
+	}
+
+	// Re-read from disk: round trip and omitempty.
+	again, err := ReadFile(path)
+	if err != nil || len(again) != 3 {
+		t.Fatal(len(again), err)
+	}
+	var sawProtect, sawVenue bool
+	for _, r := range again {
+		switch r.Demo.Action {
+		case ActionProtect:
+			sawProtect = r.Demo.Protection != nil && r.Demo.Protection.Profile == "moderate" && r.Demo.PositionAfter.TakeProfitRate == 31021.1
+		case ActionVenueClose:
+			sawVenue = r.Demo.VenueClose != nil && r.Demo.VenueClose.Kind == VenueCloseStoppedOut
+		}
+	}
+	if !sawProtect || !sawVenue {
+		t.Fatalf("round trip: protect %v venue %v", sawProtect, sawVenue)
+	}
+	b, _ := json.Marshal(rec("spx500", "2026-10-15", "long"))
+	for _, k := range []string{"stop_loss_rate", "take_profit_rate", "stop_type", "protection", "venue_close"} {
+		if strings.Contains(string(b), `"`+k+`"`) {
+			t.Errorf("%s present on a plain line: %s", k, b)
+		}
 	}
 }

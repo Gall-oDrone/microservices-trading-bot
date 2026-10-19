@@ -134,6 +134,80 @@ type Position struct {
 	// current notional in account currency (0 when the venue does not say).
 	Fees     float64 `json:"fees,omitempty"`
 	Exposure float64 `json:"exposure,omitempty"`
+	// StopLoss / TakeProfit are the resting protective rates the venue
+	// holds for the position; 0 means none (adapters map the venue's
+	// "no stop" placeholder to 0). StopType is StopFixed or StopTrailing
+	// when known. Added 2026-10-19 (protection plan phase A).
+	StopLoss   float64 `json:"stop_loss,omitempty"`
+	TakeProfit float64 `json:"take_profit,omitempty"`
+	StopType   string  `json:"stop_type,omitempty"`
+}
+
+// Protected reports whether the position has a stop loss at the venue.
+func (p Position) Protected() bool { return p.StopLoss > 0 }
+
+// Stop-loss types.
+const (
+	StopFixed    = "fixed"
+	StopTrailing = "trailing"
+)
+
+// ProtectionRequest edits the protective rates of an open position. A zero
+// StopLoss / TakeProfit leaves that side unchanged; ClearTakeProfit removes
+// the target. A stop is never cleared through this seam (policy: a
+// position may gain or move a stop, never lose it). ClientRef is the
+// caller's idempotency key, e.g. "ui-nsdq100-2026-10-19-protect-1a2b3c".
+type ProtectionRequest struct {
+	Instrument      Instrument `json:"instrument"`
+	PositionID      string     `json:"position_id"`
+	StopLoss        float64    `json:"stop_loss,omitempty"`
+	TakeProfit      float64    `json:"take_profit,omitempty"`
+	ClearTakeProfit bool       `json:"clear_take_profit,omitempty"`
+	StopType        string     `json:"stop_type,omitempty"` // "" = StopFixed
+	ClientRef       string     `json:"client_ref"`
+}
+
+// Validate checks the venue-independent rules of a protection request.
+func (r ProtectionRequest) Validate() error {
+	switch {
+	case r.ClientRef == "":
+		return errors.Join(ErrInvalidRequest, errors.New("client_ref is required"))
+	case r.PositionID == "":
+		return errors.Join(ErrInvalidRequest, errors.New("position_id is required"))
+	case r.StopLoss < 0 || r.TakeProfit < 0:
+		return errors.Join(ErrInvalidRequest, errors.New("stop_loss and take_profit must be >= 0"))
+	case r.StopLoss == 0 && r.TakeProfit == 0 && !r.ClearTakeProfit:
+		return errors.Join(ErrInvalidRequest, errors.New("nothing to change: set stop_loss, take_profit or clear_take_profit"))
+	case r.TakeProfit > 0 && r.ClearTakeProfit:
+		return errors.Join(ErrInvalidRequest, errors.New("take_profit and clear_take_profit are exclusive"))
+	case r.StopType != "" && r.StopType != StopFixed && r.StopType != StopTrailing:
+		return errors.Join(ErrInvalidRequest, errors.New("stop_type must be fixed or trailing"))
+	}
+	return nil
+}
+
+// ProtectionResult is the outcome of SetProtection. Status is
+// StatusExecuted when the position was read back with the requested rates,
+// StatusPending when the venue accepted the edit but the position did not
+// show it before the adapter's wait ran out (read Positions later), and
+// StatusRejected when the venue refused it. Position is the last state
+// read (zero value when none was read).
+type ProtectionResult struct {
+	PositionID  string    `json:"position_id"`
+	ClientRef   string    `json:"client_ref"`
+	OperationID string    `json:"operation_id,omitempty"`
+	Status      Status    `json:"status"`
+	Position    Position  `json:"position"`
+	Error       string    `json:"error,omitempty"`
+	ErrorCode   int       `json:"error_code,omitempty"`
+	At          time.Time `json:"at,omitempty"`
+}
+
+// ProtectionEditor is implemented by adapters whose venue can edit the
+// stop loss / take profit of an open position (eToro: PATCH position).
+// Optional: callers type-assert and refuse to protect when absent.
+type ProtectionEditor interface {
+	SetProtection(ctx context.Context, req ProtectionRequest) (ProtectionResult, error)
 }
 
 // ClosedPosition is one row of the venue's trading history.
@@ -151,6 +225,11 @@ type ClosedPosition struct {
 	// charged over the position's life (financing included).
 	NetProfit float64 `json:"net_profit"`
 	Fees      float64 `json:"fees"`
+	// StopLoss / TakeProfit are the protective rates the position carried
+	// when it closed (0 = none): a close rate at one of them says the venue
+	// closed it. Added 2026-10-19.
+	StopLoss   float64 `json:"stop_loss,omitempty"`
+	TakeProfit float64 `json:"take_profit,omitempty"`
 }
 
 // HistoryReader is implemented by adapters that can list closed positions
