@@ -30,7 +30,13 @@ const (
 	codeForeignPositions = "other_instruments"
 	codePortfolioLag     = "portfolio_lag" // the portfolio needed re-reads before it showed a fresh fill (warn)
 	codeHistoryLag       = "history_lag"   // the trading history needed re-reads before it listed a fresh close (warn)
+	// Protection (plan phase C4, 2026-10-19).
+	codeProtectionDrift      = "protection_drift"      // ledger says the held position has a stop, the account holds none (drift)
+	codeProtectionUnrecorded = "protection_unrecorded" // the account holds a stop the ledger never learned (warn; the next run copies it)
 )
+
+// noStopRate is eToro's placeholder for "no stop loss" (stops.NoStopRate).
+const noStopRate = 0.01
 
 // settle is how long reconcile waits for eToro's views to show an order the
 // executor finished moments ago. The portfolio lags fills: on 2026-10-12 an
@@ -200,6 +206,15 @@ func reconcileWith(ctx context.Context, b broker.Broker, recs []etoroledger.Reco
 				if pos.Units > 0 && math.Abs(held.Units-pos.Units) > 1e-6*math.Max(1, pos.Units) {
 					add(sevDrift, book, codeUnitsDrift, "position %s holds %.6f units, ledger says %.6f", pos.PositionID, held.Units, pos.Units)
 				}
+				venueStop := held.StopLoss > noStopRate
+				switch {
+				case pos.StopLossRate > 0 && !venueStop:
+					add(sevDrift, book, codeProtectionDrift, "position %s: ledger recorded stop %.2f but the account holds no stop loss", pos.PositionID, pos.StopLossRate)
+				case pos.StopLossRate > 0 && venueStop && math.Abs(held.StopLoss-pos.StopLossRate) > 1e-6*math.Max(1, pos.StopLossRate):
+					add(sevWarn, book, codeProtectionUnrecorded, "position %s: the account's stop is %.2f, ledger says %.2f (the next run copies the account's)", pos.PositionID, held.StopLoss, pos.StopLossRate)
+				case pos.StopLossRate == 0 && venueStop:
+					add(sevWarn, book, codeProtectionUnrecorded, "position %s: the account holds stop %.2f the ledger never recorded (the next run copies it)", pos.PositionID, held.StopLoss)
+				}
 			}
 		}
 		for _, r := range demo {
@@ -219,12 +234,16 @@ func reconcileWith(ctx context.Context, b broker.Broker, recs []etoroledger.Reco
 				add(sevWarn, book, codeRejectedOrder, "%s: %s %s ended %s: %s", r.Decision.BarDate, o.Kind, o.ClientRef, o.Status, o.Error)
 				continue
 			}
-			if o.Kind == etoroledger.ActionClose && closed != nil {
+			if (o.Kind == etoroledger.ActionClose || o.Kind == etoroledger.ActionVenueClose) && closed != nil {
 				pid := d.PositionBefore.PositionID
 				c, ok := closed[pid]
+				what := "close"
+				if o.Kind == etoroledger.ActionVenueClose {
+					what = "venue close"
+				}
 				switch {
 				case !ok:
-					add(sevDrift, book, codeCloseNotInHist, "%s: close of position %s is not in the trading history", r.Decision.BarDate, pid)
+					add(sevDrift, book, codeCloseNotInHist, "%s: %s of position %s is not in the trading history", r.Decision.BarDate, what, pid)
 				case o.AvgPrice > 0 && math.Abs(c.CloseRate/o.AvgPrice-1) > 1e-4:
 					add(sevWarn, book, codeClosePriceDiff, "%s: position %s closed at %.2f per the history, ledger says %.2f", r.Decision.BarDate, pid, c.CloseRate, o.AvgPrice)
 				}
@@ -309,7 +328,7 @@ func freshOrders(recs []etoroledger.Record, now time.Time, st settle) []freshOrd
 			if pid := r.Demo.PositionAfter.PositionID; pid != "" {
 				out = append(out, freshOrder{book: b, positionID: pid, wantHeld: true})
 			}
-		case etoroledger.ActionClose:
+		case etoroledger.ActionClose, etoroledger.ActionVenueClose:
 			if pid := r.Demo.PositionBefore.PositionID; pid != "" {
 				out = append(out, freshOrder{book: b, positionID: pid, wantHeld: false})
 			}

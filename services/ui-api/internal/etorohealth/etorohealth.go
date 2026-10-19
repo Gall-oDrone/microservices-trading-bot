@@ -39,6 +39,9 @@ const (
 	IDReconcile = "etoro.reconcile" // the newest reconcile report is clean
 	IDIntents   = "etoro.intents"   // no order sent without a ledger line
 	IDUpload    = "etoro.upload"    // the newest run's S3 copy (P6) succeeded, when configured
+	// Protection (plan phase C5, 2026-10-19).
+	IDProtection = "etoro.protection" // every held position carries a stop loss (warn after UnprotectedGrace)
+	IDStopOut    = "etoro.stop_out"   // a venue close (stop, target, other) recorded in the last two trading days (ok, informational)
 )
 
 // Check is one condition, with the statuses of package datahealth.
@@ -66,6 +69,10 @@ type Options struct {
 	// IntentGrace is how old an unrecorded intent must be before it alerts,
 	// so a run in progress is not reported. Zero: 10 minutes.
 	IntentGrace time.Duration
+	// UnprotectedGrace is how long a held position may go without a stop
+	// loss on the ledger before it warns (the run that opened it may still
+	// be reading the account back). Zero: 30 minutes.
+	UnprotectedGrace time.Duration
 }
 
 // DefaultBooks are the pre-registered instruments.
@@ -97,6 +104,13 @@ func (o Options) intentGrace() time.Duration {
 		return 10 * time.Minute
 	}
 	return o.IntentGrace
+}
+
+func (o Options) unprotectedGrace() time.Duration {
+	if o.UnprotectedGrace == 0 {
+		return 30 * time.Minute
+	}
+	return o.UnprotectedGrace
 }
 
 // DueDate is the most recent NYSE trading day whose run is already due at
@@ -148,7 +162,75 @@ func Evaluate(o Options, now time.Time) []Check {
 	out = append(out, reconcileCheck(dir, due))
 	out = append(out, intentsCheck(o.LedgerPath, demo, now, o.intentGrace()))
 	out = append(out, uploadCheck(dir))
+	out = append(out, protectionCheck(demo, books, now, o.unprotectedGrace()))
+	out = append(out, stopOutCheck(demo, books, due))
 	return out
+}
+
+// protectionCheck (C5) wants every held position to carry a stop loss on
+// the ledger. A position without one is tolerated for grace after the line
+// that holds it was recorded (the executor records the stop with the open;
+// a position opened before phase C, or whose stop the venue dropped, gets
+// one at the next 09:35 run). Files only: the account's own rates are the
+// reconcile's business (protection_drift).
+func protectionCheck(demo []etoroledger.Record, books []string, now time.Time, grace time.Duration) Check {
+	var bare, protected []string
+	for _, b := range books {
+		r, ok := etoroledger.LatestDemo(demo, b)
+		if !ok || r.Demo.PositionAfter.State != "long" {
+			continue
+		}
+		p := r.Demo.PositionAfter
+		if p.Protected() {
+			protected = append(protected, fmt.Sprintf("%s stop %.2f", b, p.StopLossRate))
+			continue
+		}
+		at, err := time.Parse(time.RFC3339, r.RecordedAt)
+		if err == nil && now.Sub(at) < grace {
+			continue
+		}
+		since := r.RecordedAt
+		if err == nil {
+			since = at.UTC().Format("2006-01-02 15:04 UTC")
+		}
+		bare = append(bare, fmt.Sprintf("%s position %s (held without a stop since %s)", b, p.PositionID, since))
+	}
+	if len(bare) > 0 {
+		return Check{IDProtection, "eToro position without a stop loss", datahealth.Warn,
+			strings.Join(bare, "; ") + ": the next 09:35 New York run sets the disaster stop (protect on); to protect it now use the console's Trade page (protect)"}
+	}
+	if len(protected) == 0 {
+		return Check{IDProtection, "eToro protection", datahealth.OK, "no position held"}
+	}
+	return Check{IDProtection, "eToro protection", datahealth.OK, "every held position carries a stop: " + strings.Join(protected, ", ")}
+}
+
+// stopOutCheck (C5) reports a venue close the executor recorded (C3) with
+// a fill date on the due trading day or the one before, so the operator
+// reads it without opening the ledger. Informational: a stop that fired
+// did its job; the run that recorded it is judged by the other checks.
+func stopOutCheck(demo []etoroledger.Record, books []string, due time.Time) Check {
+	prev := mktcal.PrevTradingDay(due)
+	dueStr, prevStr := due.Format("2006-01-02"), prev.Format("2006-01-02")
+	var seen []string
+	for _, r := range demo {
+		d := r.Demo
+		if d.Action != etoroledger.ActionVenueClose || (r.Decision.FillDate != dueStr && r.Decision.FillDate != prevStr) {
+			continue
+		}
+		kind, rate, pnl := "venue close", 0.0, 0.0
+		if vc := d.VenueClose; vc != nil {
+			kind, rate, pnl = vc.Kind, vc.CloseRate, vc.NetProfit-vc.Fees
+		} else if d.Order != nil {
+			rate = d.Order.AvgPrice
+		}
+		seen = append(seen, fmt.Sprintf("%s: position %s closed by eToro at %.2f on %s (%s, net %+.2f)", r.Book, d.PositionBefore.PositionID, rate, r.Decision.FillDate, kind, pnl))
+	}
+	if len(seen) == 0 {
+		return Check{IDStopOut, "eToro venue closes", datahealth.OK, fmt.Sprintf("none recorded on %s or %s", prevStr, dueStr)}
+	}
+	sort.Strings(seen)
+	return Check{IDStopOut, "eToro venue close recorded", datahealth.OK, strings.Join(seen, "; ") + " (the rule re-enters at the next run if it still says long)"}
 }
 
 func demoRecords(recs []etoroledger.Record) []etoroledger.Record {

@@ -324,21 +324,30 @@ func TestEtoroRiskShowsHaltFile(t *testing.T) {
 func TestEtoroHealth(t *testing.T) {
 	ts := etoroServer(t, etoroNow, nil)
 	h := get[EtoroHealthResponse](t, ts, "/api/ui/etoro/health", 200)
-	if h.Ledger != "etoro-demo" || h.Venue != "etoro" || h.DueDate != "2026-10-16" || h.Status != datahealth.OK || len(h.Checks) != 7 {
+	// The fixture's SPX500 position was opened before protection existed
+	// (phase C, 2026-10-19), so the protection check warns on it and the
+	// view as a whole is warn; every other check is ok.
+	if h.Ledger != "etoro-demo" || h.Venue != "etoro" || h.DueDate != "2026-10-16" || h.Status != datahealth.Warn || len(h.Checks) != 9 {
 		t.Fatalf("health %+v", h)
 	}
 	want := map[string]string{
-		"etoro.ledger":    "10 records",
-		"etoro.halted":    "not halted",
-		"etoro.coverage":  "every book recorded through 2026-10-16",
-		"etoro.run":       "run of 2026-10-16 13:35 UTC ended exit=0",
-		"etoro.reconcile": "2026-10-16: drift on the run, clean on the operator's re-check",
-		"etoro.intents":   "3 intents, all in the ledger",
-		"etoro.upload":    "not configured (ETORO_EXECUTOR_S3_URI unset for the run of 2026-10-16 13:35 UTC)",
+		"etoro.ledger":     "10 records",
+		"etoro.halted":     "not halted",
+		"etoro.coverage":   "every book recorded through 2026-10-16",
+		"etoro.run":        "run of 2026-10-16 13:35 UTC ended exit=0",
+		"etoro.reconcile":  "2026-10-16: drift on the run, clean on the operator's re-check",
+		"etoro.intents":    "3 intents, all in the ledger",
+		"etoro.upload":     "not configured (ETORO_EXECUTOR_S3_URI unset for the run of 2026-10-16 13:35 UTC)",
+		"etoro.protection": "spx500 position 3616683295 (held without a stop since 2026-10-16 13:35 UTC): the next 09:35 New York run sets the disaster stop (protect on); to protect it now use the console's Trade page (protect)",
+		"etoro.stop_out":   "none recorded on 2026-10-15 or 2026-10-16",
 	}
 	for _, c := range h.Checks {
-		if c.Area != "executor" || c.Status != datahealth.OK || c.Message != want[c.ID] {
-			t.Fatalf("check %+v, want %q", c, want[c.ID])
+		status := datahealth.OK
+		if c.ID == "etoro.protection" {
+			status = datahealth.Warn
+		}
+		if c.Area != "executor" || c.Status != status || c.Message != want[c.ID] {
+			t.Fatalf("check %+v, want %s %q", c, status, want[c.ID])
 		}
 		delete(want, c.ID)
 	}

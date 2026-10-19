@@ -272,3 +272,69 @@ func TestUploadCheck(t *testing.T) {
 	// The run itself is still fine: a failed copy never fails the run.
 	want(t, c[IDRun], datahealth.OK, "ended exit=0")
 }
+
+// Protection plan phase C5 (2026-10-19).
+func (d dir) rawRecord(r etoroledger.Record) {
+	d.t.Helper()
+	r.Mode = etoroledger.ModeDemo
+	b, err := json.Marshal(r)
+	if err != nil {
+		d.t.Fatal(err)
+	}
+	f, err := os.OpenFile(d.ledger(), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+	if err != nil {
+		d.t.Fatal(err)
+	}
+	defer f.Close()
+	f.Write(append(b, '\n'))
+}
+
+func TestProtectionCheck(t *testing.T) {
+	now := ny(2026, 10, 14, 13, 0)
+	held := func(book, pid string, sl float64, recordedAt time.Time) etoroledger.Record {
+		return etoroledger.Record{Book: book, RecordedAt: recordedAt.UTC().Format(time.RFC3339), Instrument: etoroledger.Instrument{Symbol: strings.ToUpper(book)},
+			Decision: etoroledger.Decision{BarDate: "2026-10-13", FillDate: "2026-10-14"},
+			Demo: &etoroledger.Demo{Action: etoroledger.ActionOpen, PositionBefore: etoroledger.Flat(),
+				PositionAfter: etoroledger.Position{State: "long", PositionID: pid, Units: 0.03, StopLossRate: sl},
+				Order:         &etoroledger.Order{Kind: etoroledger.ActionOpen, ClientRef: "sma50-" + book + "-2026-10-14-open", Status: "executed"}}}
+	}
+	t.Run("flat", func(t *testing.T) {
+		d := newDir(t)
+		d.record("nsdq100", "2026-10-13", "2026-10-14", etoroledger.ActionNone, "")
+		c := byID(Evaluate(Options{LedgerPath: d.ledger()}, now))
+		want(t, c[IDProtection], datahealth.OK, "no position held")
+		want(t, c[IDStopOut], datahealth.OK, "none recorded")
+	})
+	t.Run("protected", func(t *testing.T) {
+		d := newDir(t)
+		d.rawRecord(held("nsdq100", "11", 27000, now.Add(-2*time.Hour)))
+		want(t, byID(Evaluate(Options{LedgerPath: d.ledger()}, now))[IDProtection], datahealth.OK, "nsdq100 stop 27000.00")
+	})
+	t.Run("bare beyond the grace warns", func(t *testing.T) {
+		d := newDir(t)
+		d.rawRecord(held("nsdq100", "11", 0, now.Add(-2*time.Hour)))
+		d.rawRecord(held("spx500", "22", 7000, now.Add(-2*time.Hour)))
+		c := byID(Evaluate(Options{LedgerPath: d.ledger()}, now))[IDProtection]
+		want(t, c, datahealth.Warn, "nsdq100 position 11")
+		if strings.Contains(c.Message, "spx500") {
+			t.Fatalf("the protected book must not be named: %q", c.Message)
+		}
+	})
+	t.Run("bare inside the grace is quiet", func(t *testing.T) {
+		d := newDir(t)
+		d.rawRecord(held("nsdq100", "11", 0, now.Add(-5*time.Minute)))
+		want(t, byID(Evaluate(Options{LedgerPath: d.ledger()}, now))[IDProtection], datahealth.OK, "no position held")
+	})
+	t.Run("a later venue close clears it", func(t *testing.T) {
+		d := newDir(t)
+		d.rawRecord(held("nsdq100", "11", 0, now.Add(-26*time.Hour)))
+		d.rawRecord(etoroledger.Record{Book: "nsdq100", RecordedAt: now.Add(-time.Hour).UTC().Format(time.RFC3339), Instrument: etoroledger.Instrument{Symbol: "NSDQ100"},
+			Decision: etoroledger.Decision{BarDate: "2026-10-13", FillDate: "2026-10-14"},
+			Demo: &etoroledger.Demo{Action: etoroledger.ActionVenueClose, PositionBefore: etoroledger.Position{State: "long", PositionID: "11"}, PositionAfter: etoroledger.Flat(),
+				VenueClose: &etoroledger.VenueClose{Kind: etoroledger.VenueCloseStoppedOut, StopLossRate: 27000, CloseRate: 26990, NetProfit: -88.2, Fees: 0.5},
+				Order:      &etoroledger.Order{Kind: etoroledger.ActionVenueClose, Status: "executed", AvgPrice: 26990}}})
+		c := byID(Evaluate(Options{LedgerPath: d.ledger()}, now))
+		want(t, c[IDProtection], datahealth.OK, "no position held")
+		want(t, c[IDStopOut], datahealth.OK, "nsdq100: position 11 closed by eToro at 26990.00 on 2026-10-14 (stopped_out, net -88.70)")
+	})
+}

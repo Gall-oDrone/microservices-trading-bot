@@ -236,3 +236,50 @@ func TestClosedAndForeign(t *testing.T) {
 		t.Fatalf("close price differs: %+v", r.Findings)
 	}
 }
+
+// Protection plan phase C4 (2026-10-19).
+func TestProtectionFindings(t *testing.T) {
+	protected := open("nsdq100", nsdq, "2026-10-09", "11", 0.0355)
+	protected.Demo.PositionAfter.StopLossRate = 29000
+	withStop := func(sl float64) broker.Position { p := pos("11", 28, 0.0355); p.StopLoss = sl; return p }
+	cases := []struct {
+		name  string
+		rec   etoroledger.Record
+		held  broker.Position
+		clean bool
+		code  string
+	}{
+		{"ledger stop, account none (eToro's 0.01 placeholder)", protected, withStop(0.01), false, codeProtectionDrift},
+		{"ledger stop, account agrees", protected, withStop(29000), true, ""},
+		{"ledger stop, account moved it", protected, withStop(29500), true, codeProtectionUnrecorded},
+		{"no ledger stop, account has one", open("nsdq100", nsdq, "2026-10-09", "11", 0.0355), withStop(29000), true, codeProtectionUnrecorded},
+		{"no stop anywhere", open("nsdq100", nsdq, "2026-10-09", "11", 0.0355), withStop(0), true, ""},
+	}
+	for _, c := range cases {
+		f := &fake{positions: []broker.Position{c.held}}
+		r, err := run(f, []etoroledger.Record{c.rec}, nil, t0)
+		if err != nil || r.Clean != c.clean || (c.code != "" && !has(r, c.code)) || (c.code == "" && len(r.Findings) != 0) {
+			t.Errorf("%s: clean=%v findings %+v err %v", c.name, r.Clean, r.Findings, err)
+		}
+	}
+}
+
+// A venue close recorded by the executor (C3) is clean when the history
+// lists the position, drift when it does not, like a close of ours.
+func TestVenueCloseVerifiedAgainstHistory(t *testing.T) {
+	vc := etoroledger.Record{Mode: etoroledger.ModeDemo, Book: "nsdq100", Instrument: nsdq, Decision: etoroledger.Decision{BarDate: "2026-10-12"},
+		Demo: &etoroledger.Demo{Action: etoroledger.ActionVenueClose, PositionBefore: etoroledger.Position{State: "long", PositionID: "11", StopLossRate: 29000},
+			PositionAfter: etoroledger.Flat(),
+			VenueClose:    &etoroledger.VenueClose{Kind: etoroledger.VenueCloseStoppedOut, StopLossRate: 29000, CloseRate: 28995},
+			Order:         &etoroledger.Order{Kind: etoroledger.ActionVenueClose, Status: "executed", AvgPrice: 28995, Finished: t0.Add(-time.Hour)}}}
+	recs := []etoroledger.Record{open("nsdq100", nsdq, "2026-10-09", "11", 0.0355), vc}
+	f := &fake{closed: []broker.ClosedPosition{{ID: "11", CloseRate: 28995, StopLoss: 29000}}}
+	r, err := run(f, recs, nil, t0)
+	if err != nil || !r.Clean || len(r.Findings) != 0 || r.Books[0].LedgerState != "flat" || r.Books[0].OrdersChecked != 2 {
+		t.Fatalf("venue close clean: %+v %v", r, err)
+	}
+	f.closed = nil
+	if r, _ := run(f, recs, nil, t0); r.Clean || !has(r, codeCloseNotInHist) {
+		t.Fatalf("venue close missing from history: %+v", r.Findings)
+	}
+}
