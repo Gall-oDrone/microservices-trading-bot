@@ -304,7 +304,10 @@ with the executor's `book|bar_date` line for the same bar (written the next morn
 `Ledger.Get(book, bar_date)` still returns the executor's line only. The web ledger table shows it
 as `manual` with the operator.
 
-**Where to see what became of a trade (2026-10-19).** The **Positions & round trips** card on the
+**Where to see what became of a trade (2026-10-19).** Start with the console's **Today** page
+(`/today?ledger=etoro-demo`, 2026-10-20): the run per book, every open position against its stop and
+target (distance in % and ATR), the most that can be lost at the stops, and what needs you. The
+detail is the **Positions & round trips** card on the
 Trade page (every book) and on a book's forward-test page (that book), behind
 `GET /api/ui/etoro/positions?ledger=etoro-demo[&book=…]`: one row per position id, paired from the
 ledger's open / protect / close / `venue_close` lines whoever wrote them. A row is `open` (opened

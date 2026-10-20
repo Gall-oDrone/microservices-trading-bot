@@ -1783,9 +1783,60 @@ unfinished bar is labelled provisional. The decision path never reads live data.
 - **Tests**: `u1.test.tsx` (10): `attentionItems` ordering and wording, `labelledFills`, the bar
   absent / present with a failed check, the filter, the protect link and the pre-filled form, the
   keyboard toggle, outcome persistence and dismissal, the ledger table columns. Suite 253 green.
-- **Left for U2 / U3** (§8.20 when built): the eToro *Today* overview (distance to stop in % and
-  ATR, max loss at stops, last run per book, by-hand items), the ratchet history on the chart, the
-  mobile pass (bottom tab bar, collapsible intros, card tables) and a time-zone toggle.
+- **Left for U2 / U3** (built the same day, §8.20 and §8.21).
+
+### 8.20 Today: the eToro operator's first screen (as built, 2026-10-20, batch U2)
+
+- **Route** `/today` (first item under *Trading* for an eToro ledger; a Bitso ledger gets a note
+  with the links that answer the same questions there and the switch to the eToro Today).
+  `pages/etoro/EtoroTodayPage.tsx`; the arithmetic in `lib/today.ts` (pure, tested): Wilder
+  `atr(14)` from the executor's own bars (`etoro/forward-tests/{book}/candles`, 90 days),
+  `distanceTo` (points, % of the mark, ATRs), `openRisk` (exposure, unrealised, **max loss at
+  stops** = Σ units × (entry − stop) over protected rows, the unprotected count and exposure),
+  `stopHistory` (below).
+- **Page.** Head: session clock, next run, when the account was read (operator clock). **Open
+  risk** card: equity and cash; open exposure as % of equity; unrealised (live); **max loss at
+  stops** as % of equity — or *unbounded* in warn when a position has no stop — then one row per
+  open position: entry → implied mark, unrealised, the stop with its distance in % and ATRs
+  (amber under 1 ATR) or the **no stop · protect** link, the target with its distance, max loss at
+  the stop, days held. **Last run** per book: bar → fill, the signal, the action, what the demo did
+  (`demo open|close|none|blocked`), the paper position and equity, the last order's fill line when
+  it was today's, the run status. **Needs you**: the attention items (halt, failed / warning
+  checks) plus positions the account does not hold (`unknown`, `closed · unrecorded`) and
+  protection drift, each a link; else "Nothing waiting on you". Nothing on the page sends anything.
+- **Ratchet history on the chart.** `PriceChart` takes `stops: {date, value}[]` and draws a dotted
+  step line (`LineType.WithSteps`) with a point per ledger line that recorded a stop; the book page
+  builds it with `stopHistory(records)` (fill date = the bar the stop was live from; a console line
+  on the same date supersedes the run's; a closed day removes nothing earlier). With the stop /
+  target price lines of U1 the chart now shows the whole protection story.
+- **Tests.** `u2u3.test.tsx`: `atr`, `distanceTo`, `openRisk`, `stopHistory`; the Today page
+  (strip, the unprotected row's link and *unbounded*, last run per book, nothing waiting, the nav
+  item), the Bitso note.
+
+### 8.21 Phone layout and the operator clock (as built, 2026-10-20, batch U3)
+
+- **Bottom tab bar** (`AppShell` `TabBar`, ≤ 720 px; the sidebar nav hides): Today (Tests on a
+  Bitso ledger), Risk, Trade, Market, Health (a dot when a check is warn / fail), and **More** — a
+  `<details>` sheet with Forward tests, Strategies, Studies, Backtest runs and the clock toggle.
+  Safe-area padding, blurred backdrop, `main` keeps room above it.
+- **Collapsible intros** (`components/PageIntro.tsx`): the page paragraph is clamped to two lines
+  on a phone with a *more / less* toggle, full on desktop; used by Today, Trade, Market, Forward
+  tests, Risk and Data health (eToro pages).
+- **Card tables**: `table.cards-sm` stacks each row into a card under 720 px, every cell prefixed by
+  its `data-label`; applied to the Positions card, the Today open-positions table and the book
+  page's ledger table (the expanded details row keeps its full width).
+- **Operator clock** (`lib/tz.ts`, `TzToggle` in the sidebar and the More sheet): NY · UTC · MX ·
+  Local, kept in `localStorage` (`tz`), applied through `useClock()` to the moments the operator
+  acts on or reads — the audit log (its column header names the zone), the halt time, the trade
+  outcome, the Positions card (opened / closed / account read) and Today's "account read". Venue
+  clocks stay: the NYSE session, next run and bar dates are New York; the Bitso bars Mexico City;
+  every timestamp keeps the UTC tooltip.
+- **Tests.** `u2u3.test.tsx`: the tab bar's links and active tab, the clock toggle changing the
+  Positions header and times (persisted), the intro toggle; `market.test.tsx` now asks the sidebar
+  nav (two navs exist). Suite 263 green. Verified on a 390 px viewport in mock mode.
+- **Known limits.** The tab bar is a phone affordance only (no tablet breakpoint); the clock
+  preference does not reach the Bitso pages' own Mexico City labels (they are bar times, not
+  operator moments).
 
 ## 9. How to run (local)
 

@@ -10,7 +10,8 @@ import { useRef, useState } from 'react'
 import { useControls } from '../api/client'
 import { useControlMutation, type ControlAction } from '../api/controls'
 import type { AuditEntry, AuditOutcome, ControlResponse, ControlsInfo, Venue } from '../api/schemas'
-import { fmtMx, fmtUTC } from '../lib/format'
+import { fmtUTC } from '../lib/format'
+import { useClock } from '../lib/tz'
 import { ConfirmDialog } from './ConfirmDialog'
 import { IconBlock, IconCheck, IconShield } from './icons'
 import { Badge, Banner, CardSkeleton, ErrorState } from './ui'
@@ -37,6 +38,7 @@ export interface AuditSource {
  * ledger each line is about (the Strategies page mixes them).
  */
 export function AuditLog({ info, empty, target = false }: { info: AuditSource; empty: string; target?: boolean }) {
+  const clock = useClock()
   const [all, setAll] = useState(false)
   const rows = all ? info.audit : info.audit.slice(0, AUDIT_ROWS)
   return (
@@ -61,7 +63,7 @@ export function AuditLog({ info, empty, target = false }: { info: AuditSource; e
           <table className="data controls-audit" id="audit-table" data-testid="audit-table">
             <thead>
               <tr>
-                <th scope="col">When (Mexico City)</th>
+                <th scope="col">When ({clock.label})</th>
                 <th scope="col">Action</th>
                 {target && <th scope="col">Target</th>}
                 <th scope="col">Outcome</th>
@@ -73,7 +75,7 @@ export function AuditLog({ info, empty, target = false }: { info: AuditSource; e
               {rows.map((e: AuditEntry, i) => (
                 <tr key={e.id ? `${e.id}-${e.outcome}` : i} data-testid="audit-row">
                   <td className="num nowrap" title={fmtUTC(e.at)}>
-                    {fmtMx(e.at)}
+                    {clock.fmt(e.at)}
                   </td>
                   <td>{e.action}</td>
                   {target && <td className="num">{e.strategy || e.ledger || <span className="faint">—</span>}</td>}
@@ -117,6 +119,7 @@ function ControlDialog({
   onClose: () => void
   onDone: (r: ControlResponse) => void
 }) {
+  const clock = useClock()
   const ledger = info.ledger
   const m = useControlMutation()
   const halt = action === 'halt'
@@ -143,7 +146,7 @@ function ControlDialog({
         !halt && info.halt_file.halted ? (
           <>
             Halted by <b>{info.halt_file.by}</b> ·{' '}
-            <span title={fmtUTC(info.halt_file.at)}>{fmtMx(info.halt_file.at)}</span> · {info.halt_file.reason}
+            <span title={fmtUTC(info.halt_file.at)}>{clock.fmt(info.halt_file.at)}</span> · {info.halt_file.reason}
           </>
         ) : undefined
       }
@@ -175,6 +178,7 @@ const WORDS: Record<Venue, { executor: string; order: string; venueName: string 
  * policy file can lift; `venue` only changes the wording.
  */
 export function OperatorControls({ policyHalted = false, venue = 'bitso' }: { policyHalted?: boolean; venue?: Venue }) {
+  const clock = useClock()
   const q = useControls()
   const [open, setOpen] = useState<ControlAction | null>(null)
   const [flash, setFlash] = useState<ControlResponse | null>(null)
@@ -245,7 +249,7 @@ export function OperatorControls({ policyHalted = false, venue = 'bitso' }: { po
               </>
             ) : halted ? (
               <>
-                {hf.reason} · by <b>{hf.by}</b> · <span title={fmtUTC(hf.at)}>{fmtMx(hf.at)}</span>
+                {hf.reason} · by <b>{hf.by}</b> · <span title={fmtUTC(hf.at)}>{clock.fmt(hf.at)}</span>
               </>
             ) : (
               <>The next executor run may trade, within the policy limits.</>
@@ -291,7 +295,7 @@ export function OperatorControls({ policyHalted = false, venue = 'bitso' }: { po
           {flash.action === 'halt' ? <IconBlock /> : <IconCheck />}
           <span>
             {flash.action === 'halt' ? 'Halted' : 'Resumed'} <b>{flash.ledger}</b> at{' '}
-            <span title={fmtUTC(flash.audit.at)}>{fmtMx(flash.audit.at)}</span>. Audited as{' '}
+            <span title={fmtUTC(flash.audit.at)}>{clock.fmt(flash.audit.at)}</span>. Audited as{' '}
             <span className="num">{flash.audit.id || flash.audit.outcome}</span>.
             {flash.audit_error && <span className="neg"> Audit warning: {flash.audit_error}</span>}
           </span>

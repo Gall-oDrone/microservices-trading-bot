@@ -12,6 +12,7 @@ import { Badge, CardSkeleton, ErrorState, LedgerBadge } from '../../components/u
 import { fmtDate, fmtNY, fmtUTC } from '../../lib/format'
 import { countByStatus, statusLabel, statusTone } from '../../lib/health'
 import { usePageTitle } from '../../lib/usePageTitle'
+import { PageIntro } from '../../components/PageIntro'
 
 const THRESHOLD_LABEL: Record<string, string> = {
   run_at: 'Run at',
@@ -121,10 +122,10 @@ export function EtoroDataHealthPage() {
             <h1>Data health</h1>
             {d && <LedgerBadge name={d.ledger} venue="etoro" />}
           </div>
-          <p>
+          <PageIntro>
             Is the eToro demo executor doing its 09:35 New York run, and does the demo account still match the ledger?
             The same checks ui-alerts sends, read from the files next to the ledger.
-          </p>
+          </PageIntro>
         </div>
         {d && (
           <span className="faint row" style={{ gap: 6 }} title={fmtUTC(d.generated_at)}>

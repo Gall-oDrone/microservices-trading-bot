@@ -52,7 +52,9 @@ import {
 } from '../../components/icons'
 import { Badge, Banner, CardSkeleton, ErrorState, LedgerBadge, Stat } from '../../components/ui'
 import { bookLabel, bookSymbol, fmtBps, fmtMoney, fmtNY, fmtPrice, fmtUnits, fmtUTC } from '../../lib/format'
+import { useClock } from '../../lib/tz'
 import { usePageTitle } from '../../lib/usePageTitle'
+import { PageIntro } from '../../components/PageIntro'
 
 /** Whole seconds until the token expires, ticking once a second. */
 function useCountdown(expiresAt: string | undefined): number {
@@ -400,6 +402,7 @@ function PreviewCard({
 }
 
 function OutcomeCard({ r, onDismiss }: { r: TradePlaceResponse; onDismiss: () => void }) {
+  const clock = useClock()
   const protect = r.side === 'protect'
   const ok = r.status === 'executed' || (protect && r.status === 'pending')
   const pa = r.position_after
@@ -421,7 +424,10 @@ function OutcomeCard({ r, onDismiss }: { r: TradePlaceResponse; onDismiss: () =>
             {r.audit?.at ? (
               <>
                 {' '}
-                · <span title={fmtUTC(r.audit.at)}>{fmtNY(r.audit.at)} NY</span>
+                ·{' '}
+                <span title={fmtUTC(r.audit.at)}>
+                  {clock.fmt(r.audit.at)} {clock.label}
+                </span>
               </>
             ) : null}
           </div>
@@ -753,12 +759,12 @@ export function EtoroTradePage() {
             <LedgerBadge name={ledger} venue="etoro" />
             <Badge tone="etoro">demo account</Badge>
           </div>
-          <p>
+          <PageIntro>
             Assisted trades on the eToro demo account: prepare runs the executor&apos;s checks (halt file, risk policy,
             ledger vs account, live quote, costs, cash) and returns a preview with a {trading?.token_ttl_s ?? 120} s
             token; place needs the phrase typed again, a reason, who, and the operator token. Every step is audited and
             the trade lands in the executor&apos;s ledger.
-          </p>
+          </PageIntro>
         </div>
         {ft.data && (
           <div className="stack" style={{ alignItems: 'flex-end', gap: 6 }}>

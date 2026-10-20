@@ -13,6 +13,7 @@ import { RunPage } from './pages/RunPage'
 import { RunsPage } from './pages/RunsPage'
 import { StrategiesPage } from './pages/StrategiesPage'
 import { StudyPage } from './pages/StudyPage'
+import { TodayPage } from './pages/TodayPage'
 import { TradePage } from './pages/TradePage'
 
 export const routes: RouteObject[] = [
@@ -21,6 +22,7 @@ export const routes: RouteObject[] = [
   {
     element: <AppShell />,
     children: [
+      { path: 'today', element: <TodayPage /> },
       { path: 'forward-tests', element: <ForwardTestsPage /> },
       { path: 'forward-tests/:book', element: <ForwardTestDetailPage /> },
       { path: 'risk', element: <RiskPage /> },

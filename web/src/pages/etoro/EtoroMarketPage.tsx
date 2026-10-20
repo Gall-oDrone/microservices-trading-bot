@@ -21,6 +21,7 @@ import { LiveBadge, TickPrice } from '../../components/live'
 import { Badge, Banner, CardSkeleton, ErrorState, SignalPill, Stat } from '../../components/ui'
 import { ago, bookLabel, fmtDate, fmtNY, fmtPct, fmtPrice } from '../../lib/format'
 import { usePageTitle } from '../../lib/usePageTitle'
+import { PageIntro } from '../../components/PageIntro'
 
 /** The books ui-api polls; the forward-test list replaces this once loaded. */
 const DEFAULT_BOOKS = ['nsdq100', 'spx500']
@@ -209,10 +210,10 @@ export function EtoroMarketPage() {
       <div className="page-head">
         <div>
           <h1>Market</h1>
-          <p>
+          <PageIntro>
             eToro&rsquo;s index-CFD quotes, polled by ui-api every 5 s (read only). Display only: the executor decides
             on closed daily candles at 09:35 New York, never on these numbers.
-          </p>
+          </PageIntro>
         </div>
         <div className="row" style={{ gap: 10, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
           {session && <SessionClock s={session} />}

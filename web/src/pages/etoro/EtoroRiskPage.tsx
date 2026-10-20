@@ -11,6 +11,7 @@ import { IconShield } from '../../components/icons'
 import { Banner, CardSkeleton, ErrorState, LedgerBadge, Stat } from '../../components/ui'
 import { fmtMoney, fmtNY, fmtUTC } from '../../lib/format'
 import { usePageTitle } from '../../lib/usePageTitle'
+import { PageIntro } from '../../components/PageIntro'
 
 function RiskReportSection() {
   const q = useEtoroRiskReport()
@@ -41,10 +42,10 @@ export function EtoroRiskPage() {
             <h1>Risk</h1>
             {r && <LedgerBadge name={r.ledger} venue="etoro" />}
           </div>
-          <p>
+          <PageIntro>
             What the eToro demo executor may send: x1 CFDs, one small leg per instrument per day, inside the NYSE cash
             session, under an exposure cap. Checks apply to orders, never to the frozen signal.
-          </p>
+          </PageIntro>
         </div>
         {r && (
           <span className="faint" title={fmtUTC(r.generated_at)}>

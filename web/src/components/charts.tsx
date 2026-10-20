@@ -10,6 +10,7 @@ import {
   HistogramSeries,
   LineSeries,
   LineStyle,
+  LineType,
   type IChartApi,
   type IPriceLine,
   type ISeriesApi,
@@ -117,6 +118,12 @@ export interface PriceLevels {
   entry?: number
 }
 
+/** One point of the stop's history (U2): the stop the ledger recorded from that bar on. */
+export interface StopPoint {
+  date: string
+  value: number
+}
+
 /** Daily candles with SMA50, volume, and markers for signal flips and fills. */
 export function PriceChart({
   candles,
@@ -127,6 +134,7 @@ export function PriceChart({
   digits,
   volume = true,
   levels,
+  stops,
 }: {
   candles: CandlePoint[]
   fills: FillMarker[]
@@ -139,6 +147,8 @@ export function PriceChart({
   volume?: boolean
   /** Stop / target / entry of the held position, as price lines. */
   levels?: PriceLevels
+  /** The stop's history (ratchet), as a step line. */
+  stops?: StopPoint[]
 }) {
   const priceRef = useRef<ISeriesApi<'Candlestick'> | null>(null)
   const volRef = useRef<ISeriesApi<'Histogram'> | null>(null)
@@ -263,6 +273,31 @@ export function PriceChart({
           })
         }
       }
+      // The stop's history: a step line in the loss colour, one point per
+      // ledger line that recorded a stop (the ratchet is a staircase). Only
+      // dates the chart has, ascending and unique.
+      if (stops && stops.length > 0) {
+        const dates = new Set(candles.map((c) => c.date))
+        const pts = stops
+          .filter((p) => p.value > 0 && dates.has(p.date))
+          .sort((a, b) => a.date.localeCompare(b.date))
+          .filter((p, i, arr) => i === 0 || p.date !== arr[i - 1].date)
+        if (pts.length > 0) {
+          const stopLine = chart.addSeries(LineSeries, {
+            color: alpha('--loss', '#f0715c', 0.85),
+            lineWidth: 1,
+            lineStyle: LineStyle.Dotted,
+            lineType: LineType.WithSteps,
+            priceLineVisible: false,
+            lastValueVisible: false,
+            crosshairMarkerVisible: true,
+            pointMarkersVisible: true,
+            pointMarkersRadius: 2,
+            title: 'stop history',
+          })
+          stopLine.setData(pts.map((p) => ({ time: t(p.date), value: p.value })))
+        }
+      }
       priceRef.current = price
       volRef.current = vol
       return () => {
@@ -271,7 +306,7 @@ export function PriceChart({
         flipRef.current = null
       }
     },
-    [candles, fills, quote, digits, volume, levels?.stop, levels?.target, levels?.entry],
+    [candles, fills, quote, digits, volume, levels?.stop, levels?.target, levels?.entry, stops],
   )
   const [theme] = useTheme()
 

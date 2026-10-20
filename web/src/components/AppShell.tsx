@@ -31,6 +31,32 @@ import {
 } from './icons'
 import { Badge, VenueTag } from './ui'
 import { attentionItems } from '../lib/attention'
+import { TZ_OPTIONS, useTz } from '../lib/tz'
+
+/**
+ * The operator's clock (U3): which zone the audit lines, outcomes and
+ * position times are shown in. Venue clocks (the NYSE session, the Bitso
+ * bars) are not affected.
+ */
+export function TzToggle() {
+  const [tz, setTz] = useTz()
+  return (
+    <div className="seg tz-toggle" role="group" aria-label="Clock" data-testid="tz-toggle">
+      {TZ_OPTIONS.map((o) => (
+        <button
+          key={o.id}
+          type="button"
+          aria-pressed={tz === o.id}
+          onClick={() => setTz(o.id)}
+          title={o.title}
+          data-testid={`tz-${o.id}`}
+        >
+          {o.label}
+        </button>
+      ))}
+    </div>
+  )
+}
 
 /**
  * The attention bar: one line per problem that needs the operator (halt,
@@ -206,6 +232,11 @@ function Nav() {
   return (
     <nav className="nav" aria-label="Main">
       <span className="nav-label">Trading</span>
+      {etoro && (
+        <NavLink to={{ pathname: '/today', search }} className="nav-link" id="nav-today">
+          <IconSun /> Today
+        </NavLink>
+      )}
       <NavLink to={{ pathname: '/forward-tests', search }} className="nav-link" id="nav-forward-tests">
         <IconTrend /> Forward tests
         {missed > 0 && (
@@ -265,6 +296,75 @@ function Nav() {
   )
 }
 
+/**
+ * The phone navigation (U3): a fixed bottom bar with the five pages an
+ * operator opens on the move and a "More" sheet with the rest. Hidden above
+ * 720 px by CSS; the sidebar nav is hidden below it.
+ */
+function TabBar() {
+  const search = useLedgerSearch()
+  const venue = useVenue()
+  const etoro = venue === 'etoro'
+  const ehealth = useEtoroHealth({ enabled: etoro })
+  const health = useDataHealth({ enabled: venue === 'bitso' })
+  const checks = (etoro ? ehealth.data?.checks : health.data?.checks) ?? []
+  const bad = checks.filter((c) => c.status === 'fail' || c.status === 'warn').length
+  const first = etoro
+    ? { to: '/today', label: 'Today', icon: <IconSun />, id: 'tab-today' }
+    : { to: '/forward-tests', label: 'Tests', icon: <IconTrend />, id: 'tab-forward-tests' }
+  return (
+    <nav className="tabbar" aria-label="Main (phone)" data-testid="tabbar">
+      <NavLink to={{ pathname: first.to, search }} className="tab" id={first.id}>
+        {first.icon}
+        <span>{first.label}</span>
+      </NavLink>
+      <NavLink to={{ pathname: '/risk', search }} className="tab" id="tab-risk">
+        <IconShield />
+        <span>Risk</span>
+      </NavLink>
+      <NavLink to={{ pathname: '/trade', search }} className="tab" id="tab-trade">
+        <IconTrade />
+        <span>Trade</span>
+      </NavLink>
+      <NavLink to={{ pathname: '/market', search }} className="tab" id="tab-market">
+        <IconCandles />
+        <span>Market</span>
+      </NavLink>
+      <NavLink to={{ pathname: '/data-health', search }} className="tab" id="tab-data-health">
+        <IconPulse />
+        <span>Health</span>
+        {bad > 0 && <i className="tab-dot" aria-label={`${bad} checks need attention`} />}
+      </NavLink>
+      <details className="tab-more">
+        <summary className="tab" id="tab-more">
+          <IconGrid />
+          <span>More</span>
+        </summary>
+        <div className="tab-sheet" role="menu">
+          {etoro && (
+            <NavLink to={{ pathname: '/forward-tests', search }} className="nav-link" role="menuitem">
+              <IconTrend /> Forward tests
+            </NavLink>
+          )}
+          <NavLink to={{ pathname: '/strategies', search }} className="nav-link" role="menuitem">
+            <IconPower /> Strategies
+          </NavLink>
+          <NavLink to={{ pathname: '/research', search }} className="nav-link" role="menuitem">
+            <IconFlask /> Studies
+          </NavLink>
+          <NavLink to={{ pathname: '/research/runs', search }} className="nav-link" role="menuitem">
+            <IconGrid /> Backtest runs
+          </NavLink>
+          <div className="tab-sheet-row">
+            <span className="nav-label">Clock</span>
+            <TzToggle />
+          </div>
+        </div>
+      </details>
+    </nav>
+  )
+}
+
 export function AppShell() {
   const search = useLedgerSearch()
   return (
@@ -283,6 +383,10 @@ export function AppShell() {
           <ThemeToggle />
         </div>
         <LedgerPicker />
+        <div className="sidebar-clock">
+          <span className="nav-label">Clock</span>
+          <TzToggle />
+        </div>
         <Nav />
         <HealthFoot />
       </aside>
@@ -290,6 +394,7 @@ export function AppShell() {
         <AttentionBar />
         <Outlet />
       </main>
+      <TabBar />
     </div>
   )
 }

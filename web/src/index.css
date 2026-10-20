@@ -5600,3 +5600,300 @@ button.protect-row:hover {
     white-space: normal;
   }
 }
+
+/* --- U2: Today page (pages/etoro/EtoroTodayPage.tsx) --- */
+.today-strip {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  padding: 12px 14px;
+  margin-bottom: 12px;
+  border: 1px solid var(--venue-etoro-line);
+  border-radius: var(--radius);
+  background: linear-gradient(180deg, var(--venue-etoro-soft), transparent 70%);
+}
+.today-strip .stat-value {
+  font-size: 20px;
+}
+.today-dist {
+  display: inline-grid;
+  gap: 1px;
+  line-height: 1.2;
+}
+.today-dist small {
+  font-size: 11px;
+  color: var(--text-3);
+}
+.today-dist.close b {
+  color: var(--warn);
+}
+.today-grid {
+  margin-top: 16px;
+}
+.today-run {
+  display: grid;
+  gap: 8px;
+  padding: 12px 14px;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius);
+  background: var(--bg-raised);
+}
+.today-run-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.today-run-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-weight: 600;
+  color: var(--text);
+  text-decoration: none;
+}
+.today-run-title svg {
+  width: 14px;
+  height: 14px;
+  opacity: 0.6;
+}
+.today-run-title:hover {
+  color: var(--venue-etoro);
+}
+.today-run-line {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  font-size: 13px;
+}
+.today-needs {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 8px;
+}
+.today-needs li {
+  padding: 8px 10px;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius);
+  background: var(--bg-raised);
+}
+.today-need-msg {
+  color: var(--text-2);
+  white-space: normal;
+}
+
+/* --- U3: operator clock toggle --- */
+.sidebar-clock {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 0 4px 6px;
+}
+.tz-toggle {
+  height: 28px;
+  padding: 2px;
+}
+.tz-toggle button {
+  padding: 0 8px;
+  font-size: 11.5px;
+}
+
+/* --- U3: collapsible page intro (clamped on phones) --- */
+.page-intro {
+  position: relative;
+}
+.page-intro p {
+  margin: 6px 0 0;
+}
+.page-intro-toggle {
+  display: none;
+  appearance: none;
+  border: 0;
+  padding: 2px 0;
+  background: transparent;
+  color: var(--venue-etoro, var(--info));
+  font: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+
+/* --- U3: phone navigation --- */
+.tabbar {
+  display: none;
+}
+
+@media (max-width: 720px) {
+  .page-intro p {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  .page-intro.open p {
+    display: block;
+    -webkit-line-clamp: unset;
+  }
+  .page-intro-toggle {
+    display: inline-block;
+  }
+  .sidebar .nav,
+  .sidebar-clock {
+    display: none;
+  }
+  .main {
+    padding-bottom: 92px;
+  }
+  .tabbar {
+    position: fixed;
+    inset: auto 0 0 0;
+    z-index: 30;
+    display: grid;
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+    padding: 6px 6px calc(6px + env(safe-area-inset-bottom));
+    border-top: 1px solid var(--line-soft);
+    background: color-mix(in srgb, var(--bg) 88%, transparent);
+    backdrop-filter: blur(14px) saturate(140%);
+    -webkit-backdrop-filter: blur(14px) saturate(140%);
+  }
+  .tab {
+    position: relative;
+    display: grid;
+    justify-items: center;
+    gap: 3px;
+    padding: 6px 2px;
+    border-radius: 10px;
+    color: var(--text-3);
+    font-size: 10.5px;
+    font-weight: 600;
+    letter-spacing: 0.01em;
+    text-decoration: none;
+    list-style: none;
+    cursor: pointer;
+    transition:
+      color 120ms ease,
+      background 120ms ease;
+  }
+  .tab::-webkit-details-marker {
+    display: none;
+  }
+  .tab svg {
+    width: 20px;
+    height: 20px;
+  }
+  .tab.active,
+  .tab-more[open] > summary {
+    color: var(--text);
+    background: var(--surface-3);
+  }
+  .tab-dot {
+    position: absolute;
+    top: 5px;
+    right: 18%;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--warn);
+    box-shadow: 0 0 0 2px var(--bg);
+  }
+  .tab-more {
+    position: relative;
+  }
+  .tab-sheet {
+    position: absolute;
+    right: 0;
+    bottom: calc(100% + 10px);
+    min-width: 220px;
+    display: grid;
+    gap: 2px;
+    padding: 8px;
+    border: 1px solid var(--line-soft);
+    border-radius: 14px;
+    background: var(--surface-2, var(--bg-raised));
+    box-shadow: var(--shadow-2, 0 12px 32px rgba(0, 0, 0, 0.35));
+    animation: attention-in 160ms ease-out;
+  }
+  .tab-sheet .nav-link {
+    white-space: nowrap;
+  }
+  .tab-sheet-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 8px 6px 2px;
+    border-top: 1px solid var(--line-soft);
+    margin-top: 4px;
+  }
+  .tab-sheet-row .nav-label {
+    display: inline;
+  }
+
+  /* --- U3: card tables (positions, ledger, today): one card per row --- */
+  table.cards-sm,
+  table.cards-sm tbody,
+  table.cards-sm tr,
+  table.cards-sm td {
+    display: block;
+  }
+  table.cards-sm thead {
+    display: none;
+  }
+  table.cards-sm tbody tr {
+    padding: 8px 10px;
+    border-bottom: 1px solid var(--line-soft);
+  }
+  table.cards-sm tbody tr.positions-detail-row {
+    padding: 0;
+  }
+  table.cards-sm td {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 12px;
+    padding: 4px 0;
+    border: 0;
+    text-align: right;
+  }
+  table.cards-sm td.r {
+    text-align: right;
+  }
+  table.cards-sm td::before {
+    content: attr(data-label);
+    flex: none;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--text-3);
+    text-align: left;
+  }
+  table.cards-sm td:not([data-label])::before {
+    content: none;
+  }
+  table.cards-sm td[colspan] {
+    display: block;
+    text-align: left;
+  }
+  .today-strip,
+  .positions-strip {
+    grid-template-columns: 1fr 1fr;
+  }
+  .today-grid {
+    grid-template-columns: 1fr;
+  }
+  .attention {
+    margin-top: 0;
+  }
+}
+@media (max-width: 720px) {
+  .today-strip .stat-value,
+  .positions-strip .stat-value {
+    font-size: 17px;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+}

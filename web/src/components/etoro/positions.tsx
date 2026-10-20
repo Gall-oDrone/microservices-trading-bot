@@ -10,8 +10,9 @@ import { useState, type KeyboardEvent, type ReactNode } from 'react'
 import { Link } from 'react-router'
 import { useEtoroPositions, useLedgerSearch } from '../../api/client'
 import { tradePnL, type ClosedBy, type EtoroTrade, type EtoroPositionsResponse } from '../../api/etoroSchemas'
-import { fmtBps, fmtDate, fmtFrac, fmtMoney, fmtNY, fmtPrice, fmtUTC, fmtUnits } from '../../lib/format'
+import { fmtBps, fmtDate, fmtFrac, fmtMoney, fmtPrice, fmtUTC, fmtUnits } from '../../lib/format'
 import { Badge, CardSkeleton, Empty, ErrorState, Stat } from '../ui'
+import { useClock, type Tz, fmtTz, tzLabel } from '../../lib/tz'
 import { IconRefresh, IconShield, IconTrade } from '../icons'
 
 type Filter = 'all' | 'open' | 'closed'
@@ -71,8 +72,9 @@ function Fact({ label, children }: { label: string; children: ReactNode }) {
   )
 }
 
-function Details({ t, quote }: { t: EtoroTrade; quote: string }) {
+function Details({ t, quote, tz }: { t: EtoroTrade; quote: string; tz: Tz }) {
   const book = t.book
+  const when = (iso: string) => `${fmtTz(iso, tz)} ${tzLabel(tz)}`
   const price = (v: number | undefined) => (v && v > 0 ? fmtPrice(v, quote, book) : '—')
   return (
     <div className="positions-details" data-testid={`position-details-${t.position_id}`}>
@@ -81,7 +83,7 @@ function Details({ t, quote }: { t: EtoroTrade; quote: string }) {
           {fmtUnits(t.units)} · {fmtMoney(t.amount, quote, 2)} x1
         </Fact>
         <Fact label="Opened">
-          {t.opened_at ? <span title={fmtUTC(t.opened_at)}>{fmtNY(t.opened_at)} NY</span> : '—'}
+          {t.opened_at ? <span title={fmtUTC(t.opened_at)}>{when(t.opened_at)}</span> : '—'}
           {t.open_bar_date ? ` · bar ${fmtDate(t.open_bar_date)}` : ''}
           {t.recorded_open ? '' : ' · open not recorded'}
         </Fact>
@@ -117,7 +119,7 @@ function Details({ t, quote }: { t: EtoroTrade; quote: string }) {
         {t.status !== 'open' && (
           <>
             <Fact label="Closed">
-              {t.closed_at ? <span title={fmtUTC(t.closed_at)}>{fmtNY(t.closed_at)} NY</span> : '—'}
+              {t.closed_at ? <span title={fmtUTC(t.closed_at)}>{when(t.closed_at)}</span> : '—'}
               {t.close_bar_date ? ` · bar ${fmtDate(t.close_bar_date)}` : ''}
               {t.held_days != null ? ` · held ${t.held_days} d` : ''}
               {t.recorded_close === false ? ' · close not in the ledger' : ''}
@@ -163,7 +165,19 @@ function Details({ t, quote }: { t: EtoroTrade; quote: string }) {
   )
 }
 
-function Row({ t, quote, search, showBook }: { t: EtoroTrade; quote: string; search: string; showBook: boolean }) {
+function Row({
+  t,
+  quote,
+  search,
+  showBook,
+  tz,
+}: {
+  t: EtoroTrade
+  quote: string
+  search: string
+  showBook: boolean
+  tz: Tz
+}) {
   const [open, setOpen] = useState(false)
   const book = t.book
   const toggle = () => setOpen((v) => !v)
@@ -187,7 +201,7 @@ function Row({ t, quote, search, showBook }: { t: EtoroTrade; quote: string; sea
         aria-expanded={open}
         aria-controls={`position-details-${t.position_id}`}
       >
-        <td>
+        <td data-label="Position">
           <div className="positions-id">
             {showBook ? (
               <Link
@@ -207,15 +221,17 @@ function Row({ t, quote, search, showBook }: { t: EtoroTrade; quote: string; sea
             </span>
           </div>
         </td>
-        <td>
+        <td data-label={`Opened (${tzLabel(tz)})`}>
           {t.opened_at ? (
-            <span title={fmtUTC(t.opened_at)}>{fmtNY(t.opened_at)}</span>
+            <span title={fmtUTC(t.opened_at)}>{fmtTz(t.opened_at, tz)}</span>
           ) : (
             <span className="faint">—</span>
           )}
         </td>
-        <td className="r num">{fmtPrice(t.open_rate, quote, book)}</td>
-        <td className="r num">
+        <td className="r num" data-label="Open">
+          {fmtPrice(t.open_rate, quote, book)}
+        </td>
+        <td className="r num" data-label="Mark / close">
           {t.status === 'open' ? (
             t.mark_source === 'account' && t.mark_rate ? (
               <span title="implied from the account's unrealised P&L">≈ {fmtPrice(t.mark_rate, quote, book)}</span>
@@ -228,10 +244,10 @@ function Row({ t, quote, search, showBook }: { t: EtoroTrade; quote: string; sea
             <span className="faint">—</span>
           )}
         </td>
-        <td className="r">
+        <td className="r" data-label="P&L">
           <PnL t={t} quote={quote} />
         </td>
-        <td className="num">
+        <td className="num" data-label="Stop / target">
           {t.stop_loss_rate ? (
             <span title={t.protection_drift ? 'the account holds different rates (details)' : undefined}>
               {fmtPrice(t.stop_loss_rate, quote, book)}
@@ -252,14 +268,14 @@ function Row({ t, quote, search, showBook }: { t: EtoroTrade; quote: string; sea
             <span className="faint">none</span>
           )}
         </td>
-        <td>
+        <td data-label="Closed by">
           {t.status === 'open' ? (
             <span className="faint">{t.held_days != null ? `${t.held_days} d held` : ''}</span>
           ) : (
             closedByText(t.closed_by, t.close_kind)
           )}
         </td>
-        <td>
+        <td data-label="Status">
           <span data-testid={`position-status-${t.position_id}`}>
             <Badge tone={statusTone(t)} dot>
               {t.status === 'closed' && t.recorded_close === false ? 'closed · unrecorded' : t.status}
@@ -270,7 +286,7 @@ function Row({ t, quote, search, showBook }: { t: EtoroTrade; quote: string; sea
       {open && (
         <tr className="positions-detail-row" id={`position-details-${t.position_id}`}>
           <td colSpan={8}>
-            <Details t={t} quote={quote} />
+            <Details t={t} quote={quote} tz={tz} />
           </td>
         </tr>
       )}
@@ -279,6 +295,7 @@ function Row({ t, quote, search, showBook }: { t: EtoroTrade; quote: string; sea
 }
 
 function Summary({ r }: { r: EtoroPositionsResponse }) {
+  const clock = useClock()
   const quote = r.account?.currency ?? 'USD'
   const s = r.summary
   return (
@@ -338,7 +355,9 @@ function Summary({ r }: { r: EtoroPositionsResponse }) {
           r.account ? (
             <>
               cash {fmtMoney(r.account.cash, quote, 0)} · read{' '}
-              <span title={fmtUTC(r.account.at)}>{fmtNY(r.account.at)} NY</span>
+              <span title={fmtUTC(r.account.at)}>
+                {clock.fmt(r.account.at)} {clock.label}
+              </span>
               {r.cached ? ' (cached)' : ''}
             </>
           ) : (
@@ -353,6 +372,7 @@ function Summary({ r }: { r: EtoroPositionsResponse }) {
 export function PositionsCard({ book = '', title = 'Positions & round trips' }: { book?: string; title?: string }) {
   const q = useEtoroPositions(book)
   const search = useLedgerSearch()
+  const clock = useClock()
   const [filter, setFilter] = useState<Filter>('all')
   const r = q.data
   const quote = r?.account?.currency ?? 'USD'
@@ -425,11 +445,13 @@ export function PositionsCard({ book = '', title = 'Positions & round trips' }: 
             <Empty title={`No ${filter} position`}>Change the filter above.</Empty>
           ) : (
             <div className="table-wrap">
-              <table className="data positions-table" id="positions-table" data-testid="positions-table">
+              <table className="data positions-table cards-sm" id="positions-table" data-testid="positions-table">
                 <thead>
                   <tr>
                     <th scope="col">Position</th>
-                    <th scope="col">Opened (NY)</th>
+                    <th scope="col" data-testid="positions-opened-h">
+                      Opened ({clock.label})
+                    </th>
                     <th scope="col" className="r">
                       Open
                     </th>
@@ -446,7 +468,7 @@ export function PositionsCard({ book = '', title = 'Positions & round trips' }: 
                 </thead>
                 <tbody>
                   {rows.map((t) => (
-                    <Row key={t.position_id} t={t} quote={quote} search={search} showBook={!book} />
+                    <Row key={t.position_id} t={t} quote={quote} search={search} showBook={!book} tz={clock.tz} />
                   ))}
                 </tbody>
               </table>

@@ -16,6 +16,7 @@ import type { EtoroLedgerRecord, EtoroReconcileReport } from '../../api/etoroSch
 import { EtoroEquityChart, PriceChart, type FillMarker } from '../../components/charts'
 import { DemoStrip, NextRun, OrderLine, RunBadge, SessionClock } from '../../components/etoro/parts'
 import { PositionsCard } from '../../components/etoro/positions'
+import { stopHistory } from '../../lib/today'
 import { ReconcileBadge, ReconcileFindings } from '../../components/etoro/reconcile'
 import { Badge, Banner, CardSkeleton, Empty, ErrorState, LedgerBadge, SignalPill, Stat } from '../../components/ui'
 import {
@@ -50,7 +51,7 @@ function RecordsTable({ records, quote, book }: { records: EtoroLedgerRecord[]; 
   return (
     <div className="stack" style={{ gap: 10 }}>
       <div className="table-wrap">
-        <table className="data ledger-table" id="etoro-ledger-table" data-testid="etoro-records">
+        <table className="data ledger-table cards-sm" id="etoro-ledger-table" data-testid="etoro-records">
           <thead>
             <tr>
               <th scope="col">Bar → fill</th>
@@ -85,12 +86,12 @@ function RecordsTable({ records, quote, book }: { records: EtoroLedgerRecord[]; 
                   data-testid={`etoro-record-${r.decision.bar_date}`}
                   className={manual ? 'ledger-manual' : undefined}
                 >
-                  <td title={`recorded ${fmtNY(r.recorded_at)} NY (${fmtUTC(r.recorded_at)})`}>
+                  <td data-label="Bar → fill" title={`recorded ${fmtNY(r.recorded_at)} NY (${fmtUTC(r.recorded_at)})`}>
                     <span className="num">{fmtDate(r.decision.bar_date)}</span>
                     <span className="faint"> → </span>
                     <span className="num">{fmtDate(r.decision.fill_date)}</span>
                   </td>
-                  <td>
+                  <td data-label="Signal">
                     <Badge
                       tone={r.decision.signal === 'long' ? 'long' : r.decision.signal === 'manual' ? 'etoro' : 'flat'}
                       title={manual && r.operator ? `${r.operator.by}: ${r.operator.reason}` : undefined}
@@ -98,8 +99,8 @@ function RecordsTable({ records, quote, book }: { records: EtoroLedgerRecord[]; 
                       {r.decision.signal}
                     </Badge>
                   </td>
-                  <td>{r.decision.action}</td>
-                  <td>
+                  <td data-label="Action">{r.decision.action}</td>
+                  <td data-label="Demo">
                     {d ? (
                       <Badge tone={demoActionTone(d.action)} title={d.notes?.join(' · ')}>
                         {d.action}
@@ -108,7 +109,7 @@ function RecordsTable({ records, quote, book }: { records: EtoroLedgerRecord[]; 
                       <span className="faint">dry run</span>
                     )}
                   </td>
-                  <td>
+                  <td data-label="Order">
                     {o ? (
                       <span className="row" style={{ gap: 6 }}>
                         <Badge
@@ -124,14 +125,20 @@ function RecordsTable({ records, quote, book }: { records: EtoroLedgerRecord[]; 
                       <span className="faint">—</span>
                     )}
                   </td>
-                  <td className="r num">{o?.avg_price != null ? fmtPrice(o.avg_price, quote, book) : '—'}</td>
-                  <td className="r num">
+                  <td data-label="Avg price" className="r num">
+                    {o?.avg_price != null ? fmtPrice(o.avg_price, quote, book) : '—'}
+                  </td>
+                  <td data-label="vs mid / close" className="r num">
                     {o?.fill_vs_mid_bps != null ? fmtBps(o.fill_vs_mid_bps, true) : '—'}
                     <span className="faint"> / </span>
                     {o?.fill_vs_close_bps != null ? fmtBps(o.fill_vs_close_bps, true) : '—'}
                   </td>
-                  <td className="num">{d ? positionText(d.position_after) : '—'}</td>
-                  <td className="r num">{d?.account ? fmtMoney(d.account.equity, d.account.currency, 2) : '—'}</td>
+                  <td data-label="Position after" className="num">
+                    {d ? positionText(d.position_after) : '—'}
+                  </td>
+                  <td data-label="Account equity" className="r num">
+                    {d?.account ? fmtMoney(d.account.equity, d.account.currency, 2) : '—'}
+                  </td>
                 </tr>
               )
             })}
@@ -236,6 +243,7 @@ export function EtoroForwardTestDetailPage() {
       ) ?? NO_FILLS,
     [ledger.data],
   )
+  const stops = useMemo(() => (ledger.data ? stopHistory(ledger.data.records) : []), [ledger.data])
   const prereg = ft?.prereg.replace(/\.md$/, '')
 
   return (
@@ -379,6 +387,7 @@ export function EtoroForwardTestDetailPage() {
               digits={quoteDigits(quote, book)}
               volume={false}
               label={`${bookLabel(book)} daily candles with SMA50`}
+              stops={stops}
               levels={
                 ft?.demo_position?.state === 'long'
                   ? {

@@ -230,7 +230,9 @@ describe('market page', () => {
 
   it('is in the nav', async () => {
     renderAt('/forward-tests')
-    const link = await screen.findByRole('link', { name: /market/i })
+    // Two navs since U3 (sidebar + phone tab bar): ask the sidebar's.
+    const nav = await screen.findByRole('navigation', { name: 'Main' })
+    const link = await within(nav).findByRole('link', { name: /market/i })
     expect(link).toHaveAttribute('id', 'nav-market')
     expect(link.getAttribute('href')).toMatch(/^\/market/)
   })

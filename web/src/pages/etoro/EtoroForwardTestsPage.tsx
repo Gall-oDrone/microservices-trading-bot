@@ -9,6 +9,7 @@ import { SessionClock } from '../../components/etoro/parts'
 import { Banner, CardSkeleton, ErrorState } from '../../components/ui'
 import { bookSymbol, fmtNY, fmtUTC } from '../../lib/format'
 import { usePageTitle } from '../../lib/usePageTitle'
+import { PageIntro } from '../../components/PageIntro'
 
 export function EtoroForwardTestsPage() {
   usePageTitle('Forward tests · eToro')
@@ -21,11 +22,11 @@ export function EtoroForwardTestsPage() {
       <div className="page-head">
         <div>
           <h1>SMA50 forward test · eToro index CFDs (demo)</h1>
-          <p>
+          <PageIntro>
             The frozen SMA50 rule on NSDQ100 and SPX500, decided on each NYSE close and executed at 09:35 New York on a
             demo account with x1 CFDs. Paper numbers sit next to holding the same CFD, after the pre-registered spread
             and overnight financing.
-          </p>
+          </PageIntro>
         </div>
         {q.data && (
           <div className="stack" style={{ alignItems: 'flex-end', gap: 6 }}>

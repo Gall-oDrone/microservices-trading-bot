@@ -75,7 +75,7 @@ export function fmtNY(iso: string): string {
   return fmtIn(iso, NY_TZ)
 }
 
-function fmtIn(iso: string, timeZone: string): string {
+export function fmtIn(iso: string, timeZone: string): string {
   const d = new Date(iso)
   if (Number.isNaN(d.getTime())) return iso
   return d.toLocaleString('en-GB', {
