@@ -22,9 +22,9 @@ package api
 //     not in the history yet is "unknown" (eToro's history lags).
 //
 // The live reads (account, positions, history: three reads) are cached
-// for positionsCacheTTL per ledger so a page polling every 30 s and
-// several tabs stay far inside the 60 reads/min the key shares with the
-// rates poller and the trades.
+// for positionsCacheTTL per ledger so a page polling every 60 s and
+// several tabs cost one set of reads a minute, far inside the 60 reads/min
+// the key shares with the rates poller and the trades.
 
 import (
 	"context"
@@ -62,7 +62,7 @@ const (
 const stopOutTolerance = 0.0005
 
 // positionsCacheTTL bounds the live reads behind the view.
-const positionsCacheTTL = 15 * time.Second
+const positionsCacheTTL = 45 * time.Second
 
 // EtoroTrade is one position's life as the ledger and the account tell it.
 type EtoroTrade struct {

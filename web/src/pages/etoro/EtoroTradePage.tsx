@@ -14,6 +14,7 @@
  * trade is offered.
  */
 import { useEffect, useRef, useState, type FormEvent } from 'react'
+import { useSearchParams } from 'react-router'
 import { ApiError, useControls, useEtoroForwardTests, useLedgerName } from '../../api/client'
 import { PositionsCard } from '../../components/etoro/positions'
 import type {
@@ -24,6 +25,7 @@ import type {
   TradeRecommendation,
   TradeSide,
 } from '../../api/etoroSchemas'
+import { tradePlaceResponseSchema } from '../../api/etoroSchemas'
 import type { TradingInfo } from '../../api/schemas'
 import {
   deriveProposals,
@@ -61,6 +63,21 @@ function useCountdown(expiresAt: string | undefined): number {
     return () => clearInterval(id)
   }, [expiresAt])
   return secondsLeft(expiresAt, now)
+}
+
+/** The executor's books; a ?book= outside this list falls back to the first. */
+const BOOK_IDS = ['nsdq100', 'spx500']
+
+/** The outcome kept in sessionStorage for the session, or null when absent or unparsable. */
+function readOutcome(key: string): TradePlaceResponse | null {
+  try {
+    const raw = sessionStorage.getItem(key)
+    if (!raw) return null
+    const r = tradePlaceResponseSchema.safeParse(JSON.parse(raw))
+    return r.success ? r.data : null
+  } catch {
+    return null
+  }
 }
 
 const DEFAULT_TRADING: TradingInfo = {
@@ -382,7 +399,7 @@ function PreviewCard({
   )
 }
 
-function OutcomeCard({ r }: { r: TradePlaceResponse }) {
+function OutcomeCard({ r, onDismiss }: { r: TradePlaceResponse; onDismiss: () => void }) {
   const protect = r.side === 'protect'
   const ok = r.status === 'executed' || (protect && r.status === 'pending')
   const pa = r.position_after
@@ -401,11 +418,29 @@ function OutcomeCard({ r }: { r: TradePlaceResponse }) {
           </h2>
           <div className="sub">
             ref <span className="num">{r.client_ref}</span> · request <span className="num">{r.request_id}</span>
+            {r.audit?.at ? (
+              <>
+                {' '}
+                · <span title={fmtUTC(r.audit.at)}>{fmtNY(r.audit.at)} NY</span>
+              </>
+            ) : null}
           </div>
         </div>
-        <Badge tone={r.ledger_recorded ? 'ok' : 'block'} dot>
-          {r.ledger_recorded ? 'ledger recorded' : 'ledger NOT recorded'}
-        </Badge>
+        <div className="row" style={{ gap: 8 }}>
+          <Badge tone={r.ledger_recorded ? 'ok' : 'block'} dot>
+            {r.ledger_recorded ? 'ledger recorded' : 'ledger NOT recorded'}
+          </Badge>
+          <button
+            type="button"
+            className="btn btn-ghost btn-sm"
+            onClick={onDismiss}
+            id="trade-outcome-dismiss"
+            data-testid="trade-outcome-dismiss"
+            title="Hide this outcome (it stays in the ledger and the audit log)"
+          >
+            Dismiss
+          </button>
+        </div>
       </div>
       <div className="trade-facts">
         <Stat
@@ -540,6 +575,10 @@ export function EtoroTradePage() {
   const trading = controls.data?.trading ?? (controls.data ? DEFAULT_TRADING : undefined)
   const books = ft.data?.books ?? []
 
+  // The form can arrive pre-filled from a link (the Positions card's
+  // "protect" on an unprotected row): ?book=&side=&position=. Applied in an
+  // effect because the link may be followed from this very page.
+  const [params] = useSearchParams()
   const [form, setForm] = useState<Form>({
     book: 'nsdq100',
     side: 'open',
@@ -549,10 +588,34 @@ export function EtoroTradePage() {
     slPct: '',
     tpPct: '',
   })
+  const pBook = params.get('book')
+  const pSide = params.get('side')
+  const pPos = params.get('position')
+  useEffect(() => {
+    if (!pBook && !pSide && !pPos) return
+    setForm((f) => ({
+      ...f,
+      book: pBook && BOOK_IDS.includes(pBook) ? pBook : f.book,
+      side: pSide === 'open' || pSide === 'close' || pSide === 'protect' ? pSide : f.side,
+      positionId: pPos ?? f.positionId,
+    }))
+  }, [pBook, pSide, pPos])
   const [token, setToken] = useState(getOperatorToken)
   const [preview, setPreview] = useState<TradePreview | null>(null)
   const [refused, setRefused] = useState<string | null>(null)
-  const [outcome, setOutcome] = useState<TradePlaceResponse | null>(null)
+  // The last outcome is kept for the session (per ledger) so a reload or a
+  // detour to another page does not lose the fill the operator wants to read.
+  const outcomeKey = `trade-outcome:${ledger}`
+  const [outcome, setOutcomeState] = useState<TradePlaceResponse | null>(() => readOutcome(outcomeKey))
+  const setOutcome = (o: TradePlaceResponse | null) => {
+    setOutcomeState(o)
+    try {
+      if (o) sessionStorage.setItem(outcomeKey, JSON.stringify(o))
+      else sessionStorage.removeItem(outcomeKey)
+    } catch {
+      // storage unavailable: the outcome lives in memory only
+    }
+  }
   const [dialog, setDialog] = useState(false)
   const [tried, setTried] = useState(false)
   const [rec, setRec] = useState<TradeRecommendation | null>(null)
@@ -915,7 +978,7 @@ export function EtoroTradePage() {
           onReprepare={() => runPrepare({ ...form, positionId }, token)}
         />
       )}
-      {outcome && <OutcomeCard r={outcome} />}
+      {outcome && <OutcomeCard r={outcome} onDismiss={() => setOutcome(null)} />}
 
       {ft.data && <PositionsCard />}
 

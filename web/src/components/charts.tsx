@@ -20,6 +20,7 @@ import { useEffect, useRef } from 'react'
 import type { EtoroEquityPoint } from '../api/etoroSchemas'
 import type { CandlePoint, EquityPoint, LiveCandle, PnLDay } from '../api/schemas'
 import { useTheme } from '../lib/theme'
+import { labelledFills } from '../lib/chartlabels'
 
 function token(name: string, fallback: string): string {
   if (typeof window === 'undefined') return fallback
@@ -108,6 +109,14 @@ export interface FillMarker {
   label?: string
 }
 
+/** Resting protective levels of the held position, drawn as price lines (eToro, 2026-10-19). */
+export interface PriceLevels {
+  stop?: number
+  target?: number
+  /** The position's open rate, drawn faintly so the stop reads as a distance. */
+  entry?: number
+}
+
 /** Daily candles with SMA50, volume, and markers for signal flips and fills. */
 export function PriceChart({
   candles,
@@ -117,6 +126,7 @@ export function PriceChart({
   live,
   digits,
   volume = true,
+  levels,
 }: {
   candles: CandlePoint[]
   fills: FillMarker[]
@@ -127,12 +137,16 @@ export function PriceChart({
   digits?: number
   /** Draw the volume histogram (false for sources without volume, like eToro's OneDay candles). */
   volume?: boolean
+  /** Stop / target / entry of the held position, as price lines. */
+  levels?: PriceLevels
 }) {
   const priceRef = useRef<ISeriesApi<'Candlestick'> | null>(null)
   const volRef = useRef<ISeriesApi<'Histogram'> | null>(null)
   const flipRef = useRef<IPriceLine | null>(null)
   const ref = useChart(
     (chart) => {
+      // Room on the right so the last fill's label is not cut by the edge.
+      chart.applyOptions({ timeScale: { fixRightEdge: false, rightOffset: 14 } })
       const long = token('--long', '#2ec4a7')
       const loss = token('--loss', '#f0715c')
       const whole = ['mxn', 'usd'].includes(quote.toLowerCase())
@@ -193,18 +207,62 @@ export function PriceChart({
         }
       }
       const first = candles[0]?.date ?? ''
-      for (const f of fills) {
-        if (f.fill_date < first) continue
+      const labelled = labelledFills(
+        fills,
+        candles.map((c) => c.date),
+      )
+      fills.forEach((f, i) => {
+        if (f.fill_date < first) return
         markers.push({
           time: t(f.fill_date),
           position: f.side === 'buy' ? 'belowBar' : 'aboveBar',
           color: token('--info', '#5bb4f0'),
           shape: 'circle',
-          text: f.label ?? `stage ${f.side}`,
+          ...(labelled.has(i) ? { text: f.label ?? `stage ${f.side}` } : {}),
         })
-      }
+      })
       markers.sort((x, y) => String(x.time).localeCompare(String(y.time)))
       createSeriesMarkers(price, markers)
+
+      // The held position's levels: the stop in the loss colour, the target
+      // in the long colour, the entry faint. Drawn only when inside a sane
+      // range of the data so a stale level cannot squash the scale.
+      if (levels) {
+        const lo = Math.min(...candles.map((c) => c.low))
+        const hi = Math.max(...candles.map((c) => c.high))
+        const span = hi - lo || 1
+        const sane = (v: number | undefined): v is number => v != null && v > 0 && v > lo - span && v < hi + span
+        if (sane(levels.entry)) {
+          price.createPriceLine({
+            price: levels.entry,
+            color: alpha('--text-3', '#7a8394', 0.7),
+            lineWidth: 1,
+            lineStyle: LineStyle.Dotted,
+            axisLabelVisible: false,
+            title: 'entry',
+          })
+        }
+        if (sane(levels.stop)) {
+          price.createPriceLine({
+            price: levels.stop,
+            color: loss,
+            lineWidth: 1,
+            lineStyle: LineStyle.Dashed,
+            axisLabelVisible: true,
+            title: 'stop',
+          })
+        }
+        if (sane(levels.target)) {
+          price.createPriceLine({
+            price: levels.target,
+            color: long,
+            lineWidth: 1,
+            lineStyle: LineStyle.Dashed,
+            axisLabelVisible: true,
+            title: 'target',
+          })
+        }
+      }
       priceRef.current = price
       volRef.current = vol
       return () => {
@@ -213,7 +271,7 @@ export function PriceChart({
         flipRef.current = null
       }
     },
-    [candles, fills, quote, digits, volume],
+    [candles, fills, quote, digits, volume, levels?.stop, levels?.target, levels?.entry],
   )
   const [theme] = useTheme()
 
@@ -259,7 +317,7 @@ export function PriceChart({
       price.removePriceLine(flipRef.current)
       flipRef.current = null
     }
-  }, [candles, fills, quote, digits, volume, c, flip, fresh, theme])
+  }, [candles, fills, quote, digits, volume, c, flip, fresh, theme, levels?.stop, levels?.target, levels?.entry])
   return <div ref={ref} className="chart" role="img" aria-label={label} />
 }
 
@@ -311,21 +369,28 @@ export function EtoroEquityChart({ points, label }: { points: EtoroEquityPoint[]
         timeScale: { fixLeftEdge: false, fixRightEdge: false },
         leftPriceScale: { visible: true, borderVisible: false },
       })
+      // One axis label per scale: the paper equity on the right (four
+      // decimals, so 0.9729 and 0.9770 do not both read "0.97"), the demo
+      // account on the left. The hold line is named in the legend above the
+      // chart; a second right-axis label collided with the paper's.
+      const unit = { type: 'price' as const, precision: 4, minMove: 0.0001 }
       const hold = chart.addSeries(LineSeries, {
         color: token('--bench', '#959aa6'),
         lineWidth: 2,
         lineStyle: LineStyle.Dashed,
         priceLineVisible: false,
-        lastValueVisible: true,
-        title: 'CFD hold',
+        lastValueVisible: false,
+        priceFormat: unit,
       })
       hold.setData(points.map((p) => ({ time: t(p.date), value: p.hold_equity })))
       const eq = chart.addSeries(LineSeries, {
         color: token('--long', '#2ec4a7'),
         lineWidth: 2,
         priceLineVisible: false,
+        lastValueVisible: true,
         title: 'paper',
         pointMarkersVisible: points.length < 40,
+        priceFormat: unit,
       })
       eq.setData(points.map((p) => ({ time: t(p.date), value: p.equity })))
       eq.createPriceLine({
@@ -343,7 +408,8 @@ export function EtoroEquityChart({ points, label }: { points: EtoroEquityPoint[]
           color: token('--venue-etoro', '#a78bfa'),
           lineWidth: 2,
           priceLineVisible: false,
-          title: 'demo USD',
+          lastValueVisible: true,
+          title: 'demo',
           pointMarkersVisible: demoPts.length < 40,
           priceFormat: { type: 'price', precision: 0, minMove: 1 },
         })

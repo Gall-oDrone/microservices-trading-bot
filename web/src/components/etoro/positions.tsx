@@ -6,12 +6,15 @@
  * The figures' source is always named: "live" when the account was read,
  * "ledger" otherwise, and eToro's net is marked confirmed.
  */
-import { useState, type ReactNode } from 'react'
-import { useEtoroPositions } from '../../api/client'
+import { useState, type KeyboardEvent, type ReactNode } from 'react'
+import { Link } from 'react-router'
+import { useEtoroPositions, useLedgerSearch } from '../../api/client'
 import { tradePnL, type ClosedBy, type EtoroTrade, type EtoroPositionsResponse } from '../../api/etoroSchemas'
 import { fmtBps, fmtDate, fmtFrac, fmtMoney, fmtNY, fmtPrice, fmtUTC, fmtUnits } from '../../lib/format'
 import { Badge, CardSkeleton, Empty, ErrorState, Stat } from '../ui'
-import { IconRefresh, IconTrade } from '../icons'
+import { IconRefresh, IconShield, IconTrade } from '../icons'
+
+type Filter = 'all' | 'open' | 'closed'
 
 function signed(v: number, quote: string, digits = 2): string {
   const s = fmtMoney(Math.abs(v), quote, digits)
@@ -160,20 +163,44 @@ function Details({ t, quote }: { t: EtoroTrade; quote: string }) {
   )
 }
 
-function Row({ t, quote }: { t: EtoroTrade; quote: string }) {
+function Row({ t, quote, search, showBook }: { t: EtoroTrade; quote: string; search: string; showBook: boolean }) {
   const [open, setOpen] = useState(false)
   const book = t.book
+  const toggle = () => setOpen((v) => !v)
+  const onKey = (e: KeyboardEvent<HTMLTableRowElement>) => {
+    if (e.target !== e.currentTarget) return
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault()
+      toggle()
+    }
+  }
+  const unprotected = t.status === 'open' && !t.stop_loss_rate
   return (
     <>
       <tr
         className={`positions-row ${open ? 'open' : ''}`}
         data-testid={`position-${t.position_id}`}
-        onClick={() => setOpen((v) => !v)}
+        onClick={toggle}
+        onKeyDown={onKey}
+        role="button"
+        tabIndex={0}
         aria-expanded={open}
+        aria-controls={`position-details-${t.position_id}`}
       >
         <td>
           <div className="positions-id">
-            <b>{t.symbol}</b>
+            {showBook ? (
+              <Link
+                to={`/forward-tests/${encodeURIComponent(book)}${search}`}
+                className="positions-book"
+                onClick={(e) => e.stopPropagation()}
+                title={`Open the ${t.symbol} forward-test page`}
+              >
+                {t.symbol}
+              </Link>
+            ) : (
+              <b>{t.symbol}</b>
+            )}
             <span className="row" style={{ gap: 6 }}>
               <Badge tone={t.source === 'manual' ? 'etoro' : t.source === 'rule' ? 'info' : 'flat'}>{t.source}</Badge>
               <span className="faint num">{t.position_id}</span>
@@ -211,8 +238,16 @@ function Row({ t, quote }: { t: EtoroTrade; quote: string }) {
               {t.take_profit_rate ? ` / ${fmtPrice(t.take_profit_rate, quote, book)}` : ''}
               {t.protection_drift ? ' !' : ''}
             </span>
-          ) : t.status === 'open' ? (
-            <Badge tone="warn">no stop</Badge>
+          ) : unprotected ? (
+            <Link
+              to={`/trade${search}${search ? '&' : '?'}book=${encodeURIComponent(book)}&side=protect&position=${encodeURIComponent(t.position_id)}`}
+              className="positions-protect"
+              onClick={(e) => e.stopPropagation()}
+              data-testid={`position-protect-${t.position_id}`}
+              title="Set a stop from the Trade page (prepare → place)"
+            >
+              <IconShield /> no stop · protect
+            </Link>
           ) : (
             <span className="faint">none</span>
           )}
@@ -233,7 +268,7 @@ function Row({ t, quote }: { t: EtoroTrade; quote: string }) {
         </td>
       </tr>
       {open && (
-        <tr className="positions-detail-row">
+        <tr className="positions-detail-row" id={`position-details-${t.position_id}`}>
           <td colSpan={8}>
             <Details t={t} quote={quote} />
           </td>
@@ -317,8 +352,14 @@ function Summary({ r }: { r: EtoroPositionsResponse }) {
 
 export function PositionsCard({ book = '', title = 'Positions & round trips' }: { book?: string; title?: string }) {
   const q = useEtoroPositions(book)
+  const search = useLedgerSearch()
+  const [filter, setFilter] = useState<Filter>('all')
   const r = q.data
   const quote = r?.account?.currency ?? 'USD'
+  const rows = (r?.trades ?? []).filter((t) =>
+    filter === 'all' ? true : filter === 'open' ? t.status !== 'closed' : t.status === 'closed',
+  )
+  const counts = r ? { all: r.trades.length, open: r.summary.open + r.summary.unknown, closed: r.summary.closed } : null
   return (
     <section className="card venue-etoro positions-card" aria-labelledby="positions-h" data-testid="positions-card">
       <div className="card-head">
@@ -334,18 +375,35 @@ export function PositionsCard({ book = '', title = 'Positions & round trips' }: 
               : 'one row per position: open with the account’s unrealised P&L, closed with the fill, who closed it and eToro’s net'}
           </span>
         </div>
-        <button
-          type="button"
-          className="btn btn-ghost btn-sm"
-          onClick={() => q.refetch()}
-          disabled={q.isFetching}
-          aria-busy={q.isFetching}
-          id="positions-refresh"
-          data-testid="positions-refresh"
-          title="Re-read the ledger and the account"
-        >
-          <IconRefresh /> {q.isFetching ? 'Reading…' : 'Refresh'}
-        </button>
+        <div className="row" style={{ gap: 8 }}>
+          {counts && counts.all > 0 && (
+            <div className="seg positions-filter" role="group" aria-label="Show" data-testid="positions-filter">
+              {(['all', 'open', 'closed'] as Filter[]).map((f) => (
+                <button
+                  key={f}
+                  type="button"
+                  aria-pressed={filter === f}
+                  onClick={() => setFilter(f)}
+                  data-testid={`positions-filter-${f}`}
+                >
+                  {f} <span className="faint num">{counts[f]}</span>
+                </button>
+              ))}
+            </div>
+          )}
+          <button
+            type="button"
+            className="btn btn-ghost btn-sm"
+            onClick={() => q.refetch()}
+            disabled={q.isFetching}
+            aria-busy={q.isFetching}
+            id="positions-refresh"
+            data-testid="positions-refresh"
+            title="Re-read the ledger and the account"
+          >
+            <IconRefresh /> {q.isFetching ? 'Reading…' : 'Refresh'}
+          </button>
+        </div>
       </div>
       {q.isLoading && <CardSkeleton lines={4} />}
       {q.isError && <ErrorState error={q.error} onRetry={() => q.refetch()} />}
@@ -363,6 +421,8 @@ export function PositionsCard({ book = '', title = 'Positions & round trips' }: 
             <Empty title={book ? `No position on ${book.toUpperCase()} yet` : 'No positions yet'}>
               A row appears when the 09:35 run or a console trade opens one.
             </Empty>
+          ) : rows.length === 0 ? (
+            <Empty title={`No ${filter} position`}>Change the filter above.</Empty>
           ) : (
             <div className="table-wrap">
               <table className="data positions-table" id="positions-table" data-testid="positions-table">
@@ -385,8 +445,8 @@ export function PositionsCard({ book = '', title = 'Positions & round trips' }: 
                   </tr>
                 </thead>
                 <tbody>
-                  {r.trades.map((t) => (
-                    <Row key={t.position_id} t={t} quote={quote} />
+                  {rows.map((t) => (
+                    <Row key={t.position_id} t={t} quote={quote} search={search} showBook={!book} />
                   ))}
                 </tbody>
               </table>

@@ -50,11 +50,10 @@ function RecordsTable({ records, quote, book }: { records: EtoroLedgerRecord[]; 
   return (
     <div className="stack" style={{ gap: 10 }}>
       <div className="table-wrap">
-        <table className="data" id="etoro-ledger-table" data-testid="etoro-records">
+        <table className="data ledger-table" id="etoro-ledger-table" data-testid="etoro-records">
           <thead>
             <tr>
-              <th scope="col">Bar</th>
-              <th scope="col">Fill day</th>
+              <th scope="col">Bar → fill</th>
               <th scope="col">Signal</th>
               <th scope="col">Action</th>
               <th scope="col">Demo</th>
@@ -69,19 +68,35 @@ function RecordsTable({ records, quote, book }: { records: EtoroLedgerRecord[]; 
               <th scope="col" className="r">
                 Account equity
               </th>
-              <th scope="col">Recorded (NY)</th>
             </tr>
           </thead>
           <tbody>
             {rows.map((r) => {
               const d = r.demo
               const o = d?.order
+              // A console line shares the run's bar date: key on the order
+              // reference and the recording time too.
+              const key = `${r.decision.bar_date}|${o?.client_ref ?? ''}|${r.recorded_at}`
+              const manual = r.source === 'ui'
               return (
-                <tr key={r.decision.bar_date} data-testid={`etoro-record-${r.decision.bar_date}`}>
-                  <td>{fmtDate(r.decision.bar_date)}</td>
-                  <td>{fmtDate(r.decision.fill_date)}</td>
+                <tr
+                  key={key}
+                  id={`ledger-${r.decision.bar_date}${manual ? '-' + (o?.client_ref ?? 'ui') : ''}`}
+                  data-testid={`etoro-record-${r.decision.bar_date}`}
+                  className={manual ? 'ledger-manual' : undefined}
+                >
+                  <td title={`recorded ${fmtNY(r.recorded_at)} NY (${fmtUTC(r.recorded_at)})`}>
+                    <span className="num">{fmtDate(r.decision.bar_date)}</span>
+                    <span className="faint"> → </span>
+                    <span className="num">{fmtDate(r.decision.fill_date)}</span>
+                  </td>
                   <td>
-                    <Badge tone={r.decision.signal === 'long' ? 'long' : 'flat'}>{r.decision.signal}</Badge>
+                    <Badge
+                      tone={r.decision.signal === 'long' ? 'long' : r.decision.signal === 'manual' ? 'etoro' : 'flat'}
+                      title={manual && r.operator ? `${r.operator.by}: ${r.operator.reason}` : undefined}
+                    >
+                      {r.decision.signal}
+                    </Badge>
                   </td>
                   <td>{r.decision.action}</td>
                   <td>
@@ -117,7 +132,6 @@ function RecordsTable({ records, quote, book }: { records: EtoroLedgerRecord[]; 
                   </td>
                   <td className="num">{d ? positionText(d.position_after) : '—'}</td>
                   <td className="r num">{d?.account ? fmtMoney(d.account.equity, d.account.currency, 2) : '—'}</td>
-                  <td title={fmtUTC(r.recorded_at)}>{fmtNY(r.recorded_at)}</td>
                 </tr>
               )
             })}
@@ -365,6 +379,15 @@ export function EtoroForwardTestDetailPage() {
               digits={quoteDigits(quote, book)}
               volume={false}
               label={`${bookLabel(book)} daily candles with SMA50`}
+              levels={
+                ft?.demo_position?.state === 'long'
+                  ? {
+                      entry: ft.demo_position.open_rate,
+                      stop: ft.demo_position.stop_loss_rate,
+                      target: ft.demo_position.take_profit_rate,
+                    }
+                  : undefined
+              }
             />
           )}
           {candles.data && (

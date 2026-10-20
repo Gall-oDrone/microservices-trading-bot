@@ -15,6 +15,8 @@ import {
 import { ago } from '../lib/format'
 import { useTheme } from '../lib/theme'
 import {
+  IconAlert,
+  IconBlock,
   IconCandles,
   IconFlask,
   IconGrid,
@@ -28,6 +30,69 @@ import {
   IconTrend,
 } from './icons'
 import { Badge, VenueTag } from './ui'
+import { attentionItems } from '../lib/attention'
+
+/**
+ * The attention bar: one line per problem that needs the operator (halt,
+ * failed or warning checks of the selected ledger), each linking to the page
+ * that owns it. Rendered above every console page; absent when all is well,
+ * so its presence alone is the signal.
+ */
+function AttentionBar() {
+  const search = useLedgerSearch()
+  const venue = useVenue()
+  const bitso = venue === 'bitso'
+  const etoro = venue === 'etoro'
+  const risk = useRisk({ enabled: bitso })
+  const erisk = useEtoroRisk({ enabled: etoro })
+  const health = useDataHealth({ enabled: bitso })
+  const ehealth = useEtoroHealth({ enabled: etoro })
+  const halt = etoro
+    ? erisk.data
+      ? {
+          halted: erisk.data.halted,
+          reason: erisk.data.halt_reason || erisk.data.halt_file.reason,
+          by: erisk.data.halt_file.by,
+        }
+      : null
+    : risk.data
+      ? { halted: risk.data.halt_file.halted, reason: risk.data.halt_file.reason, by: risk.data.halt_file.by }
+      : null
+  const items = attentionItems(halt, etoro ? ehealth.data?.checks : health.data?.checks, search)
+  if (items.length === 0) return null
+  const blocks = items.filter((i) => i.tone === 'block').length
+  const shown = items.slice(0, 3)
+  const more = items.length - shown.length
+  return (
+    <div
+      className={`attention ${blocks > 0 ? 'block' : 'warn'}`}
+      role="status"
+      aria-live="polite"
+      data-testid="attention-bar"
+    >
+      <span className="attention-icon" aria-hidden="true">
+        {blocks > 0 ? <IconBlock /> : <IconAlert />}
+      </span>
+      <ul className="attention-list">
+        {shown.map((i) => (
+          <li key={i.id} data-testid={`attention-${i.id}`}>
+            <Link to={i.to} className="attention-link">
+              <Badge tone={i.tone} dot>
+                {i.label}
+              </Badge>
+              <span className="attention-msg">{i.message}</span>
+            </Link>
+          </li>
+        ))}
+      </ul>
+      {more > 0 && (
+        <Link to={`/data-health${search}`} className="attention-more">
+          +{more} more
+        </Link>
+      )}
+    </div>
+  )
+}
 
 /** Light / dark switch. Dark is the default; the choice persists in localStorage. */
 export function ThemeToggle() {
@@ -222,6 +287,7 @@ export function AppShell() {
         <HealthFoot />
       </aside>
       <main className="main" id="main">
+        <AttentionBar />
         <Outlet />
       </main>
     </div>

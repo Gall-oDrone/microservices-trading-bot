@@ -495,7 +495,8 @@ export function useEtoroRiskReport(opts: LedgerOpts = {}) {
 /**
  * Positions & round trips: one row per position the ledger has seen, with
  * the account's live figures when ui-api has the demo broker. Polled every
- * 30 s (the server caches the live reads for 15 s); book '' = every book.
+ * 60 s (the server caches the live reads for 45 s, so several tabs cost one
+ * set of reads a minute); book '' = every book.
  */
 export function useEtoroPositions(book = '', opts: LedgerOpts = {}) {
   const selected = useLedgerName()
@@ -508,8 +509,8 @@ export function useEtoroPositions(book = '', opts: LedgerOpts = {}) {
         etoroPositionsResponseSchema,
         signal,
       ),
-    staleTime: 15_000,
-    refetchInterval: 30_000,
+    staleTime: 45_000,
+    refetchInterval: 60_000,
     enabled: opts.enabled ?? true,
   })
 }

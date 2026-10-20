@@ -1733,7 +1733,7 @@ unfinished bar is labelled provisional. The decision path never reads live data.
   <reason>`; the server's warnings (a failed account, positions or history read) are listed.
 - **Contract.** `GET /api/ui/etoro/positions?ledger=&book=` → `etoroPositionsResponseSchema`
   (`live`, `live_reason`, `cached`, `account`, `summary`, `trades: etoroTradeSchema[]`,
-  `warnings`); `useEtoroPositions(book)` polls every 30 s (the server caches the live reads 15 s
+  `warnings`); `useEtoroPositions(book)` polls every 60 s (the server caches the live reads 45 s
   per ledger; several tabs stay inside the 60 reads/min). `tradePnL` picks the figure the row
   shows. Place invalidates `['etoro']`, so the card follows a console trade at once (the mock moves
   its rows the same way: a new `manual` open row, a protect moving the stop, a close turning the
@@ -1749,6 +1749,43 @@ unfinished bar is labelled provisional. The decision path never reads live data.
   *gross, fills* first. The mark is implied, not quoted (`open + unrealised / units`). Fixture
   `etoro-positions.json` is hand-written from the Go test's shapes (`capture-fixtures.sh` cannot
   capture it: the dev backend has no broker).
+
+### 8.19 Console quick wins, batch U1 (as built, 2026-10-20)
+
+- **Why.** A page-by-page survey of the console (desktop and phone, mock mode) found: problems
+  only visible on Data health; chart labels colliding (fill markers at the right edge, three
+  "0.97" labels on the equity axis); the ledger table cut off on the right and keyed by bar date
+  (a console line shares the run's bar); the Positions card without a filter or a way to act on an
+  unprotected row; the Trade outcome lost on reload; a 30 s poll against a 15 s cache.
+- **Attention bar** (`components/AppShell.tsx`, `lib/attention.ts`): above every console page, one
+  line per problem of the selected ledger — the halt (block, links to Risk), failed checks
+  (block) and warning checks (warn) of `etoro/health` or `health/data` (link to Data health), three
+  shown and "+n more". Absent when all is well, so its presence is the signal. The nav badges stay.
+- **Charts** (`components/charts.tsx`, `lib/chartlabels.ts`): fill markers keep their text only
+  when no other fill follows within 8 bars (`labelledFills`), a 14-bar right offset keeps the last
+  label off the axis; the equity chart shows one label per scale (paper at four decimals on the
+  right, demo USD on the left; the hold line is named in the legend only); `PriceChart` takes
+  `levels` and draws the held position's **entry, stop and target** as price lines (the book page
+  passes the forward test's `demo_position`), only when inside a sane range of the data.
+- **Ledger table** (book page): keyed `bar|client_ref|recorded_at`; "Bar → fill" in one column, the
+  recorded time in its tooltip, the "Recorded" column gone (fits at 1440 px); a console line is
+  tinted and its signal badge names the operator and reason.
+- **Positions card**: an all / open / closed filter with counts; an unprotected open row shows
+  **no stop · protect**, a link to `/trade?book=&side=protect&position=` that pre-fills the form
+  (the page applies the three params in an effect, so the link works from the Trade page itself);
+  rows are keyboard toggles (`role=button`, Enter / Space, `aria-controls`); on the Trade page the
+  symbol links to the book page.
+- **Trade page**: the last outcome is kept in `sessionStorage` per ledger (`trade-outcome:<ledger>`),
+  restored on mount through the schema (an unparsable value is ignored) and cleared by a
+  **Dismiss** button; the outcome head shows the audit time.
+- **Polling**: `useEtoroPositions` every 60 s, the server cache 45 s (one set of three eToro reads
+  a minute however many tabs).
+- **Tests**: `u1.test.tsx` (10): `attentionItems` ordering and wording, `labelledFills`, the bar
+  absent / present with a failed check, the filter, the protect link and the pre-filled form, the
+  keyboard toggle, outcome persistence and dismissal, the ledger table columns. Suite 253 green.
+- **Left for U2 / U3** (§8.20 when built): the eToro *Today* overview (distance to stop in % and
+  ATR, max loss at stops, last run per book, by-hand items), the ratchet history on the chart, the
+  mobile pass (bottom tab bar, collapsible intros, card tables) and a time-zone toggle.
 
 ## 9. How to run (local)
 

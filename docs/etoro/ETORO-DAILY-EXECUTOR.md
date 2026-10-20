@@ -313,7 +313,7 @@ reason, days held) or `closed` (close fill, who closed it: `rule`, `operator`, `
 `eToro · target`, `outside the ledger`). Two layers, named on the card: the **ledger** gives the
 fills, the gross P&L `units × (close − open)` and the financing eToro had charged at the last run;
 the **account** (only when ui-api runs with `-etoro-trading`, so it has the demo broker; three
-reads, cached 15 s per ledger) gives the open rows' unrealised P&L and fees to date (the mark shown
+reads, cached 45 s per ledger) gives the open rows' unrealised P&L and fees to date (the mark shown
 is implied from it), the account's cash / equity, and for closed rows eToro's trading history:
 `net profit` (price P&L, spread included) and `fees` (financing), `net = net profit − fees`, marked
 *eToro* when confirmed, *gross, fills* until the history lists it (it lags minutes to hours). A
