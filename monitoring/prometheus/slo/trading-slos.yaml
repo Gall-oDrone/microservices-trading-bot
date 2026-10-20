@@ -1,0 +1,231 @@
+# Trading-operations SLOs (frontend plan §11 q4, decided 2026-10-08; built 2026-10-20).
+#
+# This file is the source. scripts/gen-slo.py renders it into
+#   monitoring/prometheus/rules/trading-slo-rules.yml   (recording + burn-rate alert rules)
+#   monitoring/grafana/dashboards/domain/trading-slo.json (the dashboard)
+# and CI checks both are in sync (scripts/gen-slo.py --check). Edit here, re-run the script.
+#
+# Shape. Every SLO is a 30-day rolling objective on one service-level indicator:
+#   - kind: event   the SLI is good/total over a window (orders, decisions). Low volume
+#                   is the reality of this platform (a handful of orders a day), so each
+#                   burn-rate alert needs min_events in its long window before it may fire;
+#                   below that the per-event threshold alerts of trading-risk-alerts.yml
+#                   remain the guard.
+#   - kind: time    the SLI is the fraction of scrape intervals a condition held (freshness,
+#                   readiness). Continuous, so the fast multi-window burn alerts apply.
+# Burn rate = error ratio over the window / (1 - target). The alert windows and factors
+# are the Google SRE workbook's for a 30-day SLO: 14.4x over 1h&5m and 6x over 6h&30m page,
+# 3x over 1d&2h and 1x over 3d&6h are tickets. Budget remaining = 1 - burn rate over 30d.
+#
+# Expressions use $W for the window; the generator substitutes each window it needs.
+# Labels job=~"<service>.*" follow the existing rule files.
+
+version: 1
+window: 30d
+windows: [5m, 30m, 1h, 2h, 6h, 1d, 3d, 30d]
+
+burn_alerts:
+  # time SLIs: all four pairs; event SLIs: the three slower pairs, gated on min_events.
+  - {long: 1h, short: 5m,  factor: 14.4, severity: critical, kinds: [time]}
+  - {long: 6h, short: 30m, factor: 6,    severity: critical, kinds: [time]}
+  - {long: 6h, short: 30m, factor: 6,    severity: warning,  kinds: [event]}
+  - {long: 1d, short: 2h,  factor: 3,    severity: warning,  kinds: [time, event]}
+  - {long: 3d, short: 6h,  factor: 1,    severity: warning,  kinds: [time, event]}
+
+slos:
+  # --- The order path ---------------------------------------------------------------
+  - name: tick_to_trade
+    title: Tick-to-trade latency
+    kind: event
+    team: trading
+    target: 0.99
+    objective: "99 % of signal-to-order decisions reach the exchange acknowledgement within 5 s"
+    good:  sum(rate(signal_to_order_latency_seconds_bucket{job=~"trading-engine.*",le="5"}[$W]))
+    total: sum(rate(signal_to_order_latency_seconds_count{job=~"trading-engine.*"}[$W]))
+    events: sum(increase(signal_to_order_latency_seconds_count{job=~"trading-engine.*"}[$W]))
+    min_events: {6h: 10, 1d: 20, 3d: 30}
+    source: trading-engine signal_to_order_latency_seconds (plan §6.4.4)
+    related_alerts: [TradingTickToTradeSlow]
+
+  - name: signal_freshness
+    title: Signal freshness at decision
+    kind: event
+    team: trading
+    target: 0.99
+    objective: "99 % of decisions act on a signal younger than 10 s"
+    good:  sum(rate(signal_age_at_decision_seconds_bucket{job=~"trading-engine.*",le="10"}[$W]))
+    total: sum(rate(signal_age_at_decision_seconds_count{job=~"trading-engine.*"}[$W]))
+    events: sum(increase(signal_age_at_decision_seconds_count{job=~"trading-engine.*"}[$W]))
+    min_events: {6h: 10, 1d: 20, 3d: 30}
+    source: trading-engine signal_age_at_decision_seconds
+    related_alerts: [TradingSignalStale]
+
+  - name: risk_gate_availability
+    title: Pre-trade risk gate availability
+    kind: event
+    team: risk
+    target: 0.999
+    objective: "99.9 % of pre-trade checks evaluate (allowed or blocked); an error fails closed and counts against the budget"
+    good:  sum(rate(pretrade_policy_checks_total{job=~"trading-engine.*",result!="error"}[$W]))
+    total: sum(rate(pretrade_policy_checks_total{job=~"trading-engine.*"}[$W]))
+    events: sum(increase(pretrade_policy_checks_total{job=~"trading-engine.*"}[$W]))
+    min_events: {6h: 10, 1d: 20, 3d: 30}
+    source: trading-engine pretrade_policy_checks_total{result}
+    related_alerts: [TradingRiskStateUnknown]
+
+  - name: order_acceptance
+    title: Order acceptance at the OMS
+    kind: event
+    team: trading
+    target: 0.95
+    objective: "95 % of orders created are not rejected for validation or exchange reasons (risk rejections are the gate doing its job and are excluded)"
+    good: |
+      sum(rate(orders_created_total{job=~"order-management.*"}[$W]))
+        - sum(rate(orders_rejected_total{job=~"order-management.*",reason!~"risk_check_failed|manual"}[$W]))
+    total: sum(rate(orders_created_total{job=~"order-management.*"}[$W]))
+    events: sum(increase(orders_created_total{job=~"order-management.*"}[$W]))
+    min_events: {6h: 10, 1d: 20, 3d: 30}
+    source: order-management orders_created_total, orders_rejected_total{reason}
+    related_alerts: [OrderRejectRateHigh]
+
+  - name: fill_quality
+    title: Fill quality (implementation shortfall)
+    kind: event
+    team: trading
+    target: 0.90
+    objective: "90 % of executed orders fill within 25 bps of the price the strategy decided on (arrival slippage, before fees)"
+    good:  sum(rate(order_arrival_slippage_bps_bucket{job=~"order-management.*",le="25"}[$W]))
+    total: sum(rate(order_arrival_slippage_bps_count{job=~"order-management.*"}[$W]))
+    events: sum(increase(order_arrival_slippage_bps_count{job=~"order-management.*"}[$W]))
+    min_events: {6h: 10, 1d: 20, 3d: 30}
+    source: order-management order_arrival_slippage_bps (plan §6.4.7)
+    related_alerts: [OrderSlippageHigh]
+
+  # --- Freshness and readiness (time SLIs) ----------------------------------------------
+  - name: reconciliation_freshness
+    title: OMS-exchange reconciliation freshness
+    kind: time
+    team: trading
+    target: 0.995
+    objective: "99.5 % of the time the exchange order sync and the fill poll each succeeded within the last 120 s"
+    good_bool: |
+      min(
+          ((time() - bitso_sync_last_success_timestamp_seconds{job=~"order-management.*"}) <= bool 120)
+        and on (job, instance)
+          (bitso_sync_last_success_timestamp_seconds{job=~"order-management.*"} > bool 0)
+      )
+      * on () group_left ()
+      min(
+          ((time() - user_trades_last_poll_timestamp_seconds{job=~"order-management.*"}) <= bool 120)
+        and on (job, instance)
+          (user_trades_last_poll_timestamp_seconds{job=~"order-management.*"} > bool 0)
+      )
+    source: order-management bitso_sync_last_success_timestamp_seconds, user_trades_last_poll_timestamp_seconds
+    related_alerts: [OrderExchangeSyncStale, OrderFillDiscoveryStale]
+
+  - name: market_data_freshness
+    title: Market-data freshness
+    kind: time
+    team: trading
+    target: 0.995
+    objective: "99.5 % of the time the newest trade from the exchange stream is younger than 120 s"
+    good_bool: min(market_data_last_trade_age_seconds{job=~"market-data.*"} <= bool 120)
+    source: market-data market_data_last_trade_age_seconds
+    related_alerts: [MarketDataTradeStreamStale]
+
+  - name: kill_switch_readiness
+    title: Kill-switch readiness
+    kind: time
+    team: risk
+    target: 0.999
+    objective: "99.9 % of the time every live trading-engine watches at least one halt file and evaluated them within the last 30 s"
+    good_bool: |
+      min(
+          ((time() - trading_halt_last_check_timestamp_seconds{job=~"trading-engine.*"}) <= bool 30)
+        * on (job, instance)
+          (trading_halt_files_configured{job=~"trading-engine.*"} > bool 0)
+        or on (job, instance)
+          (trading_engine_dry_run{job=~"trading-engine.*"} == bool 1)
+      )
+    source: trading-engine trading_halt_last_check_timestamp_seconds, trading_halt_files_configured, trading_engine_dry_run
+    related_alerts: [TradingKillSwitchUnreachable, TradingHaltWatcherStale]
+
+# Operations KPIs shown under the SLOs (plan §11 q4 items that are limits, states or
+# ratios rather than reliability objectives). Rendered as rows of the same dashboard.
+kpis:
+  - row: Exposure and limit utilisation per book
+    panels:
+      - title: Session limits used (daily loss, drawdown)
+        unit: percentunit
+        expr: max by (limit) (trading_session_limit_utilization_ratio{job=~"trading-engine.*"})
+        legend: "{{limit}}"
+        thresholds: [0.8, 1]
+      - title: Per-order limit utilisation p95 (1h) by book and limit
+        unit: percentunit
+        expr: histogram_quantile(0.95, sum by (book, limit, le) (rate(order_limit_utilization_ratio_bucket{job=~"trading-engine.*"}[1h])))
+        legend: "{{book}} {{limit}}"
+        thresholds: [0.8, 1]
+      - title: Gross exposure by currency
+        unit: short
+        expr: max by (currency) (portfolio_gross_exposure_quote{job=~"order-management.*"})
+        legend: "{{currency}}"
+      - title: VaR as a share of its limit
+        unit: percentunit
+        expr: max by (currency) (portfolio_var_quote{job=~"order-management.*"}) / max by (currency) (portfolio_var_limit_quote{job=~"order-management.*"})
+        legend: "{{currency}}"
+        thresholds: [0.8, 1]
+  - row: Orders, rejects and fills
+    panels:
+      - title: Orders created per hour by book
+        unit: short
+        expr: sum by (book) (increase(orders_created_total{job=~"order-management.*"}[1h]))
+        legend: "{{book}}"
+      - title: Reject rate by reason (1h)
+        unit: percentunit
+        expr: sum by (reason) (rate(orders_rejected_total{job=~"order-management.*"}[1h])) / ignoring (reason) group_left () sum(rate(orders_created_total{job=~"order-management.*"}[1h]))
+        legend: "{{reason}}"
+      - title: Fill ratio by book (24h)
+        unit: percentunit
+        expr: sum by (book) (increase(orders_filled_total{job=~"order-management.*"}[24h])) / sum by (book) (increase(orders_created_total{job=~"order-management.*"}[24h]))
+        legend: "{{book}}"
+        thresholds: [0.5]
+      - title: Pre-trade blocks by rule (24h)
+        unit: short
+        expr: sum by (book, rule) (increase(pretrade_policy_rejections_total{job=~"trading-engine.*"}[24h]))
+        legend: "{{book}} {{rule}}"
+  - row: Reconciliation, freshness and the kill switch
+    panels:
+      - title: Exchange order sync age
+        unit: s
+        expr: time() - bitso_sync_last_success_timestamp_seconds{job=~"order-management.*"}
+        legend: "{{instance}}"
+        thresholds: [120, 300]
+      - title: Fill poll age
+        unit: s
+        expr: time() - user_trades_last_poll_timestamp_seconds{job=~"order-management.*"}
+        legend: "{{instance}}"
+        thresholds: [120, 300]
+      - title: Market-data last trade age
+        unit: s
+        expr: market_data_last_trade_age_seconds{job=~"market-data.*"}
+        legend: "{{instance}}"
+        thresholds: [120, 300]
+      - title: Halt watcher age and halt state
+        unit: s
+        expr: time() - trading_halt_last_check_timestamp_seconds{job=~"trading-engine.*"}
+        legend: "watcher age {{instance}}"
+        thresholds: [30, 60]
+        extra:
+          - expr: 60 * max by (instance) (trading_halt_active{job=~"trading-engine.*"})
+            legend: "halted (60 = yes) {{instance}}"
+  - row: Alerts firing and time to resolve
+    panels:
+      - title: Alerts firing by severity
+        unit: short
+        expr: count by (severity) (ALERTS{alertstate="firing", team=~"risk|trading"})
+        legend: "{{severity}}"
+      - title: Longest-firing alert age by severity
+        unit: s
+        expr: max by (severity) (time() - ALERTS_FOR_STATE{team=~"risk|trading"})
+        legend: "{{severity}}"
+        thresholds: [1800, 14400]

@@ -851,6 +851,55 @@ Reporting only. The executor, the SMA50 rule, its costs and its dates are unchan
   and costs), so it stays with the operator. The stress code already supports other books via
   proxies.
 
+#### 6.4.15 Trading-operations SLOs as built (2026-10-20)
+
+The step §11 q4 asked to be planned on its own. R6 (§6.4.4–§6.4.10) exports the metrics and pages on
+single events; this step adds the **objective** layer on top of the same series: how much of each
+failure is tolerable over 30 days, how fast the tolerance is being spent, and one dashboard that
+reads top-down.
+
+- **Spec, not hand-written rules:** [`monitoring/prometheus/slo/trading-slos.yaml`](../../monitoring/prometheus/slo/trading-slos.yaml)
+  names each SLO, its kind, team, target, objective sentence and SLI expressions. `scripts/gen-slo.py`
+  renders [`trading-slo-rules.yml`](../../monitoring/prometheus/rules/trading-slo-rules.yml) (148
+  rules) and the dashboard [`trading-slo.json`](../../monitoring/grafana/dashboards/domain/trading-slo.json)
+  (116 panels); `--check` in CI refuses drift, `scripts/sync-prometheus-rules.sh` now syncs both
+  rule files to k8s `PrometheusRule`s.
+- **Eight SLOs, 30-day rolling.** Event SLIs on the order path: `tick_to_trade` 99 % ≤ 5 s,
+  `signal_freshness` 99 % ≤ 10 s, `risk_gate_availability` 99.9 % evaluated (an error fails
+  closed and counts), `order_acceptance` 95 % (risk rejections excluded: the gate working is not an
+  error), `fill_quality` 90 % within 25 bps of the decision price. Time SLIs: `reconciliation_freshness`
+  99.5 % (sync and fill poll both ≤ 120 s), `market_data_freshness` 99.5 % (≤ 120 s),
+  `kill_switch_readiness` 99.9 % (every live engine watches a halt file and checked it ≤ 30 s ago).
+- **Series:** `slo:error_ratio:<W>` for W in 5m..30d, `slo:burn_rate:<W>` = error ratio / (1 −
+  target), `slo:sli:30d`, `slo:budget_remaining:30d`, `slo:events:<W>`, `slo:good:bool`,
+  `slo:target`, `slo:min_events:<W>`; all carry `slo`, `team`, `kind`.
+- **Alerts (8):** multi-window burn rates with the SRE-workbook factors — 14.4× 1h/5m and 6× 6h/30m
+  page (time SLIs), 6× 6h/30m, 3× 1d/2h and 1× 3d/6h are warnings, the 30-day budget exhausted is a
+  warning. **Low-volume rule:** every event-SLI alert is gated on `slo:min_events` (10 / 20 / 30 in
+  6h / 1d / 3d) and has no 1h page, because a handful of orders a day would make one slow order a
+  50 % error ratio; the per-event alerts of §6.4.4 remain the guard below that volume. Routed by
+  the existing `severity` + `team` matchers.
+- **Dashboard:** an overview line per SLO (SLI 30d coloured against the target, target, budget
+  remaining, burn 1h and 6h, events or condition, team), a collapsed row per SLO (error ratio by
+  window against the budget, burn rates with the 1× / 6× / 14.4× lines, events against the guards,
+  the related per-event alerts), then the §11 q4 KPIs that are limits or states: session and
+  per-order limit utilisation, gross exposure and VaR vs limit, orders / rejects by reason / fill
+  ratio / pre-trade blocks, the four freshness ages with the halt state, alerts firing by severity
+  and the longest-firing age. SLO alerts are annotations on every panel.
+- **Tests:** `monitoring/prometheus/tests/trading-slo-rules.test.yml` — a stale time SLI pages at
+  200×, a healthy one shows a full budget, six slow decisions in six hours stay silent under the
+  guard while one a minute raises the slow-burn warning and never the time-only page, and order
+  acceptance excludes risk rejections (burn exactly 1× at a 5 % validation reject rate).
+- **Runbook:** [`docs/runbooks/TRADING-SLO.md`](../runbooks/TRADING-SLO.md): per alert, the
+  per-event alert that carries the diagnosis; how to change a target.
+- **Not measured, stated there:** kill-switch time-to-halt (the engines do not export when the
+  halt was issued; the drill measures it; gap: `trading_halt_issued_timestamp_seconds`), alert
+  acknowledgement (an on-call-tool concept; time firing is shown instead), daily-executor ledger
+  freshness (cron jobs without metrics; `ui-alerts` and the watchdog cover them), a separate
+  intraday P&L series (the session-limit gauges stand in).
+- **Targets were set without history** (from the §6.4.4 thresholds). Revisit after the first 30
+  days with the dashboard's numbers; the spec is the place and the commit message the record.
+
 ### 6.5 First findings from the real stage ledger
 - **btc_mxn's first stage leg cost 118 bps against 70 assumed.** The post-only order rested 60 min, filled 0.1%, and fell back to market: taker fee 78 bps + 40 bps above the fill-day open. A stage leg is small and stage liquidity is thin, so this is not yet evidence about production costs. But it is the cost signal to watch: the pre-registration's secondary (taker) scenario is 88 bps per leg, and this leg exceeded both.
 - **btc_usd's leg cost 41 bps against 40 assumed** (maker fill, 25 bps fee + 16 bps slippage).
@@ -1759,6 +1808,6 @@ python3 -m unittest discover -s infrastructure/lambda/ledger-watchdog   # §8.10
 1. ~~Who uses it?~~ One operator for now. Phase 1 is localhost-only with no auth (decided 2026-10-03).
 2. ~~Hosting?~~ Local first (decided). AWS when Phase 4 auth exists.
 3. ~~Should controls ever reach production trading, or stay limited to stage?~~ **Yes, they will reach production; for now they stay limited to stage** (decided 2026-10-08). Enforced: the daily-executor trades only on the stage URL, and a live trading-engine refuses a non-stage Bitso host unless `TRADING_ENGINE_ALLOW_PRODUCTION=1` (§6.4.2). Going to production needs OIDC, TLS and roles (Phase 4) first.
-4. ~~Is Grafana enough for service metrics?~~ **Follow production standards, as hedge funds and private banks run trading operations** (decided 2026-10-08). Proposed reading: Prometheus + Grafana stay the service-metrics stack (the UI links out rather than rebuilding it), with SLOs and alerts on the order path and a trading-operations dashboard set: signal-to-order latency (p50/p99), order reject and error rates by reason, fill ratio and slippage against arrival price (implementation shortfall), exposure and limit utilization per book, intraday P&L and drawdown against limits, position reconciliation breaks (order-management vs exchange), market-data and ledger freshness, kill-switch time-to-halt, and alert acknowledgement time. To be planned as its own step.
+4. ~~Is Grafana enough for service metrics?~~ **Follow production standards, as hedge funds and private banks run trading operations** (decided 2026-10-08). Proposed reading: Prometheus + Grafana stay the service-metrics stack (the UI links out rather than rebuilding it), with SLOs and alerts on the order path and a trading-operations dashboard set: signal-to-order latency (p50/p99), order reject and error rates by reason, fill ratio and slippage against arrival price (implementation shortfall), exposure and limit utilization per book, intraday P&L and drawdown against limits, position reconciliation breaks (order-management vs exchange), market-data and ledger freshness, kill-switch time-to-halt, and alert acknowledgement time. ~~To be planned as its own step.~~ **Built 2026-10-20 (§6.4.15):** eight 30-day SLOs with burn-rate alerts and the *Trading Operations SLOs* dashboard, generated from one spec; time-to-halt and acknowledgement time are stated as not measurable from today's metrics, with the instrumentation gap named.
 5. ~~**R1 policy on a blocked stage order?**~~ **Skip and record, no retry of that order** (decided 2026-10-05). As built (§6.4.1), the next day's run re-plans from the recorded position, so the stage position diverges from paper only until the next run that is not blocked, rather than until the next signal flip. This keeps a blocked *exit* from leaving a long position open through a whole flat period.
 6. ~~Are the default limits in §6.2 right?~~ **Keep the defaults** (decided 2026-10-05), version `default-2026-10-03`. Revisit `cost_warn_bps` once more stage legs exist (btc_mxn's first leg already exceeded it).

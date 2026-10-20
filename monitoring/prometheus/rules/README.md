@@ -30,3 +30,17 @@ label (`risk` or `trading`). Severity: `critical` pages, `warning` is reviewed t
 - CI job `monitoring-rules` (`.github/workflows/operator-ui.yml`) runs `promtool check rules`, the
   unit tests and the sync check.
 - Dashboard: `monitoring/grafana/dashboards/domain/trading-risk-operations.json`.
+
+## trading-slo-rules.yml (2026-10-20, generated)
+
+Trading-operations SLOs (frontend plan §6.4.15 / §11 q4): recording rules for eight 30-day SLOs
+(error ratio over 5m..30d, burn rate, SLI, budget remaining) and multi-window burn-rate alerts.
+**Generated** by `scripts/gen-slo.py` from [`../slo/trading-slos.yaml`](../slo/trading-slos.yaml)
+together with the dashboard `monitoring/grafana/dashboards/domain/trading-slo.json`; edit the spec,
+not this file (CI runs `scripts/gen-slo.py --check`).
+
+- Event SLIs (orders, decisions) are gated on `slo:min_events:*`: this platform trades a few times
+  a day, so one slow order must not page. Time SLIs (freshness, kill-switch readiness) page normally.
+- Unit tests: `promtool test rules monitoring/prometheus/tests/trading-slo-rules.test.yml`.
+- k8s copy: `k8s/monitoring/trading-slo-rules.yaml` by `scripts/sync-prometheus-rules.sh`.
+- Runbook: [`docs/runbooks/TRADING-SLO.md`](../../../docs/runbooks/TRADING-SLO.md).

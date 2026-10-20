@@ -368,11 +368,18 @@ jobs:
 
       # Plan §6.4.4: every rule file parses, the trading-risk alerts pass their
       # unit tests, and the generated k8s PrometheusRule matches the source.
+      # Plan §11 q4 (2026-10-20): the SLO rules and dashboard are generated from
+      # monitoring/prometheus/slo/trading-slos.yaml and must match it.
       - name: promtool check rules
         run: /tmp/promtool check rules monitoring/prometheus/rules/*.yml
 
       - name: promtool test rules
         run: /tmp/promtool test rules monitoring/prometheus/tests/*.test.yml
+
+      - name: SLO rules and dashboard generated from the spec
+        run: |
+          python3 -m pip install --quiet pyyaml
+          scripts/gen-slo.py --check
 
       - name: k8s PrometheusRule in sync
         run: scripts/sync-prometheus-rules.sh --check
@@ -381,13 +388,16 @@ jobs:
         run: |
           python3 - <<'EOF' > /tmp/exprs.txt
           import glob, json
-          for f in glob.glob('monitoring/grafana/dashboards/**/*.json', recursive=True):
-              d = json.load(open(f))
-              if 'trading-risk-operations' not in f:
-                  continue
-              for p in d['panels']:
+          def walk(panels):
+              for p in panels:
                   for t in p.get('targets', []):
                       print(t['expr'])
+                  walk(p.get('panels', []))
+          for f in glob.glob('monitoring/grafana/dashboards/**/*.json', recursive=True):
+              d = json.load(open(f))
+              if 'trading-risk-operations' not in f and 'trading-slo' not in f:
+                  continue
+              walk(d['panels'])
           EOF
           n=0
           while IFS= read -r e; do
