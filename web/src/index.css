@@ -5897,3 +5897,38 @@ button.protect-row:hover {
     overflow-wrap: anywhere;
   }
 }
+
+/* "Close at market" shortcut on open rows (Positions card, Today): lands on the Trade page prepared. */
+.positions-open-actions {
+  display: inline-grid;
+  gap: 4px;
+  justify-items: start;
+}
+.positions-close {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 9px;
+  border-radius: 999px;
+  border: 1px solid var(--line-soft);
+  background: var(--bg-raised);
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 600;
+  text-decoration: none;
+  white-space: nowrap;
+  transition:
+    border-color 120ms ease,
+    background 120ms ease,
+    transform 120ms ease;
+}
+.positions-close:hover {
+  border-color: var(--loss);
+  background: var(--loss-soft);
+  color: var(--loss);
+  transform: translateY(-1px);
+}
+@media (max-width: 720px) {
+  .positions-open-actions {
+    justify-items: end;
+  }
+}

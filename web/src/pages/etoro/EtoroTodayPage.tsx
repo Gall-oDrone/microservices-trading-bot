@@ -131,7 +131,19 @@ function OpenRow({ t, atrValue, quote, search }: { t: EtoroTrade; atrValue: numb
         )}
       </td>
       <td data-label="Held" className="num">
-        {t.held_days != null ? `${t.held_days} d` : '—'}
+        <span className="positions-open-actions">
+          <span>{t.held_days != null ? `${t.held_days} d` : '—'}</span>
+          {t.account_holds !== false && (
+            <Link
+              to={`/trade${search}${search ? '&' : '?'}book=${encodeURIComponent(t.book)}&side=close&position=${encodeURIComponent(t.position_id)}&go=1`}
+              className="positions-close"
+              data-testid={`today-close-${t.position_id}`}
+              title="Prepare a market close on the Trade page: the preview shows the live bid; the phrase and a reason are still asked"
+            >
+              Close at market
+            </Link>
+          )}
+        </span>
       </td>
     </tr>
   )

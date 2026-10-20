@@ -270,7 +270,20 @@ function Row({
         </td>
         <td data-label="Closed by">
           {t.status === 'open' ? (
-            <span className="faint">{t.held_days != null ? `${t.held_days} d held` : ''}</span>
+            <span className="positions-open-actions">
+              <span className="faint">{t.held_days != null ? `${t.held_days} d held` : ''}</span>
+              {t.account_holds !== false && (
+                <Link
+                  to={`/trade${search}${search ? '&' : '?'}book=${encodeURIComponent(book)}&side=close&position=${encodeURIComponent(t.position_id)}&go=1`}
+                  className="positions-close"
+                  onClick={(e) => e.stopPropagation()}
+                  data-testid={`position-close-${t.position_id}`}
+                  title="Prepare a market close on the Trade page: the preview shows the live bid; the phrase and a reason are still asked"
+                >
+                  Close at market
+                </Link>
+              )}
+            </span>
           ) : (
             closedByText(t.closed_by, t.close_kind)
           )}

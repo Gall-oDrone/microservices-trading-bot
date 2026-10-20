@@ -584,7 +584,7 @@ export function EtoroTradePage() {
   // The form can arrive pre-filled from a link (the Positions card's
   // "protect" on an unprotected row): ?book=&side=&position=. Applied in an
   // effect because the link may be followed from this very page.
-  const [params] = useSearchParams()
+  const [params, setParams] = useSearchParams()
   const [form, setForm] = useState<Form>({
     book: 'nsdq100',
     side: 'open',
@@ -597,6 +597,7 @@ export function EtoroTradePage() {
   const pBook = params.get('book')
   const pSide = params.get('side')
   const pPos = params.get('position')
+  const pGo = params.get('go') === '1'
   useEffect(() => {
     if (!pBook && !pSide && !pPos) return
     setForm((f) => ({
@@ -606,6 +607,11 @@ export function EtoroTradePage() {
       positionId: pPos ?? f.positionId,
     }))
   }, [pBook, pSide, pPos])
+  // `go=1` (the "Close at market" shortcut on an open row): prepare at once
+  // with the pre-filled form, or ask for the token first; the flag is
+  // dropped from the URL so a reload does not prepare again. The preview
+  // scrolls into view when it arrives this way.
+  const autoScroll = useRef(false)
   const [token, setToken] = useState(getOperatorToken)
   const [preview, setPreview] = useState<TradePreview | null>(null)
   const [refused, setRefused] = useState<string | null>(null)
@@ -709,6 +715,37 @@ export function EtoroTradePage() {
       },
     )
   }
+
+  // The shortcut's prepare: once the page knows the books and that trading
+  // is on. Runs once per link (the flag is removed right away).
+  useEffect(() => {
+    if (!pGo || !ft.data || !trading) return
+    const next = new URLSearchParams(params)
+    next.delete('go')
+    setParams(next, { replace: true })
+    if (!trading.enabled) return
+    const side: TradeSide = pSide === 'close' || pSide === 'protect' ? pSide : 'open'
+    const book = pBook && BOOK_IDS.includes(pBook) ? pBook : 'nsdq100'
+    const f: Form = { ...form, book, side, positionId: pPos ?? '' }
+    setForm(f)
+    setTried(true)
+    if (!token.trim()) {
+      document.getElementById('trade-token')?.focus()
+      return
+    }
+    autoScroll.current = true
+    runPrepare(f, token)
+    // runPrepare / form are stable enough for a one-shot; the inputs are the URL and readiness.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pGo, ft.data, trading])
+  useEffect(() => {
+    if (!preview || !autoScroll.current) return
+    autoScroll.current = false
+    const el = document.querySelector('[data-testid="trade-preview"]')
+    if (el && typeof (el as HTMLElement).scrollIntoView === 'function') {
+      el.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    }
+  }, [preview])
 
   const submit = (e: FormEvent) => {
     e.preventDefault()

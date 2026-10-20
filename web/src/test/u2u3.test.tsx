@@ -150,3 +150,27 @@ describe('U3 shell', () => {
     expect(screen.getByTestId('page-intro')).toHaveClass('open')
   })
 })
+
+describe('Close at market shortcut', () => {
+  it('an open row links to the Trade page, which prepares the close at once and drops the flag', async () => {
+    sessionStorage.setItem('mtb-operator-token', 'b'.repeat(64))
+    renderAt('/trade?ledger=etoro-demo')
+    const card = await screen.findByTestId('positions-card')
+    const link = await within(card).findByTestId('position-close-3616683295')
+    expect(link).toHaveAttribute('href', '/trade?ledger=etoro-demo&book=spx500&side=close&position=3616683295&go=1')
+    await userEvent.click(link)
+    const preview = await screen.findByTestId('trade-preview')
+    expect(preview).toHaveAttribute('data-verdict', 'allow')
+    expect(screen.getByTestId('trade-confirmation')).toHaveTextContent('CLOSE SPX500')
+    expect(screen.getByTestId('trade-side-close')).toHaveAttribute('aria-pressed', 'true')
+    expect(window.location.search).not.toMatch(/go=1/)
+    // The Today page offers the same shortcut.
+    expect(screen.queryByTestId('trade-place')).toBeInTheDocument()
+  })
+  it('without an operator token the shortcut focuses the token field instead of preparing', async () => {
+    renderAt('/trade?ledger=etoro-demo&book=spx500&side=close&position=3616683295&go=1')
+    await screen.findByTestId('positions-card')
+    await waitFor(() => expect(document.activeElement?.id).toBe('trade-token'))
+    expect(screen.queryByTestId('trade-preview')).toBeNull()
+  })
+})

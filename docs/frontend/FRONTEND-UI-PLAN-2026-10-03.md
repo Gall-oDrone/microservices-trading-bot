@@ -1838,6 +1838,23 @@ unfinished bar is labelled provisional. The decision path never reads live data.
   preference does not reach the Bitso pages' own Mexico City labels (they are bar times, not
   operator moments).
 
+### 8.22 "Close at market" shortcut (as built, 2026-10-20)
+
+- **What it is, and what it is not.** Every open row (Positions card, Today) has a **Close at
+  market** link to `/trade?book=&side=close&position=&go=1`; the Trade page applies the three
+  fields and, with `go=1`, runs **prepare at once** (or focuses the operator-token field when there
+  is none), drops `go` from the URL (a reload does not prepare again) and scrolls to the preview.
+  The preview shows the live bid, the slippage estimate and the warnings ("the rule says long: the
+  executor re-opens tomorrow"); the confirmation phrase (`CLOSE NSDQ100`), the reason and the
+  operator token are still required. It is a shortcut through the form, **not** a one-click close:
+  prepare → place is where the halt file, the session, ledger-vs-account, the executor's lock and
+  the intent file are enforced, and a close without a phrase would be the only unguarded action in
+  the console. A true emergency flatten (every position + halt, its own phrase) would be a Risk
+  page control, not built. The link hides on a row the account no longer holds.
+- **Tests.** `u2u3.test.tsx`: the link's href, following it prepares the close (verdict allow,
+  phrase `CLOSE SPX500`, side pressed, flag gone); without a token the field is focused and no
+  preview appears.
+
 ## 9. How to run (local)
 
 ```bash
