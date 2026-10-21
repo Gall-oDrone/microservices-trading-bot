@@ -63,16 +63,33 @@ export function EtoroForwardTestCard({ ft }: { ft: EtoroForwardTest }) {
       </header>
 
       <div className="grid grid-4" style={{ gap: 14 }}>
-        <Stat
-          label="Close vs SMA50"
-          value={fmtPrice(d.close, ft.quote, ft.book)}
-          hint={<span className="num">SMA {fmtPrice(d.sma50, ft.quote, ft.book)}</span>}
-        />
+        {d.rule ? (
+          <Stat
+            label={`Close · ${d.rule}`}
+            value={fmtPrice(d.close, ft.quote, ft.book)}
+            hint={
+              <span className="num">
+                joint target {d.target ?? '—'}
+                {d.decision_day ? ' · decision day' : ''}
+              </span>
+            }
+          />
+        ) : (
+          <Stat
+            label="Close vs SMA50"
+            value={fmtPrice(d.close, ft.quote, ft.book)}
+            hint={<span className="num">SMA {fmtPrice(d.sma50, ft.quote, ft.book)}</span>}
+          />
+        )}
         <Stat
           label="Paper equity"
           value={p.equity_if_closed.toFixed(4)}
           tone={p.equity_if_closed >= 1 ? 'pos' : 'neg'}
-          hint={<span className="num">CFD hold {p.hold_equity_if_closed.toFixed(4)}</span>}
+          hint={
+            <span className="num">
+              {d.rule ? 'SPY hold' : p.product === 'etf' ? 'ETF hold' : 'CFD hold'} {p.hold_equity_if_closed.toFixed(4)}
+            </span>
+          }
         />
         <Stat
           label="vs CFD hold"

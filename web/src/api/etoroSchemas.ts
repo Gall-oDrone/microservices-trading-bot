@@ -47,6 +47,12 @@ export const etoroDecisionSchema = z.object({
   signal: signal.or(z.literal('manual')),
   prev_signal: orEmpty(signal),
   action: z.enum(['buy', 'sell', 'hold']),
+  // Since 2026-10-21 (etoroledger.Decision): the dual-momentum rotation's
+  // lines name their rule and carry the joint target; absent on SMA50 lines.
+  rule: z.string().optional(),
+  decision_day: z.boolean().optional(),
+  momentum: z.record(z.string(), z.number()).optional(),
+  target: z.string().optional(),
 })
 
 /** etoroledger.Paper: the pre-registered paper account (cfdsim, frozen costs), 1.0 at the forward start. */
@@ -54,7 +60,12 @@ export const etoroPaperSchema = z.object({
   forward_start: z.string(),
   started: z.boolean(),
   days: z.number(),
-  position: signal,
+  // Since 2026-10-21: "cfd" (default, omitted) or "etf" (commission in bps, no financing).
+  product: z.enum(['cfd', 'etf']).optional(),
+  fee_bps_per_order: z.number().optional(),
+  // "long" | "flat" for the daily rule; the rotation records the asset held
+  // through the last close ("QQQ", "SPY") or "flat".
+  position: signal.or(z.string()),
   round_trips: z.number(),
   spread_rt_bps: z.number(),
   overnight_bps: z.number(),
