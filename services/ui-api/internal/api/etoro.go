@@ -68,11 +68,16 @@ func (s *Server) etoroLoad(w http.ResponseWriter, r *http.Request) (Ledger, map[
 // etoroBooks is every pre-registered book plus any book in the ledger.
 func etoroBooks(by map[string][]etoroledger.Record) []string {
 	set := map[string]bool{}
-	for _, b := range etorohealth.DefaultBooks {
-		set[b] = true
-	}
 	for b := range by {
 		set[b] = true
+	}
+	if len(set) == 0 {
+		// An empty ledger (before its first run) shows the index-CFD
+		// cell's books; the ETF cells' ledgers carry their own books from
+		// their first line.
+		for _, b := range etorohealth.DefaultBooks {
+			set[b] = true
+		}
 	}
 	out := make([]string, 0, len(set))
 	for b := range set {
@@ -98,10 +103,12 @@ func etoroBookParam(w http.ResponseWriter, r *http.Request, by map[string][]etor
 }
 
 // etoroPolicyFor is policyFor for an eToro ledger: the executor's built-in
-// policy (risk.EtoroDemoPolicy; ui-api has no flag for it, the executor
-// has none either) with the ledger's halt file merged in.
+// policy for the ledger's product (risk.EtoroDemoPolicy for the index-CFD
+// cell, risk.EtoroDemoETFPolicy for the ETF cells since 2026-10-21; the
+// product is read from the ledger's paper block, "cfd" when absent) with the
+// ledger's halt file merged in.
 func (s *Server) etoroPolicyFor(l Ledger) (risk.Policy, HaltFileInfo) {
-	pol := risk.EtoroDemoPolicy()
+	pol := etoroBasePolicy(l)
 	info := HaltFileInfo{Path: l.Store.Where(l.Store.HaltPath())}
 	h, found, err := l.Store.Halt()
 	info.Found = found
@@ -113,7 +120,35 @@ func (s *Server) etoroPolicyFor(l Ledger) (risk.Policy, HaltFileInfo) {
 	return risk.ApplyHalt(pol, h), info
 }
 
+// etoroBasePolicy is the executor's built-in policy for the ledger's product,
+// before the halt file.
+func etoroBasePolicy(l Ledger) risk.Policy {
+	if etoroLedgerIsETF(l) {
+		return risk.EtoroDemoETFPolicy()
+	}
+	return risk.EtoroDemoPolicy()
+}
+
+// etoroLedgerIsETF reports whether the ledger's executor lines are ETF
+// products (paper.product == "etf"). An empty or unreadable ledger is not.
+func etoroLedgerIsETF(l Ledger) bool {
+	recs, err := etoroledger.ReadFile(l.Store.LedgerPath)
+	if err != nil {
+		return false
+	}
+	for _, r := range recs {
+		if r.IsUI() {
+			continue
+		}
+		return r.Paper.Product == "etf"
+	}
+	return false
+}
+
 func etoroPolicySrc(p risk.Policy) string {
+	if strings.HasPrefix(p.Version, "etoro-demo-etf-") {
+		return "built-in shared/pkg/risk.EtoroDemoETFPolicy (" + p.Version + ")"
+	}
 	return "built-in shared/pkg/risk.EtoroDemoPolicy (" + p.Version + ")"
 }
 
@@ -267,7 +302,7 @@ func (s *Server) etoroRisk(w http.ResponseWriter, r *http.Request) {
 	}
 	resp := EtoroRiskResponse{
 		Ledger: l.Name, Venue: VenueEtoro, GeneratedAt: now.UTC().Format(time.RFC3339),
-		Policy: risk.EtoroDemoPolicy(), PolicySrc: etoroPolicySrc(pol), Enforcement: "enforced",
+		Policy: etoroBasePolicy(l), PolicySrc: etoroPolicySrc(pol), Enforcement: "enforced",
 		Note: "etoro-daily-executor runs shared/pkg/risk.Check with this built-in policy before every demo order and records " +
 			"the result; a blocked order is recorded, not retried. Exposure here is units x the last close (the executor " +
 			"uses the live quote). The halt file next to the ledger is the only operator override.",

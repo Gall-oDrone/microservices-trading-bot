@@ -114,8 +114,8 @@ func main() {
 	strategyAudit := flag.String("strategy-audit-file", env("UI_API_STRATEGY_AUDIT_FILE", ""), "strategy start/stop audit log (default: "+api.StrategyAuditFile+" next to the first local ledger)")
 	bookSamples := flag.String("book-samples", env("UI_API_BOOK_SAMPLES", "../strategy-executor/daily-executor-data/book-samples"), "hourly order-book samples dir (<dir>/<book>.jsonl, cmd/book-sampler) for the capacity distribution; missing means none")
 	preregDirs := flag.String("prereg-dirs", env("UI_API_PREREG_DIRS", "../strategy-executor/daily-executor-data/prereg,../../docs/backtest-readiness"), "where to look for the latest pre-registered verdict report (scripts/prereg-evaluation.sh output), comma-separated")
-	etoroLedger := flag.String("etoro-ledger", env("UI_API_ETORO_LEDGER", ""), "eToro index-CFD executor ledger (etoro-daily-data/demo/ledger.jsonl, local disk) for /api/ui/etoro/ and the halt controls (default: off)")
-	etoroName := flag.String("etoro-name", env("UI_API_ETORO_NAME", "etoro-demo"), "ledger name of -etoro-ledger (?ledger=, the confirm phrase of its halt/resume)")
+	etoroLedger := flag.String("etoro-ledger", env("UI_API_ETORO_LEDGER", ""), "eToro executor ledger(s), local disk, for /api/ui/etoro/ and the halt controls: a path (named by -etoro-name) or name=path,name=path,… (since 2026-10-21: the index-CFD, ETF and dual-momentum cells; ?ledger=name selects one, the first is the default) (default: off)")
+	etoroName := flag.String("etoro-name", env("UI_API_ETORO_NAME", "etoro-demo"), "ledger name of a plain-path -etoro-ledger (?ledger=, the confirm phrase of its halt/resume)")
 	etoroLiveOn := flag.Bool("etoro-live", env("UI_API_ETORO_LIVE", "1") != "0", "with -etoro-ledger, poll eToro's rates for the index CFDs every 5 s, display only (UI_API_ETORO_LIVE=0 disables)")
 	etoroEnvFile := flag.String("etoro-env-file", env("UI_API_ETORO_ENV_FILE", etorolive.DefaultEnvFile()), "KEY=VALUE file with the eToro demo keys for the rates poll (ETORO_ENV must be demo); missing turns the feed off")
 	etoroTrading := flag.Bool("etoro-trading", env("UI_API_ETORO_TRADING", "0") == "1", "enable the assisted trades (Trade page) on the eToro DEMO ledger; needs -operator-token-file, -etoro-ledger and -etoro-env-file with ETORO_ENV=demo (default: off)")
@@ -157,19 +157,23 @@ func main() {
 	}
 	if *etoroLedger != "" {
 		// Appended after the Bitso ledgers: the first ledger stays the
-		// default of the Bitso routes and of /healthz.
-		if strings.HasPrefix(*etoroLedger, "s3://") {
-			logger.Fatal("-etoro-ledger: must be the local file the executor writes, not an S3 copy")
-		}
-		if !api.ValidLedgerName(*etoroName) {
-			logger.Fatalf("-etoro-name %q: use lowercase letters, digits, '-' or '_' (max 32)", *etoroName)
-		}
-		for _, l := range ledgers {
-			if l.Name == *etoroName {
-				logger.Fatalf("-etoro-name %q is already a -ledgers name", *etoroName)
+		// default of the Bitso routes and of /healthz; the first eToro
+		// ledger is the default of the eToro routes, the live feed and the
+		// assisted trades.
+		for _, nl := range api.ParseNamedLedgers(*etoroLedger, *etoroName) {
+			if strings.HasPrefix(nl.Path, "s3://") {
+				logger.Fatalf("-etoro-ledger %s: must be the local file the executor writes, not an S3 copy", nl.Name)
 			}
+			if !api.ValidLedgerName(nl.Name) {
+				logger.Fatalf("-etoro-ledger name %q: use lowercase letters, digits, '-' or '_' (max 32)", nl.Name)
+			}
+			for _, l := range ledgers {
+				if l.Name == nl.Name {
+					logger.Fatalf("-etoro-ledger name %q is already a ledger name", nl.Name)
+				}
+			}
+			ledgers = append(ledgers, api.Ledger{Name: nl.Name, Store: store.New(nl.Path, ""), Venue: api.VenueEtoro})
 		}
-		ledgers = append(ledgers, api.Ledger{Name: *etoroName, Store: store.New(*etoroLedger, ""), Venue: api.VenueEtoro})
 	}
 	srv := &api.Server{Ledgers: ledgers, Policy: pol, PolicySrc: src, StageSize: *stageSize, StaticDir: *static,
 		Version: version(), Log: logger, BookSamplesDir: *bookSamples,

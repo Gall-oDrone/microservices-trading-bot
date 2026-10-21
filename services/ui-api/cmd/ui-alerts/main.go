@@ -122,9 +122,9 @@ func main() {
 
 	now := time.Now().UTC()
 	cur := evaluate(srv.Handler(), ledgers)
-	for _, l := range etoroLedgers(*etoroLedger, *etoroName) {
-		checks := etorohealth.Evaluate(etorohealth.Options{LedgerPath: l.path}, now)
-		cur = alerts.Merge(cur, alerts.FromEtoro(l.name, checks))
+	for _, l := range api.ParseNamedLedgers(*etoroLedger, *etoroName) {
+		checks := etorohealth.Evaluate(etorohealth.Options{LedgerPath: l.Path}, now)
+		cur = alerts.Merge(cur, alerts.FromEtoro(l.Name, checks))
 	}
 	prev, err := loadState(*statePath)
 	if err != nil {
@@ -149,33 +149,6 @@ func main() {
 		logger.Print(err)
 		os.Exit(1)
 	}
-}
-
-type namedLedger struct{ name, path string }
-
-// etoroLedgers parses -etoro-ledger: empty -> none; a plain path -> one
-// ledger called defaultName; otherwise name=path entries separated by commas.
-func etoroLedgers(spec, defaultName string) []namedLedger {
-	spec = strings.TrimSpace(spec)
-	if spec == "" {
-		return nil
-	}
-	if !strings.Contains(spec, "=") {
-		return []namedLedger{{defaultName, spec}}
-	}
-	var out []namedLedger
-	for _, part := range strings.Split(spec, ",") {
-		part = strings.TrimSpace(part)
-		if part == "" {
-			continue
-		}
-		name, path, ok := strings.Cut(part, "=")
-		if !ok || strings.TrimSpace(name) == "" || strings.TrimSpace(path) == "" {
-			continue
-		}
-		out = append(out, namedLedger{strings.TrimSpace(name), strings.TrimSpace(path)})
-	}
-	return out
 }
 
 func notifier(ctx context.Context, spec string) (alerts.Notifier, error) {
