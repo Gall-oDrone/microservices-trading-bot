@@ -49,3 +49,53 @@ func TestEtoroSecondLedgerETFPolicy(t *testing.T) {
 	}
 	get[errorBody](t, ts, "/api/ui/etoro/risk?ledger=stage", 400)
 }
+
+// The Risk page shows the policy the executor's newest check ran under: a
+// ledger whose last check names the protected policy (phase C, 2026-10-19)
+// shows it with no policy_mismatch finding, while the testdata ledger, whose
+// checks predate it, keeps showing the unprotected one. A CFD ledger with
+// no recorded check falls back to the protected default.
+func TestEtoroRiskFollowsRecordedPolicyVersion(t *testing.T) {
+	dir := copyEtoroLedger(t)
+	led, err := etoroledger.Open(filepath.Join(dir, "ledger.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	rec := etoroledger.Record{Schema: etoroledger.Schema, RecordedAt: "2026-10-21T13:35:13Z", Mode: etoroledger.ModeDemo, Venue: "etoro",
+		Book: "spx500", Instrument: etoroledger.Instrument{Symbol: "SPX500", ID: 27}, Prereg: "FORWARD-TEST-PREREGISTRATION-SMA50-INDEX-CFD-2026-10-12.md",
+		Decision: etoroledger.Decision{BarDate: "2026-10-20", FillDate: "2026-10-21", Close: 7742.34, SMA: 7705.13, Signal: "long", PrevSignal: "flat", Action: "buy"},
+		Paper:    etoroledger.Paper{ForwardStart: "2026-10-13", SpreadRTBps: 7.4, CostsStatus: "FROZEN", Equity: 0.977, HoldEquity: 0.989, Position: "flat", PendingAction: "buy"},
+		Demo: &etoroledger.Demo{Env: "demo", Target: "long", Action: etoroledger.ActionNone, PositionBefore: etoroledger.Flat(), PositionAfter: etoroledger.Flat(),
+			Risk: &etoroledger.RiskCheck{PolicyVersion: "etoro-demo-2026-10-19", Allowed: true}},
+	}
+	if err := led.Append(rec); err != nil {
+		t.Fatal(err)
+	}
+	empty := t.TempDir()
+	ts := etoroServer(t, etoroNow, func(s *Server) {
+		s.Ledgers = append(s.Ledgers,
+			Ledger{Name: "etoro-protected", Store: store.New(filepath.Join(dir, "ledger.jsonl"), ""), Venue: VenueEtoro},
+			Ledger{Name: "etoro-empty", Store: store.New(filepath.Join(empty, "ledger.jsonl"), ""), Venue: VenueEtoro})
+	})
+	r := get[EtoroRiskResponse](t, ts, "/api/ui/etoro/risk?ledger=etoro-protected", 200)
+	if r.Policy.Version != "etoro-demo-2026-10-19" || !strings.Contains(r.PolicySrc, "EtoroDemoProtectedPolicy") {
+		t.Fatalf("policy %s (%s)", r.Policy.Version, r.PolicySrc)
+	}
+	for _, b := range r.Books {
+		mismatch := false
+		for _, f := range b.Findings {
+			mismatch = mismatch || f.Rule == RulePolicyMismatch
+		}
+		// spx500 was checked under the shown policy; nsdq100's last check
+		// (2026-10-15) predates it, which the finding correctly flags.
+		if want := b.Book == "nsdq100"; mismatch != want {
+			t.Fatalf("%s: mismatch finding %v, want %v: %+v", b.Book, mismatch, want, b.Findings)
+		}
+	}
+	if r := get[EtoroRiskResponse](t, ts, "/api/ui/etoro/risk", 200); r.Policy.Version != "etoro-demo-2026-10-10" {
+		t.Fatalf("testdata ledger (checks before phase C) must keep its policy: %s", r.Policy.Version)
+	}
+	if r := get[EtoroRiskResponse](t, ts, "/api/ui/etoro/risk?ledger=etoro-empty", 200); r.Policy.Version != "etoro-demo-2026-10-19" {
+		t.Fatalf("no recorded check: expected the protected default, got %s", r.Policy.Version)
+	}
+}

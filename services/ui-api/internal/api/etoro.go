@@ -120,22 +120,50 @@ func (s *Server) etoroPolicyFor(l Ledger) (risk.Policy, HaltFileInfo) {
 	return risk.ApplyHalt(pol, h), info
 }
 
-// etoroBasePolicy is the executor's built-in policy for the ledger's product,
-// before the halt file.
+// etoroBasePolicy is the policy the executor enforces on this ledger, before
+// the halt file: the one its newest recorded risk check names, when this
+// build knows that version (the ledger is the record of what was enforced;
+// a ledger from before phase C of the protection plan keeps showing the
+// unprotected policy its checks ran under). Without a recorded check, or
+// with a version this build does not know, the product's current default:
+// EtoroDemoETFPolicy for the ETF cells, else EtoroDemoProtectedPolicy, which
+// etoro-daily-executor defaults to (-protect) since 2026-10-19 and the
+// console's assisted trades (trades.go, protection.go) check against. An
+// unknown version then surfaces as the policy_mismatch finding.
 func etoroBasePolicy(l Ledger) risk.Policy {
-	if etoroLedgerIsETF(l) {
-		return risk.EtoroDemoETFPolicy()
-	}
-	return risk.EtoroDemoPolicy()
-}
-
-// etoroLedgerIsETF reports whether the ledger's executor lines are ETF
-// products (paper.product == "etf"). An empty or unreadable ledger is not.
-func etoroLedgerIsETF(l Ledger) bool {
 	recs, err := etoroledger.ReadFile(l.Store.LedgerPath)
 	if err != nil {
-		return false
+		return risk.EtoroDemoProtectedPolicy()
 	}
+	for i := len(recs) - 1; i >= 0; i-- {
+		d := recs[i].Demo
+		if d == nil || d.Risk == nil {
+			continue
+		}
+		if p, ok := etoroKnownPolicy(d.Risk.PolicyVersion); ok {
+			return p
+		}
+		break
+	}
+	if etoroRecordsAreETF(recs) {
+		return risk.EtoroDemoETFPolicy()
+	}
+	return risk.EtoroDemoProtectedPolicy()
+}
+
+// etoroKnownPolicy maps a recorded policy version to the built-in policy.
+func etoroKnownPolicy(version string) (risk.Policy, bool) {
+	for _, p := range []risk.Policy{risk.EtoroDemoProtectedPolicy(), risk.EtoroDemoPolicy(), risk.EtoroDemoETFPolicy()} {
+		if p.Version == version {
+			return p, true
+		}
+	}
+	return risk.Policy{}, false
+}
+
+// etoroRecordsAreETF reports whether the ledger's executor lines are ETF
+// products (paper.product == "etf"). An empty ledger is not.
+func etoroRecordsAreETF(recs []etoroledger.Record) bool {
 	for _, r := range recs {
 		if r.IsUI() {
 			continue
@@ -148,6 +176,9 @@ func etoroLedgerIsETF(l Ledger) bool {
 func etoroPolicySrc(p risk.Policy) string {
 	if strings.HasPrefix(p.Version, "etoro-demo-etf-") {
 		return "built-in shared/pkg/risk.EtoroDemoETFPolicy (" + p.Version + ")"
+	}
+	if p.Version == risk.EtoroDemoProtectedPolicy().Version {
+		return "built-in shared/pkg/risk.EtoroDemoProtectedPolicy (" + p.Version + ")"
 	}
 	return "built-in shared/pkg/risk.EtoroDemoPolicy (" + p.Version + ")"
 }
