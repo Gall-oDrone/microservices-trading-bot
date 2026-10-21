@@ -24,7 +24,7 @@ func weekdays(start time.Time, n int, f func(i int) float64) []dailyrule.Bar {
 func TestIsMonthEnd(t *testing.T) {
 	bars := weekdays(time.Date(2026, 1, 28, 0, 0, 0, 0, time.UTC), 6, func(int) float64 { return 1 })
 	// Jan 28 (Wed), 29, 30 (Fri), Feb 2 (Mon), 3, 4.
-	want := []bool{false, false, true, false, false, true} // last bar counts
+	want := []bool{false, false, true, false, false, false} // Feb 4 is not a month end: the next NYSE day is Feb 5
 	for i, w := range want {
 		if got := IsMonthEnd(bars, i); got != w {
 			t.Errorf("bar %d (%s): month end %v, want %v", i, bars[i].Date.Format("2006-01-02"), got, w)

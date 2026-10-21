@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"bitso-trading-platform/shared/pkg/dailyrule"
+	"bitso-trading-platform/shared/pkg/mktcal"
 )
 
 // Flat is the target when no asset passes the absolute-momentum hurdle.
@@ -56,13 +57,19 @@ type Point struct {
 	Target int
 }
 
-// IsMonthEnd reports whether bars[i] is the last bar of its calendar month
-// in the series (the next bar is in a different month, or i is the last bar).
+// IsMonthEnd reports whether bars[i] is the last trading day of its calendar
+// month: the next bar is in a different month, or, for the series' last
+// bar, the next NYSE trading day (shared/pkg/mktcal) is. The last bar is
+// therefore NOT a decision bar just because the data ends there; live, the
+// latest closed bar is a decision bar only on an actual month end.
 func IsMonthEnd(bars []dailyrule.Bar, i int) bool {
-	if i == len(bars)-1 {
-		return true
+	a := bars[i].Date
+	var b time.Time
+	if i < len(bars)-1 {
+		b = bars[i+1].Date
+	} else {
+		b = mktcal.NextTradingDay(a)
 	}
-	a, b := bars[i].Date, bars[i+1].Date
 	return a.Year() != b.Year() || a.Month() != b.Month()
 }
 

@@ -170,6 +170,9 @@ func main() {
 	seed := flag.Int64("seed", 1, "random seed")
 	status := flag.String("costs-status", "FROZEN for the CFDs (pre-registration 2026-10-12 §3); ETF commission and spreads from the in-session capture of 2026-10-21", "label printed with the cost block")
 	primary := flag.String("primary", "dm_12_1", "variant used for base rates, random baseline and sensitivity")
+	etoroETF := flag.String("etoro-etf", "", "eToro evidence directory with daily_qqq.csv / daily_spy.csv (for -forward and -state)")
+	forward := flag.String("forward", "", "FROM:TO: evaluate the pre-registered hypotheses of the ETF dual-momentum cell on eToro ETF bars (writes forward.json) instead of the study")
+	state := flag.Bool("state", false, "print the primary variant's state at the last closed eToro ETF bar (state at registration) and exit")
 	flag.Parse()
 	if *dataDir == "" || *out == "" {
 		log.Fatal("-data and -out are required")
@@ -237,6 +240,22 @@ func main() {
 	}
 	rng := rand.New(rand.NewSource(*seed))
 	st := study{d: d, p: p, cfd: cfdCosts, etf: etfCosts, rng: rng, primary: findVariant(*primary)}
+
+	if *state || *forward != "" {
+		if *etoroETF == "" {
+			log.Fatal("-state and -forward need -etoro-etf (a cmd/etoro-spike capture with daily_qqq.csv / daily_spy.csv)")
+		}
+		if *state {
+			if err := runState(*etoroETF, st.primary, p, st.hurdle(st.primary)); err != nil {
+				log.Fatal(err)
+			}
+			return
+		}
+		if err := runForward(*forward, *etoroETF, *out, st.primary, p, etfCosts, st.hurdle(st.primary), *sims, *seed); err != nil {
+			log.Fatal(err)
+		}
+		return
+	}
 
 	last := d.etfRaw[0][len(d.etfRaw[0])-1].Date
 	etfStart := d.etfRaw[0][0].Date.AddDate(1, 2, 0) // 12-1 warm-up on the ETF series

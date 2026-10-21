@@ -1,0 +1,34 @@
+rotation-research  generated 2026-10-21T15:54:05Z
+rule: dual momentum (shared/pkg/rotation): month-end decision, pick the stronger of {NSDQ100, SPX500} over the lookback, hold only if it beats the hurdle, else cash; fill at next open; x1
+variants: dm_12_1 (L=252 skip=21 tbill=false)  dm_12_1_tbill (L=252 skip=21 tbill=true)  dm_12 (L=252 skip=0 tbill=false)  dm_6 (L=126 skip=0 tbill=false)  dm_6_tbill (L=126 skip=0 tbill=true)  dm_3 (L=63 skip=0 tbill=false)  
+primary variant for base rates: dm_12_1
+costs [FROZEN 2026-10-21 (dry run on the seen year)]: CFD spread NSDQ100 15.50 / SPX500 14.80 bps RT, financing (^IRX + 4.338%)/365 per night; ETF 15 bps per order (1.65 USD on 1100 USD) + QQQ 0.28 / SPY 0.26 bps RT, no financing
+random baseline: 2000 permutations of the primary variant's monthly targets (same months in each asset, shuffled order), seed 1
+data: index proxies ^NDX/^GSPC 1985-10-01..2026-10-09 (10336 aligned bars); ETFs QQQ/SPY 1999-03-10..2026-10-09 (6940 aligned bars)
+forward evaluation 2025-10-21:2026-10-20, variant dm_12_1, ETF product, eToro bars to 2026-10-20 (costs FROZEN 2026-10-21 (dry run on the seen year))
+
+primary
+WINDOW                 RULE                  RETURN%    CAGR%  TRIPS    SW  EXPOS%   MAXDD%  SHARPE   TRADE%     FIN%  CO  RANDOM
+---------------------------------------------------------------------------------------------------------------------------------------
+primary                dm_12_1_etf             17.83    18.31      1     0   100.0    12.16    0.95     0.33     0.00      
+primary                qqq_hold                17.83    18.31      1     0   100.0    12.16    0.95     0.33     0.00      
+primary                spy_hold                14.69    15.07      1     0   100.0     9.17    1.15     0.33     0.00      
+primary                sma50_qqq                1.76     1.81     15     0    65.6    12.90    0.22     4.59     0.00      
+  H1   false rule    12.16 vs     9.17  rotation max drawdown < SPY hold max drawdown
+  H2   true  rule    17.83 vs    14.69  rotation return > SPY hold return
+  H2b  false rule    17.83 vs    17.83  rotation return > QQQ hold return
+  H3   false rule     0.00 vs    95.00  rotation beats >= 95% of permutations of its monthly targets (n/a when one target all window)
+  H4   true  rule    17.83 vs     1.76  rotation return > SMA50 on QQQ (same costs)
+
+pessimistic
+WINDOW                 RULE                  RETURN%    CAGR%  TRIPS    SW  EXPOS%   MAXDD%  SHARPE   TRADE%     FIN%  CO  RANDOM
+---------------------------------------------------------------------------------------------------------------------------------------
+pessimistic            dm_12_1_etf             17.48    17.94      1     0   100.0    12.16    0.95     0.66     0.00      
+pessimistic            qqq_hold                17.48    17.94      1     0   100.0    12.16    0.95     0.66     0.00      
+pessimistic            spy_hold                14.34    14.71      1     0   100.0     9.17    1.15     0.65     0.00      
+pessimistic            sma50_qqq               -2.77    -2.83     15     0    65.6    14.69   -0.08     8.98     0.00      
+  H1   false rule    12.16 vs     9.17  rotation max drawdown < SPY hold max drawdown
+  H2   true  rule    17.48 vs    14.34  rotation return > SPY hold return
+  H2b  false rule    17.48 vs    17.48  rotation return > QQQ hold return
+  H3   false rule     0.00 vs    95.00  rotation beats >= 95% of permutations of its monthly targets (n/a when one target all window)
+  H4   true  rule    17.48 vs    -2.77  rotation return > SMA50 on QQQ (same costs)

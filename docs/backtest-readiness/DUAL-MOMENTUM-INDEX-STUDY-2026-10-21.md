@@ -5,7 +5,7 @@ Evidence: [`evidence-2026-10-21/`](evidence-2026-10-21/) (`rotation-report.txt`,
 Engine: [`cmd/rotation-research`](../../services/strategy-executor/cmd/rotation-research/main.go) on [`shared/pkg/rotation`](../../shared/pkg/rotation/rotation.go) (the rule) and [`cfdsim.SimulateRotation`](../../shared/pkg/cfdsim/rotation.go) (the simulator). With one asset the simulator reproduces the frozen `cfdsim.Simulate` bit for bit (`TestRotationMatchesSimulate`); `cfdsim.Simulate` and `dailyrule` are untouched.
 
 > [!IMPORTANT]
-> **Verdict, in one paragraph.** On the **ETF product** (QQQ / SPY x1, real asset, no financing) the 12-1 dual-momentum rule is the first rule in this repository's studies that **beats holding SPY over the long run after costs** (since 2000: +1,130 % vs SPY +782 % and QQQ +955 %, max drawdown 50 % vs 55 % / 80 %), and it beats **97.7 % of 2,000 permutations** of its own monthly choices over that span. But the edge is concentrated: it comes from being in cash in 2000–02, 2008 and 2022. In any single year it beats SPY only **15 of 26** times and QQQ **6 of 26**; over rolling one-year windows it beats SPY in **56 %**, QQQ in **27 %**, with a median of **+1.4 pp vs SPY and 0.0 pp vs QQQ**. Its one-year drawdown is *higher* than SPY's two years in three.
+> **Verdict, in one paragraph.** On the **ETF product** (QQQ / SPY x1, real asset, no financing) the 12-1 dual-momentum rule is the first rule in this repository's studies that **beats holding SPY over the long run after costs** (since 2000: +1,130 % vs SPY +782 % and QQQ +955 %, max drawdown 50 % vs 55 % / 80 %), and it beats **98.0 % of 2,000 permutations** of its own monthly choices over that span. But the edge is concentrated: it comes from being in cash in 2000–02, 2008 and 2022. In any single year it beats SPY only **15 of 26** times and QQQ **6 of 26**; over rolling one-year windows it beats SPY in **56 %**, QQQ in **27 %**, with a median of **+1.4 pp vs SPY and 0.0 pp vs QQQ**. Its one-year drawdown is *higher* than SPY's two years in three.
 > On the **CFD product** the same rule returns +199 % since 2000: financing eats 82 % of the ETF result. **If a demo cell is run, it is the ETF cell.** The CFD version is dominated and should not be pre-registered.
 
 > [!NOTE]
@@ -41,7 +41,7 @@ Signals are computed on raw closes because that is what a live route serves; the
 - CFD: round-trip spread **15.5 / 14.8 bps**, half per leg; financing `(^IRX + 4.338 %)/365` per calendar night (the markup that makes today's rate equal the measured 2.3 bps), weekends three nights.
 - ETF: **15 bps of notional per order** (eToro's preview: 1.65 USD on 1,100 USD, 1.50 on 1,000 — proportional, not the fixed 1.50 USD the first draft of this study assumed) + 0.28 / 0.26 bps bid/ask; no financing; dividends through adjusted closes.
 - Switching NSDQ100 → SPX500 at one open pays both legs.
-- Random baseline: **2,000 permutations** of the primary variant's own month-by-month targets inside the window (same number of months in each asset and in cash, shuffled order), seed 1. It asks "is the *timing* worth anything, given the composition?". A year with a single target throughout has nothing to permute and is marked n/a.
+- Random baseline: **2,000 permutations** of the primary variant's own month-by-month targets inside the window (same number of months in each asset and in cash, shuffled order), seed 1. It asks "is the *timing* worth anything, given the composition?". A year with a single target throughout has nothing to permute and is marked n/a. Month ends are calendar month ends (the NYSE calendar for the series' last bar), never the end of the data.
 
 ## 3. Results by window — primary variant `dm_12_1`
 
@@ -49,14 +49,14 @@ Returns in % over the window from equity 1.0. Full tables with all six variants 
 
 | Window | **Rotation ETF** | Rotation CFD | QQQ hold | SPY hold | SMA50 on QQQ | Rot. ETF max DD | SPY max DD | QQQ max DD | Beats random |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| Since ETF inception (2000-05 →) | **1,130.5** | 199.2 | 954.6 | 781.6 | 264.3 | 50.0 % | 55.2 % | 80.5 % | **97.7 %** |
-| 2000-07 – 2009 | **−15.5** | −47.4 | −49.8 | −9.5 | 14.5 | 50.0 % | 55.2 % | 80.5 % | 72.2 % |
-| 2010 – 2019 | **311.1** | 142.2 | 408.0 | 248.8 | 47.7 | 22.8 % | 19.4 % | 22.8 % | 39.2 % |
-| 2020 – 2026 | **211.2** | 114.3 | 263.3 | 163.9 | 114.6 | 28.6 % | 33.7 % | 35.1 % | 77.0 % |
-| Last 10 y | **388.4** | 177.8 | 573.1 | 320.5 | 185.4 | 28.6 % | 33.7 % | 35.1 % | 63.5 % |
-| Last 5 y | **82.3** | 35.0 | 114.6 | 89.8 | 63.3 | 22.9 % | 24.5 % | 35.1 % | 67.2 % |
-| Last 3 y | **104.3** | 60.4 | 110.3 | 88.2 | 48.5 | 21.1 % | 18.8 % | 22.8 % | 56.8 % |
-| eToro CFD bars 2024-01 → (CFD only) | — | 42.5 | — | — | — | 22.5 % | — | — | 74.0 % |
+| Since ETF inception (2000-05 →) | **1,130.5** | 199.2 | 954.6 | 781.6 | 264.3 | 50.0 % | 55.2 % | 80.5 % | **98.0 %** |
+| 2000-07 – 2009 | **−15.5** | −47.4 | −49.8 | −9.5 | 14.5 | 50.0 % | 55.2 % | 80.5 % | 73.6 % |
+| 2010 – 2019 | **311.1** | 142.2 | 408.0 | 248.8 | 47.7 | 22.8 % | 19.4 % | 22.8 % | 40.9 % |
+| 2020 – 2026 | **211.2** | 114.3 | 263.3 | 163.9 | 114.6 | 28.6 % | 33.7 % | 35.1 % | 79.2 % |
+| Last 10 y | **388.4** | 177.8 | 573.1 | 320.5 | 185.4 | 28.6 % | 33.7 % | 35.1 % | 66.7 % |
+| Last 5 y | **82.3** | 35.0 | 114.6 | 89.8 | 63.3 | 22.9 % | 24.5 % | 35.1 % | 70.7 % |
+| Last 3 y | **104.3** | 60.4 | 110.3 | 88.2 | 48.5 | 21.1 % | 18.8 % | 22.8 % | 67.7 % |
+| eToro CFD bars 2024-01 → (CFD only) | — | 42.5 | — | — | — | 22.5 % | — | — | 81.7 % |
 
 On eToro's own bars the CFD rule earned 3.5 pp *more* than on index bars over the same dates (bar-source effect, opposite in sign to the SMA50 study's).
 

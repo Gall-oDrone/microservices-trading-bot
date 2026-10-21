@@ -1,0 +1,261 @@
+{
+  "schema": "dual-momentum-forward/v1",
+  "generated_at": "2026-10-21T15:54:05Z",
+  "window": "2025-10-21:2026-10-20",
+  "variant": {
+    "name": "dm_12_1",
+    "lookback_bars": 252,
+    "skip_bars": 21,
+    "tbill_hurdle": false
+  },
+  "params": {
+    "sma_benchmark": 50,
+    "spread_rt_bps_nsdq100": 15.5,
+    "spread_rt_bps_spx500": 14.8,
+    "spread_rt_bps_qqq": 0.28,
+    "spread_rt_bps_spy": 0.26,
+    "overnight_bps_per_night": 2.3,
+    "financing_markup_annual": 0.04337999839782713,
+    "irx_last_annual": 0.040570001602172855,
+    "size_usd": 1100,
+    "etf_fee_bps_per_order": 15,
+    "sims": 2000,
+    "seed": 1,
+    "costs_status": "FROZEN 2026-10-21 (dry run on the seen year)",
+    "variants": [
+      {
+        "name": "dm_12_1",
+        "lookback_bars": 252,
+        "skip_bars": 21,
+        "tbill_hurdle": false
+      },
+      {
+        "name": "dm_12_1_tbill",
+        "lookback_bars": 252,
+        "skip_bars": 21,
+        "tbill_hurdle": true
+      },
+      {
+        "name": "dm_12",
+        "lookback_bars": 252,
+        "skip_bars": 0,
+        "tbill_hurdle": false
+      },
+      {
+        "name": "dm_6",
+        "lookback_bars": 126,
+        "skip_bars": 0,
+        "tbill_hurdle": false
+      },
+      {
+        "name": "dm_6_tbill",
+        "lookback_bars": 126,
+        "skip_bars": 0,
+        "tbill_hurdle": true
+      },
+      {
+        "name": "dm_3",
+        "lookback_bars": 63,
+        "skip_bars": 0,
+        "tbill_hurdle": false
+      }
+    ],
+    "data_sha256": {
+      "gspc_yahoo_daily.csv": "825d2ec0adb29030de98a3276b0f789397f2bb4b71e28456952c07637a71b889",
+      "irx_yahoo_daily.csv": "a6e72f88257cf3d59bac7f954580771b2ebd72c708a8770177f088e554c4f201",
+      "ndx_yahoo_daily.csv": "f5277add7910f42388806e66566cdb2299631be7f8ccece1adb708c985492f21",
+      "qqq_yahoo_daily.csv": "7f768e7a75166433d0c14bf0d22afda3caf5e2969175ce119aab793817e00811",
+      "spy_yahoo_daily.csv": "1d9114e10087c38f1a874d42931cdeaea8c52c807109cb8a2beda72985f2cba3"
+    },
+    "primary_variant": "dm_12_1"
+  },
+  "last_bar": "2026-10-20",
+  "scenarios": [
+    {
+      "name": "primary",
+      "bars": 247,
+      "from": "2025-10-21",
+      "to": "2026-10-20",
+      "rows": [
+        {
+          "rule": "dm_12_1_etf",
+          "return_pct": 17.83454619143474,
+          "cagr_pct": 18.30714948137895,
+          "round_trips": 1,
+          "exposure_pct": 100,
+          "max_dd_pct": 12.158603814058646,
+          "sharpe_ann": 0.9485011880352112,
+          "trade_cost_pct": 0.33007201236054606,
+          "finance_pct": 0
+        },
+        {
+          "rule": "qqq_hold",
+          "return_pct": 17.83454619143474,
+          "cagr_pct": 18.30714948137895,
+          "round_trips": 1,
+          "exposure_pct": 100,
+          "max_dd_pct": 12.158603814058646,
+          "sharpe_ann": 0.9485011880352112,
+          "trade_cost_pct": 0.33007201236054606,
+          "finance_pct": 0
+        },
+        {
+          "rule": "spy_hold",
+          "return_pct": 14.685471250068849,
+          "cagr_pct": 15.069394531292613,
+          "round_trips": 1,
+          "exposure_pct": 100,
+          "max_dd_pct": 9.168524949314326,
+          "sharpe_ann": 1.153679630125639,
+          "trade_cost_pct": 0.3250820502433724,
+          "finance_pct": 0
+        },
+        {
+          "rule": "sma50_qqq",
+          "return_pct": 1.7619387813072374,
+          "cagr_pct": 1.8052985175704972,
+          "round_trips": 15,
+          "exposure_pct": 65.58704453441295,
+          "max_dd_pct": 12.89651052069728,
+          "sharpe_ann": 0.22097830798723653,
+          "trade_cost_pct": 4.592973847470455,
+          "finance_pct": 0
+        }
+      ],
+      "hypotheses": [
+        {
+          "id": "H1",
+          "criteria": "rotation max drawdown \u003c SPY hold max drawdown",
+          "rule": 12.158603814058646,
+          "benchmark": 9.168524949314326,
+          "pass": false
+        },
+        {
+          "id": "H2",
+          "criteria": "rotation return \u003e SPY hold return",
+          "rule": 17.83454619143474,
+          "benchmark": 14.685471250068849,
+          "pass": true
+        },
+        {
+          "id": "H2b",
+          "criteria": "rotation return \u003e QQQ hold return",
+          "rule": 17.83454619143474,
+          "benchmark": 17.83454619143474,
+          "pass": false
+        },
+        {
+          "id": "H3",
+          "criteria": "rotation beats \u003e= 95% of permutations of its monthly targets (n/a when one target all window)",
+          "rule": 0,
+          "benchmark": 95,
+          "pass": false
+        },
+        {
+          "id": "H4",
+          "criteria": "rotation return \u003e SMA50 on QQQ (same costs)",
+          "rule": 17.83454619143474,
+          "benchmark": 1.7619387813072374,
+          "pass": true
+        }
+      ],
+      "month_end_decisions": 12,
+      "targets_in_force": [
+        "2025-10-21:QQQ"
+      ]
+    },
+    {
+      "name": "pessimistic",
+      "bars": 247,
+      "from": "2025-10-21",
+      "to": "2026-10-20",
+      "rows": [
+        {
+          "rule": "dm_12_1_etf",
+          "return_pct": 17.47747308631262,
+          "cagr_pct": 17.93991380518023,
+          "round_trips": 1,
+          "exposure_pct": 100,
+          "max_dd_pct": 12.158603814058647,
+          "sharpe_ann": 0.9485011880352041,
+          "trade_cost_pct": 0.6596021855231186,
+          "finance_pct": 0
+        },
+        {
+          "rule": "qqq_hold",
+          "return_pct": 17.47747308631262,
+          "cagr_pct": 17.93991380518023,
+          "round_trips": 1,
+          "exposure_pct": 100,
+          "max_dd_pct": 12.158603814058647,
+          "sharpe_ann": 0.9485011880352041,
+          "trade_cost_pct": 0.6596021855231186,
+          "finance_pct": 0
+        },
+        {
+          "rule": "spy_hold",
+          "return_pct": 14.338170480243395,
+          "cagr_pct": 14.712445219179049,
+          "round_trips": 1,
+          "exposure_pct": 100,
+          "max_dd_pct": 9.168524949314335,
+          "sharpe_ann": 1.1536796301256498,
+          "trade_cost_pct": 0.6496374391641272,
+          "finance_pct": 0
+        },
+        {
+          "rule": "sma50_qqq",
+          "return_pct": -2.766747238597256,
+          "cagr_pct": -2.833263862661606,
+          "round_trips": 15,
+          "exposure_pct": 65.58704453441295,
+          "max_dd_pct": 14.693918399535882,
+          "sharpe_ann": -0.07990451869654568,
+          "trade_cost_pct": 8.984624131768177,
+          "finance_pct": 0
+        }
+      ],
+      "hypotheses": [
+        {
+          "id": "H1",
+          "criteria": "rotation max drawdown \u003c SPY hold max drawdown",
+          "rule": 12.158603814058647,
+          "benchmark": 9.168524949314335,
+          "pass": false
+        },
+        {
+          "id": "H2",
+          "criteria": "rotation return \u003e SPY hold return",
+          "rule": 17.47747308631262,
+          "benchmark": 14.338170480243395,
+          "pass": true
+        },
+        {
+          "id": "H2b",
+          "criteria": "rotation return \u003e QQQ hold return",
+          "rule": 17.47747308631262,
+          "benchmark": 17.47747308631262,
+          "pass": false
+        },
+        {
+          "id": "H3",
+          "criteria": "rotation beats \u003e= 95% of permutations of its monthly targets (n/a when one target all window)",
+          "rule": 0,
+          "benchmark": 95,
+          "pass": false
+        },
+        {
+          "id": "H4",
+          "criteria": "rotation return \u003e SMA50 on QQQ (same costs)",
+          "rule": 17.47747308631262,
+          "benchmark": -2.766747238597256,
+          "pass": true
+        }
+      ],
+      "month_end_decisions": 12,
+      "targets_in_force": [
+        "2025-10-21:QQQ"
+      ]
+    }
+  ]
+}
