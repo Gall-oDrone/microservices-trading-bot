@@ -39,7 +39,9 @@ Plan: `docs/frontend/FRONTEND-UI-PLAN-2026-10-03.md` §8.10; eToro runbook
 ```bash
 infrastructure/lambda/ledger-watchdog/deploy.sh \
   --bucket mtb-development-data-archive-<account> \
-  --topic-arn arn:aws:sns:us-east-1:<account>:mtb-operator-alerts      # add --test for a test email
+  --topic-arn arn:aws:sns:us-east-1:<account>:mtb-operator-alerts \
+  --ledgers "stage=daily-executor/stage,etoro-demo=daily-executor/etoro-demo:nyse,etoro-demo-etf=daily-executor/etoro-demo-etf:nyse,etoro-demo-rotation=daily-executor/etoro-demo-rotation:nyse"
+  # the four ledgers deployed on 2026-10-21 (stage, and the three eToro cells); add --test for a test email
 infrastructure/lambda/ledger-watchdog/deploy.sh --delete
 ```
 

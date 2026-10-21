@@ -18,9 +18,12 @@
 // publishes to the topic.
 //
 // With -etoro-ledger (UI_ALERTS_ETORO_LEDGER) it also checks the eToro
-// index-CFD demo executor from its ledger directory (internal/etorohealth):
+// demo executors from their ledger directories (internal/etorohealth):
 // a missed or failed 09:35 New York run, a reconcile drift, an order sent but
-// not recorded, a halt. Same lifecycle, same message.
+// not recorded, a halt. Same lifecycle, same message. One ledger as a plain
+// path (named by -etoro-name), or several as name=path,name=path (since
+// 2026-10-21: the CFD cell, the ETF cell and the dual-momentum cell each
+// keep their own ledger; alert keys are namespaced by name).
 package main
 
 import (
@@ -72,8 +75,8 @@ func main() {
 	notify := flag.String("notify", env("UI_ALERTS_NOTIFY", "stdout"), "stdout, or sns:<topic ARN>")
 	repeat := flag.Duration("repeat", envDuration("UI_ALERTS_REPEAT", 12*time.Hour), "re-send an open alert this often (0: only when new, escalated or resolved)")
 	uiURL := flag.String("ui-url", env("UI_ALERTS_UI_URL", "http://127.0.0.1:5173"), "operator UI, linked in the message")
-	etoroLedger := flag.String("etoro-ledger", env("UI_ALERTS_ETORO_LEDGER", ""), "eToro demo executor ledger (etoro-daily-data/demo/ledger.jsonl); empty: not checked")
-	etoroName := flag.String("etoro-name", env("UI_ALERTS_ETORO_NAME", "etoro-demo"), "name of the eToro ledger in alerts")
+	etoroLedger := flag.String("etoro-ledger", env("UI_ALERTS_ETORO_LEDGER", ""), "eToro demo executor ledger(s): a path (named by -etoro-name) or name=path,name=path,…; empty: not checked")
+	etoroName := flag.String("etoro-name", env("UI_ALERTS_ETORO_NAME", "etoro-demo"), "name of the eToro ledger in alerts when -etoro-ledger is a plain path")
 	dryRun := flag.Bool("dry-run", false, "print what would be sent; do not notify or write the state")
 	test := flag.Bool("test", false, "send one test message and exit")
 	flag.Parse()
@@ -119,9 +122,9 @@ func main() {
 
 	now := time.Now().UTC()
 	cur := evaluate(srv.Handler(), ledgers)
-	if *etoroLedger != "" {
-		checks := etorohealth.Evaluate(etorohealth.Options{LedgerPath: *etoroLedger}, now)
-		cur = alerts.Merge(cur, alerts.FromEtoro(*etoroName, checks))
+	for _, l := range etoroLedgers(*etoroLedger, *etoroName) {
+		checks := etorohealth.Evaluate(etorohealth.Options{LedgerPath: l.path}, now)
+		cur = alerts.Merge(cur, alerts.FromEtoro(l.name, checks))
 	}
 	prev, err := loadState(*statePath)
 	if err != nil {
@@ -146,6 +149,33 @@ func main() {
 		logger.Print(err)
 		os.Exit(1)
 	}
+}
+
+type namedLedger struct{ name, path string }
+
+// etoroLedgers parses -etoro-ledger: empty -> none; a plain path -> one
+// ledger called defaultName; otherwise name=path entries separated by commas.
+func etoroLedgers(spec, defaultName string) []namedLedger {
+	spec = strings.TrimSpace(spec)
+	if spec == "" {
+		return nil
+	}
+	if !strings.Contains(spec, "=") {
+		return []namedLedger{{defaultName, spec}}
+	}
+	var out []namedLedger
+	for _, part := range strings.Split(spec, ",") {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		name, path, ok := strings.Cut(part, "=")
+		if !ok || strings.TrimSpace(name) == "" || strings.TrimSpace(path) == "" {
+			continue
+		}
+		out = append(out, namedLedger{strings.TrimSpace(name), strings.TrimSpace(path)})
+	}
+	return out
 }
 
 func notifier(ctx context.Context, spec string) (alerts.Notifier, error) {

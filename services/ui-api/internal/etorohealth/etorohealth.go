@@ -381,6 +381,12 @@ func nyDate(t time.Time) time.Time {
 func runCheck(dir string, now time.Time) Check {
 	const unfinishedAfter = 15 * time.Minute
 	logs, err := readRunLogs(dir)
+	if errors.Is(err, os.ErrNotExist) {
+		// The cell has not run yet (its directory is created by the first
+		// run): the same warning as an empty directory, not a failure. The
+		// ledger check says "no ledger yet" for the same state.
+		return Check{IDRun, "eToro executor run", datahealth.Warn, "no run log yet (" + dir + " does not exist yet)"}
+	}
 	if err != nil {
 		return Check{IDRun, "eToro executor run", datahealth.Fail, err.Error()}
 	}

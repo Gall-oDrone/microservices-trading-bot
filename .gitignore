@@ -100,3 +100,6 @@ services/*/bitso-daily
 daily-executor-data/
 # eToro executor ledger, intents, candles, run logs and binaries (P3)
 etoro-daily-data/
+
+# go build output dropped in the package directory by mistake (the installer builds into services/ui-api/bin/)
+services/ui-api/ui-alerts

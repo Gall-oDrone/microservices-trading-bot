@@ -155,8 +155,14 @@ if [ -n "$bucket" ]; then
   [ "$etoro" = 1 ] && etoro_rot_s3uri="s3://$bucket/daily-executor/etoro-demo-rotation"
 fi
 ledger="$ROOT/services/strategy-executor/daily-executor-data/stage/ledger.jsonl"
-etoro_ledger=""
-[ "$etoro_alerts" = 1 ] && etoro_ledger="$ROOT/services/strategy-executor/etoro-daily-data/demo/ledger.jsonl"
+etoro_ledger="" etoro_alert_ledgers=""
+if [ "$etoro_alerts" = 1 ]; then
+  edata="$ROOT/services/strategy-executor/etoro-daily-data"
+  etoro_ledger="$edata/demo/ledger.jsonl"
+  # ui-alerts checks every eToro cell (name=path list; keys are namespaced by name):
+  # the index-CFD cell, the ETF cell (09:38 NY) and the dual-momentum cell (09:41 NY).
+  etoro_alert_ledgers="etoro-demo=$edata/demo/ledger.jsonl,etoro-demo-etf=$edata/demo-etf/ledger.jsonl,etoro-demo-rotation=$edata/demo-rotation/ledger.jsonl"
+fi
 etoro_yahoo=""
 [ "$etoro" = 1 ] && etoro_yahoo="$ROOT/docs/backtest-readiness/evidence-2026-10-10/data"
 
@@ -167,7 +173,7 @@ UI_ALERTS_NOTIFY=$notify
 UI_API_ARCHIVE=$archive
 UI_API_LEDGER=$ledger
 UI_API_ETORO_LEDGER=$etoro_ledger
-UI_ALERTS_ETORO_LEDGER=$etoro_ledger
+UI_ALERTS_ETORO_LEDGER=$etoro_alert_ledgers
 UI_ALERTS_UI_URL=http://127.0.0.1:5173
 DAILY_EXECUTOR_S3_URI=$s3uri
 ETORO_EXECUTOR_S3_URI=$etoro_s3uri

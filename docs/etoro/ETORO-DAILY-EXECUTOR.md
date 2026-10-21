@@ -531,8 +531,9 @@ with the same UTC guard as the CFD line, and writes `ETORO_ETF_EXECUTOR_S3_URI`
 (`s3://<bucket>/daily-executor/etoro-demo-etf`) to `ops.env`. The job sets
 `ETORO_EXECUTOR_LEDGER=etoro-daily-data/demo-etf/ledger.jsonl` and passes `-demo -instruments QQQ,SPY`
 to the same wrapper. Log: `~/.local/state/mtb-ops/etoro-etf.log`. The off-machine watchdog
-(`infrastructure/lambda/ledger-watchdog`) does not watch the ETF prefix until its `LEDGERS`
-parameter lists it.
+(`infrastructure/lambda/ledger-watchdog`) watches the ETF and rotation prefixes since its redeploy of
+2026-10-21 (`--ledgers … ,etoro-demo-etf=daily-executor/etoro-demo-etf:nyse,etoro-demo-rotation=daily-executor/etoro-demo-rotation:nyse`),
+and `ui-alerts` checks all three eToro ledgers (`UI_ALERTS_ETORO_LEDGER` as a `name=path` list).
 
 By hand: `go run ./cmd/etoro-daily-executor -demo -instruments QQQ,SPY -ledger ./etoro-daily-data/demo-etf/ledger.jsonl`.
 The reconcile, risk report and fees check take the ETF ledger with `-ledger`. The weekly execution
