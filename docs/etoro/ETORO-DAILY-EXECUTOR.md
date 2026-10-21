@@ -624,3 +624,14 @@ routes, the rates feed's closes and the assisted trades; the ETF cells are reach
 `?ledger=`. After a `git pull`, re-run the installer to rebuild; a plain
 `systemctl --user restart mtb-ui-api` restarts the binary already built. The web app itself is
 still Vite (`cd web && npm run dev`), proxying `/api` to `:8090`.
+
+## 14. Real-account canary (plan only, 2026-10-21)
+
+Nothing here is built and the real account is still refused in code by the executor, `ui-api`
+and the broker constructor. The plan for a **measurement-only** canary on the real account — one
+hand-placed position next to the demo cells, in its own process on `127.0.0.1:8091`, its own
+key, token, ledger (`etoro-daily-data/real-canary/`), policy (`EtoroRealCanaryPolicy`) and
+systemd unit, with a daily read-only observe job and an explicit six-part acknowledgement — is
+[ETORO-REAL-CANARY-PLAN-2026-10-21.md](ETORO-REAL-CANARY-PLAN-2026-10-21.md). It explains why
+60 USD cannot open NSDQ100 at x1 (eToro's 1,000 USD exposure minimum) and the three ways to read
+that constraint. When built, this section becomes the operating procedure (the plan's §8).

@@ -21,6 +21,7 @@ Or set `ETORO_PUBLIC_KEY` / `ETORO_PRIVATE_KEY` in the environment before runnin
 - Keep the demo keys in `.env.etoro.local` at the repo root. It is git-ignored by `.env.*`.
 - Load them with `set -a; . ./.env.etoro.local; set +a`.
 - `scripts/check-no-etoro-secrets.sh` fails if a key value, or anything shaped like an eToro user key, is tracked or staged. Run it before every push; CI runs it too.
+- **The real account is refused in code** by the executor, `ui-api` and the broker constructor. A measurement-only canary on the real account (own process/port/key/token/ledger/policy, one hand-placed position, nothing automatic) is planned, not built: [etoro/ETORO-REAL-CANARY-PLAN-2026-10-21.md](etoro/ETORO-REAL-CANARY-PLAN-2026-10-21.md).
 
 ## Runtime configuration
 
