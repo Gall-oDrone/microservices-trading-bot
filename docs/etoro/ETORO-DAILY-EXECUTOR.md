@@ -598,3 +598,29 @@ on/after 2027-04-12 and the final once on/after 2027-10-29 are never pruned). Th
 primary dates per cell are in the pre-registrations; an as-of report after a cell's window end
 already carries that cell's complete figures. Cells whose executor has not run yet are skipped
 with a note.
+
+## 13. The console's API as a service: `scripts/install-ui-api-service.sh` (2026-10-21)
+
+Until now `ui-api` was started by hand (`go run ./cmd -operator-token-file … -etoro-ledger …
+-etoro-trading`) and died with the shell. The installer makes it a `systemd --user` unit,
+`mtb-ui-api.service`, so it survives a logout, a crash (`Restart=on-failure`) and a reboot
+(linger is on for this user; the script says so if it is not):
+
+```
+scripts/install-ui-api-service.sh              # go build -> services/ui-api/bin/ui-api, write, enable --now
+scripts/install-ui-api-service.sh --print      # show the unit and the env file, change nothing
+scripts/install-ui-api-service.sh --no-trading # read-only console
+scripts/install-ui-api-service.sh --uninstall
+systemctl --user status mtb-ui-api | journalctl --user -u mtb-ui-api -f
+```
+
+Settings come from two files under `~/.config/microservices-trading-bot/`: `ops.env`, which
+`install-ops-cron.sh` keeps current (`UI_API_LEDGER`, `UI_API_ARCHIVE` and `UI_API_ETORO_LEDGER`
+= `etoro-demo`, `etoro-demo-etf`, `etoro-demo-rotation` as `name=path`), and `ui-api.env`
+(written once, 0600: `UI_API_ADDR=127.0.0.1:8090`, `UI_API_OPERATOR_TOKEN_FILE`,
+`UI_API_ETORO_TRADING=1`). The eToro keys stay in `etoro-demo.env`, read by the binary itself
+(`ETORO_ENV=demo` enforced). The first eToro ledger (`etoro-demo`) is the default of the eToro
+routes, the rates feed's closes and the assisted trades; the ETF cells are reached with
+`?ledger=`. After a `git pull`, re-run the installer to rebuild; a plain
+`systemctl --user restart mtb-ui-api` restarts the binary already built. The web app itself is
+still Vite (`cd web && npm run dev`), proxying `/api` to `:8090`.

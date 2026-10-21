@@ -155,6 +155,7 @@ func main() {
 			logger.Fatal("-ledgers: ", err)
 		}
 	}
+	firstEtoro := -1
 	if *etoroLedger != "" {
 		// Appended after the Bitso ledgers: the first ledger stays the
 		// default of the Bitso routes and of /healthz; the first eToro
@@ -171,6 +172,9 @@ func main() {
 				if l.Name == nl.Name {
 					logger.Fatalf("-etoro-ledger name %q is already a ledger name", nl.Name)
 				}
+			}
+			if firstEtoro < 0 {
+				firstEtoro = len(ledgers)
 			}
 			ledgers = append(ledgers, api.Ledger{Name: nl.Name, Store: store.New(nl.Path, ""), Venue: api.VenueEtoro})
 		}
@@ -202,8 +206,10 @@ func main() {
 	if *liveOn {
 		srv.Live = startLive(ctx, ledgers[0].Store, *liveURL, *liveREST, logger)
 	}
-	if *etoroLedger != "" && *etoroLiveOn {
-		srv.EtoroLive = startEtoroLive(ctx, ledgers[len(ledgers)-1], *etoroEnvFile, logger)
+	if firstEtoro >= 0 && *etoroLiveOn {
+		// The feed polls the index CFDs and reads their closed bars from the
+		// first eToro ledger (the CFD cell), not from whichever cell is last.
+		srv.EtoroLive = startEtoroLive(ctx, ledgers[firstEtoro], *etoroEnvFile, logger)
 	}
 	if *etoroTrading {
 		switch {
@@ -219,7 +225,7 @@ func main() {
 		if srv.Trading, err = api.NewEtoroTrading(cfg); err != nil {
 			logger.Fatal("-etoro-trading: ", err)
 		}
-		logger.Printf("etoro trading: ASSISTED TRADES ENABLED on the demo account (ledger %s, token-gated, %s tokens)", *etoroName, api.TradeTokenTTL)
+		logger.Printf("etoro trading: ASSISTED TRADES ENABLED on the demo account (ledger %s, token-gated, %s tokens)", ledgers[firstEtoro].Name, api.TradeTokenTTL)
 	}
 	hs := &http.Server{
 		Addr: *addr, Handler: srv.Handler(),
