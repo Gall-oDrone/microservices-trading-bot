@@ -169,6 +169,28 @@ func EtoroDemoProtectedPolicy() Policy {
 	return p
 }
 
+// EtoroDemoETFPolicy is the policy of the eToro ETF cells
+// (FORWARD-TEST-PREREGISTRATION-SMA50-ETF-2026-10-21.md and
+// FORWARD-TEST-PREREGISTRATION-DUAL-MOMENTUM-ETF-2026-10-21.md): the same
+// per-leg limits as EtoroDemoPolicy on the books qqq and spy (x1 real
+// asset, 1,100 USD), no stop-loss requirement (those cells carry no
+// protection by design; a stop overlay would come with its own addendum
+// and policy version), and everything else on the account refused.
+// The executor selects it when every instrument of a run is an ETF; the
+// CFD policies above are unchanged.
+func EtoroDemoETFPolicy() Policy {
+	etf := BookLimits{
+		MaxOrderNotional: 1500, MaxOrdersPerDay: 1, MaxPriceDeviationBps: 1000,
+		DrawdownWarn: 0.20, CostWarnBps: 40,
+		MaxLeverage: 1, MaxExposurePctEquity: 0.05, RequireMarketOpen: true,
+	}
+	return Policy{
+		Version: "etoro-demo-etf-2026-10-21",
+		Books:   map[string]BookLimits{"qqq": etf, "spy": etf},
+		Default: BookLimits{MaxOrderNotional: 1, MaxOrdersPerDay: 1, MaxLeverage: 1, RequireMarketOpen: true},
+	}
+}
+
 // For returns the limits that apply to book.
 func (p Policy) For(book string) BookLimits {
 	if l, ok := p.Books[strings.ToLower(book)]; ok {

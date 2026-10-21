@@ -10,10 +10,10 @@ sibling tests: [`FORWARD-TEST-PREREGISTRATION-SMA50-ETF-2026-10-21.md`](FORWARD-
 
 This test is judged **on paper**, from eToro's own daily bars for the ETFs, by
 [`cmd/rotation-research -forward`](../../services/strategy-executor/cmd/rotation-research/forward.go).
-A demo-account executor **may** place the same trades on the eToro **demo** account once it supports a
-joint decision across two books (the current `etoro-daily-executor` decides each instrument alone;
-that extension is the next piece of work and does not touch this file). Its fills would be reported
-next to the paper result and **do not decide pass or fail**. No real money is involved: the code
+The demo-account executor (`etoro-daily-executor -strategy dm_12_1`, built later the same day, runbook
+§11; its own ledger `etoro-daily-data/demo-rotation/`) places the same trades on the eToro **demo**
+account from the window's first fill; it holds cash before that. Its fills are reported next to the
+paper result and **do not decide pass or fail**. No real money is involved: the code
 hard-blocks `ETORO_ENV=real`.
 
 Why this cell exists. The study found that on the ETF product this rule is the first in this
@@ -129,4 +129,4 @@ go run ./cmd/rotation-research -data ../../docs/backtest-readiness/evidence-2026
 
 **Data integrity:** compare the bars before 2026-10-21 with the registered snapshot (sha256 prefixes in §1). The result stands only if differences do not change the rule's target on any decision day.
 
-**Demo executor (when built).** It must take the two books together: at 09:35 New York on the first trading day after a month end, close the book the rule left and open the one it chose, from one ledger directory of its own (`etoro-daily-data/demo-rotation/`), with the same idempotent-order, reconcile and halt machinery as the daily executors. On any other day it records the day and does nothing. Until it exists this is a paper test, like the Bitso SMA50 tests were.
+**Demo executor.** `etoro-daily-executor -strategy dm_12_1` takes the two books together: at 09:41 New York it reads both, aligns them, applies the rule once and runs the book the rule leaves before the one it enters, from its own ledger directory (`etoro-daily-data/demo-rotation/`), with the same idempotent-order, reconcile, risk (`EtoroDemoETFPolicy`) and halt machinery as the daily executors. On a day without a change it records the day and does nothing; before 2026-11-02 it holds cash. Runbook §11.

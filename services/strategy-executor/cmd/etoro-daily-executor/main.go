@@ -71,6 +71,7 @@ import (
 
 	"bitso-trading-platform/shared/pkg/bitsodaily"
 	"bitso-trading-platform/shared/pkg/broker/etorobroker"
+	"bitso-trading-platform/shared/pkg/dailyrule"
 	"bitso-trading-platform/shared/pkg/etoro"
 	"bitso-trading-platform/shared/pkg/etorodaily"
 	"bitso-trading-platform/shared/pkg/etoroledger"
@@ -109,6 +110,7 @@ func main() {
 	envFile := flag.String("env-file", defaultEnvFile(), "file with ETORO_PUBLIC_KEY / ETORO_PRIVATE_KEY (chmod 600)")
 	flag.BoolVar(&o.protect, "protect", os.Getenv("ETORO_EXECUTOR_PROTECT") != "0", "rule opens carry the disaster stop max(4xATR, 8%) and held stops are ratcheted daily; the risk policy defaults to the protected one (ETORO_EXECUTOR_PROTECT=0 turns it off)")
 	allowDraft := flag.Bool("allow-draft", false, fmt.Sprintf("also accept instruments whose pre-registration is still a draft (%s): dry run only, -demo is refused for them", strings.Join(draftNames(), ", ")))
+	strategy := flag.String("strategy", "sma50", fmt.Sprintf("sma50 (the daily rule on -instruments) or a frozen rotation (%s): the joint month-end decision over its own books, -instruments ignored, separate -ledger required", strings.Join(rotationNames(), ", ")))
 	flag.Parse()
 
 	if os.Getenv("ETORO_EXECUTOR_DISABLED") == "1" {
@@ -136,7 +138,22 @@ func main() {
 		o.candlesDir = filepath.Join(filepath.Dir(o.ledgerPath), "candles")
 	}
 	var specs []instSpec
+	var rot *rotationSpec
+	if *strategy != "sma50" {
+		r, ok := frozenRotations[*strategy]
+		if !ok {
+			usage(fmt.Sprintf("strategy %q is neither sma50 nor a frozen rotation (%s)", *strategy, strings.Join(rotationNames(), ", ")))
+		}
+		if r.Draft && o.demo {
+			usage(fmt.Sprintf("rotation %q is a draft (%s): run it without -demo", r.Name, r.Prereg))
+		}
+		rot = &r
+		specs = r.Books
+	}
 	for _, n := range strings.Split(*insts, ",") {
+		if rot != nil {
+			break // the rotation's books are fixed by its pre-registration
+		}
 		n = strings.ToUpper(strings.TrimSpace(n))
 		if n == "" {
 			continue
@@ -156,9 +173,26 @@ func main() {
 	if len(specs) == 0 {
 		usage("no instruments")
 	}
+	etfs, cfds := 0, 0
+	for _, s := range specs {
+		if s.Kind == KindETF {
+			etfs++
+		} else {
+			cfds++
+		}
+	}
+	if etfs > 0 && cfds > 0 {
+		usage("a run mixes CFD and ETF instruments; the risk policies are per product and the cells keep separate ledgers: run them separately")
+	}
 	policy := risk.EtoroDemoPolicy()
 	if o.protect {
 		policy = risk.EtoroDemoProtectedPolicy()
+	}
+	if etfs > 0 {
+		// The ETF cells carry no protection by design (pre-registrations
+		// §5): their policy has no stop requirement whatever -protect says,
+		// and the executor skips the disaster stop for Kind == etf.
+		policy = risk.EtoroDemoETFPolicy()
 	}
 	if *riskPolicy != "" {
 		p, err := risk.LoadPolicy(*riskPolicy)
@@ -223,16 +257,25 @@ func main() {
 		halt: o.halt, amount: o.amount, now: time.Now, protect: o.protect}
 
 	ctx := context.Background()
+	fetchFor := func(s instSpec) func() ([]bitsodaily.Row, etorodaily.Report, error) {
+		return func() ([]bitsodaily.Row, etorodaily.Report, error) {
+			return etorodaily.Fetch(ctx, c, s.ID, etoro.MaxCandles, now, etorodaily.Options{})
+		}
+	}
+	if rot != nil {
+		if err := runRotation(ctx, o, de, *rot, fetchFor, now, version, mode); err != nil {
+			fmt.Printf("\n[%s] FAILED: %v\n", rot.Name, err)
+			os.Exit(1)
+		}
+		return
+	}
 	failed := false
 	for _, s := range specs {
 		book := s.Book
 		de.logf = func(format string, args ...any) {
 			fmt.Printf("[%s] %s "+format+"\n", append([]any{book, time.Now().UTC().Format("15:04:05Z")}, args...)...)
 		}
-		fetch := func() ([]bitsodaily.Row, etorodaily.Report, error) {
-			return etorodaily.Fetch(ctx, c, s.ID, etoro.MaxCandles, now, etorodaily.Options{})
-		}
-		if err := runBook(ctx, o, de, s, fetch, now, version, mode); err != nil {
+		if err := runBook(ctx, o, de, s, fetchFor(s), now, version, mode); err != nil {
 			fmt.Printf("\n[%s] FAILED: %v\n", s.Book, err)
 			failed = true
 		}
@@ -247,33 +290,75 @@ func main() {
 // ~1.3 bps apart (seen 2026-10-10); a larger move is a real revision.
 const revisionTolBps = 5
 
+// bookData is one instrument's two reads of eToro's bars, saved and hashed.
+type bookData struct {
+	rows, rows2 []bitsodaily.Row
+	rep         etorodaily.Report
+	csvPath     string
+	sha         string
+	revised     int
+	maxRev      float64
+}
+
+// loadBook reads the bars twice (the rule may act only if both versions
+// agree within revisionTolBps), saves the first read as CSV and hashes it.
+func loadBook(o options, s instSpec, fetch func() ([]bitsodaily.Row, etorodaily.Report, error)) (bookData, error) {
+	var b bookData
+	var err error
+	b.rows, b.rep, err = fetch()
+	if err != nil {
+		return b, fmt.Errorf("fetch candles: %w", err)
+	}
+	if len(b.rows) == 0 {
+		return b, errors.New("no closed bars returned")
+	}
+	// Second fetch: the rule may act only if both versions agree.
+	b.rows2, _, err = fetch()
+	if err != nil {
+		return b, fmt.Errorf("fetch candles (second read): %w", err)
+	}
+	b.revised, b.maxRev, err = compareFetches(b.rows, b.rows2)
+	if err != nil {
+		return b, err
+	}
+	b.csvPath = filepath.Join(o.candlesDir, fmt.Sprintf("%s_daily_%s.csv", s.Book, b.rows[len(b.rows)-1].Date))
+	if err := bitsodaily.WriteCSV(b.csvPath, s.Symbol, b.rows); err != nil {
+		return b, fmt.Errorf("save candles: %w", err)
+	}
+	b.sha, err = fileSHA256(b.csvPath)
+	return b, err
+}
+
+// candleInfo is the ledger's fingerprint of the bars a decision used.
+func (b bookData) candleInfo(s instSpec) etoroledger.CandleInfo {
+	return etoroledger.CandleInfo{
+		Source: fmt.Sprintf("etoro live candles OneDay, instrument %d, NYSE trading days", s.ID),
+		First:  b.rows[0].Date, Last: b.rows[len(b.rows)-1].Date, Bars: len(b.rows), Missing: b.rep.MissingTrading, SHA256Short: b.sha[:16],
+		Revised: b.revised, MaxRevisionBps: b.maxRev,
+	}
+}
+
+// checkLedgerPrereg refuses to write a book's line into a ledger that
+// already holds that book under another pre-registration: the ETF cell and
+// the rotation cell both trade qqq / spy and must never share a ledger
+// (Get(book, bar_date) would collide and LastDemoPosition would mix them).
+func checkLedgerPrereg(led *etoroledger.Ledger, book, prereg string) error {
+	for _, r := range led.Records() {
+		if r.Book == book && !r.IsUI() && r.Prereg != "" && r.Prereg != prereg {
+			return fmt.Errorf("ledger %s already holds %s under %s; this run is %s: use a separate -ledger", led.Path(), book, r.Prereg, prereg)
+		}
+	}
+	return nil
+}
+
 // runBook decides one instrument and records it (dry run) or runs its demo
 // leg. A nil error with nothing written means the day was already recorded.
 func runBook(ctx context.Context, o options, de demoEnv, s instSpec, fetch func() ([]bitsodaily.Row, etorodaily.Report, error), now time.Time, version, mode string) error {
-	rows, rep, err := fetch()
-	if err != nil {
-		return fmt.Errorf("fetch candles: %w", err)
-	}
-	if len(rows) == 0 {
-		return errors.New("no closed bars returned")
-	}
-	// Second fetch: the rule may act only if both versions agree.
-	rows2, _, err := fetch()
-	if err != nil {
-		return fmt.Errorf("fetch candles (second read): %w", err)
-	}
-	revised, maxRev, err := compareFetches(rows, rows2)
+	b, err := loadBook(o, s, fetch)
 	if err != nil {
 		return err
 	}
-	csvPath := filepath.Join(o.candlesDir, fmt.Sprintf("%s_daily_%s.csv", s.Book, rows[len(rows)-1].Date))
-	if err := bitsodaily.WriteCSV(csvPath, s.Symbol, rows); err != nil {
-		return fmt.Errorf("save candles: %w", err)
-	}
-	sum, err := fileSHA256(csvPath)
-	if err != nil {
-		return err
-	}
+	rows, rows2, csvPath := b.rows, b.rows2, b.csvPath
 	d, bars, pts, err := decide(rows, now)
 	if err != nil {
 		return err
@@ -293,14 +378,19 @@ func runBook(ctx context.Context, o options, de demoEnv, s instSpec, fetch func(
 	rec := &etoroledger.Record{
 		Schema: etoroledger.Schema, CodeVersion: version, Mode: mode, Venue: etorobroker.Venue, Book: s.Book,
 		Instrument: etoroledger.Instrument{Symbol: s.Symbol, ID: s.ID}, Prereg: s.Prereg, Decision: d, Paper: p,
-		Candles: etoroledger.CandleInfo{
-			Source: fmt.Sprintf("etoro live candles OneDay, instrument %d, NYSE trading days", s.ID),
-			First:  rows[0].Date, Last: rows[len(rows)-1].Date, Bars: len(rows), Missing: rep.MissingTrading, SHA256Short: sum[:16],
-			Revised: revised, MaxRevisionBps: maxRev,
-		},
+		Candles: b.candleInfo(s),
 	}
 	printRecord(*rec, csvPath, s)
+	if err := checkLedgerPrereg(de.led, s.Book, s.Prereg); err != nil {
+		return err
+	}
+	return finishBook(ctx, o, de, s, rec, rows, bars, d, mode)
+}
 
+// finishBook is the tail shared by the daily rule and the rotation: the
+// data-integrity checks against the ledger, then record (dry run) or the
+// demo leg.
+func finishBook(ctx context.Context, o options, de demoEnv, s instSpec, rec *etoroledger.Record, rows []bitsodaily.Row, bars []dailyrule.Bar, d etoroledger.Decision, mode string) error {
 	// Data integrity (pre-registration §5): a recorded day must not change
 	// beyond eToro's two-version noise.
 	if prev, ok := de.led.Get(s.Book, d.BarDate); ok {
@@ -410,7 +500,11 @@ func printRecord(r etoroledger.Record, csvPath string, s instSpec) {
 	if r.Candles.Revised > 0 {
 		fmt.Printf("  revisions  : %d closes differed between two reads (max %.2f bps, tolerance %d)\n", r.Candles.Revised, r.Candles.MaxRevisionBps, revisionTolBps)
 	}
-	fmt.Printf("  rule       : %s close %.2f vs SMA50 %.2f -> %s (was %s), fill %s\n", d.BarDate, d.Close, d.SMA, strings.ToUpper(d.Signal), d.PrevSignal, d.FillDate)
+	if d.Rule != "" {
+		fmt.Printf("  rule       : %s %s close %.2f, joint target %s -> %s (was %s), fill %s\n", d.Rule, d.BarDate, d.Close, strings.ToUpper(d.Target), strings.ToUpper(d.Signal), d.PrevSignal, d.FillDate)
+	} else {
+		fmt.Printf("  rule       : %s close %.2f vs SMA50 %.2f -> %s (was %s), fill %s\n", d.BarDate, d.Close, d.SMA, strings.ToUpper(d.Signal), d.PrevSignal, d.FillDate)
+	}
 	if p.Started {
 		fmt.Printf("  paper      : since %s, %d days, %d round trips, costs %s | position %s | equity %.4f vs %s %.4f | max DD %.2f%% | financing %.2f%%\n",
 			p.ForwardStart, p.Days, p.RoundTrips, p.CostsStatus, p.Position, p.Equity, s.holdLabel(), p.HoldEquity, p.MaxDrawdown*100, p.FinancingPct)

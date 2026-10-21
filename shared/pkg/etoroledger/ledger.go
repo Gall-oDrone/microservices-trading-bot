@@ -136,6 +136,19 @@ type Decision struct {
 	Signal     string  `json:"signal"`      // "long" | "flat" at t's close
 	PrevSignal string  `json:"prev_signal"` // at t-1's close
 	Action     string  `json:"action"`      // "buy" | "sell" | "hold"
+	// Rule (2026-10-21) names the rule when it is not the daily SMA50:
+	// "dm_12_1" for the dual-momentum rotation
+	// (FORWARD-TEST-PREREGISTRATION-DUAL-MOMENTUM-ETF-2026-10-21.md), whose
+	// signal per book is derived from a joint target across books. Empty
+	// (omitted) on SMA50 lines, where SMA is the 50-day average.
+	Rule string `json:"rule,omitempty"`
+	// Rotation fields (omitted on SMA50 lines): DecisionDay is true when
+	// BarDate was a month end and the rule re-evaluated; Momentum maps each
+	// asset symbol to its lookback return at the latest decision; Target is
+	// the asset symbol in force after this bar's close, or "cash".
+	DecisionDay bool               `json:"decision_day,omitempty"`
+	Momentum    map[string]float64 `json:"momentum,omitempty"`
+	Target      string             `json:"target,omitempty"`
 }
 
 // Paper is the pre-registered paper account (cfdsim with the frozen costs),

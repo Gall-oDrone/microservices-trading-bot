@@ -542,3 +542,33 @@ report for this cell is a separate dated file that links the pre-registration, a
 (`decide.go`) and decided in dry-run mode with `-allow-draft`; `-demo` refuses it in two places. The
 ETF cell lived there for one dry run on 2026-10-21 (ledger `etoro-daily-data/draft-etf/`, two lines,
 not continued) before its freeze moved it to `frozenSpecs`.
+
+## 11. The dual-momentum cell: `-strategy dm_12_1` (frozen 2026-10-21, executor built the same day)
+
+[`FORWARD-TEST-PREREGISTRATION-DUAL-MOMENTUM-ETF-2026-10-21.md`](../backtest-readiness/FORWARD-TEST-PREREGISTRATION-DUAL-MOMENTUM-ETF-2026-10-21.md):
+one position at a time across **QQQ / SPY / cash**, decided on **month ends only** (12-1 momentum,
+0 % hurdle), window 2026-11-02 → 2027-10-29. `-strategy dm_12_1` makes the executor take the two
+books **together** (`rotation.go`):
+
+| Step | What differs from the daily rule |
+|---|---|
+| Decide | both books' bars are read twice, aligned on common dates (`rotation.Align`), checked fresh **on each book**, and the latest aligned bar must be every book's latest bar; `rotation.Evaluate` gives one joint target. Both reads must agree on target and previous target |
+| Per-book signal | `long` for the target book, `flat` for the others; `Decision.rule = "dm_12_1"`, `decision_day`, `momentum` (per symbol, at the latest decision) and `target` are recorded on every book's line |
+| Order of books | the book the rule leaves (sell) first, holds next, the buy last, so a switch frees the cash before it is reused; one failed book does not stop the others and the next run re-plans each from its ledger position (the target is idempotent, which is also how a missed day is caught up) |
+| Before the window | until the fill date reaches `ForwardStart` every book's signal is flat (pre-registration §2: the paper account is in cash until its first in-window fill), so `-demo` from day one opens nothing before **2026-11-02** |
+| Paper | the **joint** account from `cfdsim.SimulateRotation` with the ETF costs, against holding SPY (the H2 benchmark); identical on both books' lines; `position` is the asset held through the last close, `pending_action` is `buy X` / `sell X` / `switch X -> Y` / `hold` |
+| Risk policy | `EtoroDemoETFPolicy` (`etoro-demo-etf-2026-10-21`): books `qqq` / `spy`, 1,500 USD per leg, one leg per book per day, no stop requirement. **Selected automatically for any ETF-only run** (the ETF cell too); the CFD policies are unchanged and a run mixing products is refused |
+| Ledger | **`etoro-daily-data/demo-rotation/`**, never shared: a book under another pre-registration in the same ledger is refused (`checkLedgerPrereg`), both ways |
+| Protection | none (ETF) |
+
+Cron: `install-ops-cron.sh` schedules `ops-run.sh etoro-rotation` at **09:41 New York** (log
+`~/.local/state/mtb-ops/etoro-rotation.log`, upload `ETORO_ROTATION_EXECUTOR_S3_URI`). By hand:
+`go run ./cmd/etoro-daily-executor -demo -strategy dm_12_1 -ledger ./etoro-daily-data/demo-rotation/ledger.jsonl`
+(`-instruments` is ignored: the books are the pre-registration's). Expected first order: **2026-11-02**,
+from the 2026-10-30 decision; the state at registration has QQQ in force.
+
+> [!NOTE]
+> The same day's dry run against live bars read `target QQQ (was QQQ) | momentum QQQ +25.50% SPY +19.08%`,
+> matching the pre-registration's state at registration, and the ETF-policy fix it exposed
+> (`qqq` / `spy` fell to the refuse-everything default of the CFD policy) applies to the ETF cell's first
+> demo run as well.

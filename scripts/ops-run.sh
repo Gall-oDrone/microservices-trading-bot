@@ -10,6 +10,11 @@
 #                                 etoro-daily-data/demo-etf/, FORWARD-TEST-PREREGISTRATION-
 #                                 SMA50-ETF-2026-10-21.md; runbook §10), same wrapper with
 #                                 -instruments QQQ,SPY and ETORO_ETF_EXECUTOR_S3_URI as its upload,
+#   scripts/ops-run.sh etoro-rotation
+#                                 the dual-momentum demo run (-strategy dm_12_1, QQQ / SPY / cash,
+#                                 own ledger etoro-daily-data/demo-rotation/, FORWARD-TEST-
+#                                 PREREGISTRATION-DUAL-MOMENTUM-ETF-2026-10-21.md; runbook §11),
+#                                 ETORO_ROTATION_EXECUTOR_S3_URI as its upload,
 #                                 uploading to $ETORO_EXECUTOR_S3_URI when set (P6).
 #                                 Scheduled at 09:35 New York time on weekdays by the
 #                                 installer (a UTC guard: this cron ignores CRON_TZ);
@@ -62,9 +67,9 @@ mkdir -p "$STATE"
 job="${1:-}"
 shift || true
 case "$job" in
-  executor | etoro | etoro-etf | etoro-risk | alerts | compact | sampler | research | prereg) ;;
+  executor | etoro | etoro-etf | etoro-rotation | etoro-risk | alerts | compact | sampler | research | prereg) ;;
   *)
-    echo "usage: $0 executor|etoro|etoro-etf|etoro-risk|alerts|compact|sampler|research|prereg [flags…]" >&2
+    echo "usage: $0 executor|etoro|etoro-etf|etoro-rotation|etoro-risk|alerts|compact|sampler|research|prereg [flags…]" >&2
     exit 2
     ;;
 esac
@@ -96,6 +101,17 @@ case "$job" in
     ETORO_EXECUTOR_LEDGER="$ROOT/services/strategy-executor/etoro-daily-data/demo-etf/ledger.jsonl" \
       ETORO_EXECUTOR_S3_URI="${ETORO_ETF_EXECUTOR_S3_URI:-}" \
       "$ROOT/scripts/etoro-daily-executor-run.sh" -demo -instruments QQQ,SPY "$@"
+    code=$?
+    echo "== exit $code"
+    exit "$code"
+    ;;
+  etoro-rotation)
+    echo "== $(date -u +%Y-%m-%dT%H:%M:%SZ) ops-run etoro-rotation"
+    # Own ledger directory and own S3 prefix. -demo is safe before the
+    # window: the executor holds cash until the first in-window fill.
+    ETORO_EXECUTOR_LEDGER="$ROOT/services/strategy-executor/etoro-daily-data/demo-rotation/ledger.jsonl" \
+      ETORO_EXECUTOR_S3_URI="${ETORO_ROTATION_EXECUTOR_S3_URI:-}" \
+      "$ROOT/scripts/etoro-daily-executor-run.sh" -demo -strategy dm_12_1 "$@"
     code=$?
     echo "== exit $code"
     exit "$code"

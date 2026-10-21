@@ -22,6 +22,10 @@
 #                                               ledger etoro-daily-data/demo-etf/; runbook §10),
 #                                               three minutes after the CFD run so the two never
 #                                               share a minute of eToro's write budget
+#   41 13,14 * * 1-5 [guard] scripts/ops-run.sh etoro-rotation
+#                                               the dual-momentum demo run (QQQ / SPY / cash, own
+#                                               ledger etoro-daily-data/demo-rotation/; runbook §11),
+#                                               09:41 New York
 #   0 15 * * 1    scripts/ops-run.sh etoro-risk weekly eToro risk report (P4), Monday 15:00 UTC:
 #                                               after the week's first run, so the newest candle
 #                                               file ends on Friday
@@ -142,12 +146,13 @@ done
 
 notify="stdout"
 [ -n "$topic" ] && notify="sns:$topic"
-archive="" s3uri="" etoro_s3uri="" etoro_etf_s3uri=""
+archive="" s3uri="" etoro_s3uri="" etoro_etf_s3uri="" etoro_rot_s3uri=""
 if [ -n "$bucket" ]; then
   archive="s3://$bucket"
   s3uri="s3://$bucket/daily-executor/stage"
   [ "$etoro" = 1 ] && etoro_s3uri="s3://$bucket/daily-executor/etoro-demo"
   [ "$etoro" = 1 ] && etoro_etf_s3uri="s3://$bucket/daily-executor/etoro-demo-etf"
+  [ "$etoro" = 1 ] && etoro_rot_s3uri="s3://$bucket/daily-executor/etoro-demo-rotation"
 fi
 ledger="$ROOT/services/strategy-executor/daily-executor-data/stage/ledger.jsonl"
 etoro_ledger=""
@@ -167,6 +172,7 @@ UI_ALERTS_UI_URL=http://127.0.0.1:5173
 DAILY_EXECUTOR_S3_URI=$s3uri
 ETORO_EXECUTOR_S3_URI=$etoro_s3uri
 ETORO_ETF_EXECUTOR_S3_URI=$etoro_etf_s3uri
+ETORO_ROTATION_EXECUTOR_S3_URI=$etoro_rot_s3uri
 ETORO_RISK_REPORT_YAHOO=$etoro_yahoo
 COMPACT_BUCKET=$bucket"
 
@@ -201,6 +207,9 @@ if [ "$etoro" = 1 ]; then
 # eToro ETF cell (FORWARD-TEST-PREREGISTRATION-SMA50-ETF-2026-10-21.md; runbook §10): QQQ / SPY x1 on
 # its own ledger, 09:38 New York, three minutes after the CFD run.
 38 13,14 * * 1-5 [ \"\$(TZ=America/New_York date +\\%H)\" = 09 ] && $ROOT/scripts/ops-run.sh etoro-etf
+# eToro dual-momentum cell (FORWARD-TEST-PREREGISTRATION-DUAL-MOMENTUM-ETF-2026-10-21.md; runbook §11):
+# QQQ / SPY / cash on its own ledger, 09:41 New York; holds cash until its window opens on 2026-11-02.
+41 13,14 * * 1-5 [ \"\$(TZ=America/New_York date +\\%H)\" = 09 ] && $ROOT/scripts/ops-run.sh etoro-rotation
 # Weekly eToro risk report (P4), Monday 15:00 UTC: after the week's first run, so the newest candle
 # file ends on Friday and the report covers the whole previous week.
 0 15 * * 1 $ROOT/scripts/ops-run.sh etoro-risk"

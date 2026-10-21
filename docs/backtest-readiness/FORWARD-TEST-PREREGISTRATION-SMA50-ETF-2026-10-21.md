@@ -129,7 +129,7 @@ CRON_TZ=America/New_York
 ```
 
 - The ETF ledger directory is never written by the CFD run and vice versa; `LegsOn`, the halt file and the reconcile reports are per ledger.
-- **Protection is not part of this cell.** The executor skips the disaster stop and the ratchet for `Kind == etf` (demo.go). Eligibility allows a stop on x1 real positions; adding one later is a demo-side overlay like the CFD addendum and does not touch §1–4.
+- **Protection is not part of this cell.** The executor skips the disaster stop and the ratchet for `Kind == etf` (demo.go) and runs ETF-only runs under `risk.EtoroDemoETFPolicy` (`etoro-demo-etf-2026-10-21`: books `qqq` / `spy`, 1,500 USD per leg, one leg per book per day, no stop requirement; added the same day after a dry run showed the CFD policy refusing `qqq` outright). Eligibility allows a stop on x1 real positions; adding one later is a demo-side overlay like the CFD addendum and does not touch §1–4.
 - **Data integrity:** compare the bars before 2026-10-21 with the registered snapshot (sha256 prefixes in §1). The executor's two-read check and the recorded-close check apply unchanged. The result stands only if differences do not change the rule's position on any forward day.
 - **Bar-source note:** an ETF bucket on eToro is a UTC day; the bar's open is the 09:30 New York open, which is about when the demo executor fills (09:35). Report the measured gap as for the CFD cell.
 - **Execution note:** report the demo fills, commissions and any dividend credit against the frozen costs, from eToro's trade history, with `cmd/etoro-fees-check`.
