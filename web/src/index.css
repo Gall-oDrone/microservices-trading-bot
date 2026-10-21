@@ -240,6 +240,7 @@ h3 {
   position: sticky;
   top: 0;
   height: 100vh;
+  height: 100dvh;
   display: flex;
   flex-direction: column;
   gap: 24px;
@@ -247,6 +248,24 @@ h3 {
   background: var(--sidebar-bg);
   border-right: 1px solid var(--line-soft);
   backdrop-filter: blur(10px);
+  /* Taller than the window (short laptops, zoomed text): scroll the rail
+     itself rather than clipping the footer; the main column keeps its own
+     scroll. */
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: var(--line) transparent;
+}
+.sidebar::-webkit-scrollbar {
+  width: 6px;
+}
+.sidebar::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: var(--line);
+}
+.sidebar > * {
+  flex-shrink: 0;
 }
 
 .brand {
@@ -5730,20 +5749,28 @@ button.protect-row:hover {
 }
 
 /* --- U3: operator clock toggle --- */
+/* In the sidebar the label sits above the control like the nav sections, and
+   the four zones share the rail's width so none is clipped. */
 .sidebar-clock {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  padding: 0 4px 6px;
+  flex-direction: column;
+  gap: 2px;
 }
 .tz-toggle {
-  height: 28px;
+  height: 30px;
   padding: 2px;
 }
+.sidebar-clock .tz-toggle {
+  display: flex;
+  margin: 0 4px;
+}
 .tz-toggle button {
-  padding: 0 8px;
+  flex: 1 1 0;
+  min-width: 0;
+  padding: 0 6px;
   font-size: 11.5px;
+  text-align: center;
+  white-space: nowrap;
 }
 
 /* --- U3: collapsible page intro (clamped on phones) --- */
