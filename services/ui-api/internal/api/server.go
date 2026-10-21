@@ -309,6 +309,9 @@ func (s *Server) Handler() http.Handler {
 	// like the controls and off unless -etoro-trading. See trades.go.
 	mux.HandleFunc("POST /api/ui/etoro/trades/prepare", s.tradePrepare)
 	mux.HandleFunc("POST /api/ui/etoro/trades/place", s.tradePlace)
+	// Cancel (2026-10-21): burns a prepared trade's token before it expires;
+	// nothing sent, audited as trade.cancel. See trades.go.
+	mux.HandleFunc("POST /api/ui/etoro/trades/cancel", s.tradeCancel)
 	// Stop-loss / take-profit recommendation for an open or a held position
 	// (protection plan phase B, 2026-10-19): read-only, same gates. See
 	// protection.go.

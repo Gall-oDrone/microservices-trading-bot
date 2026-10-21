@@ -46,6 +46,14 @@ package api
 // ledger line (action protect, not a leg). A request that names no stop
 // gets the default profile and says so in a warning. protection.go holds
 // the recommendation endpoint and the shared helpers.
+//
+// Cancel (2026-10-21): a third POST, /trades/cancel, lets the operator
+// discard a prepared trade instead of waiting for the token to expire. It
+// burns the token in the same used set place consults (so a cancel and a
+// place of the same token cannot both succeed), touches neither the broker
+// nor the ledger, and writes a trade.cancel audit line with the preview's
+// client_ref so the decision not to trade is on record next to the
+// decision to prepare it.
 
 import (
 	"context"
@@ -103,6 +111,7 @@ var tradePaths = map[string]bool{
 	"/api/ui/etoro/trades/prepare":   true,
 	"/api/ui/etoro/trades/place":     true,
 	"/api/ui/etoro/trades/recommend": true,
+	"/api/ui/etoro/trades/cancel":    true,
 }
 
 // EtoroTrading is the Server's assisted-trade dependency: the demo broker,
@@ -1014,6 +1023,120 @@ func kindOf(side string) string {
 		return etoroledger.ActionProtect
 	}
 	return etoroledger.ActionClose
+}
+
+// TradeCancelRequest is the body of POST /api/ui/etoro/trades/cancel
+// (2026-10-21): the preview's token, and optionally who and why. A cancel
+// changes nothing at the venue or in the ledger, so no phrase is required;
+// Reason and By, when given, go to the audit line.
+type TradeCancelRequest struct {
+	Token  string `json:"token"`
+	Reason string `json:"reason,omitempty"`
+	By     string `json:"by,omitempty"`
+}
+
+// Cancel statuses.
+const (
+	// CancelCancelled: the token was live and is burned now.
+	CancelCancelled = "cancelled"
+	// CancelExpired: the token had already expired; nothing to burn, the
+	// cancel is still audited so the operator's decision is on record.
+	CancelExpired = "expired"
+)
+
+// TradeCancelResponse is the outcome of a cancel.
+type TradeCancelResponse struct {
+	Status     string      `json:"status"` // CancelCancelled | CancelExpired
+	Ledger     string      `json:"ledger"`
+	Book       string      `json:"book"`
+	Side       string      `json:"side"`
+	ClientRef  string      `json:"client_ref"`
+	RequestID  string      `json:"request_id"`
+	ExpiresAt  string      `json:"expires_at"`
+	AuditPath  string      `json:"audit_path"`
+	Audit      audit.Entry `json:"audit"`
+	AuditError string      `json:"audit_error,omitempty"`
+}
+
+// tradeCancel burns a prepared trade's token. Gates as place: loopback
+// Origin, operator token, JSON body, a token signed for this operator
+// session and this ledger. Under the controls mutex so it serialises with
+// a place of the same token: whichever consumes the id first wins and the
+// other is a 409.
+func (s *Server) tradeCancel(w http.ResponseWriter, r *http.Request) {
+	l, ok := s.pickEtoro(w, r)
+	if !ok {
+		return
+	}
+	if enabled, why := s.tradingState(l); !enabled {
+		writeErr(w, http.StatusForbidden, why)
+		return
+	}
+	ap := auditPath(l)
+	base := s.baseEntry(r, "trade.cancel")
+	base.Ledger = l.Name
+	var req TradeCancelRequest
+	if !s.admit(w, r, base, []string{ap}, &req) {
+		return
+	}
+	base.By, base.Reason = clip(strings.TrimSpace(req.By), 64), clip(strings.TrimSpace(req.Reason), maxReasonLen)
+	note := func(outcome, msg string) {
+		e := base
+		e.Outcome, e.Error = outcome, msg
+		s.noteAll([]string{ap}, e)
+	}
+	refuse := func(status int, msg string) {
+		note(audit.Refused, msg)
+		writeErr(w, status, msg)
+	}
+	if strings.ContainsAny(base.Reason, "\r\n\x00") {
+		refuse(http.StatusBadRequest, "reason: one line, no control characters")
+		return
+	}
+	if base.By != "" && !byRe.MatchString(base.By) {
+		refuse(http.StatusBadRequest, "by: 1-64 letters, digits, spaces or . _ @ -")
+		return
+	}
+	c, err := s.Trading.verify(req.Token, s.OperatorToken)
+	if err != nil {
+		note(audit.Denied, err.Error())
+		writeErr(w, http.StatusUnauthorized, err.Error())
+		return
+	}
+	base.Ref = c.ClientRef
+	if c.Ledger != l.Name {
+		refuse(http.StatusBadRequest, "trade token was prepared for ledger "+c.Ledger)
+		return
+	}
+	base.Detail = tradeDetail(c.Side, c.Book, c.AmountUSD, c.PositionID, c.Units)
+	now := s.Now().UTC()
+
+	s.controlsMu.Lock()
+	defer s.controlsMu.Unlock()
+	resp := TradeCancelResponse{Ledger: l.Name, Book: c.Book, Side: c.Side, ClientRef: c.ClientRef, RequestID: c.RequestID,
+		ExpiresAt: time.Unix(c.Exp, 0).UTC().Format(time.RFC3339), AuditPath: ap}
+	switch {
+	case now.Unix() >= c.Exp:
+		// Place refuses an expired token already; nothing to burn. Answered
+		// 200 so the page lands in the same state as a live cancel.
+		resp.Status = CancelExpired
+		base.Detail += " -> token had expired at " + resp.ExpiresAt + "; nothing to cancel, nothing sent"
+	case !s.Trading.consume(c.ID, c.Exp, now.Unix()):
+		refuse(http.StatusConflict, "trade token already used: it was placed or cancelled")
+		return
+	default:
+		resp.Status = CancelCancelled
+		base.Detail += " -> cancelled: token burned, nothing sent"
+	}
+	done := base
+	done.Outcome = audit.Done
+	if err := audit.Append(ap, done); err != nil {
+		s.Log.Printf("audit %s: %v", ap, err)
+		resp.AuditError = err.Error()
+	}
+	resp.Audit = done
+	s.Log.Printf("trade.cancel ledger=%s %s %s -> %s id=%s by=%q", l.Name, c.Side, c.Book, resp.Status, c.ClientRef, base.By)
+	writeJSON(w, http.StatusOK, resp)
 }
 
 // placeEnv is what placeProtect needs from tradePlace after the shared

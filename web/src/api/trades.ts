@@ -10,11 +10,13 @@ import { useMutation, useQueryClient, type QueryClient } from '@tanstack/react-q
 import { ApiError, fetchJSON, useLedgerName, withLedger } from './client'
 import {
   isProtected,
+  tradeCancelResponseSchema,
   tradePlaceResponseSchema,
   tradePreviewSchema,
   tradeRecommendationSchema,
   type EtoroForwardTest,
   type StopProfile,
+  type TradeCancelResponse,
   type TradePlaceResponse,
   type TradePreview,
   type TradeRecommendation,
@@ -104,6 +106,33 @@ function post(token: string, body: unknown): RequestInit {
   }
 }
 
+export interface CancelInput {
+  /** The trade token from the preview: burned by the cancel. */
+  tradeToken: string
+  /** Optional: who and why, for the audit line (no phrase is needed; nothing is sent). */
+  reason?: string
+  by?: string
+  /** The operator token (bearer). */
+  token: string
+}
+
+/**
+ * Cancel a prepared trade before its token expires (2026-10-21): ui-api
+ * burns the token so a later place is refused, touches neither the broker
+ * nor the ledger, and audits the decision as trade.cancel.
+ */
+export function cancelTrade(i: CancelInput, ledger: string): Promise<TradeCancelResponse> {
+  const body: Record<string, unknown> = { token: i.tradeToken }
+  if (i.reason?.trim()) body.reason = i.reason.trim()
+  if (i.by?.trim()) body.by = i.by.trim()
+  return fetchJSON(
+    withLedger('/etoro/trades/cancel', ledger),
+    tradeCancelResponseSchema,
+    undefined,
+    post(i.token, body),
+  )
+}
+
 /** A prepare changes the audit log; a place changes the ledger, the position, the account and the audit log. */
 function refreshTradeViews(qc: QueryClient) {
   void qc.invalidateQueries({ queryKey: ['controls'] })
@@ -140,6 +169,18 @@ export function usePlaceTradeMutation() {
     onSuccess: (_r, i) => rememberToken(i.token),
     onError: forgetRejectedToken,
     onSettled: () => refreshTradeViews(qc),
+  })
+}
+
+/** Cancel a prepared trade (burns its token; only the audit log changes). */
+export function useCancelTradeMutation() {
+  const ledger = useLedgerName()
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (i: CancelInput) => cancelTrade(i, ledger),
+    onSuccess: (_r, i) => rememberToken(i.token),
+    onError: forgetRejectedToken,
+    onSettled: () => void qc.invalidateQueries({ queryKey: ['controls'] }),
   })
 }
 

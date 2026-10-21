@@ -1855,6 +1855,41 @@ unfinished bar is labelled provisional. The decision path never reads live data.
   phrase `CLOSE SPX500`, side pressed, flag gone); without a token the field is focused and no
   preview appears.
 
+### 8.23 Cancel a prepared trade (as built, 2026-10-21)
+
+- **Why.** Until now the only way out of a preview was to let the two-minute token run down. That
+  left a live token in the tab (a stray click in the dialog could still place it) and no record
+  that the operator looked at the quote and decided against it. Both matter on a trading desk.
+- **Server.** `POST /api/ui/etoro/trades/cancel` (`internal/api/trades.go`, `tradeCancel`), the
+  same gates as place (loopback Origin, operator token, JSON body, a token signed for this operator
+  session and this ledger). Under the controls mutex it **burns the token in the same used set
+  place consults**, so a cancel and a place of one token cannot both succeed (the loser is a 409
+  "already used: it was placed or cancelled"). It touches neither the broker nor the ledger and
+  writes one `trade.cancel` audit line (outcome `done`, `ref` = the preview's `client_ref`,
+  `detail` = the trade + "token burned, nothing sent"). An already-expired token answers 200 with
+  `status: "expired"` (nothing to burn; still audited) so the page converges to the same state
+  either way. `reason` and `by` are optional and go to the audit line when given: a cancel changes
+  nothing at the venue, so it asks for no phrase.
+- **Page.** On a live allow preview the actions row is **Place · PHRASE** and a ghost **Cancel ·
+  nothing sent** (`#trade-cancel`, `aria-keyshortcuts="Escape"`); **Escape** cancels as well while
+  the place dialog is closed (the dialog owns Escape while open and only closes itself). The
+  preview is replaced by a compact **cancelled card** (`[data-testid=trade-cancelled]`, neutral
+  rule, side + symbol, ref, "audited trade.cancel at hh:mm NY", Dismiss) and the audit tail shows
+  the line. A 409/410 on cancel means the token is gone anyway: the preview is dropped with the
+  message in an info banner rather than shown as a failure. Previews that hold no usable token
+  (blocked, expired, refused at place) get a local **Dismiss** next to Re-prepare / Prepare again;
+  nothing is sent for those.
+- **Mock.** `src/mocks/trades.ts` mirrors the statuses (cancelled / expired / 409 / 401) and the
+  audit line, sharing the token store with the mock place.
+- **Tests.** Go `TestTradeCancel` (burned token → place 409, second cancel 409, placed token →
+  409, expired → 200 "expired", bad token → 401 denied, multi-line reason / bad `by` → 400,
+  trading off → 403, Bitso ledger → 400, GET → 405; broker and ledger untouched). Vitest
+  `cancel.test.tsx`: the mock contract; the button flow (card, audit line, proposal unchanged,
+  Dismiss); Escape cancels but not while the dialog is open; blocked and expired previews offer
+  Dismiss and no Cancel.
+- **Not built.** A reason prompt on cancel (optional in the API, not asked in the UI: one click is
+  the point); a Cancel on the Today page (the preview lives on the Trade page only).
+
 ## 9. How to run (local)
 
 ```bash

@@ -280,6 +280,16 @@ operator session only, 120 s to live, accepted once. `client_ref` is
 `ui-<book>-<NY date>-<open|close|protect>-<6 hex>`; the `x-request-id` sent to eToro is
 `UUIDv5(client_ref)` as the executor's.
 
+**Cancel (2026-10-21).** `POST /api/ui/etoro/trades/cancel` with `{token, reason?, by?}` burns a
+prepared trade's token before it expires: same gates as place, under the controls' mutex, the
+token id goes into the same single-use set place consults (so a cancel and a place of one token
+cannot both succeed; the loser is 409 "already used: it was placed or cancelled"). Nothing reaches
+eToro and the ledger is unchanged; one audit line `trade.cancel` / `done` with `ref` =
+`client_ref` and `detail` "… -> cancelled: token burned, nothing sent". An expired token answers
+200 `status: "expired"` (nothing to burn, still audited). No phrase: a cancel changes nothing at
+the venue. In the console: the **Cancel · nothing sent** button on a live preview, or **Escape**
+while the place dialog is closed.
+
 **Place.** Verifies the token, the TTL, the confirmation phrase (`PLACE NSDQ100` / `CLOSE NSDQ100`
 / `PROTECT NSDQ100`), reason and who (the halt controls' rules), then under the controls' mutex and
 the executor's own `ledger.jsonl.lock` (a running executor makes place answer 409; a console trade

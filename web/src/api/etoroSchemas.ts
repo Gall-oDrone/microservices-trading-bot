@@ -868,6 +868,25 @@ export const tradePlaceResponseSchema = z.object({
 })
 export type TradePlaceResponse = z.infer<typeof tradePlaceResponseSchema>
 
+/**
+ * api.TradeCancelResponse: POST /api/ui/etoro/trades/cancel (2026-10-21).
+ * `cancelled` burned a live token; `expired` found it already past its
+ * expiry (nothing to burn, still audited). Nothing is sent either way.
+ */
+export const tradeCancelResponseSchema = z.object({
+  status: z.enum(['cancelled', 'expired']),
+  ledger: z.string(),
+  book: z.string(),
+  side: tradeSide,
+  client_ref: z.string(),
+  request_id: z.string(),
+  expires_at: z.string(),
+  audit_path: z.string(),
+  audit: auditEntrySchema,
+  audit_error: z.string().optional(),
+})
+export type TradeCancelResponse = z.infer<typeof tradeCancelResponseSchema>
+
 // --- Positions & round trips (GET /api/ui/etoro/positions, 2026-10-19) -------
 
 export const tradeStatus = z.enum(['open', 'closed', 'unknown'])

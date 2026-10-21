@@ -874,3 +874,100 @@ func TestKillSwitchBlocksAssistedTrades(t *testing.T) {
 	}
 	_ = os.Remove(filepath.Join(h.dir, "risk-state.json"))
 }
+
+func cancelBody(token, reason, by string) string {
+	b, _ := json.Marshal(TradeCancelRequest{Token: token, Reason: reason, By: by})
+	return string(b)
+}
+
+func (h *tradeHarness) cancel(t *testing.T, body string) (int, TradeCancelResponse, []byte) {
+	t.Helper()
+	code, b := post(t, h.ts, ctl{path: "/api/ui/etoro/trades/cancel?ledger=etoro-demo", token: h.token, origin: "http://127.0.0.1:5173", body: body})
+	var resp TradeCancelResponse
+	_ = json.Unmarshal(b, &resp)
+	return code, resp, b
+}
+
+// TestTradeCancel: a prepared trade can be discarded before its token
+// expires. The token is burned (place refuses it afterwards), nothing
+// reaches the broker or the ledger, and the decision is audited as
+// trade.cancel with the preview's client_ref.
+func TestTradeCancel(t *testing.T) {
+	h := tradeServer(t, tradeNow)
+	before := len(h.records(t))
+	_, pv, _ := h.prepare(t, prepareBody("spx500", "close", 0, "3616683295"))
+	if pv.Verdict != VerdictAllow || pv.Token == "" {
+		t.Fatalf("prepare %+v", pv)
+	}
+	// A bad token is denied like at place; nothing is burned.
+	if code, _, b := h.cancel(t, cancelBody("not-a-token", "", "")); code != http.StatusUnauthorized || !strings.Contains(string(b), "trade token invalid") {
+		t.Fatalf("bad token %d %s", code, b)
+	}
+	if e := h.audit(t); e[0].Action != "trade.cancel" || e[0].Outcome != audit.Denied {
+		t.Fatalf("audit %+v", e[0])
+	}
+	// A multi-line reason is refused (the audit log is one line per entry).
+	if code, _, b := h.cancel(t, cancelBody(pv.Token, "two\nlines", "diego")); code != http.StatusBadRequest || !strings.Contains(string(b), "reason: one line") {
+		t.Fatalf("bad reason %d %s", code, b)
+	}
+	// The cancel: 200, status cancelled, audited done with the ref.
+	code, resp, b := h.cancel(t, cancelBody(pv.Token, "Changed my mind: the spread widened", "diego"))
+	if code != 200 || resp.Status != CancelCancelled || resp.ClientRef != pv.ClientRef || resp.RequestID != pv.RequestID ||
+		resp.Book != "spx500" || resp.Side != TradeClose || resp.ExpiresAt != pv.ExpiresAt || resp.AuditError != "" {
+		t.Fatalf("cancel %d %s", code, b)
+	}
+	e := h.audit(t)
+	if e[0].Action != "trade.cancel" || e[0].Outcome != audit.Done || e[0].Ref != pv.ClientRef || e[0].By != "diego" ||
+		e[0].Reason != "Changed my mind: the spread widened" || !strings.Contains(e[0].Detail, "close spx500 position 3616683295") ||
+		!strings.Contains(e[0].Detail, "token burned, nothing sent") {
+		t.Fatalf("audit %+v", e[0])
+	}
+	if resp.Audit.ID != e[0].ID || resp.AuditPath != filepath.Join(h.dir, audit.FileName) {
+		t.Fatalf("response audit %+v vs %+v", resp.Audit, e[0])
+	}
+	// The token is gone: place is a 409, a second cancel too.
+	if code, _, b := h.place(t, placeBody(pv.Token, pv.Confirmation, "placing a cancelled preview", "diego")); code != http.StatusConflict || !strings.Contains(string(b), "already used") {
+		t.Fatalf("place after cancel %d %s", code, b)
+	}
+	if code, _, b := h.cancel(t, cancelBody(pv.Token, "", "")); code != http.StatusConflict || !strings.Contains(string(b), "placed or cancelled") {
+		t.Fatalf("second cancel %d %s", code, b)
+	}
+	if len(h.fb.opens) != 0 || len(h.fb.closes) != 0 || len(h.records(t)) != before {
+		t.Fatal("a cancel must not reach the broker or the ledger")
+	}
+	// A placed token cannot be cancelled either (the place consumed it).
+	_, pv2, _ := h.prepare(t, prepareBody("spx500", "close", 0, "3616683295"))
+	if code, _, b := h.place(t, placeBody(pv2.Token, pv2.Confirmation, "closing SPX500 by hand", "diego")); code != 200 {
+		t.Fatalf("place %d %s", code, b)
+	}
+	if code, _, _ := h.cancel(t, cancelBody(pv2.Token, "", "")); code != http.StatusConflict {
+		t.Fatalf("cancel after place %d", code)
+	}
+	// An expired token: nothing to burn, still 200 and audited (status expired).
+	_, pv3, _ := h.prepare(t, prepareBody("nsdq100", "open", 1100, ""))
+	if pv3.Verdict != VerdictAllow {
+		t.Fatalf("prepare open %+v", pv3.Reasons)
+	}
+	h.now = tradeNow.Add(121 * time.Second)
+	if code, resp, b := h.cancel(t, cancelBody(pv3.Token, "", "")); code != 200 || resp.Status != CancelExpired || !strings.Contains(resp.Audit.Detail, "had expired") {
+		t.Fatalf("expired cancel %d %s", code, b)
+	}
+	// Reason and by are optional; by, when given, is validated.
+	h.now = tradeNow.Add(200 * time.Second)
+	_, pv4, _ := h.prepare(t, prepareBody("nsdq100", "open", 1100, ""))
+	if code, _, b := h.cancel(t, cancelBody(pv4.Token, "", "bad\tby")); code != http.StatusBadRequest || !strings.Contains(string(b), "by:") {
+		t.Fatalf("bad by %d %s", code, b)
+	}
+	if code, resp, _ := h.cancel(t, cancelBody(pv4.Token, "", "")); code != 200 || resp.Status != CancelCancelled || resp.Audit.By != "" {
+		t.Fatalf("bare cancel %d %+v", code, resp)
+	}
+	// Gates: trading off is a 403 before anything else; a Bitso ledger is not an eToro ledger.
+	h.srv.Trading = nil
+	if code, _, _ := h.cancel(t, cancelBody("x.y", "", "")); code != http.StatusForbidden {
+		t.Fatalf("trading off %d", code)
+	}
+	if code, b := post(t, h.ts, ctl{path: "/api/ui/etoro/trades/cancel?ledger=stage", token: testToken, origin: "http://127.0.0.1:5173", body: cancelBody("x.y", "", "")}); code != http.StatusBadRequest || !strings.Contains(string(b), "venue bitso") {
+		t.Fatalf("bitso ledger %d %s", code, b)
+	}
+	get[errorBody](t, h.ts, "/api/ui/etoro/trades/cancel", 405)
+}

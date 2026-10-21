@@ -1075,4 +1075,86 @@ export const tradeHandlers = [
         : {}),
     })
   }),
+
+  // POST /etoro/trades/cancel (2026-10-21): burns the token, audits
+  // trade.cancel, touches nothing else. Mirrors ui-api's statuses.
+  http.post('/api/ui/etoro/trades/cancel', async ({ request }) => {
+    const ledger = new URL(request.url).searchParams.get('ledger') || 'etoro-demo'
+    const flag = flagOf(request)
+    if (flag === 'trading-off')
+      return HttpResponse.json({ error: mockTradingInfo(request).disabled_reason }, { status: 403 })
+    const denied = auth(request)
+    const s = ledgerState(ledger)
+    const now = new Date()
+    const log = (e: Omit<Entry, 'id' | 'at' | 'action' | 'ledger'>) => {
+      const entry: Entry = {
+        id: nextMockId(),
+        at: now.toISOString(),
+        action: 'trade.cancel',
+        ledger,
+        user_agent: 'msw',
+        ...e,
+      }
+      s.audit.unshift(entry)
+      return entry
+    }
+    const fail = (status: number, outcome: Entry['outcome'], error: string, extra: Partial<Entry> = {}) => {
+      log({ outcome, error, ...extra })
+      return HttpResponse.json({ error }, { status })
+    }
+    if (denied) {
+      log({ outcome: 'denied', error: 'missing or wrong operator token' })
+      return denied
+    }
+    let body: Json
+    try {
+      body = (await request.json()) as Json
+    } catch {
+      return fail(400, 'refused', 'body: invalid JSON')
+    }
+    const unknown = Object.keys(body).find((k) => !['token', 'reason', 'by'].includes(k))
+    if (unknown) return fail(400, 'refused', `body: json: unknown field "${unknown}"`)
+    const who = { by: String(body.by ?? '').trim(), reason: String(body.reason ?? '').trim() }
+    if (/[\r\n]/.test(who.reason)) return fail(400, 'refused', 'reason: one line, no control characters', who)
+    if (who.by && !BY.test(who.by)) return fail(400, 'refused', 'by: 1-64 letters, digits, spaces or . _ @ -', who)
+    const id = String(body.token ?? '').replace(/^mock\./, '')
+    const c = state.tokens.get(id)
+    if (!c || !String(body.token ?? '').startsWith('mock.')) {
+      return fail(401, 'denied', 'trade token invalid or issued for another operator session: prepare again', who)
+    }
+    const ref = { ...who, ref: c.client_ref }
+    const detail =
+      c.side === 'open'
+        ? `open ${c.book} ${c.amount_usd.toFixed(0)} USD x1 (${c.units.toFixed(6)} units)`
+        : `${c.side} ${c.book} position ${c.position_id} (${c.units.toFixed(6)} units)`
+    const expiresAt = new Date(c.exp).toISOString()
+    let status: 'cancelled' | 'expired'
+    if (now.getTime() >= c.exp) {
+      status = 'expired'
+    } else if (state.used.has(id)) {
+      return fail(409, 'refused', 'trade token already used: it was placed or cancelled', ref)
+    } else {
+      state.used.add(id)
+      status = 'cancelled'
+    }
+    const done = log({
+      outcome: 'done',
+      ...ref,
+      detail:
+        status === 'expired'
+          ? `${detail} -> token had expired at ${expiresAt}; nothing to cancel, nothing sent`
+          : `${detail} -> cancelled: token burned, nothing sent`,
+    })
+    return HttpResponse.json({
+      status,
+      ledger,
+      book: c.book,
+      side: c.side,
+      client_ref: c.client_ref,
+      request_id: c.request_id,
+      expires_at: expiresAt,
+      audit_path: '../strategy-executor/etoro-daily-data/demo/ui-audit.jsonl',
+      audit: done,
+    })
+  }),
 ]

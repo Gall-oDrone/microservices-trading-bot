@@ -5208,6 +5208,21 @@ table.data tr.current td {
   height: 18px;
   vertical-align: -3px;
 }
+/* A cancelled preview (2026-10-21): nothing happened, so neither the loss
+   nor the gain tone; a quiet rule and the facts. */
+.trade-cancelled {
+  margin-bottom: 16px;
+  border-left: 3px solid var(--text-3, var(--border));
+}
+.trade-cancelled h2 svg {
+  width: 18px;
+  height: 18px;
+  vertical-align: -3px;
+  color: var(--text-3);
+}
+.trade-cancelled .card-head {
+  align-items: flex-start;
+}
 @media (max-width: 720px) {
   .trade-facts {
     grid-template-columns: 1fr 1fr;

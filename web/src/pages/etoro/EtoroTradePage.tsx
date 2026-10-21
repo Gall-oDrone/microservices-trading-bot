@@ -12,6 +12,12 @@
  * against the rule is brought back to the rule's target at the next 09:35
  * New York run unless the ledger is halted. The page says so everywhere a
  * trade is offered.
+ *
+ * Cancel (2026-10-21): a live preview can be discarded with its Cancel
+ * button or Escape; ui-api burns the token (POST /trades/cancel) and audits
+ * trade.cancel, so a stray later place is refused and the decision not to
+ * trade is on record. Blocked, expired or refused previews hold no usable
+ * token and are dismissed locally.
  */
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { useSearchParams } from 'react-router'
@@ -20,6 +26,7 @@ import { PositionsCard } from '../../components/etoro/positions'
 import type {
   EtoroForwardTest,
   StopProfile,
+  TradeCancelResponse,
   TradePlaceResponse,
   TradePreview,
   TradeRecommendation,
@@ -32,6 +39,7 @@ import {
   fmtCountdown,
   getOperatorToken,
   secondsLeft,
+  useCancelTradeMutation,
   usePlaceTradeMutation,
   usePrepareTradeMutation,
   useRecommendTradeMutation,
@@ -215,15 +223,25 @@ function PreviewCard({
   left,
   refused,
   placing,
+  cancelling,
+  cancelError,
   onPlace,
   onReprepare,
+  onCancel,
+  onDismiss,
 }: {
   pv: TradePreview
   left: number
   refused: string | null
   placing: boolean
+  cancelling: boolean
+  cancelError: string | null
   onPlace: () => void
   onReprepare: () => void
+  /** Burns the token at ui-api (a live allow preview only). */
+  onCancel: () => void
+  /** Drops a preview that holds no usable token (blocked, expired, refused): local only. */
+  onDismiss: () => void
 }) {
   const allow = pv.verdict === 'allow'
   const expired = allow && left === 0
@@ -357,6 +375,11 @@ function PreviewCard({
           <b>Not placed.</b> {refused}
         </div>
       )}
+      {cancelError && (
+        <div className="modal-error" role="alert" data-testid="trade-cancel-error">
+          <b>Not cancelled.</b> {cancelError} The token still expires on its own.
+        </div>
+      )}
 
       <ExecutorNote />
 
@@ -368,34 +391,115 @@ function PreviewCard({
               className="btn btn-danger"
               id="trade-place"
               data-testid="trade-place"
-              disabled={!canPlace || placing}
+              disabled={!canPlace || placing || cancelling}
               onClick={onPlace}
             >
               <IconBlock /> Place · {pv.confirmation}
             </button>
-            {(expired || refused) && (
-              <button
-                type="button"
-                className="btn btn-ghost"
-                id="trade-reprepare"
-                data-testid="trade-reprepare"
-                onClick={onReprepare}
-              >
-                <IconRefresh /> Re-prepare
-              </button>
+            {canPlace ? (
+              <>
+                <button
+                  type="button"
+                  className="btn btn-ghost"
+                  id="trade-cancel"
+                  data-testid="trade-cancel"
+                  disabled={placing || cancelling}
+                  aria-busy={cancelling}
+                  aria-keyshortcuts="Escape"
+                  title="Burn the token now instead of waiting for it to expire (Escape). Nothing is sent; audited as trade.cancel."
+                  onClick={onCancel}
+                >
+                  {cancelling ? 'Cancelling…' : 'Cancel · nothing sent'}
+                </button>
+                <span className="faint">or Esc</span>
+              </>
+            ) : (
+              <>
+                <button
+                  type="button"
+                  className="btn btn-ghost"
+                  id="trade-reprepare"
+                  data-testid="trade-reprepare"
+                  onClick={onReprepare}
+                >
+                  <IconRefresh /> Re-prepare
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-ghost"
+                  id="trade-dismiss"
+                  data-testid="trade-dismiss"
+                  onClick={onDismiss}
+                >
+                  Dismiss
+                </button>
+              </>
             )}
           </>
         ) : (
-          <button
-            type="button"
-            className="btn btn-ghost"
-            id="trade-reprepare"
-            data-testid="trade-reprepare"
-            onClick={onReprepare}
-          >
-            <IconRefresh /> Prepare again
-          </button>
+          <>
+            <button
+              type="button"
+              className="btn btn-ghost"
+              id="trade-reprepare"
+              data-testid="trade-reprepare"
+              onClick={onReprepare}
+            >
+              <IconRefresh /> Prepare again
+            </button>
+            <button
+              type="button"
+              className="btn btn-ghost"
+              id="trade-dismiss"
+              data-testid="trade-dismiss"
+              onClick={onDismiss}
+            >
+              Dismiss
+            </button>
+          </>
         )}
+      </div>
+    </section>
+  )
+}
+
+/**
+ * What a cancel left behind (2026-10-21): nothing at eToro, nothing in the
+ * ledger, one trade.cancel audit line. Shown where the preview was until
+ * the operator dismisses it or prepares again.
+ */
+function CancelledCard({ r, onDismiss }: { r: TradeCancelResponse; onDismiss: () => void }) {
+  const expired = r.status === 'expired'
+  return (
+    <section
+      className="card venue-etoro trade-cancelled"
+      aria-labelledby="trade-cancelled-h"
+      data-testid="trade-cancelled"
+      data-status={r.status}
+    >
+      <div className="card-head">
+        <div>
+          <h2 id="trade-cancelled-h">
+            <IconBlock /> {r.side} {bookSymbol(r.book)} · {expired ? 'discarded' : 'cancelled'}
+          </h2>
+          <div className="sub">
+            {expired
+              ? `The token had already expired at ${fmtNY(r.expires_at)} NY; nothing was sent.`
+              : 'Token burned: nothing was sent to eToro and the ledger is unchanged.'}{' '}
+            ref <span className="num">{r.client_ref}</span> · audited <span className="num">trade.cancel</span> at{' '}
+            <span title={fmtUTC(r.audit.at)}>{fmtNY(r.audit.at)} NY</span>
+            {r.audit_error ? ` · audit log not written: ${r.audit_error}` : ''}
+          </div>
+        </div>
+        <button
+          type="button"
+          className="btn btn-ghost"
+          id="trade-cancelled-dismiss"
+          data-testid="trade-cancelled-dismiss"
+          onClick={onDismiss}
+        >
+          Dismiss
+        </button>
       </div>
     </section>
   )
@@ -578,6 +682,7 @@ export function EtoroTradePage() {
   const controls = useControls()
   const prep = usePrepareTradeMutation()
   const place = usePlaceTradeMutation()
+  const cancel = useCancelTradeMutation()
   const trading = controls.data?.trading ?? (controls.data ? DEFAULT_TRADING : undefined)
   const books = ft.data?.books ?? []
 
@@ -615,6 +720,8 @@ export function EtoroTradePage() {
   const [token, setToken] = useState(getOperatorToken)
   const [preview, setPreview] = useState<TradePreview | null>(null)
   const [refused, setRefused] = useState<string | null>(null)
+  // What the last cancel left behind, shown where the preview was.
+  const [cancelled, setCancelled] = useState<TradeCancelResponse | null>(null)
   // The last outcome is kept for the session (per ledger) so a reload or a
   // detour to another page does not lose the fill the operator wants to read.
   const outcomeKey = `trade-outcome:${ledger}`
@@ -693,6 +800,8 @@ export function EtoroTradePage() {
     setOutcome(null)
     setRefused(null)
     setPreview(null)
+    setCancelled(null)
+    cancel.reset()
     const amt = f.amount === '' ? amountDefault : Number(f.amount)
     const pid = f.positionId || (books.find((b) => b.book === f.book)?.demo_position?.position_id ?? '')
     const prot =
@@ -753,6 +862,52 @@ export function EtoroTradePage() {
     if (problems.length > 0) return
     runPrepare({ ...form, positionId }, token)
   }
+
+  // Cancel: burn the token at ui-api. A 409 (placed or cancelled already)
+  // or a 410 means the token is gone anyway: the preview is dropped with
+  // the message rather than shown as a failure.
+  const live = !!preview?.token && preview.verdict === 'allow' && left > 0 && !refused
+  const runCancel = () => {
+    if (!preview?.token || cancel.isPending) return
+    const pv = preview
+    cancel.mutate(
+      { tradeToken: pv.token ?? '', token },
+      {
+        onSuccess: (r) => {
+          setPreview(null)
+          setRefused(null)
+          setCancelled(r)
+        },
+        onError: (e) => {
+          if (!(e instanceof ApiError)) return
+          if (e.status === 401) setToken('')
+          if (e.status === 409 || e.status === 410) {
+            setPreview(null)
+            setRefused(e.message)
+          }
+        },
+      },
+    )
+  }
+  const dismissPreview = () => {
+    setPreview(null)
+    setRefused(null)
+    cancel.reset()
+  }
+  // Escape cancels a live preview while the dialog is closed (the dialog
+  // owns Escape while it is open).
+  useEffect(() => {
+    if (!live || dialog) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape' || e.defaultPrevented) return
+      e.preventDefault()
+      runCancel()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+    // runCancel closes over the current preview and token; `live` and `dialog` are the gates.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [live, dialog, preview?.token, token])
 
   const propose = (p: Proposal) => {
     const side: TradeSide = p.kind === 'open' ? 'open' : p.kind === 'protect' ? 'protect' : 'close'
@@ -1014,13 +1169,26 @@ export function EtoroTradePage() {
           left={left}
           refused={refused}
           placing={place.isPending}
+          cancelling={cancel.isPending}
+          cancelError={cancel.isError ? (cancel.error as Error).message : null}
           onPlace={() => {
             place.reset()
             setDialog(true)
           }}
           onReprepare={() => runPrepare({ ...form, positionId }, token)}
+          onCancel={runCancel}
+          onDismiss={dismissPreview}
         />
       )}
+      {!preview && refused && (
+        <Banner tone="info" title="Preview dropped" id="trade-preview-gone">
+          {refused}{' '}
+          <button type="button" className="btn btn-ghost btn-sm" onClick={() => setRefused(null)}>
+            Dismiss
+          </button>
+        </Banner>
+      )}
+      {!preview && cancelled && <CancelledCard r={cancelled} onDismiss={() => setCancelled(null)} />}
       {outcome && <OutcomeCard r={outcome} onDismiss={() => setOutcome(null)} />}
 
       {ft.data && <PositionsCard />}
