@@ -1,0 +1,5 @@
+{
+  "bars": 0,
+  "error": "GET /api/v1/data/instruments/3006/candles: decode response: json: cannot unmarshal string into Go struct field HistCandle.results.volume of type float64",
+  "route": "GET /api/v1/data/instruments/{id}/candles?interval=1d (DataPlatform)"
+}

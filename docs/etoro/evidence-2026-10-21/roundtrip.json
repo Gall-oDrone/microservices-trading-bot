@@ -1,0 +1,157 @@
+{
+  "amount_usd": 1100,
+  "client_ref_open": "spike-20261021T153341Z-QQQ-roundtrip-open",
+  "close": {
+    "order_id": "389832145",
+    "client_ref": "spike-20261021T153341Z-QQQ-roundtrip-close",
+    "status": "executed",
+    "position_ids": [
+      "3623460232"
+    ],
+    "at": "0001-01-01T00:00:00Z"
+  },
+  "close_error": "",
+  "close_order_info": {
+    "orderID": 389832145,
+    "statusID": 2,
+    "referenceID": "",
+    "orderType": 19,
+    "errorCode": 0,
+    "errorMessage": "",
+    "instrumentID": 3006,
+    "requestOccurred": "2026-10-21T15:34:02.56Z",
+    "proceeds": 0,
+    "positions": [
+      {
+        "positionID": 3623460232,
+        "occurred": "",
+        "rate": 0,
+        "units": 0,
+        "conversionRate": 0,
+        "amount": 0
+      }
+    ]
+  },
+  "history_rows_for_roundtrip_position": null,
+  "instrument": {
+    "venue": "etoro",
+    "symbol": "QQQ",
+    "id": 3006
+  },
+  "intent_at": "2026-10-21T15:33:50.722664078Z",
+  "leverage": 1,
+  "lookup_by_reference_error": "",
+  "lookup_by_reference_found": false,
+  "open": {
+    "order_id": "389818357",
+    "client_ref": "spike-20261021T153341Z-QQQ-roundtrip-open",
+    "status": "executed",
+    "position_ids": [
+      "3623460232"
+    ],
+    "avg_price": 725.1399999999999,
+    "units": 1.516906,
+    "amount": 1099.97,
+    "spread_cost": 0.03,
+    "at": "2026-10-21T15:33:51.227Z"
+  },
+  "open_error": "",
+  "open_lookup_by_order_id": {
+    "orderId": 389818357,
+    "action": "open",
+    "transaction": "buy",
+    "type": "mkt",
+    "status": {
+      "id": 3,
+      "name": "Filled",
+      "errorCode": 0,
+      "errorMessage": ""
+    },
+    "asset": {
+      "symbol": "QQQ",
+      "instrumentId": 3006,
+      "currency": "USD",
+      "settlementType": "REAL",
+      "leverage": 1,
+      "side": "long"
+    },
+    "orderCurrency": "usd",
+    "requestedAmount": 1100,
+    "requestedUnits": 1.516906,
+    "frozenAmount": 1100,
+    "totalCosts": 0,
+    "positionsToClose": [],
+    "positionExecutions": [
+      {
+        "positionId": 3623460232,
+        "state": "open",
+        "investedAmountCurrency": 1,
+        "initialExposureAccountCurrency": 1099.96921684,
+        "initialExposureAssetCurrency": 1099.96921684,
+        "marginAccountCurrency": 1099.97,
+        "remainingUnits": 1.516906,
+        "stopLossRate": 0.0001,
+        "takeProfitRate": 0,
+        "openingData": {
+          "openTime": "2026-10-21T15:33:51.127Z",
+          "orderId": 389818357,
+          "executionTime": "2026-10-21T15:33:51.227Z",
+          "units": 1.516906,
+          "contracts": 1.516906,
+          "avgPrice": 725.14,
+          "avgConversionRate": 1,
+          "marketSpread": 0.03,
+          "markup": 0,
+          "priceId": 0,
+          "fees": 0,
+          "taxes": 0
+        }
+      }
+    ],
+    "requestTime": "2026-10-21T15:33:51.193Z",
+    "lastUpdate": "2026-10-21T15:33:51.273Z",
+    "openActionType": "customer",
+    "requestType": "byAmount"
+  },
+  "positions_added_by_open_and_reopen": 1,
+  "positions_after_vs_before": 1,
+  "quote_before": {
+    "instrument": {
+      "venue": "etoro",
+      "symbol": "QQQ",
+      "id": 3006
+    },
+    "bid": 725.22,
+    "ask": 725.24,
+    "at": "2026-10-21T15:32:31.033Z"
+  },
+  "reclose_error": "broker: position is not open: code 741 Order cannot be placed because the requested position is already closed",
+  "reclose_is_position_not_open": true,
+  "reclose_same_position": {
+    "order_id": "389816869",
+    "client_ref": "spike-20261021T153341Z-QQQ-roundtrip-close",
+    "status": "rejected",
+    "position_ids": [
+      "3623460232"
+    ],
+    "error": "Order cannot be placed because the requested position is already closed",
+    "error_code": 741,
+    "at": "0001-01-01T00:00:00Z"
+  },
+  "reopen_error": "",
+  "reopen_resolved_to_same_position": true,
+  "reopen_same_ref": {
+    "order_id": "389818357",
+    "client_ref": "spike-20261021T153341Z-QQQ-roundtrip-open",
+    "status": "executed",
+    "position_ids": [
+      "3623460232"
+    ],
+    "avg_price": 725.1399999999999,
+    "units": 1.516906,
+    "amount": 1099.97,
+    "spread_cost": 0.03,
+    "at": "2026-10-21T15:33:51.227Z"
+  },
+  "request_id_open": "fb1614a6-f7a1-5008-9642-c6d37b88d840"
+}

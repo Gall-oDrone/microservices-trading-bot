@@ -141,18 +141,23 @@ type Decision struct {
 // Paper is the pre-registered paper account (cfdsim with the frozen costs),
 // from the forward start through the last closed bar, starting at 1.0.
 type Paper struct {
-	ForwardStart  string  `json:"forward_start"`
-	Started       bool    `json:"started"`
-	Days          int     `json:"days"`
-	Position      string  `json:"position"` // held through the last close
-	RoundTrips    int     `json:"round_trips"`
+	ForwardStart string `json:"forward_start"`
+	Started      bool   `json:"started"`
+	Days         int    `json:"days"`
+	Position     string `json:"position"` // held through the last close
+	RoundTrips   int    `json:"round_trips"`
+	// Product (2026-10-21) is "cfd" (spread + overnight financing; the
+	// default, omitted on older lines) or "etf" (x1 real asset: FeeBps of
+	// notional per order, no financing). Schema stays etoro-ledger/v1.
+	Product       string  `json:"product,omitempty"`
 	SpreadRTBps   float64 `json:"spread_rt_bps"`
 	OvernightBps  float64 `json:"overnight_bps"`
+	FeeBps        float64 `json:"fee_bps_per_order,omitempty"`
 	CostsStatus   string  `json:"costs_status"`
 	Equity        float64 `json:"equity_if_closed"`      // trend, closed at the last close with its spread
-	HoldEquity    float64 `json:"hold_equity_if_closed"` // CFD hold over the same days
+	HoldEquity    float64 `json:"hold_equity_if_closed"` // CFD (or ETF) hold over the same days
 	MaxDrawdown   float64 `json:"max_drawdown"`          // fraction
-	FinancingPct  float64 `json:"financing_pct"`         // overnight financing paid, % of start
+	FinancingPct  float64 `json:"financing_pct"`         // overnight financing paid, % of start (0 for an ETF)
 	PendingAction string  `json:"pending_action"`        // what the next open does
 }
 

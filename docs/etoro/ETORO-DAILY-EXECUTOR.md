@@ -508,3 +508,37 @@ the paper account stays the judged series. Evidence to keep when it happens (pla
 the first PATCH request and response on demo, the first ratchet line, the first stop-out, under
 `docs/etoro/evidence-<date>/`.
 
+
+## 10. The ETF cell: QQQ / SPY at x1 (frozen 2026-10-21)
+
+The same binary runs a second, independent forward test,
+[`FORWARD-TEST-PREREGISTRATION-SMA50-ETF-2026-10-21.md`](../backtest-readiness/FORWARD-TEST-PREREGISTRATION-SMA50-ETF-2026-10-21.md):
+the frozen SMA50 rule on the ETFs **QQQ (3006)** and **SPY (3000)**, x1, settlement *real*, 1,100 USD
+each, window 2026-10-22 → 2027-10-21. What differs from the CFD cell:
+
+| | CFD cell (§1–9) | ETF cell |
+|---|---|---|
+| Instruments | `-instruments NSDQ100,SPX500` (default) | `-instruments QQQ,SPY` |
+| Ledger | `etoro-daily-data/demo/` | **`etoro-daily-data/demo-etf/`** — never the same directory; `LegsOn`, the halt file, intents, candles and reconcile reports are per ledger |
+| Paper costs (`paper.product`) | `cfd`: spread 15.5 / 14.8 bps RT, 2.3 bps per night | `etf`: **15 bps of notional per order** (`paper.fee_bps_per_order`), 0.28 / 0.26 bps bid/ask, no financing |
+| Protection | disaster stop + daily ratchet (§9) | **none**: the executor skips `disasterStop` and `ratchet` for `Kind == etf` until a stop overlay is decided in its own addendum |
+| Bars | 0 missing trading days | **28 missing trading days per ETF** in the live route (mostly Fridays); each gap is shorter than `dailyrule.MaxGapDays`, so the SMA never restarts. `candles.missing_trading_days` records it every run |
+| Demo fees | financing previewed, **not charged** on demo | commission previewed (1.65 USD), **not charged** on demo ([`evidence-2026-10-21/fees.md`](evidence-2026-10-21/fees.md)) |
+
+Cron: `scripts/install-ops-cron.sh` schedules `scripts/ops-run.sh etoro-etf` at **09:38 New York** on
+weekdays (three minutes after the CFD run, so the two never share a minute of eToro's write budget),
+with the same UTC guard as the CFD line, and writes `ETORO_ETF_EXECUTOR_S3_URI`
+(`s3://<bucket>/daily-executor/etoro-demo-etf`) to `ops.env`. The job sets
+`ETORO_EXECUTOR_LEDGER=etoro-daily-data/demo-etf/ledger.jsonl` and passes `-demo -instruments QQQ,SPY`
+to the same wrapper. Log: `~/.local/state/mtb-ops/etoro-etf.log`. The off-machine watchdog
+(`infrastructure/lambda/ledger-watchdog`) does not watch the ETF prefix until its `LEDGERS`
+parameter lists it.
+
+By hand: `go run ./cmd/etoro-daily-executor -demo -instruments QQQ,SPY -ledger ./etoro-daily-data/demo-etf/ledger.jsonl`.
+The reconcile, risk report and fees check take the ETF ledger with `-ledger`. The weekly execution
+report for this cell is a separate dated file that links the pre-registration, as for the CFD cell.
+
+**Draft specs.** An instrument whose pre-registration is not frozen can be added to `draftSpecs`
+(`decide.go`) and decided in dry-run mode with `-allow-draft`; `-demo` refuses it in two places. The
+ETF cell lived there for one dry run on 2026-10-21 (ledger `etoro-daily-data/draft-etf/`, two lines,
+not continued) before its freeze moved it to `frozenSpecs`.

@@ -1,0 +1,88 @@
+[
+  {
+    "symbol": "QQQ",
+    "request": {
+      "action": "open",
+      "transaction": "buy",
+      "instrumentId": 3006,
+      "orderType": "mkt",
+      "leverage": 1,
+      "amount": 1100,
+      "orderCurrency": "usd"
+    },
+    "preview": {
+      "instrumentId": 3006,
+      "symbol": "QQQ",
+      "costs": [
+        {
+          "costType": "transactionFee",
+          "currency": "USD",
+          "value": 1.65
+        },
+        {
+          "costType": "markup",
+          "currency": "USD",
+          "value": 0
+        },
+        {
+          "costType": "marketSpread",
+          "currency": "USD",
+          "value": 0.05
+        },
+        {
+          "costType": "overnightFee",
+          "currency": "USD",
+          "value": 0
+        }
+      ],
+      "lastUpdated": "2026-10-21T15:33:43.4303306Z"
+    },
+    "spread_cost_bps_of_amount": 0.4545454545454546,
+    "overnight_fee_bps_per_night": 0,
+    "overnight_fee_pct_per_year_365_nights": 0,
+    "transaction_fee_usd": 1.65
+  },
+  {
+    "symbol": "SPY",
+    "request": {
+      "action": "open",
+      "transaction": "buy",
+      "instrumentId": 3000,
+      "orderType": "mkt",
+      "leverage": 1,
+      "amount": 1100,
+      "orderCurrency": "usd"
+    },
+    "preview": {
+      "instrumentId": 3000,
+      "symbol": "SPY",
+      "costs": [
+        {
+          "costType": "transactionFee",
+          "currency": "USD",
+          "value": 1.65
+        },
+        {
+          "costType": "markup",
+          "currency": "USD",
+          "value": 0
+        },
+        {
+          "costType": "marketSpread",
+          "currency": "USD",
+          "value": 0.04
+        },
+        {
+          "costType": "overnightFee",
+          "currency": "USD",
+          "value": 0
+        }
+      ],
+      "lastUpdated": "2026-10-21T15:33:44.563712Z"
+    },
+    "spread_cost_bps_of_amount": 0.36363636363636365,
+    "overnight_fee_bps_per_night": 0,
+    "overnight_fee_pct_per_year_365_nights": 0,
+    "transaction_fee_usd": 1.65
+  }
+]

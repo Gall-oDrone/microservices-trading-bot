@@ -108,6 +108,7 @@ func main() {
 	riskPolicy := flag.String("risk-policy", "", "JSON risk policy (default: built-in shared/pkg/risk.EtoroDemoPolicy)")
 	envFile := flag.String("env-file", defaultEnvFile(), "file with ETORO_PUBLIC_KEY / ETORO_PRIVATE_KEY (chmod 600)")
 	flag.BoolVar(&o.protect, "protect", os.Getenv("ETORO_EXECUTOR_PROTECT") != "0", "rule opens carry the disaster stop max(4xATR, 8%) and held stops are ratcheted daily; the risk policy defaults to the protected one (ETORO_EXECUTOR_PROTECT=0 turns it off)")
+	allowDraft := flag.Bool("allow-draft", false, fmt.Sprintf("also accept instruments whose pre-registration is still a draft (%s): dry run only, -demo is refused for them", strings.Join(draftNames(), ", ")))
 	flag.Parse()
 
 	if os.Getenv("ETORO_EXECUTOR_DISABLED") == "1" {
@@ -141,8 +142,14 @@ func main() {
 			continue
 		}
 		s, ok := frozenSpecs[n]
+		if !ok && *allowDraft {
+			s, ok = draftSpecs[n]
+		}
 		if !ok {
-			usage(fmt.Sprintf("instrument %q has no frozen spec; only %s are pre-registered", n, strings.Join(specNames(), ", ")))
+			usage(fmt.Sprintf("instrument %q has no frozen spec; only %s are pre-registered (drafts %s need -allow-draft, dry run only)", n, strings.Join(specNames(), ", "), strings.Join(draftNames(), ", ")))
+		}
+		if s.Draft && o.demo {
+			usage(fmt.Sprintf("instrument %q is a draft (%s): its pre-registration is not frozen, so it cannot be traded on the demo account; run it without -demo", n, s.Prereg))
 		}
 		specs = append(specs, s)
 	}
@@ -292,7 +299,7 @@ func runBook(ctx context.Context, o options, de demoEnv, s instSpec, fetch func(
 			Revised: revised, MaxRevisionBps: maxRev,
 		},
 	}
-	printRecord(*rec, csvPath)
+	printRecord(*rec, csvPath, s)
 
 	// Data integrity (pre-registration §5): a recorded day must not change
 	// beyond eToro's two-version noise.
@@ -321,6 +328,10 @@ func runBook(ctx context.Context, o options, de demoEnv, s instSpec, fetch func(
 		}
 		fmt.Printf("[%s] ledger: recorded (dry run, no order placed)\n", s.Book)
 		return nil
+	}
+	if s.Draft {
+		// Belt and braces: main refuses -demo for a draft spec already.
+		return fmt.Errorf("%s is a draft spec (%s): demo orders are not allowed until its pre-registration is frozen", s.Symbol, s.Prereg)
 	}
 	de.bars, de.protect = bars, o.protect
 	return runDemo(ctx, de, s, rec)
@@ -388,17 +399,21 @@ func relBps(a, b float64) float64 {
 	return d
 }
 
-func printRecord(r etoroledger.Record, csvPath string) {
+func printRecord(r etoroledger.Record, csvPath string, s instSpec) {
 	d, p := r.Decision, r.Paper
-	fmt.Printf("\n[%s] %s (id %d) %s\n", r.Book, r.Instrument.Symbol, r.Instrument.ID, r.Prereg)
+	draft := ""
+	if s.Draft {
+		draft = " [DRAFT: dry run only]"
+	}
+	fmt.Printf("\n[%s] %s (id %d, %s x1) %s%s\n", r.Book, r.Instrument.Symbol, r.Instrument.ID, s.Kind, r.Prereg, draft)
 	fmt.Printf("  bars       : %d %s .. %s, %d missing trading days (sha256 %s) -> %s\n", r.Candles.Bars, r.Candles.First, r.Candles.Last, r.Candles.Missing, r.Candles.SHA256Short, csvPath)
 	if r.Candles.Revised > 0 {
 		fmt.Printf("  revisions  : %d closes differed between two reads (max %.2f bps, tolerance %d)\n", r.Candles.Revised, r.Candles.MaxRevisionBps, revisionTolBps)
 	}
 	fmt.Printf("  rule       : %s close %.2f vs SMA50 %.2f -> %s (was %s), fill %s\n", d.BarDate, d.Close, d.SMA, strings.ToUpper(d.Signal), d.PrevSignal, d.FillDate)
 	if p.Started {
-		fmt.Printf("  paper      : since %s, %d days, %d round trips, costs %s | position %s | equity %.4f vs CFD hold %.4f | max DD %.2f%% | financing %.2f%%\n",
-			p.ForwardStart, p.Days, p.RoundTrips, p.CostsStatus, p.Position, p.Equity, p.HoldEquity, p.MaxDrawdown*100, p.FinancingPct)
+		fmt.Printf("  paper      : since %s, %d days, %d round trips, costs %s | position %s | equity %.4f vs %s %.4f | max DD %.2f%% | financing %.2f%%\n",
+			p.ForwardStart, p.Days, p.RoundTrips, p.CostsStatus, p.Position, p.Equity, s.holdLabel(), p.HoldEquity, p.MaxDrawdown*100, p.FinancingPct)
 	} else {
 		fmt.Printf("  paper      : forward window starts %s (no forward bar yet)\n", p.ForwardStart)
 	}

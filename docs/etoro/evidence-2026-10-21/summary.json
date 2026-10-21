@@ -1,0 +1,103 @@
+{
+  "account": {
+    "account_currency_id": 1,
+    "credit_usd": 98836.29,
+    "equity_usd": 99938.81,
+    "open_positions": 1,
+    "pending_open_orders": 0,
+    "unrealized_pnl_usd": 2.52
+  },
+  "captured_at": "2026-10-21T15:33:41Z",
+  "costs_x1": {
+    "QQQ": {
+      "overnight_bps_per_night": 0,
+      "overnight_pct_per_year": 0,
+      "spread_bps": 0.45,
+      "transaction_fee_usd": 1.65
+    },
+    "SPY": {
+      "overnight_bps_per_night": 0,
+      "overnight_pct_per_year": 0,
+      "spread_bps": 0.36,
+      "transaction_fee_usd": 1.65
+    }
+  },
+  "costs_x1_amount_usd": 1100,
+  "daily_QQQ": {
+    "first": "2022-09-22",
+    "holiday_dropped": 4,
+    "kept": 995,
+    "last": "2026-10-20",
+    "missing_trading_days": 28,
+    "weekend_dropped": 0
+  },
+  "daily_SPY": {
+    "first": "2022-09-22",
+    "holiday_dropped": 4,
+    "kept": 995,
+    "last": "2026-10-20",
+    "missing_trading_days": 28,
+    "weekend_dropped": 0
+  },
+  "eligibility": {
+    "QQQ": {
+      "long_x1_allowed": true,
+      "long_x1_min_amount_usd": 10,
+      "long_x1_settlement": "real",
+      "max_units_per_order": 1332,
+      "min_position_exposure_usd": 10
+    },
+    "SPY": {
+      "long_x1_allowed": true,
+      "long_x1_min_amount_usd": 10,
+      "long_x1_settlement": "real",
+      "max_units_per_order": 1285,
+      "min_position_exposure_usd": 10
+    }
+  },
+  "env": "demo",
+  "history_QQQ": {
+    "bars": 0,
+    "error": "GET /api/v1/data/instruments/3006/candles: decode response: json: cannot unmarshal string into Go struct field HistCandle.results.volume of type float64",
+    "route": "GET /api/v1/data/instruments/{id}/candles?interval=1d (DataPlatform)"
+  },
+  "history_SPY": {
+    "bars": 0,
+    "error": "GET /api/v1/data/instruments/3000/candles: decode response: json: cannot unmarshal string into Go struct field HistCandle.results.volume of type float64",
+    "route": "GET /api/v1/data/instruments/{id}/candles?interval=1d (DataPlatform)"
+  },
+  "hourly_bars_by_weekday_QQQ": {
+    "Fri": 180,
+    "Mon": 190,
+    "Thu": 208,
+    "Tue": 216,
+    "Wed": 206
+  },
+  "hourly_bars_by_weekday_SPY": {
+    "Fri": 180,
+    "Mon": 190,
+    "Thu": 209,
+    "Tue": 215,
+    "Wed": 206
+  },
+  "instrument_ids": {
+    "QQQ": 3006,
+    "SPY": 3000
+  },
+  "quoted_spread_bps_at_capture": {
+    "QQQ": 0.55,
+    "SPY": 0.39
+  },
+  "roundtrip": {
+    "lookup_by_reference_found": false,
+    "open_amount_usd": 1099.97,
+    "open_avg_price": 725.1399999999999,
+    "open_spread_cost_usd": 0.03,
+    "open_status": "executed",
+    "open_units": 1.516906,
+    "positions_added_by_open_and_reopen": 1,
+    "positions_after_vs_before": 1,
+    "reclose_is_position_not_open": true,
+    "reopen_resolved_to_same_position": true
+  }
+}

@@ -1,0 +1,22 @@
+[
+  {
+    "instrumentId": 3006,
+    "bid": 725.08,
+    "ask": 725.12,
+    "date": "2026-10-21T15:33:30.353",
+    "quoteType": "realtime",
+    "symbol": "QQQ",
+    "mid": 725.1,
+    "spread_bps": 0.5516480485445265
+  },
+  {
+    "instrumentId": 3000,
+    "bid": 772.01,
+    "ask": 772.04,
+    "date": "2026-10-21T15:33:30.467",
+    "quoteType": "realtime",
+    "symbol": "SPY",
+    "mid": 772.025,
+    "spread_bps": 0.3885884524461347
+  }
+]

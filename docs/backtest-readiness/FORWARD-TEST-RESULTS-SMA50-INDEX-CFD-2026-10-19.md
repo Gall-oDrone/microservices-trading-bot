@@ -101,10 +101,13 @@ Over eleven position-nights including two weekends the account shows no overnigh
 the cent. eToro's cost preview at the opens quoted an overnight fee of 0.26 / 0.25 USD per night,
 in line with the frozen 0.253. Either the demo account does not charge financing, or it books it
 outside the cash balance (the position's `unrealizedPnL` object, or the trading history's fees
-field). **Pending:** read the two closed positions' fee fields from the trading history (the
-`positions` view in progress in `ui-api` does this) and record the answer here. Until then the
-paper account keeps charging the frozen 2.3 bps, as it must, and the demo-versus-paper tracking
-(risk report §4: −55 bps NSDQ100, +43 bps SPX500) carries a 2.78 USD unknown.
+field). **Resolved 2026-10-21** with `cmd/etoro-fees-check` ([`docs/etoro/evidence-2026-10-21/fees.md`](../etoro/evidence-2026-10-21/fees.md)):
+the trading history's `fees` field is **0.00** on both positions (and on the console position
+3622570112, closed 2026-10-19 18:03 UTC at −7.79 USD). **The demo account does not charge overnight
+financing.** A QQQ round trip the same day was also charged no commission despite a 1.65 USD preview:
+the demo account appears to charge no fees at all. The paper account keeps charging the frozen 2.3 bps,
+as it must; the 2.78 USD in the demo-versus-paper tracking (risk report §4) is now a known demo
+artefact, not an unknown.
 
 ### 3.3 Execution slippage versus the paper fill
 

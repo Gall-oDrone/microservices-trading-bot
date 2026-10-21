@@ -1,0 +1,386 @@
+{
+  "schema": "etf-trend-forward/v1",
+  "generated_at": "2026-10-21T15:40:54Z",
+  "window": "2025-10-21:2026-10-20",
+  "params": {
+    "sma": 50,
+    "size_usd": 1100,
+    "fee_bps_per_order": 15,
+    "fee_usd_per_order_at_size": 1.6500000000000001,
+    "sims": 2000,
+    "seed": 1,
+    "costs_status": "FROZEN 2026-10-21 (dry run on the seen year)",
+    "etfs": [
+      {
+        "symbol": "QQQ",
+        "index_proxy": "^NDX",
+        "spread_rt_bps": 0.28
+      },
+      {
+        "symbol": "SPY",
+        "index_proxy": "^GSPC",
+        "spread_rt_bps": 0.26
+      }
+    ],
+    "data_sha256": {
+      "gspc_yahoo_daily.csv": "825d2ec0adb29030de98a3276b0f789397f2bb4b71e28456952c07637a71b889",
+      "ndx_yahoo_daily.csv": "f5277add7910f42388806e66566cdb2299631be7f8ccece1adb708c985492f21",
+      "qqq_yahoo_daily.csv": "7f768e7a75166433d0c14bf0d22afda3caf5e2969175ce119aab793817e00811",
+      "spy_yahoo_daily.csv": "1d9114e10087c38f1a874d42931cdeaea8c52c807109cb8a2beda72985f2cba3"
+    }
+  },
+  "etfs": [
+    {
+      "symbol": "QQQ",
+      "last_bar": "2026-10-20",
+      "scenarios": [
+        {
+          "name": "primary",
+          "bars": 247,
+          "from": "2025-10-21",
+          "to": "2026-10-20",
+          "round_trips": 15,
+          "rows": [
+            {
+              "rule": "etf_hold",
+              "result": {
+                "return_pct": 17.83454619143474,
+                "cagr_pct": 18.30714948137895,
+                "round_trips": 1,
+                "exposure_pct": 100,
+                "max_dd_pct": 12.158603814058646,
+                "sharpe_ann": 0.9485011880352112,
+                "trade_cost_pct": 0.33007201236054606,
+                "finance_pct": 0,
+                "nights_held": 0,
+                "bars": 247,
+                "min_equity": 0.9109750920686681,
+                "margin_close_out": false
+              }
+            },
+            {
+              "rule": "etf_trend_self",
+              "result": {
+                "return_pct": 1.7619387813072374,
+                "cagr_pct": 1.8052985175704972,
+                "round_trips": 15,
+                "exposure_pct": 65.58704453441295,
+                "max_dd_pct": 12.89651052069728,
+                "sharpe_ann": 0.22097830798723653,
+                "trade_cost_pct": 4.592973847470455,
+                "finance_pct": 0,
+                "nights_held": 0,
+                "bars": 247,
+                "min_equity": 0.9356486954217045,
+                "margin_close_out": false
+              },
+              "random_beat_pct": 40.95
+            },
+            {
+              "rule": "etf_trend_index",
+              "result": {
+                "return_pct": 1.7619387813072374,
+                "cagr_pct": 1.8052985175704972,
+                "round_trips": 15,
+                "exposure_pct": 65.58704453441295,
+                "max_dd_pct": 12.89651052069728,
+                "sharpe_ann": 0.22097830798723653,
+                "trade_cost_pct": 4.592973847470455,
+                "finance_pct": 0,
+                "nights_held": 0,
+                "bars": 247,
+                "min_equity": 0.9356486954217045,
+                "margin_close_out": false
+              }
+            }
+          ],
+          "yahoo_total_return_hold_pct": 23.032508397937313,
+          "hypotheses": [
+            {
+              "id": "E-H1",
+              "criteria": "trend max drawdown \u003c ETF hold max drawdown",
+              "trend": 12.89651052069728,
+              "benchmark": 12.158603814058646,
+              "pass": false
+            },
+            {
+              "id": "E-H2",
+              "criteria": "trend return \u003e ETF hold return (same bars, after commission)",
+              "trend": 1.7619387813072374,
+              "benchmark": 17.83454619143474,
+              "pass": false
+            },
+            {
+              "id": "E-H3",
+              "criteria": "trend beats \u003e= 95% of random same-trip strategies",
+              "trend": 40.95,
+              "benchmark": 95,
+              "pass": false
+            }
+          ]
+        },
+        {
+          "name": "pessimistic",
+          "bars": 247,
+          "from": "2025-10-21",
+          "to": "2026-10-20",
+          "round_trips": 15,
+          "rows": [
+            {
+              "rule": "etf_hold",
+              "result": {
+                "return_pct": 17.47747308631262,
+                "cagr_pct": 17.93991380518023,
+                "round_trips": 1,
+                "exposure_pct": 100,
+                "max_dd_pct": 12.158603814058647,
+                "sharpe_ann": 0.9485011880352041,
+                "trade_cost_pct": 0.6596021855231186,
+                "finance_pct": 0,
+                "nights_held": 0,
+                "bars": 247,
+                "min_equity": 0.9095937844795862,
+                "margin_close_out": false
+              }
+            },
+            {
+              "rule": "etf_trend_self",
+              "result": {
+                "return_pct": -2.766747238597256,
+                "cagr_pct": -2.833263862661606,
+                "round_trips": 15,
+                "exposure_pct": 65.58704453441295,
+                "max_dd_pct": 14.693918399535882,
+                "sharpe_ann": -0.07990451869654568,
+                "trade_cost_pct": 8.984624131768177,
+                "finance_pct": 0,
+                "nights_held": 0,
+                "bars": 247,
+                "min_equity": 0.9187653185919582,
+                "margin_close_out": false
+              },
+              "random_beat_pct": 40.95
+            },
+            {
+              "rule": "etf_trend_index",
+              "result": {
+                "return_pct": -2.766747238597256,
+                "cagr_pct": -2.833263862661606,
+                "round_trips": 15,
+                "exposure_pct": 65.58704453441295,
+                "max_dd_pct": 14.693918399535882,
+                "sharpe_ann": -0.07990451869654568,
+                "trade_cost_pct": 8.984624131768177,
+                "finance_pct": 0,
+                "nights_held": 0,
+                "bars": 247,
+                "min_equity": 0.9187653185919582,
+                "margin_close_out": false
+              }
+            }
+          ],
+          "yahoo_total_return_hold_pct": 22.65968394853315,
+          "hypotheses": [
+            {
+              "id": "E-H1",
+              "criteria": "trend max drawdown \u003c ETF hold max drawdown",
+              "trend": 14.693918399535882,
+              "benchmark": 12.158603814058647,
+              "pass": false
+            },
+            {
+              "id": "E-H2",
+              "criteria": "trend return \u003e ETF hold return (same bars, after commission)",
+              "trend": -2.766747238597256,
+              "benchmark": 17.47747308631262,
+              "pass": false
+            },
+            {
+              "id": "E-H3",
+              "criteria": "trend beats \u003e= 95% of random same-trip strategies",
+              "trend": 40.95,
+              "benchmark": 95,
+              "pass": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "symbol": "SPY",
+      "last_bar": "2026-10-20",
+      "scenarios": [
+        {
+          "name": "primary",
+          "bars": 247,
+          "from": "2025-10-21",
+          "to": "2026-10-20",
+          "round_trips": 12,
+          "rows": [
+            {
+              "rule": "etf_hold",
+              "result": {
+                "return_pct": 14.685471250068849,
+                "cagr_pct": 15.069394531292613,
+                "round_trips": 1,
+                "exposure_pct": 100,
+                "max_dd_pct": 9.168524949314326,
+                "sharpe_ann": 1.153679630125639,
+                "trade_cost_pct": 0.3250820502433724,
+                "finance_pct": 0,
+                "nights_held": 0,
+                "bars": 247,
+                "min_equity": 0.9400714832064951,
+                "margin_close_out": false
+              }
+            },
+            {
+              "rule": "etf_trend_self",
+              "result": {
+                "return_pct": 3.7929449370015966,
+                "cagr_pct": 3.887231260912527,
+                "round_trips": 12,
+                "exposure_pct": 78.5425101214575,
+                "max_dd_pct": 6.066947229161301,
+                "sharpe_ann": 0.44126609037675374,
+                "trade_cost_pct": 3.642902565067678,
+                "finance_pct": 0,
+                "nights_held": 0,
+                "bars": 247,
+                "min_equity": 0.9590336015617138,
+                "margin_close_out": false
+              },
+              "random_beat_pct": 54.2
+            },
+            {
+              "rule": "etf_trend_index",
+              "result": {
+                "return_pct": 3.7929449370015966,
+                "cagr_pct": 3.887231260912527,
+                "round_trips": 12,
+                "exposure_pct": 78.5425101214575,
+                "max_dd_pct": 6.066947229161301,
+                "sharpe_ann": 0.44126609037675374,
+                "trade_cost_pct": 3.642902565067678,
+                "finance_pct": 0,
+                "nights_held": 0,
+                "bars": 247,
+                "min_equity": 0.9590336015617138,
+                "margin_close_out": false
+              }
+            }
+          ],
+          "yahoo_total_return_hold_pct": 16.851868682638237,
+          "hypotheses": [
+            {
+              "id": "E-H1",
+              "criteria": "trend max drawdown \u003c ETF hold max drawdown",
+              "trend": 6.066947229161301,
+              "benchmark": 9.168524949314326,
+              "pass": true
+            },
+            {
+              "id": "E-H2",
+              "criteria": "trend return \u003e ETF hold return (same bars, after commission)",
+              "trend": 3.7929449370015966,
+              "benchmark": 14.685471250068849,
+              "pass": false
+            },
+            {
+              "id": "E-H3",
+              "criteria": "trend beats \u003e= 95% of random same-trip strategies",
+              "trend": 54.2,
+              "benchmark": 95,
+              "pass": false
+            }
+          ]
+        },
+        {
+          "name": "pessimistic",
+          "bars": 247,
+          "from": "2025-10-21",
+          "to": "2026-10-20",
+          "round_trips": 12,
+          "rows": [
+            {
+              "rule": "etf_hold",
+              "result": {
+                "return_pct": 14.338170480243395,
+                "cagr_pct": 14.712445219179049,
+                "round_trips": 1,
+                "exposure_pct": 100,
+                "max_dd_pct": 9.168524949314335,
+                "sharpe_ann": 1.1536796301256498,
+                "trade_cost_pct": 0.6496374391641272,
+                "finance_pct": 0,
+                "nights_held": 0,
+                "bars": 247,
+                "min_equity": 0.9386469998090233,
+                "margin_close_out": false
+              }
+            },
+            {
+              "rule": "etf_trend_self",
+              "result": {
+                "return_pct": 0.08335572845719064,
+                "cagr_pct": 0.08538966277524818,
+                "round_trips": 12,
+                "exposure_pct": 78.5425101214575,
+                "max_dd_pct": 7.90058606786912,
+                "sharpe_ann": 0.09731044060046228,
+                "trade_cost_pct": 7.158957436219008,
+                "finance_pct": 0,
+                "nights_held": 0,
+                "bars": 247,
+                "min_equity": 0.938887746649782,
+                "margin_close_out": false
+              },
+              "random_beat_pct": 54.2
+            },
+            {
+              "rule": "etf_trend_index",
+              "result": {
+                "return_pct": 0.08335572845719064,
+                "cagr_pct": 0.08538966277524818,
+                "round_trips": 12,
+                "exposure_pct": 78.5425101214575,
+                "max_dd_pct": 7.90058606786912,
+                "sharpe_ann": 0.09731044060046228,
+                "trade_cost_pct": 7.158957436219008,
+                "finance_pct": 0,
+                "nights_held": 0,
+                "bars": 247,
+                "min_equity": 0.938887746649782,
+                "margin_close_out": false
+              }
+            }
+          ],
+          "yahoo_total_return_hold_pct": 16.498007434943386,
+          "hypotheses": [
+            {
+              "id": "E-H1",
+              "criteria": "trend max drawdown \u003c ETF hold max drawdown",
+              "trend": 7.90058606786912,
+              "benchmark": 9.168524949314335,
+              "pass": true
+            },
+            {
+              "id": "E-H2",
+              "criteria": "trend return \u003e ETF hold return (same bars, after commission)",
+              "trend": 0.08335572845719064,
+              "benchmark": 14.338170480243395,
+              "pass": false
+            },
+            {
+              "id": "E-H3",
+              "criteria": "trend beats \u003e= 95% of random same-trip strategies",
+              "trend": 54.2,
+              "benchmark": 95,
+              "pass": false
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

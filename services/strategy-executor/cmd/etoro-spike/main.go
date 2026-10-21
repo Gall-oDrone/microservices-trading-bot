@@ -293,8 +293,17 @@ func (s *spike) hourly(ctx context.Context, sym string, id int64) {
 
 func (s *spike) history(ctx context.Context, sym string, id int64) {
 	hs, err := s.c.HistoryCandles(ctx, id, "1d", time.Date(1990, 1, 1, 0, 0, 0, 0, time.UTC), time.Time{}, 10)
-	s.must(err, "history "+sym)
 	rep := map[string]any{"route": "GET /api/v1/data/instruments/{id}/candles?interval=1d (DataPlatform)", "bars": len(hs)}
+	if err != nil {
+		// Research-only route (never a live input): a failure is recorded,
+		// not fatal. Seen 2026-10-21 on the ETFs: `volume` comes back as a
+		// string and the client's HistCandle expects a number.
+		rep["error"] = redact(errString(err))
+		log.Printf("history %s: %v (recorded, not fatal: research-only route)", sym, redact(errString(err)))
+		s.write("history_"+strings.ToLower(sym)+"_coverage.json", rep)
+		s.summary["history_"+sym] = rep
+		return
+	}
 	if len(hs) > 0 {
 		last := hs[len(hs)-1].Time
 		hoursUTC := map[int]int{}

@@ -6,6 +6,10 @@
 #                                 uploading to $DAILY_EXECUTOR_S3_URI when set
 #   scripts/ops-run.sh etoro      the eToro index-CFD demo run and its reconciliation
 #                                 (scripts/etoro-daily-executor-run.sh -demo; porting plan P3),
+#   scripts/ops-run.sh etoro-etf  the eToro ETF-cell demo run (QQQ / SPY x1, its own ledger
+#                                 etoro-daily-data/demo-etf/, FORWARD-TEST-PREREGISTRATION-
+#                                 SMA50-ETF-2026-10-21.md; runbook §10), same wrapper with
+#                                 -instruments QQQ,SPY and ETORO_ETF_EXECUTOR_S3_URI as its upload,
 #                                 uploading to $ETORO_EXECUTOR_S3_URI when set (P6).
 #                                 Scheduled at 09:35 New York time on weekdays by the
 #                                 installer (a UTC guard: this cron ignores CRON_TZ);
@@ -58,9 +62,9 @@ mkdir -p "$STATE"
 job="${1:-}"
 shift || true
 case "$job" in
-  executor | etoro | etoro-risk | alerts | compact | sampler | research | prereg) ;;
+  executor | etoro | etoro-etf | etoro-risk | alerts | compact | sampler | research | prereg) ;;
   *)
-    echo "usage: $0 executor|etoro|etoro-risk|alerts|compact|sampler|research|prereg [flags…]" >&2
+    echo "usage: $0 executor|etoro|etoro-etf|etoro-risk|alerts|compact|sampler|research|prereg [flags…]" >&2
     exit 2
     ;;
 esac
@@ -82,6 +86,16 @@ case "$job" in
   etoro)
     echo "== $(date -u +%Y-%m-%dT%H:%M:%SZ) ops-run etoro"
     "$ROOT/scripts/etoro-daily-executor-run.sh" -demo "$@"
+    code=$?
+    echo "== exit $code"
+    exit "$code"
+    ;;
+  etoro-etf)
+    echo "== $(date -u +%Y-%m-%dT%H:%M:%SZ) ops-run etoro-etf"
+    # Own ledger directory and own S3 prefix; the CFD ledger is never touched.
+    ETORO_EXECUTOR_LEDGER="$ROOT/services/strategy-executor/etoro-daily-data/demo-etf/ledger.jsonl" \
+      ETORO_EXECUTOR_S3_URI="${ETORO_ETF_EXECUTOR_S3_URI:-}" \
+      "$ROOT/scripts/etoro-daily-executor-run.sh" -demo -instruments QQQ,SPY "$@"
     code=$?
     echo "== exit $code"
     exit "$code"

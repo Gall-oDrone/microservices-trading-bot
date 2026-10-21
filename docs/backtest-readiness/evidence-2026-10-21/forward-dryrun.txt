@@ -1,0 +1,45 @@
+forward evaluation 2025-10-21:2026-10-20 (costs FROZEN 2026-10-21 (dry run on the seen year))
+
+QQQ primary (eToro bars)
+WINDOW                               RULE                RETURN%    CAGR%   TRIPS   EXPOS%   MAXDD%  SHARPE   TRADE%  RANDOM
+----------------------------------------------------------------------------------------------------------------------------------
+QQQ primary                          etf_hold              17.83    18.31       1    100.0    12.16    0.95     0.33  
+QQQ primary                          etf_trend_self         1.76     1.81      15     65.6    12.90    0.22     4.59  beats  41.0%
+QQQ primary                          etf_trend_index        1.76     1.81      15     65.6    12.90    0.22     4.59  
+  (Yahoo total-return hold over the same dates: 23.03%)
+  E-H1  false trend    12.90 vs    12.16  trend max drawdown < ETF hold max drawdown
+  E-H2  false trend     1.76 vs    17.83  trend return > ETF hold return (same bars, after commission)
+  E-H3  false trend    40.95 vs    95.00  trend beats >= 95% of random same-trip strategies
+
+QQQ pessimistic (eToro bars)
+WINDOW                               RULE                RETURN%    CAGR%   TRIPS   EXPOS%   MAXDD%  SHARPE   TRADE%  RANDOM
+----------------------------------------------------------------------------------------------------------------------------------
+QQQ pessimistic                      etf_hold              17.48    17.94       1    100.0    12.16    0.95     0.66  
+QQQ pessimistic                      etf_trend_self        -2.77    -2.83      15     65.6    14.69   -0.08     8.98  beats  41.0%
+QQQ pessimistic                      etf_trend_index       -2.77    -2.83      15     65.6    14.69   -0.08     8.98  
+  (Yahoo total-return hold over the same dates: 22.66%)
+  E-H1  false trend    14.69 vs    12.16  trend max drawdown < ETF hold max drawdown
+  E-H2  false trend    -2.77 vs    17.48  trend return > ETF hold return (same bars, after commission)
+  E-H3  false trend    40.95 vs    95.00  trend beats >= 95% of random same-trip strategies
+
+SPY primary (eToro bars)
+WINDOW                               RULE                RETURN%    CAGR%   TRIPS   EXPOS%   MAXDD%  SHARPE   TRADE%  RANDOM
+----------------------------------------------------------------------------------------------------------------------------------
+SPY primary                          etf_hold              14.69    15.07       1    100.0     9.17    1.15     0.33  
+SPY primary                          etf_trend_self         3.79     3.89      12     78.5     6.07    0.44     3.64  beats  54.2%
+SPY primary                          etf_trend_index        3.79     3.89      12     78.5     6.07    0.44     3.64  
+  (Yahoo total-return hold over the same dates: 16.85%)
+  E-H1  true  trend     6.07 vs     9.17  trend max drawdown < ETF hold max drawdown
+  E-H2  false trend     3.79 vs    14.69  trend return > ETF hold return (same bars, after commission)
+  E-H3  false trend    54.20 vs    95.00  trend beats >= 95% of random same-trip strategies
+
+SPY pessimistic (eToro bars)
+WINDOW                               RULE                RETURN%    CAGR%   TRIPS   EXPOS%   MAXDD%  SHARPE   TRADE%  RANDOM
+----------------------------------------------------------------------------------------------------------------------------------
+SPY pessimistic                      etf_hold              14.34    14.71       1    100.0     9.17    1.15     0.65  
+SPY pessimistic                      etf_trend_self         0.08     0.09      12     78.5     7.90    0.10     7.16  beats  54.2%
+SPY pessimistic                      etf_trend_index        0.08     0.09      12     78.5     7.90    0.10     7.16  
+  (Yahoo total-return hold over the same dates: 16.50%)
+  E-H1  true  trend     7.90 vs     9.17  trend max drawdown < ETF hold max drawdown
+  E-H2  false trend     0.08 vs    14.34  trend return > ETF hold return (same bars, after commission)
+  E-H3  false trend    54.20 vs    95.00  trend beats >= 95% of random same-trip strategies

@@ -130,7 +130,7 @@ func runDemo(ctx context.Context, e demoEnv, s instSpec, rec *etoroledger.Record
 
 	if action == etoroledger.ActionNone {
 		e.logf("demo: rule says %s, executor holds %s -> nothing to do", target, pos.State)
-		if e.protect && pos.State == "long" {
+		if e.protect && s.Kind != KindETF && pos.State == "long" {
 			for i := range mine {
 				if mine[i].ID == pos.PositionID {
 					if perr := e.ratchet(ctx, in, s.Book, rec, d, mine[i], e.bars); perr != nil {
@@ -179,10 +179,12 @@ func runDemo(ctx context.Context, e demoEnv, s instSpec, rec *etoroledger.Record
 		if q.Ask > 0 {
 			ro.QtyBTC = e.amount / q.Ask
 		}
-		if e.protect {
+		if e.protect && s.Kind != KindETF {
 			// C1: the disaster stop goes out with the order and through the
 			// risk check; an infeasible stop leaves the order bare and the
-			// policy (stop_loss_required) blocks it.
+			// policy (stop_loss_required) blocks it. ETF specs skip this
+			// until stop eligibility on x1 real settlement is evidenced
+			// (FORWARD-TEST-PREREGISTRATION-SMA50-ETF-2026-10-21.md §5).
 			var vol *stops.Volatility
 			var notes []string
 			levels, vol, notes = e.disasterStop(ctx, in, s.Book, q, acct.Equity, e.bars)
