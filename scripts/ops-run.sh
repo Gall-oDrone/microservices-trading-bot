@@ -15,6 +15,12 @@
 #                                 own ledger etoro-daily-data/demo-rotation/, FORWARD-TEST-
 #                                 PREREGISTRATION-DUAL-MOMENTUM-ETF-2026-10-21.md; runbook §11),
 #                                 ETORO_ROTATION_EXECUTOR_S3_URI as its upload,
+#   scripts/ops-run.sh etoro-prereg
+#                                 the weekly verdicts of the three eToro pre-registrations from the
+#                                 executors' saved candles (scripts/etoro-prereg-evaluation.sh) into
+#                                 etoro-daily-data/prereg/<date>-<phase>; interim once on/after
+#                                 2027-04-12, final once on/after 2027-10-29 (the as-of runs in
+#                                 between already carry the earlier cells' complete windows),
 #                                 uploading to $ETORO_EXECUTOR_S3_URI when set (P6).
 #                                 Scheduled at 09:35 New York time on weekdays by the
 #                                 installer (a UTC guard: this cron ignores CRON_TZ);
@@ -67,9 +73,9 @@ mkdir -p "$STATE"
 job="${1:-}"
 shift || true
 case "$job" in
-  executor | etoro | etoro-etf | etoro-rotation | etoro-risk | alerts | compact | sampler | research | prereg) ;;
+  executor | etoro | etoro-etf | etoro-rotation | etoro-risk | etoro-prereg | alerts | compact | sampler | research | prereg) ;;
   *)
-    echo "usage: $0 executor|etoro|etoro-etf|etoro-rotation|etoro-risk|alerts|compact|sampler|research|prereg [flags…]" >&2
+    echo "usage: $0 executor|etoro|etoro-etf|etoro-rotation|etoro-risk|etoro-prereg|alerts|compact|sampler|research|prereg [flags…]" >&2
     exit 2
     ;;
 esac
@@ -187,6 +193,28 @@ case "$job" in
       phase="interim"
     fi
     "$ROOT/scripts/prereg-evaluation.sh" --phase "$phase" --out "$dir/$today-$phase" "$@"
+    code=$?
+    # Keep the 8 newest progress reports; interim and final runs are never pruned.
+    ls -1d "$dir"/*-as-of 2>/dev/null | sort | head -n -8 | xargs -r rm -rf --
+    echo "== exit $code ($dir/$today-$phase)"
+    exit "$code"
+    ;;
+  etoro-prereg)
+    echo "== $(date -u +%Y-%m-%dT%H:%M:%SZ) ops-run etoro-prereg"
+    dir="$ROOT/services/strategy-executor/etoro-daily-data/prereg"
+    mkdir -p "$dir"
+    today="$(date -u +%F)"
+    phase="as-of"
+    if [[ ! "$today" < "2027-10-29" ]]; then
+      if compgen -G "$dir/*-final" >/dev/null; then
+        echo "the final evaluation is already in $dir; nothing to do"
+        exit 0
+      fi
+      phase="final"
+    elif [[ ! "$today" < "2027-04-12" ]] && ! compgen -G "$dir/*-interim" >/dev/null; then
+      phase="interim"
+    fi
+    "$ROOT/scripts/etoro-prereg-evaluation.sh" --phase "$phase" --out "$dir/$today-$phase" "$@"
     code=$?
     # Keep the 8 newest progress reports; interim and final runs are never pruned.
     ls -1d "$dir"/*-as-of 2>/dev/null | sort | head -n -8 | xargs -r rm -rf --

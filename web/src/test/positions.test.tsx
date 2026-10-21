@@ -46,7 +46,9 @@ describe('contract: positions & round trips', () => {
     expect(open.mark_source).toBe('account')
     const closed = p.trades.find((t) => t.status === 'closed')!
     expect(closed.closed_by).toBe('rule')
-    expect(closed.net).toBeCloseTo(-35.34, 6)
+    // Measured on demo (docs/etoro/evidence-2026-10-21/fees.md): the history's fees are 0.00, so net == gross.
+    expect(closed.fees).toBe(0)
+    expect(closed.net).toBeCloseTo(-34.24, 6)
   })
 
   it('tradePnL names its source: eToro net, gross from the fills, unrealised, or nothing', () => {
@@ -54,7 +56,9 @@ describe('contract: positions & round trips', () => {
     const open = p.trades.find((t) => t.status === 'open')!
     const closed = p.trades.find((t) => t.status === 'closed')!
     expect(tradePnL(open)).toEqual({ value: -23.49, kind: 'unrealized' })
-    expect(tradePnL(closed)).toEqual({ value: -35.34, kind: 'net' })
+    expect(tradePnL(closed)).toEqual({ value: -34.24, kind: 'net' })
+    // eToro's net is preferred over the fills' gross whenever it is there (a real account would show fees).
+    expect(tradePnL({ ...closed, fees: 1.1, net: -35.34 })).toEqual({ value: -35.34, kind: 'net' })
     const grossOnly: EtoroTrade = {
       ...closed,
       net: undefined,
@@ -123,7 +127,7 @@ describe('Positions card', () => {
     expect(rows).toHaveLength(2)
     expect(within(card).getByTestId('position-status-3616683295')).toHaveTextContent('open')
     expect(within(card).getByTestId('position-status-3616683146')).toHaveTextContent('closed')
-    expect(within(card).getByTestId('position-pnl-3616683146')).toHaveTextContent(/35\.34/)
+    expect(within(card).getByTestId('position-pnl-3616683146')).toHaveTextContent(/34\.24/)
     expect(within(card).getByTestId('position-pnl-3616683146')).toHaveTextContent(/net, eToro/)
     expect(within(card).getByTestId('position-pnl-3616683295')).toHaveTextContent(/unrealised/)
 

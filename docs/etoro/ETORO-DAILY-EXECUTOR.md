@@ -573,3 +573,18 @@ from the 2026-10-30 decision; the state at registration has QQQ in force.
 > matching the pre-registration's state at registration, and the ETF-policy fix it exposed
 > (`qqq` / `spy` fell to the refuse-everything default of the CFD policy) applies to the ETF cell's first
 > demo run as well.
+
+## 12. Weekly verdicts: `scripts/etoro-prereg-evaluation.sh` (2026-10-21)
+
+The eToro sibling of `scripts/prereg-evaluation.sh`: it runs the procedure of each of the three
+pre-registrations (§5 of each file) on the **bars the executors saved** (the newest
+`<book>_daily_<date>.csv` per book under `etoro-daily-data/{demo,demo-etf,demo-rotation}/candles/`,
+the judged series), fetching the Yahoo benchmarks into its output unless `--no-fetch`, with every
+cost flag as frozen, and writes `cfd/`, `etf/` and `rotation/` (`forward.txt`, `forward.json`, the
+rotation's `state.json`), the bars used and `SHA256SUMS`. No eToro key; nothing written to a
+ledger. `ops-run.sh etoro-prereg` runs it on Mondays at 15:10 UTC into
+`etoro-daily-data/prereg/<date>-<phase>` (eight newest as-of reports kept; the interim run once
+on/after 2027-04-12 and the final once on/after 2027-10-29 are never pruned). The interim and
+primary dates per cell are in the pre-registrations; an as-of report after a cell's window end
+already carries that cell's complete figures. Cells whose executor has not run yet are skipped
+with a note.

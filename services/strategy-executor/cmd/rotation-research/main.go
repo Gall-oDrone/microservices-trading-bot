@@ -209,27 +209,6 @@ func main() {
 	if err := os.MkdirAll(*out, 0o755); err != nil {
 		log.Fatal(err)
 	}
-	f, err := os.Create(filepath.Join(*out, "rotation-report.txt"))
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer f.Close()
-	w := io.MultiWriter(f, os.Stdout)
-	res := &results{Params: p}
-
-	fmt.Fprintf(w, "rotation-research  generated %s\n", time.Now().UTC().Format(time.RFC3339))
-	fmt.Fprintf(w, "rule: dual momentum (shared/pkg/rotation): month-end decision, pick the stronger of {NSDQ100, SPX500} over the lookback, hold only if it beats the hurdle, else cash; fill at next open; x1\n")
-	fmt.Fprintf(w, "variants: ")
-	for _, v := range variants {
-		fmt.Fprintf(w, "%s (L=%d skip=%d tbill=%v)  ", v.Name, v.Lookback, v.Skip, v.TBill)
-	}
-	fmt.Fprintf(w, "\nprimary variant for base rates: %s\n", *primary)
-	fmt.Fprintf(w, "costs [%s]: CFD spread NSDQ100 %.2f / SPX500 %.2f bps RT, financing (^IRX + %.3f%%)/365 per night; ETF %.0f bps per order (%.2f USD on %.0f USD) + QQQ %.2f / SPY %.2f bps RT, no financing\n",
-		p.CostsStatus, *nsdqSpread, *spxSpread, markup*100, *etfFeeBps, *etfFeeBps/1e4**size, *size, *qqqSpread, *spySpread)
-	fmt.Fprintf(w, "random baseline: %d permutations of the primary variant's monthly targets (same months in each asset, shuffled order), seed %d\n", *sims, *seed)
-	fmt.Fprintf(w, "data: index proxies ^NDX/^GSPC %s..%s (%d aligned bars); ETFs QQQ/SPY %s..%s (%d aligned bars)\n",
-		ds(d.idx[0][0].Date), ds(d.idx[0][len(d.idx[0])-1].Date), len(d.idx[0]), ds(d.etfRaw[0][0].Date), ds(d.etfRaw[0][len(d.etfRaw[0])-1].Date), len(d.etfRaw[0]))
-
 	cfdCosts := []cfdsim.Costs{
 		{SpreadPerLeg: *nsdqSpread / 2 / 1e4, NightlyRate: cfdsim.RateLinked(irx.At, markup)},
 		{SpreadPerLeg: *spxSpread / 2 / 1e4, NightlyRate: cfdsim.RateLinked(irx.At, markup)},
@@ -256,6 +235,27 @@ func main() {
 		}
 		return
 	}
+
+	f, err := os.Create(filepath.Join(*out, "rotation-report.txt"))
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer f.Close()
+	w := io.MultiWriter(f, os.Stdout)
+	res := &results{Params: p}
+
+	fmt.Fprintf(w, "rotation-research  generated %s\n", time.Now().UTC().Format(time.RFC3339))
+	fmt.Fprintf(w, "rule: dual momentum (shared/pkg/rotation): month-end decision, pick the stronger of {NSDQ100, SPX500} over the lookback, hold only if it beats the hurdle, else cash; fill at next open; x1\n")
+	fmt.Fprintf(w, "variants: ")
+	for _, v := range variants {
+		fmt.Fprintf(w, "%s (L=%d skip=%d tbill=%v)  ", v.Name, v.Lookback, v.Skip, v.TBill)
+	}
+	fmt.Fprintf(w, "\nprimary variant for base rates: %s\n", *primary)
+	fmt.Fprintf(w, "costs [%s]: CFD spread NSDQ100 %.2f / SPX500 %.2f bps RT, financing (^IRX + %.3f%%)/365 per night; ETF %.0f bps per order (%.2f USD on %.0f USD) + QQQ %.2f / SPY %.2f bps RT, no financing\n",
+		p.CostsStatus, *nsdqSpread, *spxSpread, markup*100, *etfFeeBps, *etfFeeBps/1e4**size, *size, *qqqSpread, *spySpread)
+	fmt.Fprintf(w, "random baseline: %d permutations of the primary variant's monthly targets (same months in each asset, shuffled order), seed %d\n", *sims, *seed)
+	fmt.Fprintf(w, "data: index proxies ^NDX/^GSPC %s..%s (%d aligned bars); ETFs QQQ/SPY %s..%s (%d aligned bars)\n",
+		ds(d.idx[0][0].Date), ds(d.idx[0][len(d.idx[0])-1].Date), len(d.idx[0]), ds(d.etfRaw[0][0].Date), ds(d.etfRaw[0][len(d.etfRaw[0])-1].Date), len(d.etfRaw[0]))
 
 	last := d.etfRaw[0][len(d.etfRaw[0])-1].Date
 	etfStart := d.etfRaw[0][0].Date.AddDate(1, 2, 0) // 12-1 warm-up on the ETF series

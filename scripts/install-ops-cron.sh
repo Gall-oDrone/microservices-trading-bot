@@ -29,6 +29,10 @@
 #   0 15 * * 1    scripts/ops-run.sh etoro-risk weekly eToro risk report (P4), Monday 15:00 UTC:
 #                                               after the week's first run, so the newest candle
 #                                               file ends on Friday
+#   10 15 * * 1   scripts/ops-run.sh etoro-prereg
+#                                               weekly verdicts of the three eToro pre-registrations
+#                                               (scripts/etoro-prereg-evaluation.sh), after the risk
+#                                               report; interim / final once on their dates
 #
 # It builds services/ui-api/bin/ui-alerts (and the executor binary only when it is
 # missing, or with --rebuild-executor), and services/strategy-executor/daily-executor-data/
@@ -218,7 +222,10 @@ if [ "$etoro" = 1 ]; then
 41 13,14 * * 1-5 [ \"\$(TZ=America/New_York date +\\%H)\" = 09 ] && $ROOT/scripts/ops-run.sh etoro-rotation
 # Weekly eToro risk report (P4), Monday 15:00 UTC: after the week's first run, so the newest candle
 # file ends on Friday and the report covers the whole previous week.
-0 15 * * 1 $ROOT/scripts/ops-run.sh etoro-risk"
+0 15 * * 1 $ROOT/scripts/ops-run.sh etoro-risk
+# Weekly verdicts of the three eToro pre-registrations from the executors' saved candles, after the
+# risk report (scripts/etoro-prereg-evaluation.sh; interim / final once on their dates).
+10 15 * * 1 $ROOT/scripts/ops-run.sh etoro-prereg"
 fi
 block="$block
 */15 * * * * $ROOT/scripts/ops-run.sh alerts

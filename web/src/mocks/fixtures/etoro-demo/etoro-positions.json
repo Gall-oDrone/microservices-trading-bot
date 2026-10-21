@@ -16,9 +16,9 @@
     "unknown": 0,
     "open_exposure": 1099.99,
     "unrealized_pnl": -23.49,
-    "fees_to_date": 0.75,
+    "fees_to_date": 0,
     "realized_gross": -34.24,
-    "realized_net": -35.34,
+    "realized_net": -34.24,
     "realized_confirmed": 1
   },
   "trades": [
@@ -42,7 +42,7 @@
       "mark_rate": 7649.16,
       "unrealized_pnl": -23.49,
       "unrealized_pct": -0.02135,
-      "fees_to_date": 0.75,
+      "fees_to_date": 0,
       "held_days": 4
     },
     {
@@ -73,8 +73,8 @@
       "return_pct": -0.03113,
       "venue_confirmed": true,
       "net_profit": -34.24,
-      "fees": 1.1,
-      "net": -35.34,
+      "fees": 0,
+      "net": -34.24,
       "venue_close_rate": 29770.5
     }
   ],
