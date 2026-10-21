@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"io"
 	"log"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -224,6 +225,35 @@ func TestComputeProvisional(t *testing.T) {
 	}
 	if p, _ := ComputeProvisional(closes[:48], "2026-10-05", "2026-10-06", 40); p != nil {
 		t.Fatal("needs 49 closes")
+	}
+}
+
+func TestDayChange(t *testing.T) {
+	closes := []float64{29000, 29868.7}
+	dc := dayChange(closes, "2026-10-20", "2026-10-21", 30198.8)
+	if dc == nil || dc.PrevClose != 29868.7 || dc.PrevDate != "2026-10-20" {
+		t.Fatalf("%+v", dc)
+	}
+	if math.Abs(dc.Change-330.1) > 1e-9 || math.Abs(dc.ChangePct-330.1/29868.7*100) > 1e-9 {
+		t.Fatalf("change %v pct %v", dc.Change, dc.ChangePct)
+	}
+	// The candle file already holds today's bar: compare with the one before.
+	if dc := dayChange(closes, "2026-10-21", "2026-10-21", 29500); dc == nil || dc.PrevClose != 29000 || dc.PrevDate != "" || dc.Change != 500 {
+		t.Fatalf("forming-day bar in file: %+v", dc)
+	}
+	if dc := dayChange(closes, "2026-10-20", "2026-10-21", 0); dc != nil {
+		t.Fatal("no last price must give nil")
+	}
+	if dc := dayChange(nil, "", "2026-10-21", 100); dc != nil {
+		t.Fatal("no closes must give nil")
+	}
+	// Wired into the snapshot next to the provisional level.
+	now := noon
+	h := newTestHub(&now, nil, closesEndingOn("2026-10-05", 60, 100))
+	h.OnTrade(Trade{Book: "btc_usd", Price: 101, Amount: 1, Side: "buy", At: noon})
+	s := h.Snapshot([]string{"btc_usd"}).Books[0]
+	if s.DayChange == nil || s.DayChange.PrevClose != 100 || s.DayChange.Change != 1 || s.DayChange.ChangePct != 1 || s.DayChange.PrevDate != "2026-10-05" {
+		t.Fatalf("snapshot day change %+v", s.DayChange)
 	}
 }
 

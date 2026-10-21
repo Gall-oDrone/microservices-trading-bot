@@ -4,6 +4,7 @@ import { createMemoryRouter, RouterProvider } from 'react-router'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { etoroLiveSnapshotSchema } from '../api/etoroSchemas'
 import { livePhase, STALE_MS, type LiveRaw } from '../api/live'
+import { fmtDayChange } from '../lib/format'
 import { liveSnapshotSchema, type LiveStatus } from '../api/schemas'
 import etoroLive from '../mocks/fixtures/etoro-demo/etoro-live.json'
 import live from '../mocks/fixtures/live.json'
@@ -209,6 +210,11 @@ describe('eToro market (rates stream, P5c)', () => {
     expect(within(nsdq).getByTestId('forming-nsdq100')).toHaveTextContent('UTC day 16 Oct 2026')
     expect(within(nsdq).getByTestId('forming-nsdq100')).toHaveTextContent('7 quotes')
     expect(within(nsdq).getByTestId('closes-nsdq100')).toHaveTextContent('29,868.70')
+    // The day change, as eToro shows it: units and percent vs the previous close, red when down.
+    const dc = within(nsdq).getByTestId('day-change-nsdq100')
+    expect(dc).toHaveTextContent('-678.95 (-2.27%)')
+    expect(dc).toHaveClass('neg')
+    expect(dc).toHaveAttribute('title', 'vs previous close of 15 Oct 2026: 29,868.70 USD')
 
     // SPX500 is recorded long and the mid is below its flip level: the rule would flip.
     const spx = screen.getByTestId('market-spx500')
@@ -232,10 +238,27 @@ describe('eToro market (rates stream, P5c)', () => {
     b.ask = 29900.9
     b.last = 29900.5
     b.provisional = { ...b.provisional!, price: 29900.5, signal: 'long', distance_to_flip_pct: 0.06 }
+    b.day_change = { prev_close: 29570.4, prev_date: '2026-10-15', change: 330.1, change_pct: 1.1163 }
     es.emit('book', b)
     await waitFor(() => expect(within(nsdq).getByTestId('bid-nsdq100')).toHaveTextContent('29,900.10'))
     expect(within(nsdq).getByTestId('flip-nsdq100')).toHaveTextContent('flips to flat below 29,882.02')
     expect(within(nsdq).getByText('would flip')).toBeInTheDocument()
+    expect(within(nsdq).getByTestId('day-change-nsdq100')).toHaveTextContent('+330.10 (+1.12%)')
+    expect(within(nsdq).getByTestId('day-change-nsdq100')).toHaveClass('pos')
+    // Without closed bars ui-api omits day_change (Go omitempty): no pill, no error.
+    delete b.day_change
+    b.bid = 29901.1
+    es.emit('book', b)
+    await waitFor(() => expect(within(nsdq).getByTestId('bid-nsdq100')).toHaveTextContent('29,901.10'))
+    expect(within(nsdq).queryByTestId('day-change-nsdq100')).not.toBeInTheDocument()
+  })
+
+  it('fmtDayChange signs the units and the percent like a venue dashboard', () => {
+    expect(fmtDayChange({ change: 330.1, change_pct: 1.1163 }, 'usd', 'nsdq100')).toBe('+330.10 (+1.12%)')
+    expect(fmtDayChange({ change: -58.57, change_pct: -0.76 }, 'usd', 'spx500')).toBe('-58.57 (-0.76%)')
+    expect(fmtDayChange({ change: 0, change_pct: 0 }, 'usd', 'spx500')).toBe('0.00 (0.00%)')
+    // Bitso books show whole quote units.
+    expect(fmtDayChange({ change: 12345.6, change_pct: 0.617 }, 'mxn')).toBe('+12,346 (+0.62%)')
   })
 
   it('a contract mismatch on the eToro snapshot is an error, not a wrong number', async () => {

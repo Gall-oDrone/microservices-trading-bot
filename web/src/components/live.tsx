@@ -5,8 +5,8 @@
  */
 import { useState } from 'react'
 import type { LivePhase, LiveState } from '../api/live'
-import type { BookSnapshot, ForwardTest } from '../api/schemas'
-import { ago, fmtMoney, fmtPct, fmtPrice, fmtUTC } from '../lib/format'
+import type { BookSnapshot, DayChange, ForwardTest } from '../api/schemas'
+import { ago, fmtDate, fmtDayChange, fmtMoney, fmtPct, fmtPrice, fmtUTC } from '../lib/format'
 import { Badge, SignalPill, Stat } from './ui'
 
 const PHASE_LABEL: Record<LivePhase, string> = {
@@ -66,6 +66,40 @@ export function TickPrice({ value, quote, book }: { value: number; quote: string
 }
 
 /**
+ * The move since the previous closed bar, green up / red down, like the
+ * "+330.1 (1.12%)" next to an index on eToro. The title names the close it
+ * is measured from. Renders nothing before ui-api has a last price and
+ * closed bars for the book.
+ */
+export function DayChangePill({
+  dc,
+  quote,
+  book,
+  large,
+}: {
+  dc: DayChange | undefined
+  quote: string
+  book?: string
+  large?: boolean
+}) {
+  if (!dc) return null
+  const tone = dc.change > 0 ? 'pos' : dc.change < 0 ? 'neg' : 'flat'
+  const since = dc.prev_date ? ` close of ${fmtDate(dc.prev_date)}` : ' close'
+  return (
+    <span
+      className={`day-change num ${tone} ${large ? 'lg' : ''}`}
+      data-testid={`day-change-${book ?? ''}`}
+      title={`vs previous${since}: ${fmtPrice(dc.prev_close, quote, book)} ${quote.toUpperCase()}`}
+    >
+      <span className="day-change-arrow" aria-hidden="true">
+        {tone === 'pos' ? '▲' : tone === 'neg' ? '▼' : '•'}
+      </span>
+      {fmtDayChange(dc, quote, book)}
+    </span>
+  )
+}
+
+/**
  * The live strip on a forward-test card (and, `large`, on the detail page):
  * last trade, the provisional flip level, and what the frozen rule would say
  * if today closed now. Greyed out when the stream is stale.
@@ -115,9 +149,14 @@ export function LiveStrip({
             label="Last trade"
             value={<TickPrice value={snap.last} quote={ft.quote} />}
             hint={
-              snap.bid > 0 && snap.ask > 0 ? (
-                <span className="num">
-                  {fmtPrice(snap.bid, ft.quote)} / {fmtPrice(snap.ask, ft.quote)}
+              snap.day_change || (snap.bid > 0 && snap.ask > 0) ? (
+                <span className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
+                  <DayChangePill dc={snap.day_change} quote={ft.quote} book={ft.book} />
+                  {snap.bid > 0 && snap.ask > 0 ? (
+                    <span className="num">
+                      {fmtPrice(snap.bid, ft.quote)} / {fmtPrice(snap.ask, ft.quote)}
+                    </span>
+                  ) : null}
                 </span>
               ) : undefined
             }

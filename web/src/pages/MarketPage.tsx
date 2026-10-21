@@ -12,7 +12,7 @@ import { useCandles, useForwardTests } from '../api/client'
 import { useLiveStream, type LiveState } from '../api/live'
 import type { BookSnapshot, Fill, Market, TapeTrade } from '../api/schemas'
 import { PriceChart } from '../components/charts'
-import { LiveBadge, TickPrice } from '../components/live'
+import { DayChangePill, LiveBadge, TickPrice } from '../components/live'
 import { Badge, Banner, CardSkeleton, Empty, ErrorState, Stat } from '../components/ui'
 import { VenueSwitch } from '../components/VenueSwitch'
 import { ago, bookLabel, fmtDate, fmtPrice, fmtUTC } from '../lib/format'
@@ -85,6 +85,7 @@ function Ticker({
       <span className="ticker-price">
         {has ? <TickPrice value={snap.last} quote={quote} /> : <span className="faint">—</span>}
         <span className="ticker-quote">{quote.toUpperCase()}</span>
+        <DayChangePill dc={snap?.day_change} quote={quote} book={book} large />
       </span>
       <span className="ticker-quotes num">
         <span>

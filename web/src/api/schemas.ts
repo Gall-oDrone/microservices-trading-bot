@@ -586,6 +586,20 @@ export const provisionalSchema = z.object({
 })
 export type Provisional = z.infer<typeof provisionalSchema>
 
+/**
+ * live.DayChange: the last price against the previous closed bar's close,
+ * as a venue dashboard shows it ("+330.10 (+1.12%)"). prev_date is "" when
+ * the candle file already held the forming day's bar. Absent (Go omitempty)
+ * without a last price or closed bars.
+ */
+export const dayChangeSchema = z.object({
+  prev_close: z.number(),
+  prev_date: z.string(),
+  change: z.number(),
+  change_pct: z.number(),
+})
+export type DayChange = z.infer<typeof dayChangeSchema>
+
 export const bookSnapshotSchema = z.object({
   book: z.string(),
   last: z.number(),
@@ -596,6 +610,7 @@ export const bookSnapshotSchema = z.object({
   candle: liveCandleSchema.nullable(),
   provisional: provisionalSchema.nullable(),
   provisional_note: z.string().optional(),
+  day_change: dayChangeSchema.optional(),
   updated_at: z.string(),
 })
 export type BookSnapshot = z.infer<typeof bookSnapshotSchema>

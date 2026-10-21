@@ -17,7 +17,7 @@ import { useLiveStream, type LiveState } from '../../api/live'
 import type { BookSnapshot } from '../../api/schemas'
 import { SessionClock } from '../../components/etoro/parts'
 import { IconArrowRight } from '../../components/icons'
-import { LiveBadge, TickPrice } from '../../components/live'
+import { DayChangePill, LiveBadge, TickPrice } from '../../components/live'
 import { Badge, Banner, CardSkeleton, ErrorState, SignalPill, Stat } from '../../components/ui'
 import { ago, bookLabel, fmtDate, fmtNY, fmtPct, fmtPrice } from '../../lib/format'
 import { usePageTitle } from '../../lib/usePageTitle'
@@ -72,6 +72,7 @@ function BookCard({ ft, snap, live }: { ft: EtoroForwardTest; snap: BookSnapshot
         <span className="ticker-price">
           {q ? <TickPrice value={q.mid} quote={quote} book={ft.book} /> : <span className="faint">—</span>}
           <span className="ticker-quote">{quote.toUpperCase()} mid</span>
+          <DayChangePill dc={snap?.day_change} quote={quote} book={ft.book} large />
         </span>
         <span className="ticker-quotes num">
           <span>

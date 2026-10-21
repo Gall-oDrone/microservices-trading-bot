@@ -3386,6 +3386,49 @@ table.data td.run-book {
 .ticker.is-stale .ticker-price {
   opacity: 0.55;
 }
+
+/* The day change next to a live price: "▲ +330.10 (+1.12%)", green up and
+   red down like the venues' own dashboards. In .ticker-price it sits on the
+   price's baseline at a readable size instead of inheriting the 30px. */
+.day-change {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  line-height: 1.4;
+  white-space: nowrap;
+  color: var(--text-2);
+  background: var(--bg-sunken, var(--line-soft));
+}
+.day-change.lg {
+  font-size: 13.5px;
+  padding: 3px 10px;
+}
+.day-change.pos {
+  color: var(--long);
+  background: var(--long-soft);
+}
+.day-change.neg {
+  color: var(--loss);
+  background: var(--loss-soft);
+}
+.day-change-arrow {
+  font-family: var(--font-sans);
+  font-size: 0.75em;
+}
+.ticker-price .day-change {
+  align-self: center;
+  margin-left: 2px;
+}
+.lp-hc-price .day-change {
+  margin-top: 6px;
+}
 .ticker-quotes {
   display: flex;
   flex-wrap: wrap;

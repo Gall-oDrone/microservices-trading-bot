@@ -639,8 +639,11 @@ export const etoroRiskReportSchema = z
             .object({
               book: z.string(),
               total: pnlBreakdownSchema,
-              financing_charged: z.number(),
-              net_with_charged: z.number(),
+              // cfdrisk.BookAttribution: *float64,omitempty — eToro's charged financing when a
+              // reconcile report carries it; absent while the book is flat or the figure is unknown
+              // (the 2026-10-19 report had neither). The contract required them until 2026-10-21.
+              financing_charged: z.number().optional(),
+              net_with_charged: z.number().optional(),
               paper_equity: z.number(),
               demo_equity: z.number(),
               tracking_bps: z.number(),

@@ -64,6 +64,15 @@ describe('contract: the eToro ui-api responses parse with the UI schemas', () =>
     expect(rep.var.var_99_usd).toBeCloseTo(52.81, 1)
     expect(rep.stress?.worst_episode).toBe('2008-09-lehman')
     expect(rep.fill_quality?.books.map((b) => b.frozen_spread_per_leg_bps)).toEqual([7.75, 7.4])
+    // cfdrisk omits financing_charged / net_with_charged while they are unknown (the live
+    // 2026-10-19 report had neither on both books): the contract must accept their absence.
+    const noCharged = JSON.parse(JSON.stringify(riskReport)) as typeof riskReport
+    for (const b of noCharged.attribution.books as Record<string, unknown>[]) {
+      delete b.financing_charged
+      delete b.net_with_charged
+    }
+    const rep2 = etoroRiskReportSchema.safeParse(noCharged)
+    expect(rep2.success, rep2.success ? '' : JSON.stringify(rep2.error.issues.slice(0, 2))).toBe(true)
 
     const rc = etoroReconcileResponseSchema.parse(reconcile)
     expect(rc.reports[0].date).toBe('2026-10-16')

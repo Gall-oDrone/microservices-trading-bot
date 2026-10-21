@@ -136,7 +136,42 @@ type BookSnapshot struct {
 	Candle          *Candle      `json:"candle"`
 	Provisional     *Provisional `json:"provisional"`
 	ProvisionalNote string       `json:"provisional_note,omitempty"`
-	UpdatedAt       string       `json:"updated_at"`
+	// DayChange (2026-10-21) is the last price against the previous closed
+	// bar's close, as a venue dashboard shows it ("+330.1 (+1.12 %)"). The
+	// previous close is the last row of the executor's candle file, i.e.
+	// the bar the rule decided on; nil without a last price or closed bars.
+	DayChange *DayChange `json:"day_change,omitempty"`
+	UpdatedAt string     `json:"updated_at"`
+}
+
+// DayChange is the move since the previous closed bar.
+type DayChange struct {
+	PrevClose float64 `json:"prev_close"`
+	PrevDate  string  `json:"prev_date"`  // the closed bar's date ("" when not known)
+	Change    float64 `json:"change"`     // last - prev_close, in price units
+	ChangePct float64 `json:"change_pct"` // change / prev_close x 100
+}
+
+// dayChange compares last with the newest closed close that precedes the
+// forming day. When the candle file already holds the forming day's bar
+// (lastDate >= formingDay) the one before it is used, and its date is not
+// known from the closes alone, so PrevDate is left empty. nil without a
+// last price or a usable close.
+func dayChange(closes []float64, lastDate, formingDay string, last float64) *DayChange {
+	if last <= 0 {
+		return nil
+	}
+	n := len(closes)
+	prevDate := lastDate
+	if lastDate != "" && formingDay != "" && lastDate >= formingDay {
+		n--
+		prevDate = ""
+	}
+	if n <= 0 || closes[n-1] <= 0 {
+		return nil
+	}
+	prev := closes[n-1]
+	return &DayChange{PrevClose: prev, PrevDate: prevDate, Change: last - prev, ChangePct: (last - prev) / prev * 100}
 }
 
 // Status is the upstream connection state.
@@ -512,6 +547,7 @@ func (h *Hub) bookSnapshotLocked(b string) BookSnapshot {
 		bs.ProvisionalNote = "closed candles: " + err.Error()
 		return bs
 	}
+	bs.DayChange = dayChange(closes, lastDate, day, st.last)
 	bs.Provisional, bs.ProvisionalNote = ComputeProvisionalWith(closes, lastDate, day, st.last, h.PrevBar)
 	return bs
 }

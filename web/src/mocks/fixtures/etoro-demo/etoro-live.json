@@ -34,6 +34,12 @@
         "distance_to_flip_pct": -2.3716054926325376,
         "based_on": "2026-10-15"
       },
+      "day_change": {
+        "prev_close": 29868.7,
+        "prev_date": "2026-10-15",
+        "change": -678.9500000000007,
+        "change_pct": -2.273115334781898
+      },
       "updated_at": "2026-10-16T18:47:58.956944577Z"
     },
     {
@@ -61,6 +67,12 @@
         "signal": "flat",
         "distance_to_flip_pct": -0.7602499245822535,
         "based_on": "2026-10-15"
+      },
+      "day_change": {
+        "prev_close": 7707.8,
+        "prev_date": "2026-10-15",
+        "change": -58.57000000000062,
+        "change_pct": -0.759879602480612
       },
       "updated_at": "2026-10-16T18:47:58.956946947Z"
     }

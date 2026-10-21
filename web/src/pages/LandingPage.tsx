@@ -26,7 +26,7 @@ import type { ForwardTest, RiskResponse, Study } from '../api/schemas'
 import { ThemeToggle } from '../components/AppShell'
 import { SessionClock } from '../components/etoro/parts'
 import { IconArrowRight, IconExternal, IconLogo } from '../components/icons'
-import { LiveBadge, TickPrice } from '../components/live'
+import { DayChangePill, LiveBadge, TickPrice } from '../components/live'
 import { TrendChart } from '../components/TrendChart'
 import { Badge, SignalPill, Skeleton, VenueTag } from '../components/ui'
 import { bookLabel, bookSymbol, fmtBps, fmtDate, fmtFrac, fmtNY, fmtPct, fmtPrice, positionText } from '../lib/format'
@@ -192,6 +192,7 @@ function HeroCard({ books, live, loading }: { books: ForwardTest[]; live: LiveSt
             )}
             <span className="lp-quote">{quote.toUpperCase()}</span>
           </span>
+          {hasLive && <DayChangePill dc={snap.day_change} quote={quote} book={book} />}
         </div>
         <div className="lp-hc-signal">
           {loading ? <Skeleton h={28} w={88} /> : <SignalPill signal={signal} />}

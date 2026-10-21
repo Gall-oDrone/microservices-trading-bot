@@ -59,6 +59,15 @@ export function fmtPct(v: number, digits = 2, signed = true): string {
   return signed && v > 0 ? `+${s}%` : `${s}%`
 }
 
+/**
+ * A day change in quote units and percent, as a venue dashboard shows it
+ * next to the price: { change: 330.1, change_pct: 1.12 } -> "+330.10 (+1.12%)".
+ */
+export function fmtDayChange(dc: { change: number; change_pct: number }, quote: string, book?: string): string {
+  const sign = dc.change > 0 ? '+' : dc.change < 0 ? '-' : ''
+  return `${sign}${fmtPrice(Math.abs(dc.change), quote, book)} (${fmtPct(dc.change_pct, 2)})`
+}
+
 export function fmtBps(v: number, signed = false): string {
   const r = Math.round(v) === 0 ? 0 : v // no "-0 bps"
   const s = r.toFixed(0)
