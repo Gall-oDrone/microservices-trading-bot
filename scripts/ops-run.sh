@@ -32,6 +32,22 @@
 #                                 $ETORO_EXECUTOR_S3_URI/risk/<date>/ when set. Mondays
 #                                 15:00 UTC: after the week's first run, so the newest candle
 #                                 file ends on Friday
+#   scripts/ops-run.sh etoro-canary-observe
+#                                 the real-account canary's daily measurement (2026-10-22;
+#                                 docs/etoro/ETORO-REAL-CANARY-PLAN-2026-10-21.md §3.5, runbook
+#                                 §14): etoro-daily-data/etoro-canary-observe reads the REAL
+#                                 account (read-only: pnl, history, a cost preview, rates,
+#                                 eligibility; it has no order call) with the keys in
+#                                 ~/.config/microservices-trading-bot/etoro-real-canary.env and
+#                                 appends one line to etoro-daily-data/real-canary/
+#                                 observations.jsonl. Scheduled at 18:00 New York every day,
+#                                 weekends included (eToro books overnight fees at 17:00 New
+#                                 York). It writes real-canary/run-<UTC>.log (last line "exit=")
+#                                 and, with ETORO_CANARY_S3_URI set, copies the directory there
+#                                 and the run log last, so the ledger-watchdog can watch the
+#                                 prefix as a plain daily ledger (no :nyse). This is the ONLY
+#                                 scheduled job that touches the real account; no cron ever
+#                                 runs an executor against it.
 #   scripts/ops-run.sh alerts     R3: services/ui-api/bin/ui-alerts (notify on new,
 #                                 escalated, reminder or resolved alerts)
 #   scripts/ops-run.sh compact    the archive compactor's non-destructive refresh
@@ -55,8 +71,8 @@
 # Settings come from $MTB_OPS_ENV (default ~/.config/microservices-trading-bot/ops.env),
 # written by the installer: PATH (cron's is minimal), UI_ALERTS_NOTIFY, UI_API_ARCHIVE,
 # UI_API_LEDGER, UI_API_ETORO_LEDGER, UI_ALERTS_ETORO_LEDGER, DAILY_EXECUTOR_S3_URI,
-# ETORO_EXECUTOR_S3_URI, ETORO_RISK_REPORT_YAHOO, COMPACT_BUCKET. Output is appended to
-# ${XDG_STATE_HOME:-~/.local/state}/mtb-ops/<job>.log (rotated at 5 MB).
+# ETORO_EXECUTOR_S3_URI, ETORO_RISK_REPORT_YAHOO, ETORO_CANARY_S3_URI, COMPACT_BUCKET. Output
+# is appended to ${XDG_STATE_HOME:-~/.local/state}/mtb-ops/<job>.log (rotated at 5 MB).
 set -uo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -73,9 +89,9 @@ mkdir -p "$STATE"
 job="${1:-}"
 shift || true
 case "$job" in
-  executor | etoro | etoro-etf | etoro-rotation | etoro-risk | etoro-prereg | alerts | compact | sampler | research | prereg) ;;
+  executor | etoro | etoro-etf | etoro-rotation | etoro-risk | etoro-prereg | etoro-canary-observe | alerts | compact | sampler | research | prereg) ;;
   *)
-    echo "usage: $0 executor|etoro|etoro-etf|etoro-rotation|etoro-risk|etoro-prereg|alerts|compact|sampler|research|prereg [flags…]" >&2
+    echo "usage: $0 executor|etoro|etoro-etf|etoro-rotation|etoro-risk|etoro-prereg|etoro-canary-observe|alerts|compact|sampler|research|prereg [flags…]" >&2
     exit 2
     ;;
 esac
@@ -143,6 +159,45 @@ case "$job" in
       fi
     fi
     echo "== exit $code ($out)"
+    exit "$code"
+    ;;
+  etoro-canary-observe)
+    echo "== $(date -u +%Y-%m-%dT%H:%M:%SZ) ops-run etoro-canary-observe"
+    cd "$ROOT/services/strategy-executor" || exit 2
+    dir="./etoro-daily-data/real-canary"
+    mkdir -p "$dir"
+    stamp="$(date -u +%Y%m%dT%H%M%SZ)"
+    runlog="$dir/run-$stamp.log"
+    # Read-only by construction (see cmd/etoro-canary-observe); -ledger is pinned to the
+    # canary directory, the binary refuses a demo env file without -allow-demo and a real
+    # one outside real-canary/. The ledger itself is written only by the canary console.
+    "${ETORO_CANARY_OBSERVE_BIN:-./etoro-daily-data/etoro-canary-observe}" \
+      -ledger "$dir/ledger.jsonl" -ledger-name etoro-real-canary "$@" 2>&1 | tee "$runlog"
+    code=${PIPESTATUS[0]}
+    echo "exit=$code" >>"$runlog"
+    s3="${ETORO_CANARY_S3_URI:-}"
+    if [ -n "$s3" ]; then
+      s3="${s3%/}"
+      ok=1
+      for f in observations.jsonl ledger.jsonl; do
+        [ -f "$dir/$f" ] || continue
+        aws s3 cp "$dir/$f" "$s3/$f" --only-show-errors || ok=0
+      done
+      for sub in reconcile intents; do
+        [ -d "$dir/$sub" ] || continue
+        aws s3 sync "$dir/$sub" "$s3/$sub" --exclude '*' --include '*.json' --only-show-errors || ok=0
+      done
+      if [ "$ok" = 1 ]; then
+        echo "upload=ok $s3" | tee -a "$runlog"
+      else
+        echo "upload=failed $s3" | tee -a "$runlog"
+      fi
+      # The run log goes last: the watchdog takes its presence as "the job ran".
+      aws s3 cp "$runlog" "$s3/run-$stamp.log" --only-show-errors || echo "upload=failed $s3/run-$stamp.log"
+    fi
+    # Keep the 90 newest run logs locally (one per day: a quarter).
+    ls -1 "$dir"/run-*.log 2>/dev/null | sort | head -n -90 | xargs -r rm -f --
+    echo "== exit $code ($dir/observations.jsonl)"
     exit "$code"
     ;;
   alerts)

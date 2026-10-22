@@ -33,6 +33,13 @@
 #                                               weekly verdicts of the three eToro pre-registrations
 #                                               (scripts/etoro-prereg-evaluation.sh), after the risk
 #                                               report; interim / final once on their dates
+#   0 22,23 * * * [guard] scripts/ops-run.sh etoro-canary-observe
+#                                               only with --canary-observe (2026-10-22): the real-
+#                                               account canary's read-only measurement at 18:00 New
+#                                               York EVERY day, weekends included (eToro books the
+#                                               overnight fee at 17:00 New York); docs/etoro/
+#                                               ETORO-REAL-CANARY-PLAN-2026-10-21.md §3.5, runbook §14.
+#                                               Same two-candidates-plus-guard shape as the 09:35 jobs
 #
 # It builds services/ui-api/bin/ui-alerts (and the executor binary only when it is
 # missing, or with --rebuild-executor), and services/strategy-executor/daily-executor-data/
@@ -78,7 +85,17 @@
 #                         uncommitted changes are not included); the old binary is kept as
 #                         daily-executor.prev-<rev>
 #   --rebuild-etoro       the same for the three eToro binaries (one throwaway clone; the old
-#                         copies are kept as <name>.prev-<rev>)
+#                         copies are kept as <name>.prev-<rev>), and for etoro-canary-observe
+#                         with --canary-observe
+#   --canary-observe      also schedule the real-account canary's daily observation (18:00 New
+#                         York, every day) and build etoro-daily-data/etoro-canary-observe. Off
+#                         by default and never implied: pass it on every re-run while the canary
+#                         is open, or the line and ETORO_CANARY_S3_URI are dropped again. With
+#                         --bucket the job copies etoro-daily-data/real-canary/ to
+#                         s3://NAME/daily-executor/etoro-real-canary (the run log last, for the
+#                         ledger-watchdog: add etoro-real-canary=daily-executor/etoro-real-canary
+#                         to its LEDGERS, plain daily calendar). The observer is read-only; this
+#                         flag schedules nothing that can place an order.
 #   --compactor-ref REF   git ref holding services/data-collector (see above)
 #   --rebuild-compactor   rebuild bin/compact-archive from --compactor-ref
 set -euo pipefail
@@ -87,7 +104,7 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 ENV_FILE="${MTB_OPS_ENV:-$HOME/.config/microservices-trading-bot/ops.env}"
 topic="" bucket="" print=0 uninstall=0 executor=1 rebuild=0
 sampler=1 research=1 compact=1 etoro_alerts=1 compactor_ref="origin/feat/intraday-data-collector" rebuild_compactor=0
-etoro=0 rebuild_etoro=0
+etoro=0 rebuild_etoro=0 canary=0
 [ -d "$ROOT/services/strategy-executor/cmd/etoro-daily-executor" ] && etoro=1
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -103,13 +120,23 @@ while [ $# -gt 0 ]; do
     --no-etoro-alerts) etoro_alerts=0; shift ;;
     --rebuild-executor) rebuild=1; shift ;;
     --rebuild-etoro) rebuild_etoro=1; shift ;;
+    --canary-observe) canary=1; shift ;;
     --compactor-ref) compactor_ref="$2"; shift 2 ;;
     --rebuild-compactor) rebuild_compactor=1; shift ;;
-    -h | --help) sed -n '2,70p' "$0"; exit 0 ;;
+    -h | --help) sed -n '2,100p' "$0"; exit 0 ;;
     *) echo "unknown option $1" >&2; exit 2 ;;
   esac
 done
 if [ -z "$bucket" ]; then compact=0; fi
+if [ "$canary" = 1 ] && [ ! -d "$ROOT/services/strategy-executor/cmd/etoro-canary-observe" ]; then
+  echo "--canary-observe: services/strategy-executor/cmd/etoro-canary-observe is not in this checkout" >&2
+  exit 2
+fi
+canary_env="${MTB_ETORO_REAL_CANARY_ENV:-$HOME/.config/microservices-trading-bot/etoro-real-canary.env}"
+if [ "$canary" = 1 ] && [ ! -f "$canary_env" ]; then
+  # Not a refusal: the job itself exits 2 and logs until the file exists (runbook §14 pre-flight).
+  echo "warning: --canary-observe but $canary_env does not exist yet; the job will fail until it does" >&2
+fi
 
 # The managed block, plus the legacy standalone eToro block (hand-installed before P6).
 strip_block() { sed -e '/^# BEGIN mtb-ops/,/^# END mtb-ops/d' -e '/^# BEGIN mtb-etoro/,/^# END mtb-etoro/d'; }
@@ -150,13 +177,15 @@ done
 
 notify="stdout"
 [ -n "$topic" ] && notify="sns:$topic"
-archive="" s3uri="" etoro_s3uri="" etoro_etf_s3uri="" etoro_rot_s3uri=""
+archive="" s3uri="" etoro_s3uri="" etoro_etf_s3uri="" etoro_rot_s3uri="" canary_s3uri=""
 if [ -n "$bucket" ]; then
   archive="s3://$bucket"
   s3uri="s3://$bucket/daily-executor/stage"
   [ "$etoro" = 1 ] && etoro_s3uri="s3://$bucket/daily-executor/etoro-demo"
   [ "$etoro" = 1 ] && etoro_etf_s3uri="s3://$bucket/daily-executor/etoro-demo-etf"
   [ "$etoro" = 1 ] && etoro_rot_s3uri="s3://$bucket/daily-executor/etoro-demo-rotation"
+  # Its own prefix (plan D4): never under etoro-demo*, so a listing cannot mix the accounts.
+  [ "$canary" = 1 ] && canary_s3uri="s3://$bucket/daily-executor/etoro-real-canary"
 fi
 ledger="$ROOT/services/strategy-executor/daily-executor-data/stage/ledger.jsonl"
 etoro_ledger="" etoro_alert_ledgers=""
@@ -184,6 +213,7 @@ ETORO_EXECUTOR_S3_URI=$etoro_s3uri
 ETORO_ETF_EXECUTOR_S3_URI=$etoro_etf_s3uri
 ETORO_ROTATION_EXECUTOR_S3_URI=$etoro_rot_s3uri
 ETORO_RISK_REPORT_YAHOO=$etoro_yahoo
+ETORO_CANARY_S3_URI=$canary_s3uri
 COMPACT_BUCKET=$bucket"
 
 block="# BEGIN mtb-ops: managed by scripts/install-ops-cron.sh; times are UTC (06:15 UTC = 00:15 Mexico City)"
@@ -226,6 +256,13 @@ if [ "$etoro" = 1 ]; then
 # Weekly verdicts of the three eToro pre-registrations from the executors' saved candles, after the
 # risk report (scripts/etoro-prereg-evaluation.sh; interim / final once on their dates).
 10 15 * * 1 $ROOT/scripts/ops-run.sh etoro-prereg"
+fi
+if [ "$canary" = 1 ]; then
+  block="$block
+# Real-account canary, measurement only (docs/etoro/ETORO-REAL-CANARY-PLAN-2026-10-21.md §3.5; runbook §14):
+# the read-only observer at 18:00 New York EVERY day, weekends included (overnight fees post at 17:00 New
+# York). Listed at 22:00 and 23:00 UTC with the same guard as above. Nothing here can place an order.
+0 22,23 * * * [ \"\$(TZ=America/New_York date +\\%H)\" = 18 ] && $ROOT/scripts/ops-run.sh etoro-canary-observe"
 fi
 block="$block
 */15 * * * * $ROOT/scripts/ops-run.sh alerts
@@ -290,10 +327,13 @@ if [ "$executor" = 1 ] && { [ "$rebuild" = 1 ] || [ ! -x "$exe" ]; }; then
   keep_prev "$exe"
   mv -f "$exe.new" "$exe"
 fi
-if [ "$etoro" = 1 ]; then
+if [ "$etoro" = 1 ] || [ "$canary" = 1 ]; then
   edir="$ROOT/services/strategy-executor/etoro-daily-data"
   mkdir -p "$edir"
-  for name in etoro-daily-executor etoro-reconcile etoro-risk-report; do
+  names=()
+  [ "$etoro" = 1 ] && names+=(etoro-daily-executor etoro-reconcile etoro-risk-report)
+  [ "$canary" = 1 ] && names+=(etoro-canary-observe)
+  for name in "${names[@]}"; do
     exe="$edir/$name"
     if [ "$rebuild_etoro" = 1 ] || [ ! -x "$exe" ]; then
       clean_clone
@@ -330,4 +370,4 @@ backup_crontab
 { (crontab -l 2>/dev/null || true) | strip_block; printf '%s\n' "$block"; } | crontab -
 echo "installed:"
 printf '%s\n' "$block"
-echo "logs: ${XDG_STATE_HOME:-$HOME/.local/state}/mtb-ops/{executor,etoro,etoro-risk,alerts,compact}.log"
+echo "logs: ${XDG_STATE_HOME:-$HOME/.local/state}/mtb-ops/{executor,etoro,etoro-risk,etoro-canary-observe,alerts,compact}.log"
