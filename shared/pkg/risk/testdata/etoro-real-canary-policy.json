@@ -1,0 +1,39 @@
+{
+  "version": "etoro-real-canary-2026-10-22",
+  "halted": false,
+  "books": {
+    "nsdq100": {
+      "max_order_btc": 0,
+      "max_position_btc": 0,
+      "max_order_notional": 1200,
+      "max_orders_per_day": 1,
+      "max_price_deviation_bps": 1000,
+      "drawdown_warn": 0.2,
+      "cost_warn_bps": 40,
+      "max_leverage": 20,
+      "require_market_open": true,
+      "require_stop_loss": true,
+      "min_stop_loss_pct": 0.023,
+      "max_stop_loss_pct": 0.0245,
+      "max_invested_usd": 60,
+      "max_positions": 1,
+      "leverages": [
+        20
+      ],
+      "min_invested_usd": 50,
+      "default_invested_usd": 50
+    }
+  },
+  "default": {
+    "max_order_btc": 0,
+    "max_position_btc": 0,
+    "max_order_notional": 1,
+    "max_orders_per_day": 1,
+    "max_price_deviation_bps": 0,
+    "drawdown_warn": 0,
+    "cost_warn_bps": 0,
+    "max_leverage": 1,
+    "require_market_open": true,
+    "require_stop_loss": true
+  }
+}

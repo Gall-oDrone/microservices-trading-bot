@@ -77,6 +77,42 @@ type BookLimits struct {
 	// MaxLossPctEquity caps the loss at the stop, qty x (price - stop), as
 	// a fraction of State.Equity. Needs State.Equity.
 	MaxLossPctEquity float64 `json:"max_loss_pct_equity,omitempty"`
+
+	// Real-account canary (added 2026-10-22, docs/etoro/ETORO-REAL-CANARY-PLAN-2026-10-21.md
+	// §6). On a leveraged CFD the order notional is the exposure (units x
+	// price); the money the operator puts up is invested = exposure /
+	// leverage. These apply to orders that add exposure; closes are never
+	// trapped by them. Zero disables.
+	//
+	// MaxInvestedUSD caps invested (account currency).
+	MaxInvestedUSD float64 `json:"max_invested_usd,omitempty"`
+	// MaxPositions caps the account's open positions after the order,
+	// across every instrument (State.OpenPositions + 1). Needs
+	// State.OpenPositions; a caller that leaves it 0 never trips it.
+	MaxPositions int `json:"max_positions,omitempty"`
+	// Leverages is the set of leverage values an exposure-adding order may
+	// carry; empty means any up to MaxLeverage.
+	Leverages []int `json:"leverages,omitempty"`
+	// MinInvestedUSD and DefaultInvestedUSD size the console's form on this
+	// book (the venue's minimum and the figure the form pre-fills); they are
+	// not enforced by Check (an order below the venue minimum is refused by
+	// the venue). A book without them keeps the console's x1 defaults.
+	MinInvestedUSD     float64 `json:"min_invested_usd,omitempty"`
+	DefaultInvestedUSD float64 `json:"default_invested_usd,omitempty"`
+}
+
+// AllowsLeverage reports whether an exposure-adding order may carry lev:
+// in Leverages when the set is given, else at most MaxLeverage (0: any).
+func (l BookLimits) AllowsLeverage(lev int) bool {
+	if len(l.Leverages) > 0 {
+		for _, x := range l.Leverages {
+			if x == lev {
+				return true
+			}
+		}
+		return false
+	}
+	return l.MaxLeverage <= 0 || lev <= l.MaxLeverage
 }
 
 // PortfolioLimits apply across every book (firm-wide). Zero disables.
@@ -191,6 +227,62 @@ func EtoroDemoETFPolicy() Policy {
 	}
 }
 
+// EtoroRealCanaryVersion is the version string the real-account
+// acknowledgement must name (etoro.RealAckPolicyPrefix + date).
+const EtoroRealCanaryVersion = "etoro-real-canary-2026-10-22"
+
+// EtoroRealCanaryPolicy is the policy of the measurement-only canary on the
+// REAL eToro account (docs/etoro/ETORO-REAL-CANARY-PLAN-2026-10-21.md §6,
+// decision D1 = B): NSDQ100 only, x20 and nothing else, 50 to 60 USD
+// invested (1,000 to 1,200 USD of exposure: eToro's 1,000 USD minimum
+// exposure reached from a 60 USD budget), one position on the whole account,
+// one order per day, the cash session, the 10 % fat-finger guard, a stop
+// required and held between 2.3 % and 2.45 % of the price. At x20 eToro caps
+// the stop at 50 % of the invested amount, i.e. 2.5 % of the price; the
+// policy stops just inside that so a market fill a few bps above the ask
+// cannot push the stop past the venue's cap (an order the venue would
+// refuse): the most the position can lose at the stop is 23 to 24.5 USD on
+// 50 USD invested. MaxExposurePctEquity and MaxLossPctEquity are off: the
+// account's equity is the canary and either cap would block every order.
+//
+// It is loaded only by a process started with -etoro-real-canary that
+// passed the six-part acknowledgement (shared/pkg/etoro/realack.go) and, on
+// the demo account, by -canary-rehearsal (EtoroRealCanaryRehearsalPolicy).
+// It is not a path to leverage in the strategy: the demo policies above are
+// unchanged.
+func EtoroRealCanaryPolicy() Policy {
+	canary := BookLimits{
+		MaxOrderNotional: 1200, MaxOrdersPerDay: 1, MaxPriceDeviationBps: 1000,
+		DrawdownWarn: 0.20, CostWarnBps: 40,
+		MaxLeverage: 20, Leverages: []int{20}, RequireMarketOpen: true,
+		RequireStopLoss: true, MinStopLossPct: 0.023, MaxStopLossPct: 0.0245,
+		MaxInvestedUSD: 60, MinInvestedUSD: 50, DefaultInvestedUSD: 50, MaxPositions: 1,
+	}
+	return Policy{
+		Version: EtoroRealCanaryVersion,
+		Books:   map[string]BookLimits{"nsdq100": canary},
+		// Anything else on the account is refused outright.
+		Default: BookLimits{MaxOrderNotional: 1, MaxOrdersPerDay: 1, MaxLeverage: 1, RequireMarketOpen: true, RequireStopLoss: true},
+	}
+}
+
+// EtoroRealCanaryRehearsalPolicy is the canary policy for the rehearsal on
+// the DEMO account (plan §7, before any real order): the same book limits
+// on nsdq100 and spx500 (so the rehearsal can use whichever index the demo
+// cell is flat on) without the account-wide one-position cap, because the
+// demo account also holds the forward-test cells' positions. Its version
+// does not carry the etoro-real-canary- prefix, so the acknowledgement
+// check can never accept it for the real account.
+func EtoroRealCanaryRehearsalPolicy() Policy {
+	p := EtoroRealCanaryPolicy()
+	p.Version = "etoro-canary-rehearsal-2026-10-22"
+	l := p.Books["nsdq100"]
+	l.MaxPositions = 0
+	l.Leverages = append([]int(nil), l.Leverages...)
+	p.Books = map[string]BookLimits{"nsdq100": l, "spx500": l}
+	return p
+}
+
 // For returns the limits that apply to book.
 func (p Policy) For(book string) BookLimits {
 	if l, ok := p.Books[strings.ToLower(book)]; ok {
@@ -229,6 +321,17 @@ func (p Policy) Validate() error {
 			return fmt.Errorf("%s: min_stop_loss_pct %v exceeds max_stop_loss_pct %v", name, l.MinStopLossPct, l.MaxStopLossPct)
 		case l.MaxLossPctEquity < 0 || l.MaxLossPctEquity >= 1:
 			return fmt.Errorf("%s: max_loss_pct_equity must be in [0, 1)", name)
+		case l.MaxInvestedUSD < 0 || l.MinInvestedUSD < 0 || l.DefaultInvestedUSD < 0 || l.MaxPositions < 0:
+			return fmt.Errorf("%s: invested and position limits must be >= 0", name)
+		case l.MaxInvestedUSD > 0 && l.MinInvestedUSD > l.MaxInvestedUSD:
+			return fmt.Errorf("%s: min_invested_usd %v exceeds max_invested_usd %v", name, l.MinInvestedUSD, l.MaxInvestedUSD)
+		case l.DefaultInvestedUSD > 0 && (l.DefaultInvestedUSD < l.MinInvestedUSD || (l.MaxInvestedUSD > 0 && l.DefaultInvestedUSD > l.MaxInvestedUSD)):
+			return fmt.Errorf("%s: default_invested_usd %v is outside [min, max] invested", name, l.DefaultInvestedUSD)
+		}
+		for _, lev := range l.Leverages {
+			if lev < 1 || (l.MaxLeverage > 0 && lev > l.MaxLeverage) {
+				return fmt.Errorf("%s: leverages must be >= 1 and <= max_leverage (got x%d)", name, lev)
+			}
 		}
 		return nil
 	}

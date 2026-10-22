@@ -42,6 +42,11 @@ const (
 	RuleStopLossTooWide   = "stop_loss_too_wide"
 	RuleTakeProfitInvalid = "take_profit_invalid"
 	RuleMaxLossPctEquity  = "max_loss_pct_equity"
+
+	// Real-account canary rules (2026-10-22), on orders that add exposure.
+	RuleMaxInvested        = "max_invested_usd"
+	RuleMaxPositions       = "max_positions"
+	RuleLeverageNotAllowed = "leverage_not_allowed"
 )
 
 // Finding is one limit that was hit (or nearly hit, for warnings).
@@ -91,6 +96,9 @@ type State struct {
 	Equity       float64 `json:"equity,omitempty"`
 	Exposure     float64 `json:"exposure,omitempty"`
 	MarketClosed bool    `json:"market_closed,omitempty"`
+	// OpenPositions is the account's open positions before the order, on
+	// every instrument (2026-10-22, for BookLimits.MaxPositions).
+	OpenPositions int `json:"open_positions,omitempty"`
 }
 
 // Decision is the outcome of Check.
@@ -139,7 +147,9 @@ func Check(p Policy, o Order, s State) Decision {
 		if l.MaxPositionBTC > 0 && math.Abs(after) > l.MaxPositionBTC+1e-12 {
 			block(RuleMaxPositionBTC, l.MaxPositionBTC, math.Abs(after), "position after fill %.8f BTC exceeds max %.8f BTC", after, l.MaxPositionBTC)
 		}
-		if n := o.QtyBTC * o.Price; l.MaxOrderNotional > 0 && n > l.MaxOrderNotional {
+		// 1e-6 of tolerance: units derived as invested x leverage / price
+		// recompute to the cap plus a few ulps (the canary's 60 USD at x20).
+		if n := o.QtyBTC * o.Price; l.MaxOrderNotional > 0 && n > l.MaxOrderNotional+1e-6 {
 			block(RuleMaxOrderNotional, l.MaxOrderNotional, n, "notional %.2f exceeds max %.2f", n, l.MaxOrderNotional)
 		}
 		if l.MaxOrdersPerDay > 0 && s.OrdersToday >= l.MaxOrdersPerDay {
@@ -158,6 +168,20 @@ func Check(p Policy, o Order, s State) Decision {
 		}
 		if l.MaxLeverage > 0 && o.Leverage > l.MaxLeverage {
 			block(RuleMaxLeverage, float64(l.MaxLeverage), float64(o.Leverage), "leverage x%d exceeds max x%d", o.Leverage, l.MaxLeverage)
+		} else if len(l.Leverages) > 0 && !l.AllowsLeverage(o.Leverage) {
+			block(RuleLeverageNotAllowed, float64(l.Leverages[0]), float64(o.Leverage), "leverage x%d is not one the policy allows %v", o.Leverage, l.Leverages)
+		}
+		if l.MaxInvestedUSD > 0 {
+			lev := float64(o.Leverage)
+			if lev < 1 {
+				lev = 1
+			}
+			if inv := o.QtyBTC * o.Price / lev; inv > l.MaxInvestedUSD+1e-9 {
+				block(RuleMaxInvested, l.MaxInvestedUSD, inv, "invested %.2f (notional %.2f at x%.0f) exceeds max %.2f", inv, o.QtyBTC*o.Price, lev, l.MaxInvestedUSD)
+			}
+		}
+		if l.MaxPositions > 0 && s.OpenPositions >= l.MaxPositions {
+			block(RuleMaxPositions, float64(l.MaxPositions), float64(s.OpenPositions+1), "the account would hold %d positions, max %d (it holds %d on every instrument)", s.OpenPositions+1, l.MaxPositions, s.OpenPositions)
 		}
 		if l.MaxExposurePctEquity > 0 && s.Equity > 0 {
 			lev := float64(o.Leverage)
