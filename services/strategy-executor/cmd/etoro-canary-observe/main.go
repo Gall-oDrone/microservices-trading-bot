@@ -21,8 +21,9 @@
 //	# rehearsal on the demo account
 //	etoro-canary-observe -allow-demo -env-file ~/.config/microservices-trading-bot/etoro-demo.env \
 //	  -ledger ./etoro-daily-data/rehearsal-canary/ledger.jsonl -ledger-name etoro-canary-rehearsal
-//	# day-0 captures (eligibility, costs at the canary size, rates, account), read-only
-//	etoro-canary-observe -capture ../../docs/etoro/evidence-real-canary-2026-11-03 -dry
+//	# day-0 captures (eligibility, costs at the canary size, rates, account), read-only;
+//	# not with -dry, which writes nothing at all (captures included)
+//	etoro-canary-observe -capture ../../docs/etoro/evidence-real-canary-2026-11-03
 //
 // Exit status: 0 when every read succeeded (the line is written), 1 when a
 // read failed (the line is still written, with its errors, so a gap in the

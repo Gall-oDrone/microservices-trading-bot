@@ -1,8 +1,11 @@
 # eToro real-account canary: measurement only (plan, 2026-10-21)
 
-**Status:** draft for decision. Nothing in this document is built. The executor, `ui-api` and the
-broker adapter still refuse the real account in code; this plan says what would change, why, and
-what would stay refused.
+**Status (2026-10-22): built, not yet used.** C1–C10 are on branch `feat/etoro-real-canary`
+(§7 lists the commits). The executor still refuses the real account; `ui-api` builds a real broker
+only under `-etoro-real-canary` with the six-part acknowledgement (§5.2). **No key, no ack file, no
+unit and no order exist yet**; the operating procedure as built is runbook §14 and the rehearsal
+gate (§7) comes before any real key. Where the build departed from this text, the paragraph says
+so with the date; the original reasoning is kept.
 
 **One sentence.** Open one small, hand-placed position on the **real** eToro account, next to the
 demo cells and never sharing a process, key, port, ledger or policy with them, to **measure the
@@ -135,8 +138,8 @@ the demo `ui-api` (read-only, no trading) is a separate, smaller task.
 | Policy | `EtoroDemoProtectedPolicy` | **`EtoroRealCanaryPolicy`** (§6) |
 | Executor cron | 09:35 / 09:38 / 09:41 NY | **none that trades**; one read-only `etoro-canary-observe` at 18:00 NY daily (§3.5) |
 | S3 prefix | `daily-executor/etoro-demo*` | **`daily-executor/etoro-real-canary`** (observations + ledger, optional; D4) |
-| Watchdog | staleness on the demo prefixes | **none** (no daily decision to be late) or observations staleness only (D4) |
-| Web | vite `:5173` → `:8090`, or `-static` | **vite `:5174` with `UI_API_URL=http://127.0.0.1:8091`**, or the canary `ui-api` with `-static ../../web/dist` |
+| Watchdog | staleness on the demo prefixes | **none** (no daily decision to be late) or observations staleness only (D4). *As built:* the observer's `run-<UTC>.log` follows the executors' convention, so the existing Lambda watches `etoro-real-canary=daily-executor/etoro-real-canary` (plain daily calendar) with no code change |
+| Web | vite `:5173` → `:8090`, or `-static` | **vite `:5174` with `UI_API_URL=http://127.0.0.1:8091`** (`npm run dev:real-canary`), or the canary `ui-api` with `-static ../../web/dist` |
 
 Nothing under `real-canary/` is ever read by a demo process and nothing under `demo*/` by the
 canary process. `install-ops-cron.sh` does not learn about the canary's trading; it may learn the
@@ -158,7 +161,11 @@ go run ./cmd -addr 127.0.0.1:8091 \
 ```
 
 Without `-etoro-real-canary` an env file with `ETORO_ENV=real` is **fatal**, as today. With it,
-every item in §5.2 must hold or the start is fatal (never a silent read-only start).
+every item in §5.2 must hold or the start is fatal (never a silent read-only start). *As built
+(2026-10-22):* the flag has no environment-variable form; the ack file and the demo token file
+default to `~/.config/microservices-trading-bot/REAL-ACCOUNT-ACK` and `~/.config/mtb/operator-token`
+(`-real-ack-file`, `-demo-operator-token-file`); the canary process must register exactly one
+eToro ledger and it must be named `etoro-real-canary`.
 
 In operation the canary runs as a second systemd user unit, `mtb-ui-api-real-canary`, installed by
 `scripts/install-ui-api-service.sh --real-canary` next to `mtb-ui-api` (runbook §13): same binary,
@@ -269,24 +276,31 @@ Every refusal names the missing item. The start logs one line with all six facts
 
 ## 6. `EtoroRealCanaryPolicy` (shared/pkg/risk)
 
-Version `etoro-real-canary-2026-10-<dd>`. Values for B; A and C in brackets.
+Version `etoro-real-canary-2026-10-<dd>`. Values for B; A and C in brackets. *As built
+(2026-10-22): version `etoro-real-canary-2026-10-22`, nsdq100 only; the two rows marked ⚠ differ
+from the draft.*
 
 | Field | B | notes |
 |---|---|---|
-| `MaxLeverage` | **20** [A: 1, C: 1] | x20 is the only leverage that reaches 1,000 USD exposure from ≤ 60 USD invested |
-| `MaxOrderNotional` (exposure) | **1,000** [A: 1,100, C: 60] | the venue minimum, exactly |
-| **`MaxInvestedUSD`** (new field) | **60** [A: 1,100, C: 60] | invested = exposure / leverage; the cap you set |
-| `MaxPositions` (new, account-wide) | **1** | the account holds the canary and nothing else |
+| `MaxLeverage` | **20** [A: 1, C: 1] | x20 is the only leverage that reaches 1,000 USD exposure from ≤ 60 USD invested. *Built:* also `Leverages: [20]`, the list the Trade page offers |
+| `MaxOrderNotional` (exposure) | ⚠ **1,200** (draft said 1,000) [A: 1,100, C: 60] | the venue minimum is a floor, not the cap: 60 USD invested at x20 is 1,200 of exposure, and the draft's own `MaxInvestedUSD 60` allows it |
+| **`MaxInvestedUSD`** (new field) | **60** [A: 1,100, C: 60] | invested = exposure / leverage; the cap you set. *Built:* with `MinInvestedUSD 50` and `DefaultInvestedUSD 50`, which `TradingInfo` reports as the Trade page's bounds |
+| `MaxPositions` (new, account-wide) | **1** | the account holds the canary and nothing else. *Built:* `State.OpenPositions` from the account's `Positions()`; any held position blocks an open |
 | `MaxOrdersPerDay` | 1 | unchanged |
-| `RequireStopLoss` | true | at x20 eToro caps it at 50 % of invested → the policy requires **exactly the venue maximum distance** (25 USD) so the probe lives as long as the venue allows; A: the disaster stop; C: none (no stop overlay in the ETF cell) |
-| `MaxExposurePctEquity` | **off** | equity *is* the canary; the cap would block every order |
+| `RequireStopLoss` | true | at x20 eToro caps it at 50 % of invested → the draft required **exactly the venue maximum distance** (25 USD). ⚠ *Built:* a **range, 2.3–2.45 % of the price** (23–24.5 USD): a market fill a few bps above the ask would push an exactly-2.5 % stop past the venue's cap and the order would be refused. A: the disaster stop; C: none |
+| `MaxExposurePctEquity` | **off** | equity *is* the canary; the cap would block every order. *Built:* `MaxLossPctEquity` off for the same reason |
 | `MaxPriceDeviationBps` | 1000 | unchanged |
 | Market hours | NYSE cash session for opens and closes | unchanged |
 | Halt file | honoured | `etoro-real-canary` phrase |
 
 `TradeMinAmount` / `TradeMaxAmount` / `TradeDefaultAmount` move from constants in `trades.go`
 into the policy (or `TradingInfo` derives them from it), so the demo keeps 1,000 / 1,500 / 1,100
-and the canary gets 50 / 60 / 50 at x20 without touching demo code paths.
+and the canary gets 50 / 60 / 50 at x20 without touching demo code paths. *Built:* `TradingInfo`
+derives them from the policy (`min_amount_usd`, `max_amount_usd`, `default_amount_usd`,
+`leverage_options`, `default_leverage`, `policy_version`, `books`, `environment`); the demo
+values are unchanged. A second policy, `etoro-canary-rehearsal-2026-10-22`, is the same shape on
+the demo account for the rehearsal (nsdq100 + spx500, no `MaxPositions`: the demo account holds
+the cells' positions).
 
 ---
 
@@ -294,31 +308,36 @@ and the canary gets 50 / 60 / 50 at x20 without touching demo code paths.
 
 Ordered so each step is testable before the next, and the real account is touched last.
 
-| # | Where | Change | Tests |
-|---|---|---|---|
-| C1 | `shared/pkg/etoro` | `Client.Env()`; route table already real-aware — add a table test asserting every real path has no `/demo/` segment and matches the OpenAPI capture of 2026-10-10 | unit |
-| C2 | `shared/pkg/etoro` (new `realack.go`) | `LoadRealAck(path)` + `CheckRealAck(ack, envFile, ledgerPath, policyVersion, now)`: the six conditions of §5.2, each with its own error | unit: one test per missing condition |
-| C3 | `shared/pkg/risk` | `EtoroRealCanaryPolicy()`; new fields `MaxInvestedUSD`, `MaxPositions`; `Check` enforces them; `Order.Leverage` already exists | unit + golden JSON |
-| C4 | `shared/pkg/etoroledger` | `ModeReal = "real"`; `Demo.Env` may be `"real"` (the JSON key stays `demo` for schema v1 stability — documented in the schema comment and the runbook); `UIClientRef` prefix `ui-real-…` so a canary ref can never collide with a demo ref | unit |
-| C5 | `services/ui-api` | `-etoro-real-canary` flag; `NewEtoroTrading` accepts real only with the ack; `TradingInfo` gains `environment`, `leverage_options`, bounds from policy; prepare/place accept `leverage` from the options (today hard-coded 1); phrases with REAL; `/ledgers` and `/controls` report `environment` | Go: gate refusals, phrase, bounds, a full prepare→place→cancel against the fake broker under the canary policy; the demo tests unchanged |
-| C6 | `services/strategy-executor/cmd/etoro-canary-observe` (new) | §3.5; `-ledger`, `-env-file`, `-out observations.jsonl`, `-dry` (print only) | unit on the delta computation with fixtures |
-| C7 | `cmd/etoro-fees-check`, `cmd/etoro-reconcile` | accept the canary ledger; the fees check gains a "per night, as observed" section from `observations.jsonl` and a `measured vs preview vs frozen` table | unit on fixtures |
-| C8 | `web` | env banner + red accent + title prefix; `TradingInfo` bounds and leverage; REAL phrases; `?mock=real-canary` fixtures; Positions/Today label the ledger `REAL`; the Trade page shows invested / exposure / max loss | vitest: banner on real, absent on demo; bounds; phrases; a11y of the banner |
-| C9 | `scripts` | `check-no-etoro-secrets.sh` patterns; `install-ui-api-service.sh --real-canary` writes `ui-api-real-canary.env` and the `mtb-ui-api-real-canary` unit (`Wants=mtb-ui-api.service`, refuses to install if the demo unit is absent); `install-ops-cron.sh --canary-observe` (optional, D3) adds only the 18:00 NY observe line | shell test of the refusals |
-| C10 | docs | runbook §14 "Real canary" (operating procedure, §8 below), integration map, frontend plan §8.24, this plan marked "as built" | — |
+| # | Where | Change | Tests | As built (2026-10-22, branch `feat/etoro-real-canary`) |
+|---|---|---|---|---|
+| C1 | `shared/pkg/etoro` | `Client.Env()`; route table already real-aware — add a table test asserting every real path has no `/demo/` segment and matches the OpenAPI capture of 2026-10-10 | unit | `b2aa64a`. `Client.Environment()` already existed; `paths_test.go` pins every real path |
+| C2 | `shared/pkg/etoro` (new `realack.go`) | `LoadRealAck(path)` + `CheckRealAck(ack, envFile, ledgerPath, policyVersion, now)`: the six conditions of §5.2, each with its own error | unit: one test per missing condition | `ceeafeb`. `LoadRealAck`, `CheckRealAck(ack, RealAckCheck)`, sentinel errors `ErrRealAck{Flag,Env,KeyPrefix,File,Window,Ledger,Policy,Token}`, `Facts()` for the start line. File: the sentence, then `key_prefix` (8–16 chars), `ledger`, `policy`, `start`, `end`, `name`; 0600 |
+| C3 | `shared/pkg/risk` | `EtoroRealCanaryPolicy()`; new fields `MaxInvestedUSD`, `MaxPositions`; `Check` enforces them; `Order.Leverage` already exists | unit + golden JSON | `2774782`. Also `MinInvestedUSD`, `DefaultInvestedUSD`, `Leverages`, `State.OpenPositions`; rules `max_invested_usd`, `max_positions`, `leverage_not_allowed`; the rehearsal policy; golden `testdata/etoro-real-canary-policy.json`. Deviations: §6 ⚠ rows. `934f871` fixes `shared/pkg/stops` rounding a clamped stop below the policy floor |
+| C4 | `shared/pkg/etoroledger` | `ModeReal = "real"`; `Demo.Env` may be `"real"` (the JSON key stays `demo` for schema v1 stability — documented in the schema comment and the runbook); `UIClientRef` prefix `ui-real-…` so a canary ref can never collide with a demo ref | unit | `8f62d1e`. `ModeReal`, `IsAccountMode`, `Record.IsAccount()` (reconcile and `etorohealth` use it), `UIRealClientRef` / `IsRealRef`; `observation.go` (the observer's schema, `NightsHeld` on 17:00 NY boundaries, `FeeDeltas`); later `venueclose.go` (C7) |
+| C5 | `services/ui-api` | `-etoro-real-canary` flag; `NewEtoroTrading` accepts real only with the ack; `TradingInfo` gains `environment`, `leverage_options`, bounds from policy; prepare/place accept `leverage` from the options (today hard-coded 1); phrases with REAL; `/ledgers` and `/controls` report `environment` | Go: gate refusals, phrase, bounds, a full prepare→place→cancel against the fake broker under the canary policy; the demo tests unchanged | `9ef452b`. `NewEtoroRealCanary(cfg, ack, chk)`, `NewEtoroCanaryRehearsal`; flags `-etoro-real-canary`, `-real-ack-file`, `-demo-operator-token-file`, `-canary-rehearsal`; units = invested × leverage / ask; preview `leverage`, `exposure_usd`, `max_loss_usd`, `environment`; trade tokens bound to env and leverage; the real account blocks an open when it holds any position; `protection.go` leverage-aware. Tests `internal/api/canary_test.go`; demo suites unchanged |
+| C6 | `services/strategy-executor/cmd/etoro-canary-observe` (new) | §3.5; `-ledger`, `-env-file`, `-out observations.jsonl`, `-dry` (print only) | unit on the delta computation with fixtures | `546c960`. Plus `-allow-demo` (rehearsal), `-capture <dir>` (day-0 JSON + `SHA256SUMS`), `-preview-*`, `-since-days`; exit 1 writes the line with its errors |
+| C7 | `cmd/etoro-fees-check`, `cmd/etoro-reconcile` | accept the canary ledger; the fees check gains a "per night, as observed" section from `observations.jsonl` and a `measured vs preview vs frozen` table | unit on fixtures | `1d953e2`. Both take `-real-canary`; the fees model is priced on exposure; reconcile gained **`-record-venue-close -by -reason`** (a reconcile is read-only, so the one write of §4 M6 is a named flag) and the venue-close classifier moved to `etoroledger/venueclose.go`, shared with the executor |
+| C8 | `web` | env banner + red accent + title prefix; `TradingInfo` bounds and leverage; REAL phrases; `?mock=real-canary` fixtures; Positions/Today label the ledger `REAL`; the Trade page shows invested / exposure / max loss | vitest: banner on real, absent on demo; bounds; phrases; a11y of the banner | `05ddd13`. `lib/env.ts`, `RealBar` (role=alert, names the ui-api it talks to via `__UI_API__`), `data-env` on `<html>` switching the accent, `REAL ·` title + favicon dot, `· REAL` badge, leverage field, sizing line, red dialog, `npm run dev:real-canary`; `src/test/realCanary.test.tsx` |
+| C9 | `scripts` | `check-no-etoro-secrets.sh` patterns; `install-ui-api-service.sh --real-canary` writes `ui-api-real-canary.env` and the `mtb-ui-api-real-canary` unit (`Wants=mtb-ui-api.service`, refuses to install if the demo unit is absent); `install-ops-cron.sh --canary-observe` (optional, D3) adds only the 18:00 NY observe line | shell test of the refusals | `151e649`. Also `ops-run.sh etoro-canary-observe` (run log last, for the watchdog), `ETORO_CANARY_S3_URI`; `scripts/tests/real-canary-scripts-test.sh` (48 checks, no systemd/go/aws) |
+| C10 | docs | runbook §14 "Real canary" (operating procedure, §8 below), integration map, frontend plan §8.24, this plan marked "as built" | — | this commit |
 
 Rehearsal before any real order: run the **canary binary against the demo account** with the
 canary policy (`ETORO_ENV=demo`, `-etoro-real-canary` refused → a `-canary-rehearsal` flag that
 loads the canary policy on demo). Open and close one x20 position on demo with the REAL-less
 phrases, confirm the observe job writes deltas, the fees check reads them, the reconcile
-classifies a hand-closed position. Only then the real key.
+classifies a hand-closed position. Only then the real key. *As built:* runbook §14.7; the
+rehearsal refuses a ledger named `etoro-demo*` and runs on its own port.
 
 Estimate: **1.5–2.5 days** of implementation and tests, half a day of rehearsal, then the
-measurement window.
+measurement window. *Actual:* one day of implementation (2026-10-22); the rehearsal is pending.
 
 ---
 
 ## 8. Operating procedure (runbook draft)
+
+*As built (2026-10-22): the procedure with the exact commands, file formats and console steps
+is runbook [ETORO-DAILY-EXECUTOR.md §14](ETORO-DAILY-EXECUTOR.md); what follows is the draft it
+was written from. Where they differ, the runbook is right.*
 
 ### 8.1 Pre-flight (once)
 
@@ -424,6 +443,12 @@ measurement window.
 
 ## 12. Decisions needed before implementation
 
+*Taken 2026-10-22, before implementation: **D1 = B**, **D2** = second process on `:8091` (as a
+systemd user unit), **D3** = cron via `install-ops-cron.sh --canary-observe`, **D4** = yes, push
+to `s3://…/daily-executor/etoro-real-canary` and watch the observations' staleness, **D5** = the
+sentence verbatim as in §5.2 with the end date = the key's expiry minus one day, **D6** = at most
+three opens in the window.*
+
 - **D1 — Which position.** A (NSDQ100 x1, ~1,100 USD capital, ~90 at risk), **B (NSDQ100 x20,
   50 USD invested, 25 USD max loss; recommended if 60 USD is a capital cap)**, or C (QQQ x1,
   60 USD; no financing to measure).
@@ -465,5 +490,7 @@ measurement window.
 | ledger name / halt phrase | `etoro-demo` | `etoro-real-canary` |
 | trade phrases | `PLACE NSDQ100` … | `PLACE REAL NSDQ100` … |
 | client_ref prefix | `ui-nsdq100-…` | `ui-real-nsdq100-…` |
-| policy version | `etoro-demo-2026-10-19` | `etoro-real-canary-2026-10-<dd>` |
+| policy version | `etoro-demo-2026-10-19` | `etoro-real-canary-2026-10-22` (rehearsal on demo: `etoro-canary-rehearsal-2026-10-22`) |
 | S3 prefix | `daily-executor/etoro-demo` | `daily-executor/etoro-real-canary` |
+| systemd unit | `mtb-ui-api` | `mtb-ui-api-real-canary` |
+| cron job | `ops-run.sh etoro` 09:35 NY weekdays | `ops-run.sh etoro-canary-observe` 18:00 NY daily (read-only) |

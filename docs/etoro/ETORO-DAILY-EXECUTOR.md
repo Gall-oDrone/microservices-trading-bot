@@ -625,13 +625,223 @@ routes, the rates feed's closes and the assisted trades; the ETF cells are reach
 `systemctl --user restart mtb-ui-api` restarts the binary already built. The web app itself is
 still Vite (`cd web && npm run dev`), proxying `/api` to `:8090`.
 
-## 14. Real-account canary (plan only, 2026-10-21)
+## 14. Real-account canary, measurement only (built 2026-10-22; nothing placed yet)
 
-Nothing here is built and the real account is still refused in code by the executor, `ui-api`
-and the broker constructor. The plan for a **measurement-only** canary on the real account — one
-hand-placed position next to the demo cells, in its own process on `127.0.0.1:8091`, its own
-key, token, ledger (`etoro-daily-data/real-canary/`), policy (`EtoroRealCanaryPolicy`) and
-systemd unit, with a daily read-only observe job and an explicit six-part acknowledgement — is
-[ETORO-REAL-CANARY-PLAN-2026-10-21.md](ETORO-REAL-CANARY-PLAN-2026-10-21.md). It explains why
-60 USD cannot open NSDQ100 at x1 (eToro's 1,000 USD exposure minimum) and the three ways to read
-that constraint. When built, this section becomes the operating procedure (the plan's §8).
+The plan is [ETORO-REAL-CANARY-PLAN-2026-10-21.md](ETORO-REAL-CANARY-PLAN-2026-10-21.md)
+(decisions D1–D6 taken 2026-10-22: **B**, NSDQ100 x20, 50 USD invested → 1,000 USD exposure, max
+loss at the stop 23–24.5 USD). This section is the operating procedure, as built. Everything the
+plan's §5 promised is in code; the real account has **not** been touched: no key exists yet, no
+acknowledgement file, no unit installed, no order. The demo cells, their unit (`mtb-ui-api`,
+§13), their cron lines and their ledgers are unchanged.
+
+**What stays refused.** `etoro-daily-executor` still refuses `ETORO_ENV=real`. The demo `ui-api`
+still refuses a real env file. Only a `ui-api` started with `-etoro-real-canary` **on the command
+line** that passes the six-part acknowledgement builds a real broker, and the only thing a cron
+ever runs against the real account is the read-only observer (`ops-run.sh etoro-canary-observe`).
+
+### 14.1 The two consoles side by side
+
+| | Demo (unchanged) | **Real canary** |
+|---|---|---|
+| `ui-api` | `127.0.0.1:8090`, unit `mtb-ui-api` | **`127.0.0.1:8091`**, unit **`mtb-ui-api-real-canary`** (same binary, `ExecStart=… -etoro-real-canary`, `Wants=mtb-ui-api.service`) |
+| unit env file | `ops.env` + `ui-api.env` | **`~/.config/microservices-trading-bot/ui-api-real-canary.env`** only |
+| eToro keys | `etoro-demo.env` (`ETORO_ENV=demo`) | **`etoro-real-canary.env`** (`ETORO_ENV=real`, its own key, 0600) |
+| operator token | `~/.config/mtb/operator-token` | **`~/.config/mtb/operator-token-real-canary`** (a different value; the start compares hashes) |
+| acknowledgement | — | **`~/.config/microservices-trading-bot/REAL-ACCOUNT-ACK`** (0600; §14.2) |
+| ledger | `etoro-daily-data/demo/` | **`etoro-daily-data/real-canary/`**: `ledger.jsonl`, `intents/`, `risk-state.json`, `ui-audit.jsonl`, **`observations.jsonl`**, `run-<UTC>.log` |
+| ledger name = halt phrase | `etoro-demo` | **`etoro-real-canary`** |
+| policy | `etoro-demo-2026-10-19` | **`etoro-real-canary-2026-10-22`**: nsdq100 only, x20 only, invested 50–60 (default 50), exposure ≤ 1,200, one position account-wide, stop required at 2.3–2.45 % of the price (the venue caps it at 2.5 % = 50 % of invested at x20; the policy stays just inside so a fill above the ask cannot push it past), one order per day, cash session, equity caps off |
+| phrases | `PLACE NSDQ100` … | **`PLACE REAL NSDQ100`**, **`CLOSE REAL NSDQ100`**, **`PROTECT REAL NSDQ100`** |
+| client_ref | `ui-nsdq100-…` | **`ui-real-nsdq100-…`** |
+| web | `:5173` → `:8090` | **`npm run dev:real-canary`** = `:5174` → `:8091`; red top bar, `REAL ·` title, red accent, `· REAL` on the ledger badge |
+| cron | 09:35 / 09:38 / 09:41 NY executors | **none that trades**; `etoro-canary-observe` at 18:00 NY every day (opt-in, `install-ops-cron.sh --canary-observe`) |
+| S3 | `daily-executor/etoro-demo*` | **`daily-executor/etoro-real-canary`** (observer's copy; D4) |
+| watchdog | `:nyse` calendar | the same Lambda, plain daily calendar on the observer's run logs (no code change; §14.5) |
+
+The ledger lines keep schema `etoro-ledger/v1`: the JSON key is still `demo`, with `"env":
+"real"` inside it (`etoroledger.ModeReal`; `Record.IsAccount()` is what readers test).
+
+### 14.2 Pre-flight (once; what only you can do is marked **you**)
+
+1. **you** — Fund the real account with the canary budget only (60 USD; check your region's
+   minimum first deposit, conversion and withdrawal fees first). 2FA on.
+2. **you** — Create a **new API key** for the canary with trading scope. Write the env file,
+   0600, and paste the key **nowhere else** (not in a chat, not in a shell history: use an editor):
+   ```
+   umask 077
+   $EDITOR ~/.config/microservices-trading-bot/etoro-real-canary.env
+     ETORO_ENV=real
+     ETORO_PUBLIC_KEY=<the x-api-key>
+     ETORO_PRIVATE_KEY=<the x-user-key>
+   ```
+3. **you** — A second operator token, different from the demo one:
+   `umask 077; openssl rand -hex 32 > ~/.config/mtb/operator-token-real-canary`.
+4. **you** — The acknowledgement file, 0600. The first non-comment line is the sentence,
+   verbatim; then `key: value` lines; dates `YYYY-MM-DD`, the end date inclusive and ≤ the key's
+   expiry minus one day (D5); `key_prefix` is the first 8–16 characters of the **public** key
+   (`cut -c1-12`), never the key:
+   ```
+   umask 077
+   $EDITOR ~/.config/microservices-trading-bot/REAL-ACCOUNT-ACK
+     I accept orders on the eToro REAL account for the measurement canary only
+     key_prefix: <first 8-16 chars of ETORO_PUBLIC_KEY>
+     ledger: /abs/path/to/services/strategy-executor/etoro-daily-data/real-canary/ledger.jsonl
+     policy: etoro-real-canary-2026-10-22
+     start: 2026-11-03
+     end: 2026-12-12
+     name: <your name>
+   ```
+5. `scripts/check-no-etoro-secrets.sh` — green. It now also compares the values in both env
+   files against the tree (never printing them) and fails on a filled-in ack file.
+6. Rehearsal on demo passed (§14.7).
+7. Install the unit: `scripts/install-ui-api-service.sh --real-canary` (`--print` first to read
+   what it writes). It refuses when the demo unit is absent, when the token file is missing, the
+   demo's path or the demo's content, when the env file is missing, not 0600 or not
+   `ETORO_ENV=real`. The binary then checks the six conditions at start and **dies naming the
+   failing one**; the installer prints the journal hint when `/healthz` does not answer:
+   ```
+   systemctl --user status mtb-ui-api-real-canary
+   journalctl --user -u mtb-ui-api-real-canary -n 30
+   journalctl --user -u mtb-ui-api-real-canary | grep 'REAL CANARY ACK OK' | tail -1   # the six facts
+   ```
+   The start line reads `REAL CANARY ACK OK: flag -etoro-real-canary; ETORO_ENV=real, key prefix
+   matched (12 chars); ack <path> by <name>, <start>..<end>; ledger <path>; policy
+   etoro-real-canary-2026-10-22; token file differs from the demo one (paths and hashes)`,
+   followed by `REAL ACCOUNT CANARY ENABLED on ledger etoro-real-canary …`.
+8. **Start halted.** Open `http://127.0.0.1:5174` (`cd web && npm run dev:real-canary`): the red
+   bar must be there on every page. Risk page → Halt, phrase `etoro-real-canary`, reason
+   "canary pre-flight: halted until day 0". `GET http://127.0.0.1:8091/api/ui/controls?ledger=etoro-real-canary`
+   must show `environment: "real"`, `trading.enabled`, `policy_version
+   etoro-real-canary-2026-10-22`, `min_amount_usd 50 / max 60 / default 50`,
+   `leverage_options [20]`.
+9. Cron and S3 (D3/D4): re-run the ops installer **with** the flag, and keep passing it on every
+   later re-run (it is never implied):
+   `scripts/install-ops-cron.sh --topic-arn … --bucket … --canary-observe`. It adds one line
+   (`0 22,23 * * *` with the New York `= 18` guard → 18:00 NY every day), builds
+   `etoro-daily-data/etoro-canary-observe`, writes `ETORO_CANARY_S3_URI`. Then, once:
+   `scripts/ops-run.sh etoro-canary-observe` by hand and read
+   `~/.local/state/mtb-ops/etoro-canary-observe.log` and `real-canary/observations.jsonl`
+   (an observation with no positions and the 50 USD x20 preview; exit 0).
+10. Day-0 captures, read-only (eligibility, the cost preview at 50 USD x20, rates, account, with
+    `SHA256SUMS`): `cd services/strategy-executor && ./etoro-daily-data/etoro-canary-observe
+    -capture ../../docs/etoro/evidence-real-canary-<start>` (without `-dry`, which writes nothing
+    at all; the observation line this also appends is the series' first point: no position yet).
+
+### 14.3 Day 0: open (by hand, cash session, not in the first or last 15 minutes)
+
+1. Risk page → Resume, phrase `etoro-real-canary`, reason "canary day 0".
+2. Trade page → NSDQ100 · Open. **Invested** 50 USD, leverage x20 (the only option), the stop
+   the recommend step proposes (the policy forces 2.3–2.45 %) → **Prepare**. The card is headed
+   `Preview · open REAL NSDQ100` and its first line reads `50 USD invested · x20 · exposure
+   1,000 USD · max loss 24.50 USD`; below it the venue's costs (overnight, weekend) and the
+   warnings. The prepare blocks when the account holds **any** position (`max_positions`), when
+   the session is closed, when the day's order was already sent, and when the price moved more
+   than 10 % from the quote.
+3. **Place · `PLACE REAL NSDQ100`**, a reason, your name. The dialog is red and repeats the
+   sizing line. Read the outcome: fill, `fill_vs_mid_bps`, position id, the stop as eToro holds
+   it. The ledger line carries `source: "ui"`, `client_ref ui-real-nsdq100-…`, `env: real`.
+4. Note the fill and the day-0 preview in `evidence-real-canary-<start>/SUMMARY.md`. The 18:00 NY
+   observation must show the position with `fees_to_date 0` (the first night's fee posts the
+   next day).
+
+### 14.4 Daily
+
+Nothing to do. The observer runs at 18:00 NY (weekends included; eToro posts overnight fees at
+17:00 NY) and appends one line: cash and equity, per position `fees_to_date` and the day's
+**delta** (M1), nights held since the last line (17:00 NY boundaries), the history rows that
+appeared since (M4), the cost preview at the held size. Glance at the Positions card on `:5174`
+or `tail -1 real-canary/observations.jsonl | jq`. Every Monday:
+
+```
+cd services/strategy-executor
+go run ./cmd/etoro-fees-check -real-canary -ledger ./etoro-daily-data/real-canary/ledger.jsonl \
+  -env-file ~/.config/microservices-trading-bot/etoro-real-canary.env \
+  -out ../../docs/etoro/evidence-real-canary-<start>/fees
+```
+
+The report prices the model on **exposure** (amount × leverage) and adds a "Per night, as
+observed" section from `observations.jsonl`: measured vs preview vs frozen, one row per night,
+the weekend night (M2) visible as the ≈ 3× delta. If the observer exits 1 two days running (a
+read failed; the line is still written, with the error), fix it the same day: a gap in the
+series is a gap in the measurement.
+
+### 14.5 Events
+
+- **Stopped out (likely under B).** Do nothing at the venue. When the history shows the close:
+  ```
+  go run ./cmd/etoro-reconcile -real-canary -ledger ./etoro-daily-data/real-canary/ledger.jsonl \
+    -env-file ~/.config/microservices-trading-bot/etoro-real-canary.env -record-venue-close -by <you>
+  ```
+  `-record-venue-close` is the one write this command makes: an `action: venue_close` line
+  (`stopped_out` / `took_profit` / `other` with the gap in bps, classified by the shared rule the
+  executor uses) for a position the ledger holds, the account does not, and the history lists.
+  Record the venue's stop time and the time the history first showed it (M4, M6). Re-open **once
+  or twice** if M1 needs more nights; never more than **three** opens in the window (D6).
+- **Halt.** Risk page, phrase `etoro-real-canary`. Prepares are refused; a held position stays
+  until you close it by hand.
+- **Watchdog.** The observer's run log lands last at
+  `s3://<bucket>/daily-executor/etoro-real-canary/run-<UTC>.log` with an `exit=` line, the same
+  convention the ledger-watchdog reads, so one deploy-time parameter watches it:
+  `LEDGERS=…,etoro-real-canary=daily-executor/etoro-real-canary` (plain daily calendar: stale
+  after 30 h). The 15-minute `ui-alerts` job is **not** pointed at the canary on purpose
+  (measurement only; the observer's exit code, its log and the unit's journal are the signal).
+- **Anything unexplained** (a position the ledger does not know, a fee you cannot attribute, an
+  order you did not send): halt, close by hand in the console if needed,
+  `systemctl --user stop mtb-ui-api-real-canary`, revoke the key. Write it down first.
+
+### 14.6 Close-out and teardown
+
+1. When M1–M4 are done or the ack's end date arrives (after it the unit refuses to start):
+   **Close · `CLOSE REAL NSDQ100`** in the cash session; wait for the history; run the reconcile
+   and the fees check once more.
+2. Copy `observations.jsonl`, the ledger, `ui-audit.jsonl`, the reconcile and fees reports and
+   the day-0 captures into `docs/etoro/evidence-real-canary-<start>/`; write `SUMMARY.md`
+   (measured vs preview vs frozen per line item; lags; fills; surprises).
+3. **you** — Revoke the API key at eToro. Delete the ack file and the env file.
+   `scripts/install-ui-api-service.sh --real-canary --uninstall`; re-run
+   `scripts/install-ops-cron.sh` **without** `--canary-observe` (the line and the S3 URI go away).
+   Withdraw the balance or note the inactivity fee.
+4. Append the "measured on the real account, reported, does not decide" addendum to both
+   pre-registrations. Commit, push.
+
+### 14.7 Rehearsal on demo (before any real key; the gate)
+
+The same binary runs the canary policy on the **demo** account with `-canary-rehearsal`
+(`-etoro-real-canary` and `-canary-rehearsal` exclude each other; the rehearsal refuses a ledger
+named `etoro-demo*`, so it cannot write the cells' ledgers). Phrases carry no REAL; the policy is
+`etoro-canary-rehearsal-2026-10-22` (nsdq100 and spx500, no `max_positions`, because the demo
+account holds the cells' positions; a same-instrument demo position is a warning, not a block):
+
+```
+cd services/ui-api
+go run ./cmd -addr 127.0.0.1:8092 -operator-token-file ~/.config/mtb/operator-token \
+  -etoro-ledger etoro-canary-rehearsal=../strategy-executor/etoro-daily-data/rehearsal-canary/ledger.jsonl \
+  -etoro-trading -canary-rehearsal
+# web: UI_API_URL=http://127.0.0.1:8092 UI_PORT=5175 npm run dev
+```
+
+Pass when, in one cash session: one x20 open at 50 USD and its close went through the console
+(`PLACE NSDQ100` / `CLOSE NSDQ100`, the sizing line present, `env: demo` on the lines); the
+observer wrote a line for it (`./etoro-daily-data/etoro-canary-observe -allow-demo -env-file
+~/.config/microservices-trading-bot/etoro-demo.env -ledger ./etoro-daily-data/rehearsal-canary/ledger.jsonl
+-ledger-name etoro-canary-rehearsal`); the fees check read the observations
+(`etoro-fees-check -ledger ./etoro-daily-data/rehearsal-canary/ledger.jsonl`, demo env); and the
+reconcile classified a position closed by hand at the venue (`etoro-reconcile -ledger … -record-venue-close -by <you>`).
+The port `8090` unit is not involved and is not restarted.
+
+### 14.8 What the plan got wrong, found while building
+
+- `MaxOrderNotional` is **1,200**, not 1,000: the exposure is invested × leverage = 1,000 at
+  50 USD, and the policy allows up to 60 USD invested (D1), i.e. 1,200; the venue minimum is a
+  floor, not the cap.
+- The stop is a **range** (2.3–2.45 %), not "exactly the venue maximum": a market fill a few
+  bps above the ask would push a 2.5 % stop past eToro's cap and the order would be refused.
+  Found with it: `shared/pkg/stops` floored a clamped stop below the policy minimum; it now
+  rounds up at the ceiling.
+- `etoro-reconcile` gained `-record-venue-close` (the plan said "hand-run reconcile writes the
+  `venue_close` line"; a reconcile is read-only, so the write is a separate, named flag).
+- The real account blocks an open when it holds **any** position, not only unknown ones: with
+  `MaxPositions 1` the two rules coincide, and the stricter one is the right one for real money.
+- `Client.Environment()` already existed (the plan said `Env()`).
+- The watchdog needed no change: the observer's run log follows the executors' convention.
+

@@ -1890,6 +1890,60 @@ unfinished bar is labelled provisional. The decision path never reads live data.
 - **Not built.** A reason prompt on cancel (optional in the API, not asked in the UI: one click is
   the point); a Cancel on the Today page (the preview lives on the Trade page only).
 
+### 8.24 The REAL account made unmistakable (as built, 2026-10-22; canary plan C8)
+
+The measurement canary ([ETORO-REAL-CANARY-PLAN-2026-10-21.md](../etoro/ETORO-REAL-CANARY-PLAN-2026-10-21.md)
+§3.4; runbook §14) is served by a **second `ui-api`** on `127.0.0.1:8091` and a **second dev
+server** on `:5174` (`npm run dev:real-canary` = `UI_API_URL=http://127.0.0.1:8091 UI_PORT=5174`;
+the target is baked in as `__UI_API__`). The same bundle serves both consoles, so every mark is
+driven by one fact the API now states: the ledger's **`environment`** (`demo` | `real`, on
+`/ledgers`, `/controls` and the trading info; older captures default to `demo`). Nothing on the
+demo console changed: the violet accent, the x1 bounds and every earlier vitest expectation are
+as they were.
+
+- **The bar.** On a real ledger a persistent **red bar** sits above every page (`AppShell`
+  `RealBar`, `role="alert"`, no close button): `REAL ACCOUNT · measurement canary · ledger
+  etoro-real-canary · policy etoro-real-canary-2026-10-22 · ui-api 127.0.0.1:8091 · every
+  order placed here is real money; phrases carry REAL`. `<html data-env="real">` switches the
+  eToro accent tokens (`--real*`) to a red variant on every card, tag and badge; `usePageTitle`
+  prefixes the title `REAL ·` and gives the favicon a red dot (`lib/env.ts`: `accountLabel`,
+  `titleFor`, `faviconFor`); the sidebar ledger picker shows a `REAL` badge and the option reads
+  `etoro-real-canary · REAL` (demo options are unchanged), the Trade nav badge says `REAL`,
+  `LedgerBadge` reads `name · REAL`.
+- **Trade page.** The form's bounds and leverage come from `TradingInfo` (`min_amount_usd`,
+  `max_amount_usd`, `default_amount_usd`, `leverage_options`, `default_leverage`,
+  `policy_version`, `books`): on the canary a fixed `x20` label (a picker when a policy offers
+  several), the amount field reads **Invested (USD, x20)** with the exposure it buys as the hint,
+  and 50 / 60 / 50 are enforced before the request. Prepare and recommend send `leverage`; the
+  preview parses `leverage`, `exposure_usd`, `environment`, `max_loss_usd` (all optional, demo
+  defaults). The preview card is headed `Preview · open REAL NSDQ100` with a `REAL` badge and its
+  first line is the **sizing line** (`lib/env.ts` `sizingLine`): `50 USD invested · x20 ·
+  exposure 1,000 USD · max loss 24.50 USD` (demo: `1,000 USD x1 · exposure 1,000 USD`). The place
+  dialog is red, names the REAL account and the phrase **`PLACE REAL NSDQ100`** / `CLOSE REAL …`
+  / `PROTECT REAL …` (the phrase comes from the API; the page only displays it). The executor
+  note on a real or rehearsal ledger says no executor acts on this ledger (venue closes are
+  recorded by hand, three opens at most); the disabled card names the canary process when
+  trading is off. The protection panel states the policy's caps from the recommendation
+  (`lib/protection.ts` `policyCapsSentence`: "between 2.30 % and 2.45 % …, no equity cap")
+  instead of the demo's fixed 10 % / 0.5 %.
+- **Mock.** `?mock=real-canary` (`src/mocks/flag.ts`; `forceMockFlag('real-canary')` in tests,
+  the memory router cannot set the URL) serves what the canary's `ui-api` would: the ledger list
+  (`stage` + `etoro-real-canary`, environment real; `etoro-demo` unknown there), the demo captures
+  relabelled for the canary's fixtures, controls with `environment: real` and the canary bounds,
+  prepare at x20 with the canary's stop band (23–24.5 USD at risk; the ceiling rounding of
+  `stops.go` mirrored), REAL phrases, `ui-real-` refs, exposure and max loss, a separate position
+  and legs state for the canary ledger, place at the token's leverage.
+- **Tests.** `src/test/realCanary.test.tsx` (9): the pure helpers; the additive schemas and the
+  demo defaults of older captures; the mock's ledgers / controls / prepare under the scenario;
+  the bar on the real ledger (role, name, policy, no button, title prefix, `data-env`, the
+  badges) and its absence on demo; the Trade page's bounds, label, x20, exposure hint,
+  out-of-bounds refusal, preview first line, REAL phrase and dialog; the demo page unchanged;
+  the caps sentence. The whole gate (tsc, eslint, prettier, vitest 280, vite build) is green.
+- **Not built, on purpose.** A single console showing demo and real side by side (plan §3.1:
+  two processes, two tabs, two tokens); a way to dismiss the bar; any REAL-specific shortcut
+  (the "Close at market" shortcut of §8.22 works through the same REAL phrase and dialog). The
+  Positions and Today cards carry the `· REAL` ledger badge and nothing else changes there.
+
 ## 9. How to run (local)
 
 ```bash
@@ -1922,6 +1976,19 @@ export PATH=$PWD/.tools/node/bin:$PATH              # portable Node 22
 #   go run ./cmd -operator-token-file ~/.config/mtb/operator-token \
 #     -etoro-ledger ../strategy-executor/etoro-daily-data/demo/ledger.jsonl -etoro-trading
 #   (the env file defaults to ~/.config/microservices-trading-bot/etoro-demo.env and must say ETORO_ENV=demo)
+# Real-account canary (§8.24; runbook §14): a SECOND ui-api on :8091 and a second dev server on :5174.
+#   In operation it is the unit mtb-ui-api-real-canary (scripts/install-ui-api-service.sh --real-canary);
+#   by hand, with the real env file, its own token and the ack file in place:
+#   go run ./cmd -addr 127.0.0.1:8091 -operator-token-file ~/.config/mtb/operator-token-real-canary \
+#     -etoro-env-file ~/.config/microservices-trading-bot/etoro-real-canary.env \
+#     -etoro-ledger etoro-real-canary=../strategy-executor/etoro-daily-data/real-canary/ledger.jsonl \
+#     -etoro-trading -etoro-real-canary
+#   (cd web && npm run dev:real-canary)                   # http://127.0.0.1:5174, red bar
+#   the rehearsal of the same policy on DEMO, own ledger, own port (never the cells' ledgers):
+#   go run ./cmd -addr 127.0.0.1:8092 -operator-token-file ~/.config/mtb/operator-token \
+#     -etoro-ledger etoro-canary-rehearsal=../strategy-executor/etoro-daily-data/rehearsal-canary/ledger.jsonl \
+#     -etoro-trading -canary-rehearsal
+#   without any backend: http://127.0.0.1:5173/?mock=real-canary
 cd web && npm ci && npm run dev                     # http://127.0.0.1:5173
 # or, without the backend:
 npm run dev:mock
