@@ -44,11 +44,14 @@ type fakeTradeBroker struct {
 	opens     []broker.OpenRequest
 	closes    []broker.CloseRequest
 	previews  int
-	nextID    int
-	openErr   error
-	closeErr  error
-	quoteErr  error
-	costsErr  error
+	// lastPreview is the request of the latest PreviewOpen (the stop must
+	// travel with a leveraged preview).
+	lastPreview broker.OpenRequest
+	nextID      int
+	openErr     error
+	closeErr    error
+	quoteErr    error
+	costsErr    error
 	// Protection (phase B): protects records SetProtection calls;
 	// protectErr is returned instead; protectPending answers pending
 	// without applying; limitsErr fails ProtectionLimits; noEditor hides
@@ -213,8 +216,18 @@ func (f *fakeTradeBroker) Account(ctx context.Context) (broker.Account, error) {
 }
 func (f *fakeTradeBroker) PreviewOpen(ctx context.Context, req broker.OpenRequest) (broker.Costs, error) {
 	f.previews++
+	f.lastPreview = req
 	if f.costsErr != nil {
 		return broker.Costs{}, f.costsErr
+	}
+	// The real adapter validates the request before the call, and eToro's
+	// costs route needs a stop once leverage > 1 (etoro.OrderRequest.Validate;
+	// the canary rehearsal found prepare leaving it out, 2026-10-22).
+	if err := req.Validate(); err != nil {
+		return broker.Costs{}, err
+	}
+	if req.Leverage > 1 && !(req.StopLoss > 0) {
+		return broker.Costs{}, errors.New("stopLossRate is required for leverage > 1 or sellShort")
 	}
 	return broker.Costs{Currency: "USD", Spread: 0.04, OvernightFee: 0.26}, nil
 }

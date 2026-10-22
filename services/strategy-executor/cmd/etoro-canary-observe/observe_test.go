@@ -45,6 +45,11 @@ func (f *fakeVenue) Costs(_ context.Context, req etoro.OrderRequest) (etoro.Cost
 	if f.costsErr != nil {
 		return etoro.CostPreview{}, f.costsErr
 	}
+	// As etoro.Client.Costs does: a leveraged preview without a stop never
+	// reaches the venue.
+	if err := req.Validate(); err != nil {
+		return etoro.CostPreview{}, err
+	}
 	return f.costs[req.InstrumentID], nil
 }
 func (f *fakeVenue) GetRates(context.Context, ...int64) ([]etoro.Rate, error) { return f.rates, nil }
@@ -76,7 +81,8 @@ func costs(overnight, weekend float64) etoro.CostPreview {
 func TestObserveSeriesAndDeltas(t *testing.T) {
 	ny := mktcal.NewYork
 	day1 := time.Date(2026, 11, 3, 18, 0, 0, 0, ny) // day 0, 18:00 NY: one night crossed
-	v := &fakeVenue{portfolio: canaryPortfolio(0), costs: map[int64]etoro.CostPreview{28: costs(-0.22, -0.66)}}
+	v := &fakeVenue{portfolio: canaryPortfolio(0), costs: map[int64]etoro.CostPreview{28: costs(-0.22, -0.66)},
+		rates: []etoro.Rate{{InstrumentID: 28, Bid: 24999, Ask: 25001}}}
 	base := input{recs: canaryLedger(), env: "real", ledger: "etoro-real-canary", sinceDays: 90, previewInstrument: 28, previewAmount: 50, previewLeverage: 20}
 
 	in := base
@@ -97,8 +103,10 @@ func TestObserveSeriesAndDeltas(t *testing.T) {
 	if first.Account.Cash != 10.2 || first.Account.Exposure != 998.7 || first.Account.Equity < 58.8 || first.Account.Equity > 59.0 {
 		t.Fatalf("account %+v", first.Account)
 	}
-	// The preview was asked at the held size and leverage.
-	if len(v.costCalls) != 1 || v.costCalls[0].Leverage != 20 || *v.costCalls[0].Amount != 50 || v.costCalls[0].InstrumentID != 28 {
+	// The preview was asked at the held size and leverage, with the held
+	// stop (eToro's costs route needs one at leverage > 1).
+	if len(v.costCalls) != 1 || v.costCalls[0].Leverage != 20 || *v.costCalls[0].Amount != 50 || v.costCalls[0].InstrumentID != 28 ||
+		v.costCalls[0].StopLossRate == nil || *v.costCalls[0].StopLossRate != 24387.5 {
 		t.Fatalf("cost calls %+v", v.costCalls)
 	}
 	if len(first.HistoryNew) != 0 || len(first.HistoryIDs) != 0 {
@@ -137,9 +145,11 @@ func TestObserveSeriesAndDeltas(t *testing.T) {
 		t.Fatalf("gone %+v", gone)
 	}
 	// With nothing held the planned order is previewed instead (the first
-	// note, sorted).
-	if !strings.Contains(gone.Notes[0], "no position held; preview") || v.costCalls[len(v.costCalls)-1].Leverage != 20 || *v.costCalls[len(v.costCalls)-1].Amount != 50 {
-		t.Fatalf("empty-account preview %+v", v.costCalls[len(v.costCalls)-1])
+	// note, sorted), its stop 2.45 % below the ask of one rate read.
+	last := v.costCalls[len(v.costCalls)-1]
+	if !strings.Contains(gone.Notes[0], "no position held; preview") || last.Leverage != 20 || *last.Amount != 50 ||
+		last.StopLossRate == nil || *last.StopLossRate != 24388.48 {
+		t.Fatalf("empty-account preview %+v", last)
 	}
 	v.history = []etoro.ClosedTrade{{PositionID: 4100000001, InstrumentID: 28, Leverage: 20, Units: 0.04, OpenRate: 25000, CloseRate: 24380.1,
 		OpenTimestamp: "2026-11-03T15:05:00.000Z", CloseTimestamp: "2026-11-05T08:12:33.000Z", NetProfit: -24.80, Fees: -0.46, StopLossRate: 24387.5}}
@@ -224,5 +234,24 @@ func TestCaptureDay0WritesTheFourFilesAndSums(t *testing.T) {
 	sums, _ := os.ReadFile(filepath.Join(dir, "SHA256SUMS"))
 	if strings.Count(string(sums), "\n") != 4 {
 		t.Fatalf("sums %s", sums)
+	}
+}
+
+func TestPreviewRequestStop(t *testing.T) {
+	// x1: no stop, as before.
+	if r := previewRequest(3006, 1100, 1, 0, 500); r.StopLossRate != nil || r.Leverage != 1 {
+		t.Fatalf("x1 %+v", r)
+	}
+	// Held stop wins over any reference rate.
+	if r := previewRequest(28, 50, 20, 24387.5, 24967.5, 25000); r.StopLossRate == nil || *r.StopLossRate != 24387.5 {
+		t.Fatalf("held %+v", r)
+	}
+	// No held stop: 2.45 % below the first positive reference (the mark here).
+	if r := previewRequest(28, 50, 20, 0, 0, 25000); r.StopLossRate == nil || *r.StopLossRate != 24387.5 {
+		t.Fatalf("ref %+v", r)
+	}
+	// No reference at all: no stop, and Validate refuses it locally.
+	if r := previewRequest(28, 50, 20, 0, 0, 0); r.StopLossRate != nil || r.Validate() == nil {
+		t.Fatalf("none %+v", r)
 	}
 }

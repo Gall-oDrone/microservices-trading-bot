@@ -829,6 +829,32 @@ observer wrote a line for it (`./etoro-daily-data/etoro-canary-observe -allow-de
 reconcile classified a position closed by hand at the venue (`etoro-reconcile -ledger … -record-venue-close -by <you>`).
 The port `8090` unit is not involved and is not restarted.
 
+**Run 2026-10-22, 12:05–12:16 New York, passed.** `ui-api` on `:8092` with `-canary-rehearsal`
+reported `policy_version etoro-canary-rehearsal-2026-10-22`, bounds 50 / 60 / 50, `leverage_options
+[20]`. Prepare at 50 USD x20: verdict allow, units 0.03428 = 1,000 USD exposure, stop 28457.19
+(2.45 %), max loss 24.50 USD, cost preview overnight **0.23 USD** per night on 1,000 of exposure
+(= the frozen 2.3 bps; weekend quoted 0). `PLACE NSDQ100` → executed, position 3623996972, fill
+29165.20 (−2.1 bps vs mid), stop held by eToro. The observer (`-allow-demo`) listed the position
+at exposure 1,000.03 with `fees_to_date 0`, `in_ledger true`, and previewed it with its held
+stop; `CLOSE NSDQ100` → executed at 29171.50 (−0.1 bps vs mid), net profit 0.22, fees 0; the next
+observation 30 s later had the position gone and the close in `history_new` (M4 lag on demo:
+under a minute). `etoro-fees-check` read the ledger (row `x20`, exposure 1,000) and the
+observations' per-night section. `etoro-reconcile` on the ledger: CLEAN; on a copy with the
+close line removed (the stop-out shape): DRIFT `missing_position`, then `-record-venue-close -by`
+wrote one `venue_close` line (close rate between the stop and the target → `venue_close`, net
+profit 0.22, fees 0) and the next reconcile was CLEAN. A second open the same day was refused by
+`max_orders_per_day`, as it should be. The demo cells' ledgers were not touched; the rehearsal
+ledger lives in `etoro-daily-data/rehearsal-canary/` (git-ignored).
+
+**What the rehearsal caught.** The first prepare was **blocked** with `cost preview failed:
+stopLossRate is required for leverage > 1 or sellShort`: eToro's costs route (and our
+`etoro.OrderRequest.Validate`) need a stop once leverage > 1, and prepare built the preview
+without the stop it had already computed; the observer's what-if previews had the same gap. Fixed
+the same day (prepare passes the order's stop and target to the preview; the observer previews a
+held position with its own stop and the planned order with a stop 2.45 % below the ask), and the
+fakes in both test suites now apply the rule, so the suites would catch it. Every unit test had
+passed before: the fakes did not know the venue's rule. This is why the gate exists.
+
 ### 14.8 What the plan got wrong, found while building
 
 - `MaxOrderNotional` is **1,200**, not 1,000: the exposure is invested × leverage = 1,000 at

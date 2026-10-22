@@ -905,9 +905,16 @@ func (s *Server) preparePreview(ctx context.Context, l Ledger, req TradePrepareR
 	}
 
 	// 4. Cost preview (opens). 5. Cash (opens): what is invested must be
-	// available.
+	// available. The preview carries the same stop and target the order
+	// will: eToro's costs route (and OrderRequest.Validate) require a
+	// stopLossRate once leverage > 1 (found in the canary rehearsal,
+	// 2026-10-22; at x1 the fields are simply echoed).
 	if req.Side == TradeOpen {
-		c, err := b.PreviewOpen(ctx, broker.OpenRequest{Instrument: bin, Side: broker.Long, Amount: req.AmountUSD, Leverage: lev, ClientRef: "preview"})
+		preq := broker.OpenRequest{Instrument: bin, Side: broker.Long, Amount: req.AmountUSD, Leverage: lev, ClientRef: "preview"}
+		if pv.Protection != nil {
+			preq.StopLoss, preq.TakeProfit = pv.Protection.Levels.SLRate, pv.Protection.Levels.TPRate
+		}
+		c, err := b.PreviewOpen(ctx, preq)
 		if err != nil {
 			reasons = append(reasons, "cost preview failed: "+err.Error())
 		} else {

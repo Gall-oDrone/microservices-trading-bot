@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"sort"
@@ -87,7 +88,7 @@ func observe(ctx context.Context, v venue, in input) etoroledger.Observation {
 			if lev < 1 {
 				lev = 1
 			}
-			if c, err := v.Costs(ctx, etoro.MarketBuyByAmount(pos.InstrumentID, pos.Amount, lev)); err != nil {
+			if c, err := v.Costs(ctx, previewRequest(pos.InstrumentID, pos.Amount, lev, op.StopLossRate, pos.UnrealizedPnL.CloseRate, pos.OpenRate)); err != nil {
 				o.Errors = append(o.Errors, fmt.Sprintf("costs for position %s: %v", op.PositionID, err))
 			} else {
 				op.Preview = costsOf(c)
@@ -96,8 +97,18 @@ func observe(ctx context.Context, v venue, in input) etoroledger.Observation {
 		}
 		if len(p.Positions) == 0 && in.previewInstrument > 0 && in.previewAmount > 0 {
 			// Nothing held: preview the canary's planned order so the series
-			// has the venue's quote of the night fee before day 0 too.
-			if c, err := v.Costs(ctx, etoro.MarketBuyByAmount(in.previewInstrument, in.previewAmount, in.previewLeverage)); err != nil {
+			// has the venue's quote of the night fee before day 0 too. A
+			// leveraged preview needs a stop: one rate read, the stop 2.45 %
+			// below the ask (the canary policy's ceiling).
+			var ask float64
+			if in.previewLeverage > 1 {
+				if rs, err := v.GetRates(ctx, in.previewInstrument); err != nil {
+					o.Errors = append(o.Errors, fmt.Sprintf("rates for the preview of instrument %d: %v", in.previewInstrument, err))
+				} else if len(rs) > 0 {
+					ask = rs[0].Ask
+				}
+			}
+			if c, err := v.Costs(ctx, previewRequest(in.previewInstrument, in.previewAmount, in.previewLeverage, 0, ask, 0)); err != nil {
 				o.Errors = append(o.Errors, fmt.Sprintf("costs preview %d x%d %.0f USD: %v", in.previewInstrument, in.previewLeverage, in.previewAmount, err))
 			} else {
 				pc := costsOf(c)
@@ -205,6 +216,39 @@ func applyDeltas(prev *etoroledger.Observation, cur *etoroledger.Observation) {
 	sort.Strings(cur.Notes)
 }
 
+// previewStopPct is where a what-if preview puts its stop when the
+// position has none to copy: the canary policy's ceiling (2.45 % below the
+// reference rate; eToro caps the stop at 2.5 % at x20).
+const previewStopPct = 0.0245
+
+// previewRequest is the read-only cost preview's order: a market buy by
+// amount at the leverage with, when leverage > 1, the stop eToro's costs
+// route requires (and etoro.OrderRequest.Validate enforces; found in the
+// canary rehearsal, 2026-10-22). The stop is the held position's when
+// there is one, else previewStopPct below the first positive reference
+// rate (the mark, then the open rate / the ask). At x1 no stop is sent. A
+// leveraged preview with no rate at all goes out without a stop and is
+// refused locally, which the caller reports as an error.
+func previewRequest(instrument int64, amount float64, leverage int, heldStop float64, refRates ...float64) etoro.OrderRequest {
+	req := etoro.MarketBuyByAmount(instrument, amount, leverage)
+	if leverage <= 1 {
+		return req
+	}
+	stop := heldStop
+	if !(stop > 0) {
+		for _, r := range refRates {
+			if r > 0 {
+				stop = math.Round(r*(1-previewStopPct)*100) / 100
+				break
+			}
+		}
+	}
+	if stop > 0 {
+		req.StopLossRate = &stop
+	}
+	return req
+}
+
 func costsOf(c etoro.CostPreview) *etoroledger.Costs {
 	return &etoroledger.Costs{Spread: c.Get(etoro.CostMarketSpread), Markup: c.Get(etoro.CostMarkup), TransactionFee: c.Get(etoro.CostTransactionFee),
 		OvernightFee: c.Get(etoro.CostOvernightFee), WeekendFee: c.Get(etoro.CostOverWeekendFee)}
@@ -300,17 +344,23 @@ func captureDay0(ctx context.Context, v venue, dir string, instrument int64, amo
 	} else {
 		files["eligibility.json"] = els
 	}
-	req := etoro.MarketBuyByAmount(instrument, amount, leverage)
+	// Rates first: a leveraged cost preview needs a stop, placed 2.45 %
+	// below the ask (the canary policy's ceiling).
+	var ask float64
+	if rs, err := v.GetRates(ctx, instrument); err != nil {
+		errs = append(errs, "capture rates: "+err.Error())
+	} else {
+		files["rates.json"] = rs
+		if len(rs) > 0 {
+			ask = rs[0].Ask
+		}
+	}
+	req := previewRequest(instrument, amount, leverage, 0, ask, 0)
 	if c, err := v.Costs(ctx, req); err != nil {
 		errs = append(errs, "capture costs: "+err.Error())
 	} else {
 		files["costs.json"] = map[string]any{"request": req, "preview": c, "exposure_usd": amount * float64(leverage),
 			"overnight_fee_bps_of_exposure": c.Get(etoro.CostOvernightFee) / (amount * float64(leverage)) * 1e4}
-	}
-	if rs, err := v.GetRates(ctx, instrument); err != nil {
-		errs = append(errs, "capture rates: "+err.Error())
-	} else {
-		files["rates.json"] = rs
 	}
 	if p, err := v.GetPortfolio(ctx); err != nil {
 		errs = append(errs, "capture account: "+err.Error())

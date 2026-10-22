@@ -293,9 +293,14 @@ func TestRealCanaryOpenCloseRoundTrip(t *testing.T) {
 	if pv.Risk == nil || pv.Risk.PolicyVersion != risk.EtoroRealCanaryVersion || pv.Risk.Order.Leverage != 20 || pv.Risk.State.OpenPositions != 0 {
 		t.Fatalf("risk %+v", pv.Risk)
 	}
-	// The cost preview was asked at x20 and the cash check is on invested.
+	// The cost preview was asked at x20 with the order's stop (eToro's costs
+	// route needs one at leverage > 1; the fake refuses without it) and the
+	// cash check is on invested.
 	if h.fb.previews != 1 || pv.Costs == nil {
 		t.Fatalf("previews %d costs %+v", h.fb.previews, pv.Costs)
+	}
+	if lp := h.fb.lastPreview; lp.Leverage != 20 || lp.Amount != 50 || lp.StopLoss != sl.SLRate {
+		t.Fatalf("cost preview request %+v (want x20, 50 USD, stop %.2f)", lp, sl.SLRate)
 	}
 	if pv.Account == nil || pv.Account.Cash < 50 {
 		t.Fatalf("account %+v", pv.Account)
