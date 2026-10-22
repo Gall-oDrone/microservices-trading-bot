@@ -140,9 +140,27 @@ func ClientRef(book, fillDate, kind string) string {
 // close and a later open, or a retry after a failed place) never share a
 // reference. The request id sent to eToro is still RequestIDFor(ref).
 func UIClientRef(book, nyDate, kind string) (string, error) {
+	return uiRef("ui-", book, nyDate, kind)
+}
+
+// UIRealPrefix starts every client ref of the real-account canary.
+const UIRealPrefix = "ui-real-"
+
+// UIRealClientRef (2026-10-22) is UIClientRef for the real-account canary:
+// "ui-real-nsdq100-2026-11-03-open-3f9a1c". The prefix differs from the
+// demo console's so a canary reference (and its UUIDv5 request id) can
+// never collide with a demo one, whatever the book and day.
+func UIRealClientRef(book, nyDate, kind string) (string, error) {
+	return uiRef(UIRealPrefix, book, nyDate, kind)
+}
+
+// IsRealRef reports whether ref was issued by the real-account canary.
+func IsRealRef(ref string) bool { return strings.HasPrefix(ref, UIRealPrefix) }
+
+func uiRef(prefix, book, nyDate, kind string) (string, error) {
 	var b [3]byte
 	if _, err := rand.Read(b[:]); err != nil {
 		return "", fmt.Errorf("client ref: %w", err)
 	}
-	return "ui-" + book + "-" + nyDate + "-" + kind + "-" + hex.EncodeToString(b[:]), nil
+	return prefix + book + "-" + nyDate + "-" + kind + "-" + hex.EncodeToString(b[:]), nil
 }

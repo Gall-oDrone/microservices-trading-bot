@@ -132,7 +132,7 @@ func reconcileWith(ctx context.Context, b broker.Broker, recs []etoroledger.Reco
 	refs := map[string]bool{}
 	var earliest time.Time
 	for _, r := range recs {
-		if r.Mode != etoroledger.ModeDemo || r.Demo == nil {
+		if !r.IsAccount() {
 			continue
 		}
 		demo = append(demo, r)
@@ -297,7 +297,7 @@ type freshOrder struct {
 func freshOrders(recs []etoroledger.Record, now time.Time, st settle) []freshOrder {
 	newest := map[string]etoroledger.Record{}
 	for _, r := range recs {
-		if r.Mode != etoroledger.ModeDemo || r.Demo == nil {
+		if !r.IsAccount() {
 			continue
 		}
 		if cur, ok := newest[r.Book]; !ok || etoroledger.Newer(r, cur) {

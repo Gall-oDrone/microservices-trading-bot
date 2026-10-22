@@ -236,7 +236,7 @@ func stopOutCheck(demo []etoroledger.Record, books []string, due time.Time) Chec
 func demoRecords(recs []etoroledger.Record) []etoroledger.Record {
 	var out []etoroledger.Record
 	for _, r := range recs {
-		if r.Mode == etoroledger.ModeDemo && r.Demo != nil {
+		if r.IsAccount() {
 			out = append(out, r)
 		}
 	}

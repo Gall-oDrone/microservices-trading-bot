@@ -39,7 +39,20 @@ const Schema = "etoro-ledger/v1"
 const (
 	ModeDryRun = "dry-run"
 	ModeDemo   = "demo"
+	// ModeReal (2026-10-22): a line written against the REAL eToro account
+	// by the measurement-only canary (docs/etoro/ETORO-REAL-CANARY-PLAN-2026-10-21.md).
+	// Only the canary ui-api process writes it, into its own ledger under
+	// etoro-daily-data/real-canary/; the executor never does. The schema
+	// stays etoro-ledger/v1: the account section keeps its JSON key "demo"
+	// (Record.Demo) with Demo.Env = "real", so every reader of v1 lines
+	// (reconcile, positions, fees check) parses a real line unchanged.
+	ModeReal = "real"
 )
+
+// IsAccountMode reports whether mode names a line written against an
+// account (demo or real) rather than a dry run. Readers that used to test
+// Mode == ModeDemo use this so the canary's lines are not skipped.
+func IsAccountMode(mode string) bool { return mode == ModeDemo || mode == ModeReal }
 
 // Demo actions.
 const (
@@ -91,7 +104,7 @@ type Record struct {
 	Schema      string     `json:"schema"`
 	RecordedAt  string     `json:"recorded_at"`
 	CodeVersion string     `json:"code_version"`
-	Mode        string     `json:"mode"`  // ModeDryRun | ModeDemo
+	Mode        string     `json:"mode"`  // ModeDryRun | ModeDemo | ModeReal
 	Venue       string     `json:"venue"` // "etoro"
 	Book        string     `json:"book"`  // "nsdq100" | "spx500"
 	Instrument  Instrument `json:"instrument"`
@@ -112,6 +125,10 @@ type Record struct {
 
 // IsUI reports whether r is an assisted trade from the console.
 func (r Record) IsUI() bool { return r.Source == SourceUI }
+
+// IsAccount reports whether r was written against an account (demo or
+// real), i.e. carries a Demo section that describes a venue state.
+func (r Record) IsAccount() bool { return IsAccountMode(r.Mode) && r.Demo != nil }
 
 // ClientRef is the idempotency key of the record's order ("" without one).
 func (r Record) ClientRef() string {
@@ -315,9 +332,12 @@ type Order struct {
 	FillVsCloseBps float64 `json:"fill_vs_close_bps,omitempty"`
 }
 
-// Demo is the demo-account part of a record.
+// Demo is the account part of a record. Its JSON key is "demo" and so is
+// its name, for schema v1 stability: on a canary line (Record.Mode ==
+// ModeReal) Env is "real" and every other field means the same thing on
+// the real account.
 type Demo struct {
-	Env            string     `json:"env"` // "demo"
+	Env            string     `json:"env"` // "demo" | "real"
 	Target         string     `json:"target"`
 	Action         string     `json:"action"` // ActionOpen | ActionClose | ActionNone | ActionBlocked | ActionProtect | ActionVenueClose
 	PositionBefore Position   `json:"position_before"`
