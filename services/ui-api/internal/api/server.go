@@ -47,6 +47,11 @@ type Ledger struct {
 	// and the halt file; the ledger itself is read with etoroledger, never
 	// with dailyledger.
 	Venue string
+	// Environment (2026-10-22, eToro ledgers) is the account the ledger is
+	// written against: "demo" (the default when empty) or "real" (the
+	// measurement canary's ledger, set by cmd -etoro-real-canary). The web
+	// app paints a real ledger red on every page.
+	Environment string
 }
 
 // venue is the ledger's venue with the default applied.
@@ -55,6 +60,18 @@ func (l Ledger) venue() string {
 		return VenueBitso
 	}
 	return l.Venue
+}
+
+// environment is the ledger's account environment with the default
+// applied ("" for a Bitso ledger: the field is eToro's).
+func (l Ledger) environment() string {
+	if l.venue() != VenueEtoro {
+		return ""
+	}
+	if l.Environment == "" {
+		return "demo"
+	}
+	return l.Environment
 }
 
 // Server holds the API's dependencies.
@@ -441,7 +458,9 @@ type LedgerInfo struct {
 	Name string `json:"name"`
 	// Venue is "bitso" or "etoro" (additive, P5a): the web app picks the
 	// venue's pages and formatting from it.
-	Venue       string   `json:"venue"`
+	Venue string `json:"venue"`
+	// Environment (2026-10-22, eToro ledgers only) is "demo" or "real".
+	Environment string   `json:"environment,omitempty"`
 	Path        string   `json:"path"`
 	Default     bool     `json:"default"`
 	Found       bool     `json:"found"`
@@ -459,7 +478,7 @@ type LedgersResponse struct {
 func (s *Server) listLedgers(w http.ResponseWriter, r *http.Request) {
 	resp := LedgersResponse{Ledgers: []LedgerInfo{}}
 	for i, l := range s.ledgers() {
-		info := LedgerInfo{Name: l.Name, Venue: l.venue(), Path: l.Store.Where(l.Store.LedgerPath), Default: i == 0, Modes: []string{}}
+		info := LedgerInfo{Name: l.Name, Venue: l.venue(), Environment: l.environment(), Path: l.Store.Where(l.Store.LedgerPath), Default: i == 0, Modes: []string{}}
 		_, info.Found, _ = l.Store.LedgerInfo()
 		modes := map[string]bool{}
 		note := func(mode, barDate string) {

@@ -88,9 +88,12 @@ type ControlResponse struct {
 // ControlsInfo is GET /api/ui/controls: whether controls are available for
 // this ledger, the halt file, and the recent audit log.
 type ControlsInfo struct {
-	Ledger  string `json:"ledger"`
-	Venue   string `json:"venue"` // bitso | etoro (additive, P5a)
-	Enabled bool   `json:"enabled"`
+	Ledger string `json:"ledger"`
+	Venue  string `json:"venue"` // bitso | etoro (additive, P5a)
+	// Environment (2026-10-22, eToro ledgers) is "demo" or "real": the web
+	// app paints a real ledger red on every page.
+	Environment string `json:"environment,omitempty"`
+	Enabled     bool   `json:"enabled"`
 	// DisabledReason says why controls are off for this ledger.
 	DisabledReason string        `json:"disabled_reason,omitempty"`
 	HaltFile       HaltFileInfo  `json:"halt_file"`
@@ -128,7 +131,7 @@ func (s *Server) controls(w http.ResponseWriter, r *http.Request) {
 	}
 	enabled, why := s.controlsState(l)
 	_, hf := s.policyFor(l)
-	info := ControlsInfo{Ledger: l.Name, Venue: l.venue(), Enabled: enabled, DisabledReason: why, HaltFile: hf, Audit: []audit.Entry{}, Trading: s.tradingInfo(l)}
+	info := ControlsInfo{Ledger: l.Name, Venue: l.venue(), Environment: l.environment(), Enabled: enabled, DisabledReason: why, HaltFile: hf, Audit: []audit.Entry{}, Trading: s.tradingInfo(l)}
 	if p := auditPath(l); p != "" {
 		info.AuditPath = p
 		entries, err := audit.Tail(p, auditTail)

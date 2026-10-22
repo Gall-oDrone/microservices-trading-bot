@@ -54,6 +54,23 @@ package api
 // nor the ledger, and writes a trade.cancel audit line with the preview's
 // client_ref so the decision not to trade is on record next to the
 // decision to prepare it.
+//
+// Real-account canary (2026-10-22, docs/etoro/ETORO-REAL-CANARY-PLAN-2026-10-21.md):
+// a SEPARATE ui-api process (its own port, env file, operator token, ledger
+// directory and systemd unit) may trade the real account for the
+// measurement-only canary when it was started with -etoro-real-canary and
+// the six-part acknowledgement of shared/pkg/etoro/realack.go held at
+// start. Nothing else changes in this file's flow: the same prepare ->
+// place -> ledger line, with the canary policy (risk.EtoroRealCanaryPolicy:
+// x20, 50-60 USD invested, one position, a stop just inside the venue's
+// cap), the amount bounds and the leverage choices taken from that policy
+// instead of the x1 constants, confirmation phrases carrying the word REAL
+// ("PLACE REAL NSDQ100"), client refs prefixed ui-real-, ledger lines with
+// mode "real" and demo.env "real", and TradingInfo.Environment "real" so
+// the web app paints the account red. The demo process is unchanged:
+// NewEtoroTrading still refuses anything but demo. -canary-rehearsal runs
+// the canary policy on the demo account (its own ledger, REAL-less
+// phrases) so the whole flow is exercised before the real key exists.
 
 import (
 	"context"
@@ -89,7 +106,9 @@ const (
 	TradeTokenTTL = 120 * time.Second
 	// TradeMinAmount is eToro's minimum exposure for the index CFDs (P1
 	// evidence; the executor's floor); TradeMaxAmount EtoroDemoPolicy's
-	// order notional cap; TradeDefaultAmount the forward-test size.
+	// order notional cap; TradeDefaultAmount the forward-test size. They
+	// are the x1 form bounds of a policy that carries none of its own
+	// (the demo policies); the canary policy carries its own (tradeBounds).
 	TradeMinAmount     = 1000
 	TradeMaxAmount     = 1500
 	TradeDefaultAmount = 1100
@@ -114,10 +133,26 @@ var tradePaths = map[string]bool{
 	"/api/ui/etoro/trades/cancel":    true,
 }
 
-// EtoroTrading is the Server's assisted-trade dependency: the demo broker,
-// the per-process token secret and the set of tokens already used.
+// RealCanaryLedgerName is the only ledger name the canary process serves
+// (plan §3.2: also the halt phrase and the ?ledger= value).
+const RealCanaryLedgerName = "etoro-real-canary"
+
+// EtoroTrading is the Server's assisted-trade dependency: the broker, the
+// policy and environment it trades under, the per-process token secret and
+// the set of tokens already used.
 type EtoroTrading struct {
 	Broker broker.Broker
+	// Policy is what prepare and place check an order with and where the
+	// form bounds come from: EtoroDemoProtectedPolicy for the demo console
+	// (the zero value means it), EtoroRealCanaryPolicy for the real canary,
+	// EtoroRealCanaryRehearsalPolicy under -canary-rehearsal.
+	Policy risk.Policy
+	// Env is the account the broker trades: demo (default) or real.
+	Env etoro.Environment
+	// Rehearsal marks the canary policy on the demo account.
+	Rehearsal bool
+	// Ack is the acknowledgement that let a real process start (nil on demo).
+	Ack    *etoro.RealAck
 	secret []byte
 	mu     sync.Mutex
 	used   map[string]int64 // token id -> expiry (unix s), pruned as they expire
@@ -125,7 +160,7 @@ type EtoroTrading struct {
 
 // NewEtoroTrading builds the demo broker for the assisted trades. It refuses
 // any environment but demo: nothing for the real account is reachable from
-// the console.
+// the demo console (the canary is NewEtoroRealCanary, a different process).
 func NewEtoroTrading(cfg etoro.Config) (*EtoroTrading, error) {
 	if cfg.Env != etoro.EnvDemo {
 		return nil, fmt.Errorf("assisted trading: ETORO_ENV must be demo (got %q); the real account is refused in code", cfg.Env)
@@ -137,21 +172,143 @@ func NewEtoroTrading(cfg etoro.Config) (*EtoroTrading, error) {
 	return newEtoroTrading(etorobroker.New(c))
 }
 
+// NewEtoroCanaryRehearsal builds the DEMO broker with the canary policy
+// (plan §7's rehearsal): x20, 50-60 USD, the canary's stop bounds, on the
+// demo account and a ledger of its own. Demo only, like NewEtoroTrading.
+func NewEtoroCanaryRehearsal(cfg etoro.Config) (*EtoroTrading, error) {
+	if cfg.Env != etoro.EnvDemo {
+		return nil, fmt.Errorf("canary rehearsal: ETORO_ENV must be demo (got %q); the rehearsal runs on the demo account", cfg.Env)
+	}
+	c, err := etoro.NewClient(cfg)
+	if err != nil {
+		return nil, fmt.Errorf("canary rehearsal: %w", err)
+	}
+	return newEtoroTradingWith(etorobroker.New(c), risk.EtoroRealCanaryRehearsalPolicy(), etoro.EnvDemo, true, nil)
+}
+
+// NewEtoroRealCanary builds the REAL broker for the measurement canary. It
+// is the only constructor that accepts ETORO_ENV=real, and only after
+// etoro.CheckRealAck passed every one of the six conditions (the caller
+// fills chk from its flags and files; PolicyVersion is forced to the canary
+// policy's here so the ack is checked against what will actually run).
+func NewEtoroRealCanary(cfg etoro.Config, ack etoro.RealAck, chk etoro.RealAckCheck) (*EtoroTrading, error) {
+	pol := risk.EtoroRealCanaryPolicy()
+	chk.Env, chk.PublicKey, chk.PolicyVersion = cfg.Env, cfg.PublicKey, pol.Version
+	if err := etoro.CheckRealAck(ack, chk); err != nil {
+		return nil, err
+	}
+	if cfg.Env != etoro.EnvReal {
+		return nil, fmt.Errorf("%w (got %q)", etoro.ErrRealAckEnv, cfg.Env)
+	}
+	c, err := etoro.NewClient(cfg)
+	if err != nil {
+		return nil, fmt.Errorf("real canary: %w", err)
+	}
+	a := ack
+	return newEtoroTradingWith(etorobroker.New(c), pol, etoro.EnvReal, false, &a)
+}
+
 // newEtoroTrading wraps a broker (tests pass a fake; it must still be an
-// eToro venue).
+// eToro venue) with the demo console's policy.
 func newEtoroTrading(b broker.Broker) (*EtoroTrading, error) {
+	return newEtoroTradingWith(b, risk.EtoroDemoProtectedPolicy(), etoro.EnvDemo, false, nil)
+}
+
+func newEtoroTradingWith(b broker.Broker, pol risk.Policy, env etoro.Environment, rehearsal bool, ack *etoro.RealAck) (*EtoroTrading, error) {
 	if b == nil || b.Venue() != etorobroker.Venue {
 		return nil, errors.New("assisted trading: the broker must be the eToro adapter")
+	}
+	if env == etoro.EnvReal && (ack == nil || !strings.HasPrefix(pol.Version, etoro.RealAckPolicyPrefix)) {
+		return nil, errors.New("assisted trading: a real broker needs the acknowledgement and the canary policy")
+	}
+	if err := pol.Validate(); err != nil {
+		return nil, fmt.Errorf("assisted trading: policy: %w", err)
 	}
 	secret := make([]byte, 32)
 	if _, err := rand.Read(secret); err != nil {
 		return nil, fmt.Errorf("assisted trading: token secret: %w", err)
 	}
-	return &EtoroTrading{Broker: b, secret: secret, used: map[string]int64{}}, nil
+	return &EtoroTrading{Broker: b, Policy: pol, Env: env, Rehearsal: rehearsal, Ack: ack, secret: secret, used: map[string]int64{}}, nil
+}
+
+// Real reports whether the broker trades the REAL account.
+func (t *EtoroTrading) Real() bool { return t != nil && t.Env == etoro.EnvReal }
+
+// Environment is "demo" or "real" (demo when unset).
+func (t *EtoroTrading) Environment() string {
+	if t.Real() {
+		return string(etoro.EnvReal)
+	}
+	return string(etoro.EnvDemo)
+}
+
+// policy is the policy the trades are checked with (the demo console's
+// when none was set, so older constructions behave as before).
+func (t *EtoroTrading) policy() risk.Policy {
+	if t == nil || t.Policy.Version == "" {
+		return risk.EtoroDemoProtectedPolicy()
+	}
+	return t.Policy
+}
+
+// tradeBounds are the form's bounds for a book: the amount the operator
+// invests (min, max, default) and the leverage values offered. A policy
+// book that carries its own sizing (the canary) defines them; otherwise the
+// x1 constants apply, as before 2026-10-22.
+type tradeBounds struct {
+	Min, Max, Default float64
+	Leverages         []int
+}
+
+func (b tradeBounds) allowsLeverage(lev int) bool {
+	for _, x := range b.Leverages {
+		if x == lev {
+			return true
+		}
+	}
+	return false
+}
+
+// defaultLeverage is the leverage the form pre-selects (the only one on
+// the canary; x1 on demo).
+func (b tradeBounds) defaultLeverage() int {
+	if len(b.Leverages) == 1 {
+		return b.Leverages[0]
+	}
+	return 1
+}
+
+// boundsFor derives the bounds of book from the policy.
+func boundsFor(pol risk.Policy, book string) tradeBounds {
+	l := pol.For(book)
+	b := tradeBounds{Min: TradeMinAmount, Max: TradeMaxAmount, Default: TradeDefaultAmount, Leverages: []int{1}}
+	if l.MaxInvestedUSD > 0 {
+		b.Max = l.MaxInvestedUSD
+		b.Min, b.Default = l.MinInvestedUSD, l.DefaultInvestedUSD
+		if b.Min <= 0 {
+			b.Min = b.Max
+		}
+		if b.Default <= 0 {
+			b.Default = b.Min
+		}
+	}
+	if len(l.Leverages) > 0 {
+		b.Leverages = append([]int(nil), l.Leverages...)
+	}
+	return b
+}
+
+// tradeBook is the book the form's bounds are reported for in TradingInfo:
+// the first book of the policy (nsdq100 on every policy so far).
+func tradeBook(pol risk.Policy) string {
+	if names := pol.BookNames(); len(names) > 0 {
+		return names[0]
+	}
+	return "nsdq100"
 }
 
 // TradingInfo is ControlsInfo.Trading: whether the assisted trades are
-// available on a ledger.
+// available on a ledger, and how the page builds its form.
 type TradingInfo struct {
 	Enabled        bool   `json:"enabled"`
 	DisabledReason string `json:"disabled_reason,omitempty"`
@@ -160,6 +317,17 @@ type TradingInfo struct {
 	MinAmountUSD    float64 `json:"min_amount_usd"`
 	MaxAmountUSD    float64 `json:"max_amount_usd"`
 	DefaultAmount   float64 `json:"default_amount_usd"`
+	// Environment (2026-10-22) is "demo" or "real"; LeverageOptions the
+	// leverage values the form offers and DefaultLeverage the one it
+	// pre-selects (x1 on demo; x20 only on the canary); PolicyVersion the
+	// policy the trades are checked with; Books the books it allows;
+	// Rehearsal marks the canary policy on the demo account.
+	Environment     string   `json:"environment"`
+	LeverageOptions []int    `json:"leverage_options"`
+	DefaultLeverage int      `json:"default_leverage"`
+	PolicyVersion   string   `json:"policy_version"`
+	Books           []string `json:"books"`
+	Rehearsal       bool     `json:"rehearsal,omitempty"`
 }
 
 // tradingState reports whether a ledger accepts assisted trades, and why not.
@@ -181,8 +349,16 @@ func (s *Server) tradingState(l Ledger) (bool, string) {
 
 func (s *Server) tradingInfo(l Ledger) TradingInfo {
 	enabled, why := s.tradingState(l)
-	return TradingInfo{Enabled: enabled, DisabledReason: why, TokenTTLSeconds: int(TradeTokenTTL / time.Second),
-		MinAmountUSD: TradeMinAmount, MaxAmountUSD: TradeMaxAmount, DefaultAmount: TradeDefaultAmount}
+	pol := s.Trading.policy()
+	b := boundsFor(pol, tradeBook(pol))
+	info := TradingInfo{Enabled: enabled, DisabledReason: why, TokenTTLSeconds: int(TradeTokenTTL / time.Second),
+		MinAmountUSD: b.Min, MaxAmountUSD: b.Max, DefaultAmount: b.Default,
+		Environment: l.environment(), LeverageOptions: b.Leverages, DefaultLeverage: b.defaultLeverage(),
+		PolicyVersion: pol.Version, Books: pol.BookNames()}
+	if s.Trading != nil {
+		info.Rehearsal = s.Trading.Rehearsal
+	}
+	return info
 }
 
 // tradeInstrument maps a book to its eToro instrument (the executor's frozen
@@ -199,11 +375,14 @@ func tradeInstrument(book string) (etoroledger.Instrument, bool) {
 type TradePrepareRequest struct {
 	Book string `json:"book"`
 	Side string `json:"side"` // TradeOpen | TradeClose | TradeProtect
-	// AmountUSD is the x1 exposure of an open; PositionID the ledger's
+	// AmountUSD is what the operator invests in an open (the exposure at
+	// x1; exposure / leverage on the canary); PositionID the ledger's
 	// position to close or protect.
 	AmountUSD  float64 `json:"amount_usd,omitempty"`
 	PositionID string  `json:"position_id,omitempty"`
-	Leverage   int     `json:"leverage"`
+	// Leverage must be one of TradingInfo.LeverageOptions (x1 on demo; x20
+	// only on the canary).
+	Leverage int `json:"leverage"`
 	// Protection of an open or a protect (2026-10-19). Profile is a
 	// stops.Profile ("" = the default, moderate); "custom" takes
 	// StopLossPct (required) and TakeProfitPct (0 = none) as fractions of
@@ -213,12 +392,16 @@ type TradePrepareRequest struct {
 	TakeProfitPct float64 `json:"take_profit_pct,omitempty"`
 }
 
-func (r TradePrepareRequest) validate() error {
+func (r TradePrepareRequest) validate(pol risk.Policy) error {
 	if _, ok := tradeInstrument(r.Book); !ok {
 		return fmt.Errorf("book: %q is not an eToro book of this executor (nsdq100, spx500)", r.Book)
 	}
-	if r.Leverage != 1 {
-		return errors.New("leverage: must be 1 (the policy allows x1 only)")
+	b := boundsFor(pol, r.Book)
+	if !b.allowsLeverage(r.Leverage) {
+		if len(b.Leverages) == 1 {
+			return fmt.Errorf("leverage: must be %d (the policy allows x%d only)", b.Leverages[0], b.Leverages[0])
+		}
+		return fmt.Errorf("leverage: must be one of %v (the policy)", b.Leverages)
 	}
 	positionID := func() error {
 		if r.PositionID == "" || len(r.PositionID) > 32 || strings.Trim(r.PositionID, "0123456789") != "" {
@@ -250,8 +433,8 @@ func (r TradePrepareRequest) validate() error {
 		if r.PositionID != "" {
 			return errors.New("position_id: not for an open")
 		}
-		if math.IsNaN(r.AmountUSD) || r.AmountUSD < TradeMinAmount || r.AmountUSD > TradeMaxAmount {
-			return fmt.Errorf("amount_usd: must be between %d and %d USD", TradeMinAmount, TradeMaxAmount)
+		if math.IsNaN(r.AmountUSD) || r.AmountUSD < b.Min || r.AmountUSD > b.Max {
+			return fmt.Errorf("amount_usd: must be between %.0f and %.0f USD", b.Min, b.Max)
 		}
 		return protection()
 	case TradeClose:
@@ -298,6 +481,14 @@ type TradePreview struct {
 	Units      float64                `json:"units"`
 	AmountUSD  float64                `json:"amount_usd"`
 	PositionID string                 `json:"position_id,omitempty"`
+	// Leverage and ExposureUSD (2026-10-22): the leverage the order carries
+	// and units x ask, the venue-side size (= AmountUSD at x1).
+	// Environment is "demo" or "real"; MaxLossUSD the most the position
+	// can lose at its stop (opens; 0 without a stop).
+	Leverage    int     `json:"leverage"`
+	ExposureUSD float64 `json:"exposure_usd"`
+	Environment string  `json:"environment"`
+	MaxLossUSD  float64 `json:"max_loss_usd,omitempty"`
 	// RefPrice is the last close the rule recorded (the price-deviation
 	// guard's reference and fill_vs_close's).
 	RefPrice     float64 `json:"ref_price"`
@@ -339,8 +530,12 @@ type tradeClaims struct {
 	SLBefore float64 `json:"sl_before,omitempty"`
 	TPBefore float64 `json:"tp_before,omitempty"`
 	OpenRate float64 `json:"open_rate,omitempty"`
-	Iat      int64   `json:"iat"`
-	Exp      int64   `json:"exp"`
+	// Leverage of an open (0 on older tokens = x1); Env "real" binds a
+	// canary token to the real process (never set on demo).
+	Leverage int    `json:"leverage,omitempty"`
+	Env      string `json:"env,omitempty"`
+	Iat      int64  `json:"iat"`
+	Exp      int64  `json:"exp"`
 }
 
 // key derives the signing key of an operator session.
@@ -430,7 +625,7 @@ func (s *Server) tradePrepare(w http.ResponseWriter, r *http.Request) {
 		e.Outcome, e.Error = outcome, msg
 		s.noteAll([]string{ap}, e)
 	}
-	if err := req.validate(); err != nil {
+	if err := req.validate(s.Trading.policy()); err != nil {
 		note(audit.Refused, err.Error())
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return
@@ -447,6 +642,12 @@ func (s *Server) tradePrepare(w http.ResponseWriter, r *http.Request) {
 		c := tradeClaims{ID: newID(), Ledger: l.Name, ClientRef: pv.ClientRef, RequestID: pv.RequestID, Book: pv.Book, Side: pv.Side,
 			AmountUSD: pv.AmountUSD, PositionID: pv.PositionID, Units: pv.Units, Bid: pv.Quote.Bid, Ask: pv.Quote.Ask, RefPrice: pv.RefPrice,
 			Confirmation: pv.Confirmation, Iat: now.Unix(), Exp: exp.Unix()}
+		if pv.Side == TradeOpen {
+			c.Leverage = pv.Leverage
+		}
+		if s.Trading.Real() {
+			c.Env = string(etoro.EnvReal)
+		}
 		if p := pv.Protection; p != nil {
 			c.SLRate, c.TPRate, c.Profile = p.Levels.SLRate, p.Levels.TPRate, p.Profile
 			if p.Volatility != nil {
@@ -469,7 +670,7 @@ func (s *Server) tradePrepare(w http.ResponseWriter, r *http.Request) {
 	}
 	e := base
 	e.Ref = pv.ClientRef
-	e.Detail = tradeDetail(pv.Side, pv.Book, pv.AmountUSD, pv.PositionID, pv.Units)
+	e.Detail = tradeDetail(pv.Side, pv.Book, pv.AmountUSD, pv.PositionID, pv.Units, pv.Leverage, s.Trading.Real())
 	if pv.Verdict == VerdictAllow {
 		e.Outcome = audit.Done
 		e.Detail += " -> allow"
@@ -485,14 +686,23 @@ func (s *Server) tradePrepare(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, pv)
 }
 
-func tradeDetail(side, book string, amount float64, positionID string, units float64) string {
+// tradeDetail is the trade in words for the audit line. The leverage is
+// named on an open ("x1", "x20"); a real-account trade says REAL first.
+func tradeDetail(side, book string, amount float64, positionID string, units float64, leverage int, real bool) string {
+	if leverage < 1 {
+		leverage = 1
+	}
+	prefix := ""
+	if real {
+		prefix = "REAL "
+	}
 	switch side {
 	case TradeOpen:
-		return fmt.Sprintf("open %s %.0f USD x1 (%.6f units)", book, amount, units)
+		return fmt.Sprintf("%sopen %s %.0f USD x%d (%.6f units)", prefix, book, amount, leverage, units)
 	case TradeProtect:
-		return fmt.Sprintf("protect %s position %s (%.6f units)", book, positionID, units)
+		return fmt.Sprintf("%sprotect %s position %s (%.6f units)", prefix, book, positionID, units)
 	}
-	return fmt.Sprintf("close %s position %s (%.6f units)", book, positionID, units)
+	return fmt.Sprintf("%sclose %s position %s (%.6f units)", prefix, book, positionID, units)
 }
 
 // preparePreview runs the checks. A local or venue failure is returned as
@@ -500,20 +710,19 @@ func tradeDetail(side, book string, amount float64, positionID string, units flo
 // verdict with its reasons.
 func (s *Server) preparePreview(ctx context.Context, l Ledger, req TradePrepareRequest) (TradePreview, int, error) {
 	b := s.Trading.Broker
+	real := s.Trading.Real()
 	now := s.Now().UTC()
 	today := now.In(mktcal.NewYork).Format(dateFmt)
 	in, _ := tradeInstrument(req.Book)
 	bin := broker.Instrument{Venue: b.Venue(), Symbol: in.Symbol, ID: in.ID}
-	pv := TradePreview{Verdict: VerdictBlock, Reasons: []string{}, Warnings: []string{}, Ledger: l.Name, Book: req.Book, Side: req.Side,
-		Instrument: in, AmountUSD: req.AmountUSD, PositionID: req.PositionID, PreparedAt: now.Format(time.RFC3339)}
-	switch req.Side {
-	case TradeOpen:
-		pv.Confirmation = "PLACE " + in.Symbol
-	case TradeProtect:
-		pv.Confirmation = "PROTECT " + in.Symbol
-	default:
-		pv.Confirmation = "CLOSE " + in.Symbol
+	lev := req.Leverage
+	if lev < 1 {
+		lev = 1
 	}
+	pv := TradePreview{Verdict: VerdictBlock, Reasons: []string{}, Warnings: []string{}, Ledger: l.Name, Book: req.Book, Side: req.Side,
+		Instrument: in, AmountUSD: req.AmountUSD, PositionID: req.PositionID, PreparedAt: now.Format(time.RFC3339),
+		Leverage: lev, Environment: s.Trading.Environment()}
+	pv.Confirmation = confirmationPhrase(req.Side, in.Symbol, real)
 
 	recs, err := etoroledger.ReadFile(l.Store.LedgerPath)
 	if err != nil {
@@ -531,9 +740,10 @@ func (s *Server) preparePreview(ctx context.Context, l Ledger, req TradePrepareR
 	reasons, warnings := []string{}, []string{}
 
 	// 1. Halt file (merged into the policy like the executor does, so the
-	// halted finding is the first the risk check reports). The protected
-	// policy: an open must carry a stop (2026-10-19).
-	pol := risk.EtoroDemoProtectedPolicy()
+	// halted finding is the first the risk check reports). The policy is
+	// the trading dependency's: the protected demo policy (an open must
+	// carry a stop, 2026-10-19) or the canary's.
+	pol := s.Trading.policy()
 	var halt *risk.HaltState
 	if h, found, herr := l.Store.Halt(); herr != nil {
 		reasons = append(reasons, "halt file invalid: "+herr.Error()+" (the executor refuses to run; fix or remove it by hand)")
@@ -568,7 +778,13 @@ func (s *Server) preparePreview(ctx context.Context, l Ledger, req TradePrepareR
 	profile, _ := stops.ParseProfile(req.Profile)
 	var pc protectionCtx
 	if req.Side == TradeOpen || req.Side == TradeProtect {
-		pc = s.protectionInputs(ctx, l, req.Book, req.Side, q, acct, pos, req.AmountUSD, pol)
+		plev := lev
+		if req.Side == TradeProtect && pos.State == "long" {
+			if held := heldPosition(all, in.ID, pos.PositionID); held != nil && held.Leverage > 0 {
+				plev = held.Leverage
+			}
+		}
+		pc = s.protectionInputs(ctx, l, req.Book, req.Side, q, acct, pos, req.AmountUSD*float64(lev), plev, pol)
 		warnings = append(warnings, pc.warnings...)
 		if req.Profile == "" && req.Side == TradeOpen {
 			warnings = append(warnings, fmt.Sprintf("no stop requested: the %s profile's levels were applied (the policy requires a stop)", profile))
@@ -589,23 +805,28 @@ func (s *Server) preparePreview(ctx context.Context, l Ledger, req TradePrepareR
 		}
 	}
 
-	// 2. risk.Check with the protected policy, the executor's order and
-	// state. A protect is not an order: only the halt applies to it.
-	ro := risk.Order{Book: req.Book, RefPrice: pv.RefPrice, Leverage: req.Leverage}
+	// 2. risk.Check with the policy, the executor's order and state. A
+	// protect is not an order: only the halt applies to it. Units are the
+	// exposure (invested x leverage) at the ask.
+	ro := risk.Order{Book: req.Book, RefPrice: pv.RefPrice, Leverage: lev}
 	rs := risk.State{OrdersToday: etoroledger.LegsOn(recs, req.Book, today), Equity: acct.Equity, Exposure: pv.Account.Exposure,
-		MarketClosed: !mktcal.IsOpen(now)}
+		MarketClosed: !mktcal.IsOpen(now), OpenPositions: len(all)}
 	switch req.Side {
 	case TradeOpen:
-		ro.Side, ro.Price, ro.QtyBTC = "buy", q.Ask, req.AmountUSD/q.Ask
+		ro.Side, ro.Price, ro.QtyBTC = "buy", q.Ask, req.AmountUSD*float64(lev)/q.Ask
+		pv.ExposureUSD = ro.QtyBTC * q.Ask
 		if pv.Protection != nil {
 			ro.StopLoss, ro.TakeProfit = pv.Protection.Levels.SLRate, pv.Protection.Levels.TPRate
+			pv.MaxLossUSD = pv.Protection.Levels.MaxLossUSD
 		}
 	case TradeClose:
 		ro.Side, ro.Price, ro.QtyBTC = "sell", q.Bid, pos.Units
 		rs.PositionBTC = pos.Units
+		pv.ExposureUSD = pos.Units * q.Bid
 	case TradeProtect:
 		ro.Side, ro.Price, ro.QtyBTC = "protect", q.Bid, pos.Units
 		rs.PositionBTC = pos.Units
+		pv.ExposureUSD = pos.Units * q.Bid
 	}
 	pv.Units = ro.QtyBTC
 	if req.Side == TradeProtect {
@@ -634,13 +855,25 @@ func (s *Server) preparePreview(ctx context.Context, l Ledger, req TradePrepareR
 	}
 
 	// 3. Eligibility: the ledger and the account must agree, as the executor
-	// requires before it acts.
+	// requires before it acts. On the real account the whole account must
+	// hold nothing the canary ledger does not know (plan §5.3), not only
+	// the instrument: any other position blocks an open. The rehearsal on
+	// demo shares the account with the forward-test cells, so there a
+	// position on the instrument the rehearsal ledger does not know is a
+	// warning, not a block (the close and protect checks are by position id
+	// and unchanged).
 	switch req.Side {
 	case TradeOpen:
-		if pos.State == "long" {
+		switch {
+		case pos.State == "long":
 			reasons = append(reasons, fmt.Sprintf("the ledger already holds position %s on %s (%.6f units): close it before opening again", pos.PositionID, in.Symbol, pos.Units))
-		} else if len(mine) > 0 {
+		case len(mine) > 0 && s.Trading.Rehearsal:
+			warnings = append(warnings, fmt.Sprintf("rehearsal: the demo account holds %s on %s that this ledger does not (the demo cell's); the rehearsal position will sit next to it until you close it", tradeIDs(mine), in.Symbol))
+		case len(mine) > 0:
 			reasons = append(reasons, fmt.Sprintf("the account holds %s on %s that the ledger does not: resolve by hand, nothing sent", tradeIDs(mine), in.Symbol))
+		}
+		if real && len(all) > 0 {
+			reasons = append(reasons, fmt.Sprintf("REAL: the account holds %s and the canary may be its only position: close or record them first, nothing sent", tradeIDs(all)))
 		}
 	default: // close, protect
 		verb := "close"
@@ -671,9 +904,10 @@ func (s *Server) preparePreview(ctx context.Context, l Ledger, req TradePrepareR
 		}
 	}
 
-	// 4. Cost preview (opens). 5. Cash (opens).
+	// 4. Cost preview (opens). 5. Cash (opens): what is invested must be
+	// available.
 	if req.Side == TradeOpen {
-		c, err := b.PreviewOpen(ctx, broker.OpenRequest{Instrument: bin, Side: broker.Long, Amount: req.AmountUSD, Leverage: 1, ClientRef: "preview"})
+		c, err := b.PreviewOpen(ctx, broker.OpenRequest{Instrument: bin, Side: broker.Long, Amount: req.AmountUSD, Leverage: lev, ClientRef: "preview"})
 		if err != nil {
 			reasons = append(reasons, "cost preview failed: "+err.Error())
 		} else {
@@ -694,7 +928,7 @@ func (s *Server) preparePreview(ctx context.Context, l Ledger, req TradePrepareR
 		warnings = append(warnings, fmt.Sprintf("the stop %.2f sits above the rule's SMA50 %.2f: tighter than the rule's own exit", pv.Protection.Levels.SLRate, pc.sma))
 	}
 
-	ref, err := etoroledger.UIClientRef(req.Book, today, req.kind())
+	ref, err := clientRefFor(real, req.Book, today, req.kind())
 	if err != nil {
 		return pv, http.StatusInternalServerError, err
 	}
@@ -781,6 +1015,14 @@ func (s *Server) tradePlace(w http.ResponseWriter, r *http.Request) {
 		refuse(http.StatusBadRequest, "trade token was prepared for ledger "+c.Ledger)
 		return
 	}
+	if (c.Env == string(etoro.EnvReal)) != s.Trading.Real() {
+		refuse(http.StatusBadRequest, "trade token was prepared for another account environment")
+		return
+	}
+	lev := c.Leverage
+	if lev < 1 {
+		lev = 1
+	}
 	now := s.Now().UTC()
 	if now.Unix() >= c.Exp {
 		refuse(http.StatusGone, fmt.Sprintf("trade token expired at %s: prepare again", time.Unix(c.Exp, 0).UTC().Format(time.RFC3339)))
@@ -793,7 +1035,7 @@ func (s *Server) tradePlace(w http.ResponseWriter, r *http.Request) {
 	in, _ := tradeInstrument(c.Book)
 	bin := broker.Instrument{Venue: s.Trading.Broker.Venue(), Symbol: in.Symbol, ID: in.ID}
 	today := now.In(mktcal.NewYork).Format(dateFmt)
-	base.Detail = tradeDetail(c.Side, c.Book, c.AmountUSD, c.PositionID, c.Units)
+	base.Detail = tradeDetail(c.Side, c.Book, c.AmountUSD, c.PositionID, c.Units, lev, s.Trading.Real())
 
 	// One control at a time, and never while the executor runs.
 	s.controlsMu.Lock()
@@ -848,7 +1090,10 @@ func (s *Server) tradePlace(w http.ResponseWriter, r *http.Request) {
 	mine := tradeOnInstrument(all, in.ID)
 	held := heldPosition(all, in.ID, pos.PositionID)
 	switch {
-	case c.Side == TradeOpen && len(mine) > 0:
+	case c.Side == TradeOpen && s.Trading.Real() && len(all) > 0:
+		blocked(fmt.Sprintf("REAL: the account holds %s and the canary may be its only position", tradeIDs(all)))
+		return
+	case c.Side == TradeOpen && len(mine) > 0 && !s.Trading.Rehearsal:
 		blocked(fmt.Sprintf("the account holds %s on %s that the ledger does not: resolve by hand", tradeIDs(mine), in.Symbol))
 		return
 	case c.Side != TradeOpen && held == nil:
@@ -891,11 +1136,11 @@ func (s *Server) tradePlace(w http.ResponseWriter, r *http.Request) {
 	var bo broker.Order
 	var oerr error
 	if c.Side == TradeOpen {
-		s.Log.Printf("trade.place ledger=%s open %s %.2f USD x1 sl=%.2f tp=%.2f ref=%s by=%q", l.Name, in.Symbol, c.AmountUSD, c.SLRate, c.TPRate, c.ClientRef, base.By)
-		bo, oerr = s.Trading.Broker.Open(ctx, broker.OpenRequest{Instrument: bin, Side: broker.Long, Amount: c.AmountUSD, Leverage: 1,
+		s.Log.Printf("trade.place ledger=%s %s open %s %.2f USD x%d sl=%.2f tp=%.2f ref=%s by=%q", l.Name, strings.ToUpper(s.Trading.Environment()), in.Symbol, c.AmountUSD, lev, c.SLRate, c.TPRate, c.ClientRef, base.By)
+		bo, oerr = s.Trading.Broker.Open(ctx, broker.OpenRequest{Instrument: bin, Side: broker.Long, Amount: c.AmountUSD, Leverage: lev,
 			StopLoss: c.SLRate, TakeProfit: c.TPRate, ClientRef: c.ClientRef, IntentAt: intent.IntentAt})
 	} else {
-		s.Log.Printf("trade.place ledger=%s close %s position %s ref=%s by=%q", l.Name, in.Symbol, c.PositionID, c.ClientRef, base.By)
+		s.Log.Printf("trade.place ledger=%s %s close %s position %s ref=%s by=%q", l.Name, strings.ToUpper(s.Trading.Environment()), in.Symbol, c.PositionID, c.ClientRef, base.By)
 		bo, oerr = s.Trading.Broker.Close(ctx, broker.CloseRequest{Instrument: bin, PositionID: c.PositionID, ClientRef: c.ClientRef})
 	}
 	finished := s.Now().UTC()
@@ -929,15 +1174,16 @@ func (s *Server) tradePlace(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// The ledger line (the executor's shape, source ui).
+	// The ledger line (the executor's shape, source ui; mode and env "real"
+	// on the canary, schema unchanged).
 	mid := (c.Bid + c.Ask) / 2
-	d := &etoroledger.Demo{Env: "demo", Action: kindOf(c.Side), PositionBefore: pos, Account: account,
+	d := &etoroledger.Demo{Env: s.Trading.Environment(), Action: kindOf(c.Side), PositionBefore: pos, Account: account,
 		Quote: &etoroledger.Quote{Bid: c.Bid, Ask: c.Ask, At: time.Unix(c.Iat, 0).UTC().Format(time.RFC3339), SpreadBps: broker.Quote{Bid: c.Bid, Ask: c.Ask}.SpreadBps()},
 		Order: &o,
-		Notes: []string{"assisted trade from the console (ui-api); the executor brings the book back to the rule's target at its next run unless the ledger is halted"},
+		Notes: []string{ledgerNote(s.Trading)},
 	}
-	ro := risk.Order{Book: c.Book, RefPrice: c.RefPrice, Leverage: 1, QtyBTC: c.Units}
-	rsState := risk.State{OrdersToday: etoroledger.LegsOn(led.Records(), c.Book, today), MarketClosed: false}
+	ro := risk.Order{Book: c.Book, RefPrice: c.RefPrice, Leverage: lev, QtyBTC: c.Units}
+	rsState := risk.State{OrdersToday: etoroledger.LegsOn(led.Records(), c.Book, today), MarketClosed: false, OpenPositions: len(all)}
 	if account != nil {
 		rsState.Equity, rsState.Exposure = account.Equity, account.Exposure
 	}
@@ -976,7 +1222,7 @@ func (s *Server) tradePlace(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	// The check as it was passed at prepare (same policy, state as of now).
-	d.Risk = &etoroledger.RiskCheck{PolicyVersion: risk.EtoroDemoProtectedPolicy().Version, Order: ro, State: rsState, Allowed: true}
+	d.Risk = &etoroledger.RiskCheck{PolicyVersion: s.Trading.policy().Version, Order: ro, State: rsState, Allowed: true}
 	var ruleSignal string
 	var ruleSMA float64
 	for _, rr := range led.Records() {
@@ -990,7 +1236,7 @@ func (s *Server) tradePlace(w http.ResponseWriter, r *http.Request) {
 	}
 	rec := etoroledger.Record{
 		Schema: etoroledger.Schema, RecordedAt: finished.Format(time.RFC3339), CodeVersion: "ui-api " + s.Version,
-		Mode: etoroledger.ModeDemo, Venue: etorobroker.Venue, Book: c.Book, Instrument: in,
+		Mode: ledgerMode(s.Trading), Venue: etorobroker.Venue, Book: c.Book, Instrument: in,
 		Decision: etoroledger.Decision{BarDate: today, FillDate: today, Close: c.RefPrice, SMA: ruleSMA, Signal: etoroledger.SignalManual, PrevSignal: ruleSignal, Action: action},
 		Demo:     d, Source: etoroledger.SourceUI, Operator: &etoroledger.Operator{By: base.By, Reason: base.Reason},
 	}
@@ -1023,6 +1269,51 @@ func kindOf(side string) string {
 		return etoroledger.ActionProtect
 	}
 	return etoroledger.ActionClose
+}
+
+// confirmationPhrase is what the operator types to place: the verb and the
+// symbol, with REAL between them on the real account ("PLACE REAL NSDQ100").
+func confirmationPhrase(side, symbol string, real bool) string {
+	verb := "CLOSE"
+	switch side {
+	case TradeOpen:
+		verb = "PLACE"
+	case TradeProtect:
+		verb = "PROTECT"
+	}
+	if real {
+		return verb + " REAL " + symbol
+	}
+	return verb + " " + symbol
+}
+
+// clientRefFor is the console's idempotency key: ui-real-… on the real
+// account, ui-… otherwise.
+func clientRefFor(real bool, book, nyDate, kind string) (string, error) {
+	if real {
+		return etoroledger.UIRealClientRef(book, nyDate, kind)
+	}
+	return etoroledger.UIClientRef(book, nyDate, kind)
+}
+
+// ledgerMode is the Record.Mode the process writes.
+func ledgerMode(t *EtoroTrading) string {
+	if t.Real() {
+		return etoroledger.ModeReal
+	}
+	return etoroledger.ModeDemo
+}
+
+// ledgerNote is the first note of a console line: what the trade is and
+// what happens to it next.
+func ledgerNote(t *EtoroTrading) string {
+	switch {
+	case t.Real():
+		return "REAL account: measurement canary trade from the console (ui-api -etoro-real-canary); no executor acts on this ledger"
+	case t != nil && t.Rehearsal:
+		return "canary rehearsal on the demo account (ui-api -canary-rehearsal); no executor acts on this ledger"
+	}
+	return "assisted trade from the console (ui-api); the executor brings the book back to the rule's target at its next run unless the ledger is halted"
 }
 
 // TradeCancelRequest is the body of POST /api/ui/etoro/trades/cancel
@@ -1108,7 +1399,7 @@ func (s *Server) tradeCancel(w http.ResponseWriter, r *http.Request) {
 		refuse(http.StatusBadRequest, "trade token was prepared for ledger "+c.Ledger)
 		return
 	}
-	base.Detail = tradeDetail(c.Side, c.Book, c.AmountUSD, c.PositionID, c.Units)
+	base.Detail = tradeDetail(c.Side, c.Book, c.AmountUSD, c.PositionID, c.Units, c.Leverage, s.Trading.Real())
 	now := s.Now().UTC()
 
 	s.controlsMu.Lock()
@@ -1229,7 +1520,7 @@ func (s *Server) placeProtect(w http.ResponseWriter, ctx context.Context, e plac
 	if after.StopLossRate > 0 && e.pos.OpenRate > 0 {
 		prot.MaxLossUSD = e.pos.Units * (e.pos.OpenRate - after.StopLossRate)
 	}
-	d := &etoroledger.Demo{Env: "demo", Target: "long", Action: etoroledger.ActionProtect, PositionBefore: before, PositionAfter: after, Account: e.account,
+	d := &etoroledger.Demo{Env: s.Trading.Environment(), Target: "long", Action: etoroledger.ActionProtect, PositionBefore: before, PositionAfter: after, Account: e.account,
 		Quote:      &etoroledger.Quote{Bid: c.Bid, Ask: c.Ask, At: time.Unix(c.Iat, 0).UTC().Format(time.RFC3339), SpreadBps: broker.Quote{Bid: c.Bid, Ask: c.Ask}.SpreadBps()},
 		Order:      &o,
 		Protection: prot,
@@ -1247,7 +1538,7 @@ func (s *Server) placeProtect(w http.ResponseWriter, ctx context.Context, e plac
 	}
 	rec := etoroledger.Record{
 		Schema: etoroledger.Schema, RecordedAt: finished.Format(time.RFC3339), CodeVersion: "ui-api " + s.Version,
-		Mode: etoroledger.ModeDemo, Venue: etorobroker.Venue, Book: c.Book, Instrument: e.in,
+		Mode: ledgerMode(s.Trading), Venue: etorobroker.Venue, Book: c.Book, Instrument: e.in,
 		Decision: etoroledger.Decision{BarDate: e.today, FillDate: e.today, Close: c.RefPrice, SMA: ruleSMA, Signal: etoroledger.SignalManual, PrevSignal: ruleSignal, Action: etoroledger.ActionProtect},
 		Demo:     d, Source: etoroledger.SourceUI, Operator: &etoroledger.Operator{By: base.By, Reason: base.Reason},
 	}

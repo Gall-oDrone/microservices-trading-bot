@@ -58,6 +58,7 @@ type fakeTradeBroker struct {
 	protectPending bool
 	limitsErr      error
 	limitsCalls    int
+	limitsLeverage int
 	// History (positions view): closed is what ClosedPositions answers;
 	// histErr fails it; histCalls counts the reads; posErr fails Positions.
 	closed    []broker.ClosedPosition
@@ -95,12 +96,16 @@ func (f *fakeTradeBroker) Open(ctx context.Context, req broker.OpenRequest) (bro
 	f.nextID++
 	id := strconv.Itoa(f.nextID)
 	ask := f.quotes[req.Instrument.ID][1]
-	units := req.Amount / ask
+	lev := req.Leverage
+	if lev < 1 {
+		lev = 1
+	}
+	units := req.Amount * float64(lev) / ask
 	o := broker.Order{OrderID: "o" + id, ClientRef: req.ClientRef, Status: broker.StatusExecuted, PositionIDs: []string{id},
 		AvgPrice: ask + 0.5, Units: units, Amount: req.Amount, SpreadCost: 0.04, At: tradeNow.Add(3 * time.Second)}
 	f.byRef[req.ClientRef] = o
 	p := broker.Position{ID: id, Instrument: req.Instrument, Side: broker.Long, Units: units,
-		OpenRate: o.AvgPrice, Amount: req.Amount, Leverage: 1, Exposure: req.Amount}
+		OpenRate: o.AvgPrice, Amount: req.Amount, Leverage: lev, Exposure: req.Amount * float64(lev)}
 	if req.StopLoss > 0 {
 		p.StopLoss, p.StopType = req.StopLoss, broker.StopFixed
 	}
@@ -147,9 +152,12 @@ func (f *fakeTradeBroker) SetProtection(ctx context.Context, req broker.Protecti
 }
 
 // ProtectionLimits implements broker.ProtectionLimitsReader with the
-// evidence of 2026-10-10: NSDQ100 needs 1 %, SPX500 0 %.
+// evidence of 2026-10-10: NSDQ100 needs 1 %, SPX500 0 %; at x20 eToro's
+// stop cap is 50 % of the invested amount (eligibility 2026-10-10), which
+// the adapter divides by the leverage as it does the x1 figures.
 func (f *fakeTradeBroker) ProtectionLimits(ctx context.Context, in broker.Instrument, side broker.Side, leverage int) (broker.ProtectionLimits, error) {
 	f.limitsCalls++
+	f.limitsLeverage = leverage
 	if f.limitsErr != nil {
 		return broker.ProtectionLimits{}, f.limitsErr
 	}
@@ -157,7 +165,11 @@ func (f *fakeTradeBroker) ProtectionLimits(ctx context.Context, in broker.Instru
 	if in.ID == 28 {
 		min = 0.01
 	}
-	return broker.ProtectionLimits{MinStopLossPct: min, MaxStopLossPct: 1, MaxTakeProfitPct: 10, AllowEdit: true, Tick: 0.01}, nil
+	max := 1.0
+	if leverage > 1 {
+		min, max = min/float64(leverage), 0.5/float64(leverage)
+	}
+	return broker.ProtectionLimits{MinStopLossPct: min, MaxStopLossPct: max, MaxTakeProfitPct: 10, AllowEdit: true, Tick: 0.01}, nil
 }
 func (f *fakeTradeBroker) Close(ctx context.Context, req broker.CloseRequest) (broker.Order, error) {
 	f.closes = append(f.closes, req)

@@ -26,6 +26,7 @@ import (
 	"strings"
 	"time"
 
+	"bitso-trading-platform/shared/pkg/etoro"
 	"bitso-trading-platform/shared/pkg/etoroledger"
 	"bitso-trading-platform/shared/pkg/risk"
 	"bitso-trading-platform/ui-api/internal/datahealth"
@@ -129,8 +130,13 @@ func (s *Server) etoroPolicyFor(l Ledger) (risk.Policy, HaltFileInfo) {
 // EtoroDemoETFPolicy for the ETF cells, else EtoroDemoProtectedPolicy, which
 // etoro-daily-executor defaults to (-protect) since 2026-10-19 and the
 // console's assisted trades (trades.go, protection.go) check against. An
-// unknown version then surfaces as the policy_mismatch finding.
+// unknown version then surfaces as the policy_mismatch finding. A ledger
+// marked real (the canary's) is under EtoroRealCanaryPolicy whatever it
+// has recorded: no executor ever runs on it.
 func etoroBasePolicy(l Ledger) risk.Policy {
+	if l.environment() == string(etoro.EnvReal) {
+		return risk.EtoroRealCanaryPolicy()
+	}
 	recs, err := etoroledger.ReadFile(l.Store.LedgerPath)
 	if err != nil {
 		return risk.EtoroDemoProtectedPolicy()
@@ -153,7 +159,7 @@ func etoroBasePolicy(l Ledger) risk.Policy {
 
 // etoroKnownPolicy maps a recorded policy version to the built-in policy.
 func etoroKnownPolicy(version string) (risk.Policy, bool) {
-	for _, p := range []risk.Policy{risk.EtoroDemoProtectedPolicy(), risk.EtoroDemoPolicy(), risk.EtoroDemoETFPolicy()} {
+	for _, p := range []risk.Policy{risk.EtoroDemoProtectedPolicy(), risk.EtoroDemoPolicy(), risk.EtoroDemoETFPolicy(), risk.EtoroRealCanaryPolicy(), risk.EtoroRealCanaryRehearsalPolicy()} {
 		if p.Version == version {
 			return p, true
 		}
@@ -174,6 +180,12 @@ func etoroRecordsAreETF(recs []etoroledger.Record) bool {
 }
 
 func etoroPolicySrc(p risk.Policy) string {
+	if strings.HasPrefix(p.Version, etoro.RealAckPolicyPrefix) {
+		return "built-in shared/pkg/risk.EtoroRealCanaryPolicy (" + p.Version + ") REAL ACCOUNT"
+	}
+	if strings.HasPrefix(p.Version, "etoro-canary-rehearsal-") {
+		return "built-in shared/pkg/risk.EtoroRealCanaryRehearsalPolicy (" + p.Version + ") rehearsal on demo"
+	}
 	if strings.HasPrefix(p.Version, "etoro-demo-etf-") {
 		return "built-in shared/pkg/risk.EtoroDemoETFPolicy (" + p.Version + ")"
 	}

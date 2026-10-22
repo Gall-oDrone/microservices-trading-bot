@@ -58,10 +58,29 @@
 //
 //	go run ./cmd -operator-token-file ~/.config/mtb/operator-token \
 //	  -etoro-ledger ../strategy-executor/etoro-daily-data/demo/ledger.jsonl -etoro-trading
+//
+// Real-account canary (2026-10-22, docs/etoro/ETORO-REAL-CANARY-PLAN-2026-10-21.md):
+// a SEPARATE process on its own port, env file, operator token and ledger
+// directory may trade the real account for the measurement canary. It
+// needs -etoro-real-canary on the command line (visible in ps; there is
+// no environment variable for it) and every one of the six conditions in
+// shared/pkg/etoro/realack.go, or the start is fatal and names the missing
+// one: never a silent read-only start. The executor keeps refusing real.
+//
+//	go run ./cmd -addr 127.0.0.1:8091 \
+//	  -operator-token-file ~/.config/mtb/operator-token-real-canary \
+//	  -etoro-env-file ~/.config/microservices-trading-bot/etoro-real-canary.env \
+//	  -etoro-ledger etoro-real-canary=../strategy-executor/etoro-daily-data/real-canary/ledger.jsonl \
+//	  -etoro-trading -etoro-real-canary
+//
+// -canary-rehearsal runs the same canary policy on the DEMO account with a
+// ledger of its own (plan §7's rehearsal), demo keys and REAL-less phrases.
 package main
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -119,7 +138,15 @@ func main() {
 	etoroLiveOn := flag.Bool("etoro-live", env("UI_API_ETORO_LIVE", "1") != "0", "with -etoro-ledger, poll eToro's rates for the index CFDs every 5 s, display only (UI_API_ETORO_LIVE=0 disables)")
 	etoroEnvFile := flag.String("etoro-env-file", env("UI_API_ETORO_ENV_FILE", etorolive.DefaultEnvFile()), "KEY=VALUE file with the eToro demo keys for the rates poll (ETORO_ENV must be demo); missing turns the feed off")
 	etoroTrading := flag.Bool("etoro-trading", env("UI_API_ETORO_TRADING", "0") == "1", "enable the assisted trades (Trade page) on the eToro DEMO ledger; needs -operator-token-file, -etoro-ledger and -etoro-env-file with ETORO_ENV=demo (default: off)")
+	realCanary := flag.Bool("etoro-real-canary", false, "REAL ACCOUNT: trade the measurement canary (one eToro ledger under a real-canary/ directory, -etoro-env-file with ETORO_ENV=real, its own -operator-token-file, the acknowledgement file); every condition of the acknowledgement must hold or the start is fatal; command line only, no env var")
+	realAckFile := flag.String("real-ack-file", env("UI_API_REAL_ACK_FILE", defaultRealAckFile()), "the REAL-ACCOUNT-ACK file -etoro-real-canary checks")
+	demoTokenFile := flag.String("demo-operator-token-file", env("UI_API_DEMO_OPERATOR_TOKEN_FILE", defaultDemoTokenFile()), "the demo console's operator token file; -etoro-real-canary refuses to start with the same token")
+	rehearsal := flag.Bool("canary-rehearsal", env("UI_API_CANARY_REHEARSAL", "0") == "1", "run the canary policy (x20, 50-60 USD) on the DEMO account with its own ledger: the rehearsal before the real canary; needs -etoro-trading")
 	flag.Parse()
+
+	if *realCanary && *rehearsal {
+		log.Fatal("ui-api: -etoro-real-canary and -canary-rehearsal exclude each other")
+	}
 
 	if *printPolicy {
 		b, _ := json.MarshalIndent(risk.DefaultPolicy(), "", "  ")
@@ -176,7 +203,30 @@ func main() {
 			if firstEtoro < 0 {
 				firstEtoro = len(ledgers)
 			}
-			ledgers = append(ledgers, api.Ledger{Name: nl.Name, Store: store.New(nl.Path, ""), Venue: api.VenueEtoro})
+			l := api.Ledger{Name: nl.Name, Store: store.New(nl.Path, ""), Venue: api.VenueEtoro}
+			if *realCanary {
+				l.Environment = string(etoro.EnvReal)
+			}
+			ledgers = append(ledgers, l)
+		}
+	}
+	if *realCanary {
+		// The canary process serves exactly one eToro ledger, the canary's,
+		// named etoro-real-canary (the halt phrase of plan §3.2), and trades it.
+		n := 0
+		for _, l := range ledgers {
+			if l.Venue == api.VenueEtoro {
+				n++
+				if l.Name != api.RealCanaryLedgerName {
+					logger.Fatalf("-etoro-real-canary: the eToro ledger must be named %s (got %q): -etoro-ledger %s=<path>", api.RealCanaryLedgerName, l.Name, api.RealCanaryLedgerName)
+				}
+			}
+		}
+		if n != 1 {
+			logger.Fatalf("-etoro-real-canary: exactly one eToro ledger (the canary's), got %d", n)
+		}
+		if !*etoroTrading {
+			logger.Fatal("-etoro-real-canary without -etoro-trading makes no sense: the canary process exists to trade the canary ledger; for a read-only view of it start without -etoro-real-canary")
 		}
 	}
 	srv := &api.Server{Ledgers: ledgers, Policy: pol, PolicySrc: src, StageSize: *stageSize, StaticDir: *static,
@@ -209,7 +259,9 @@ func main() {
 	if firstEtoro >= 0 && *etoroLiveOn {
 		// The feed polls the index CFDs and reads their closed bars from the
 		// first eToro ledger (the CFD cell), not from whichever cell is last.
-		srv.EtoroLive = startEtoroLive(ctx, ledgers[firstEtoro], *etoroEnvFile, logger)
+		// Market data is environment independent: the canary process polls
+		// with its own (real) key, the demo process with the demo key.
+		srv.EtoroLive = startEtoroLive(ctx, ledgers[firstEtoro], *etoroEnvFile, *realCanary, logger)
 	}
 	if *etoroTrading {
 		switch {
@@ -218,14 +270,33 @@ func main() {
 		case srv.OperatorToken == "":
 			logger.Fatal("-etoro-trading needs -operator-token-file: the trades are token-gated like the halt controls")
 		}
-		cfg, err := etorolive.Credentials(*etoroEnvFile)
-		if err != nil {
-			logger.Fatalf("-etoro-trading: %v (the env file must exist, be 0600 and say ETORO_ENV=demo)", err)
+		switch {
+		case *realCanary:
+			srv.Trading = startRealCanary(ledgers, ledgers[firstEtoro], *etoroEnvFile, *realAckFile, *tokenFile, *demoTokenFile, srv.OperatorToken, logger)
+		case *rehearsal:
+			cfg, err := etorolive.Credentials(*etoroEnvFile)
+			if err != nil {
+				logger.Fatalf("-canary-rehearsal: %v (the env file must exist, be 0600 and say ETORO_ENV=demo)", err)
+			}
+			if srv.Trading, err = api.NewEtoroCanaryRehearsal(cfg); err != nil {
+				logger.Fatal("-canary-rehearsal: ", err)
+			}
+			for _, l := range ledgers {
+				if l.Venue == api.VenueEtoro && strings.HasPrefix(l.Name, "etoro-demo") {
+					logger.Fatalf("-canary-rehearsal: refusing to run the canary policy on the demo cell's ledger %s; give the rehearsal its own ledger (e.g. etoro-canary-rehearsal=…/etoro-daily-data/rehearsal-canary/ledger.jsonl)", l.Name)
+				}
+			}
+			logger.Printf("etoro trading: CANARY REHEARSAL on the demo account (ledger %s, policy %s, x%v, %s tokens)", ledgers[firstEtoro].Name, srv.Trading.Policy.Version, srv.Trading.Policy.For("nsdq100").Leverages, api.TradeTokenTTL)
+		default:
+			cfg, err := etorolive.Credentials(*etoroEnvFile)
+			if err != nil {
+				logger.Fatalf("-etoro-trading: %v (the env file must exist, be 0600 and say ETORO_ENV=demo)", err)
+			}
+			if srv.Trading, err = api.NewEtoroTrading(cfg); err != nil {
+				logger.Fatal("-etoro-trading: ", err)
+			}
+			logger.Printf("etoro trading: ASSISTED TRADES ENABLED on the demo account (ledger %s, token-gated, %s tokens)", ledgers[firstEtoro].Name, api.TradeTokenTTL)
 		}
-		if srv.Trading, err = api.NewEtoroTrading(cfg); err != nil {
-			logger.Fatal("-etoro-trading: ", err)
-		}
-		logger.Printf("etoro trading: ASSISTED TRADES ENABLED on the demo account (ledger %s, token-gated, %s tokens)", ledgers[firstEtoro].Name, api.TradeTokenTTL)
 	}
 	hs := &http.Server{
 		Addr: *addr, Handler: srv.Handler(),
@@ -300,6 +371,75 @@ func repoRel(dir string) string {
 	return filepath.ToSlash(dir)
 }
 
+// startRealCanary builds the REAL broker for the measurement canary or
+// dies naming the condition that failed (plan §5.2: never a silent
+// read-only start). It reads the real env file (ETORO_ENV=real required),
+// the acknowledgement file (0600, the exact sentence, the key prefix, the
+// ledger, the policy, the window, a name), hashes the operator tokens and
+// hands everything to api.NewEtoroRealCanary, which runs
+// etoro.CheckRealAck before building anything. On success it logs one line
+// with the six facts and no secret.
+func startRealCanary(all []api.Ledger, canary api.Ledger, envFile, ackFile, tokenFile, demoTokenFile, token string, logger *log.Logger) *api.EtoroTrading {
+	cfg, err := etorolive.RealCredentials(envFile)
+	if err != nil {
+		logger.Fatalf("-etoro-real-canary REFUSED (condition 2, the env file): %v (the env file must exist, be 0600 and say ETORO_ENV=real)", err)
+	}
+	ack, err := etoro.LoadRealAck(ackFile)
+	if err != nil {
+		logger.Fatalf("-etoro-real-canary REFUSED (condition 3, the acknowledgement): %v", err)
+	}
+	chk := etoro.RealAckCheck{Flag: true, LedgerPath: canary.Store.LedgerPath, TokenFile: tokenFile, DemoTokenFile: demoTokenFile, Now: time.Now()}
+	if abs, err := filepath.Abs(canary.Store.LedgerPath); err == nil {
+		chk.LedgerPath = abs
+	}
+	for _, l := range all {
+		if l.Name != canary.Name && l.Store != nil && !l.Store.Remote() {
+			p := l.Store.LedgerPath
+			if abs, err := filepath.Abs(p); err == nil {
+				p = abs
+			}
+			chk.OtherLedgers = append(chk.OtherLedgers, p)
+		}
+	}
+	chk.TokenSHA256 = sha256Hex(token)
+	if demo, err := api.LoadOperatorToken(demoTokenFile); err == nil {
+		chk.DemoTokenSHA256 = sha256Hex(demo)
+	} else {
+		logger.Printf("real canary: the demo operator token %s could not be read (%v): comparing token paths only", demoTokenFile, err)
+	}
+	tr, err := api.NewEtoroRealCanary(cfg, ack, chk)
+	if err != nil {
+		logger.Fatalf("-etoro-real-canary REFUSED: %v", err)
+	}
+	chk.PolicyVersion = tr.Policy.Version
+	logger.Printf("etoro trading: %s", ack.Facts(chk))
+	logger.Printf("etoro trading: REAL ACCOUNT CANARY ENABLED on ledger %s (%s): policy %s, books %v, x%v, invested %.0f-%.0f USD, one position; phrases carry REAL; %s tokens",
+		canary.Name, chk.LedgerPath, tr.Policy.Version, tr.Policy.BookNames(), tr.Policy.For("nsdq100").Leverages,
+		tr.Policy.For("nsdq100").MinInvestedUSD, tr.Policy.For("nsdq100").MaxInvestedUSD, api.TradeTokenTTL)
+	return tr
+}
+
+func sha256Hex(s string) string {
+	h := sha256.Sum256([]byte(s))
+	return hex.EncodeToString(h[:])
+}
+
+func defaultRealAckFile() string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+	return filepath.Join(home, ".config", "microservices-trading-bot", "REAL-ACCOUNT-ACK")
+}
+
+func defaultDemoTokenFile() string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+	return filepath.Join(home, ".config", "mtb", "operator-token")
+}
+
 // startLive connects one shared upstream for the forward-test books. Closed
 // daily closes for the provisional flip level come from the default ledger's
 // candle files (the executor's), never from the live feed.
@@ -334,20 +474,29 @@ func startLive(ctx context.Context, st *store.Store, wsURL, restURL string, logg
 // startEtoroLive starts the eToro rates poller for the eToro ledger's books
 // (porting plan P5c). The hub buckets the forming bar by UTC day like the
 // executor's candle files, from which the provisional flip level is read.
-// Without usable demo keys it logs why and returns nil: the console keeps
-// serving everything else. GetRates is the only eToro call made here.
-func startEtoroLive(ctx context.Context, l api.Ledger, envFile string, logger *log.Logger) *live.Hub {
+// Without usable keys it logs why and returns nil: the console keeps
+// serving everything else. GetRates is the only eToro call made here. The
+// demo process accepts demo keys only; the canary process (real) its real
+// key only: the rates route is the same for both.
+func startEtoroLive(ctx context.Context, l api.Ledger, envFile string, real bool, logger *log.Logger) *live.Hub {
 	if l.Venue != api.VenueEtoro {
 		logger.Printf("etoro live: off (ledger %s is not an eToro ledger)", l.Name)
 		return nil
 	}
-	cfg, err := etorolive.Credentials(envFile)
+	load := etorolive.Credentials
+	if real {
+		load = etorolive.RealCredentials
+	}
+	cfg, err := load(envFile)
 	switch {
 	case etorolive.IsNotExist(err):
 		logger.Printf("etoro live: off (no env file %s; -etoro-env-file)", envFile)
 		return nil
 	case errors.Is(err, etorolive.ErrNotDemo):
-		logger.Printf("etoro live: REFUSED: %v; the console only ever uses demo keys, feed off", err)
+		logger.Printf("etoro live: REFUSED: %v; the demo console only ever uses demo keys, feed off", err)
+		return nil
+	case errors.Is(err, etorolive.ErrNotReal):
+		logger.Printf("etoro live: REFUSED: %v; the canary process only ever uses its real key, feed off", err)
 		return nil
 	case err != nil:
 		logger.Printf("etoro live: off (%v)", err)

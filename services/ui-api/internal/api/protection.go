@@ -50,24 +50,34 @@ var fallbackBounds = stops.Bounds{MinStopLossPct: 0.01, MaxStopLossPct: 1, MaxTa
 type TradeRecommendRequest struct {
 	Book string `json:"book"`
 	Side string `json:"side"` // TradeOpen | TradeProtect
-	// AmountUSD sizes an open (default TradeDefaultAmount); PositionID
-	// names the ledger's position for a protect (default: the ledger's).
+	// AmountUSD sizes an open (default: the policy's default amount);
+	// PositionID names the ledger's position for a protect (default: the
+	// ledger's). Leverage (2026-10-22) is the open's leverage, default the
+	// policy's (x1 on demo, x20 on the canary).
 	AmountUSD  float64 `json:"amount_usd,omitempty"`
 	PositionID string  `json:"position_id,omitempty"`
+	Leverage   int     `json:"leverage,omitempty"`
 }
 
-func (r TradeRecommendRequest) validate() error {
+func (r TradeRecommendRequest) validate(pol risk.Policy) error {
 	if _, ok := tradeInstrument(r.Book); !ok {
 		return fmt.Errorf("book: %q is not an eToro book of this executor (nsdq100, spx500)", r.Book)
 	}
+	b := boundsFor(pol, r.Book)
 	switch r.Side {
 	case TradeOpen:
-		if r.AmountUSD != 0 && (math.IsNaN(r.AmountUSD) || r.AmountUSD < TradeMinAmount || r.AmountUSD > TradeMaxAmount) {
-			return fmt.Errorf("amount_usd: must be between %d and %d USD", TradeMinAmount, TradeMaxAmount)
+		if r.AmountUSD != 0 && (math.IsNaN(r.AmountUSD) || r.AmountUSD < b.Min || r.AmountUSD > b.Max) {
+			return fmt.Errorf("amount_usd: must be between %.0f and %.0f USD", b.Min, b.Max)
+		}
+		if r.Leverage != 0 && !b.allowsLeverage(r.Leverage) {
+			return fmt.Errorf("leverage: must be one of %v (the policy)", b.Leverages)
 		}
 	case TradeProtect:
 		if r.AmountUSD != 0 {
 			return fmt.Errorf("amount_usd: not for a protect (the held position is sized already)")
+		}
+		if r.Leverage != 0 {
+			return fmt.Errorf("leverage: not for a protect (the held position's applies)")
 		}
 		if r.PositionID != "" && (len(r.PositionID) > 32 || strings.Trim(r.PositionID, "0123456789") != "") {
 			return fmt.Errorf("position_id: the numeric id of the ledger's position")
@@ -124,6 +134,11 @@ type TradeRecommendation struct {
 	RuleSignal string                 `json:"rule_signal"`
 	AmountUSD  float64                `json:"amount_usd,omitempty"`
 	Units      float64                `json:"units"`
+	// Leverage, ExposureUSD and Environment (2026-10-22): the leverage the
+	// levels were sized for, units x ask, and "demo" | "real".
+	Leverage    int     `json:"leverage"`
+	ExposureUSD float64 `json:"exposure_usd"`
+	Environment string  `json:"environment"`
 	// Profiles holds the three named profiles; DefaultProfile which one the
 	// console pre-selects; Custom is nil here (the console sends its own
 	// distances to prepare).
@@ -150,13 +165,19 @@ type protectionCtx struct {
 // protectionInputs gathers the ATR from the ledger's candles, the venue's
 // bounds from the broker and the policy's caps. side decides the entry and
 // mark: an open measures from the ask (entry) and the bid (mark); a protect
-// from the position's open rate (entry) and the bid (mark). units sizes
-// the money figures. It never fails: a missing input becomes a warning and
-// a conservative default.
-func (s *Server) protectionInputs(ctx context.Context, l Ledger, book, side string, q broker.Quote, acct broker.Account, pos etoroledger.Position, amount float64, pol risk.Policy) protectionCtx {
+// from the position's open rate (entry) and the bid (mark). exposure (the
+// notional, invested x leverage) sizes the money figures of an open;
+// leverage selects the venue's stop bounds (eToro states them as a share
+// of the invested amount, so the adapter divides by the leverage: 50 % at
+// x20 is 2.5 % of the price). It never fails: a missing input becomes a
+// warning and a conservative default.
+func (s *Server) protectionInputs(ctx context.Context, l Ledger, book, side string, q broker.Quote, acct broker.Account, pos etoroledger.Position, exposure float64, leverage int, pol risk.Policy) protectionCtx {
 	pc := protectionCtx{warnings: []string{}}
 	bl := pol.For(book)
 	pc.limits = stops.Limits{MinStopLossPct: bl.MinStopLossPct, MaxStopLossPct: bl.MaxStopLossPct, MaxLossPctEquity: bl.MaxLossPctEquity}
+	if leverage < 1 {
+		leverage = 1
+	}
 
 	// Volatility from the executor's saved bars.
 	if rows, _, err := l.Store.Candles(book); err != nil {
@@ -173,13 +194,19 @@ func (s *Server) protectionInputs(ctx context.Context, l Ledger, book, side stri
 		}
 	}
 
-	// The venue's bounds, or the fallback.
+	// The venue's bounds for this leverage, or the fallback (x1 figures,
+	// scaled by the leverage like the adapter does).
 	in, _ := tradeInstrument(book)
 	bin := broker.Instrument{Venue: s.Trading.Broker.Venue(), Symbol: in.Symbol, ID: in.ID}
 	pc.bounds, pc.src = fallbackBounds, "fallback"
+	if leverage > 1 {
+		pc.bounds.MinStopLossPct /= float64(leverage)
+		pc.bounds.MaxStopLossPct /= float64(leverage)
+		pc.bounds.MaxTakeProfitPct /= float64(leverage)
+	}
 	if lr, ok := s.Trading.Broker.(broker.ProtectionLimitsReader); ok {
-		if pl, err := lr.ProtectionLimits(ctx, bin, broker.Long, 1); err != nil {
-			pc.warnings = append(pc.warnings, "venue bounds: "+err.Error()+"; the fallback bounds (NSDQ100 x1 long, evidence 2026-10-10) apply")
+		if pl, err := lr.ProtectionLimits(ctx, bin, broker.Long, leverage); err != nil {
+			pc.warnings = append(pc.warnings, fmt.Sprintf("venue bounds: %v; the fallback bounds (NSDQ100 x1 long, evidence 2026-10-10, scaled to x%d) apply", err, leverage))
 		} else {
 			pc.bounds = stops.Bounds{MinStopLossPct: pl.MinStopLossPct, MaxStopLossPct: pl.MaxStopLossPct, MaxTakeProfitPct: pl.MaxTakeProfitPct, Tick: pl.Tick}
 			pc.src = "venue"
@@ -208,7 +235,7 @@ func (s *Server) protectionInputs(ctx context.Context, l Ledger, book, side stri
 	case TradeProtect:
 		pc.in.Entry, pc.in.Mark, pc.in.Units = pos.OpenRate, q.Bid, pos.Units
 	default:
-		pc.in.Entry, pc.in.Mark, pc.in.Amount = q.Ask, q.Bid, amount
+		pc.in.Entry, pc.in.Mark, pc.in.Amount = q.Ask, q.Bid, exposure
 	}
 	return pc
 }
@@ -285,7 +312,7 @@ func (s *Server) tradeRecommend(w http.ResponseWriter, r *http.Request) {
 	if !s.admit(w, r, base, []string{ap}, &req) {
 		return
 	}
-	if err := req.validate(); err != nil {
+	if err := req.validate(s.Trading.policy()); err != nil {
 		e := base
 		e.Outcome, e.Error = audit.Refused, err.Error()
 		s.noteAll([]string{ap}, e)
@@ -349,19 +376,29 @@ func (s *Server) recommend(ctx context.Context, l Ledger, req TradeRecommendRequ
 	}
 	rec.Quote = &etoroledger.Quote{Bid: q.Bid, Ask: q.Ask, At: q.At.UTC().Format(time.RFC3339), SpreadBps: q.SpreadBps()}
 
-	amount := req.AmountUSD
+	pol := s.Trading.policy()
+	bounds := boundsFor(pol, req.Book)
+	amount, lev := req.AmountUSD, req.Leverage
+	if lev < 1 {
+		lev = bounds.defaultLeverage()
+	}
 	if req.Side == TradeOpen {
 		if amount == 0 {
-			amount = TradeDefaultAmount
+			amount = bounds.Default
 		}
-		rec.AmountUSD, rec.Units = amount, amount/q.Ask
+		rec.AmountUSD, rec.Units, rec.Leverage = amount, amount*float64(lev)/q.Ask, lev
 	} else {
 		rec.Units = pos.Units
+		if held := heldPosition(all, in.ID, pos.PositionID); held != nil && held.Leverage > 0 {
+			lev = held.Leverage
+		}
+		rec.Leverage = lev
 	}
-	pc := s.protectionInputs(ctx, l, req.Book, req.Side, q, acct, pos, amount, risk.EtoroDemoProtectedPolicy())
+	rec.ExposureUSD, rec.Environment = rec.Units*q.Ask, s.Trading.Environment()
+	pc := s.protectionInputs(ctx, l, req.Book, req.Side, q, acct, pos, amount*float64(lev), lev, pol)
 	rec.Warnings = append(rec.Warnings, pc.warnings...)
 	rec.Profiles = pc.recommendAll()
-	rec.PolicyVersion = risk.EtoroDemoProtectedPolicy().Version
+	rec.PolicyVersion = pol.Version
 	def := rec.Profiles[rec.DefaultProfile]
 	rec.Context = pc.block(rec.DefaultProfile, def)
 	if req.Side == TradeProtect {

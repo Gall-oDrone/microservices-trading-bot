@@ -66,17 +66,37 @@ func LoadEnvFile(path string) (map[string]string, error) {
 // unless ETORO_ENV is exactly "demo", and with fs.ErrNotExist when the file
 // is missing; the returned config is for etoro.NewClient and nothing else.
 func Credentials(path string) (etoro.Config, error) {
+	return credentials(path, etoro.EnvDemo)
+}
+
+// ErrNotReal: the file is not for the real environment.
+var ErrNotReal = errors.New("ETORO_ENV must be real")
+
+// RealCredentials (2026-10-22) reads the REAL account's keys for the
+// measurement canary (cmd -etoro-real-canary). It fails with ErrNotReal
+// unless ETORO_ENV is exactly "real": the canary process can no more load a
+// demo key than the demo process a real one. Only api.NewEtoroRealCanary
+// consumes the result, after the acknowledgement check.
+func RealCredentials(path string) (etoro.Config, error) {
+	return credentials(path, etoro.EnvReal)
+}
+
+func credentials(path string, want etoro.Environment) (etoro.Config, error) {
 	kv, err := LoadEnvFile(path)
 	if err != nil {
 		return etoro.Config{}, err
 	}
-	if env := kv["ETORO_ENV"]; env != string(etoro.EnvDemo) {
-		return etoro.Config{}, fmt.Errorf("%w (%s has %q)", ErrNotDemo, path, env)
+	if env := kv["ETORO_ENV"]; env != string(want) {
+		sentinel := ErrNotDemo
+		if want == etoro.EnvReal {
+			sentinel = ErrNotReal
+		}
+		return etoro.Config{}, fmt.Errorf("%w (%s has %q)", sentinel, path, env)
 	}
 	if kv["ETORO_PUBLIC_KEY"] == "" || kv["ETORO_PRIVATE_KEY"] == "" {
 		return etoro.Config{}, fmt.Errorf("%s: ETORO_PUBLIC_KEY and ETORO_PRIVATE_KEY are required", path)
 	}
-	return etoro.Config{PublicKey: kv["ETORO_PUBLIC_KEY"], PrivateKey: kv["ETORO_PRIVATE_KEY"], Env: etoro.EnvDemo}, nil
+	return etoro.Config{PublicKey: kv["ETORO_PUBLIC_KEY"], PrivateKey: kv["ETORO_PRIVATE_KEY"], Env: want}, nil
 }
 
 // IsNotExist reports whether err is a missing env file.
