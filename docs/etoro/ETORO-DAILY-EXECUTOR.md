@@ -664,9 +664,15 @@ The ledger lines keep schema `etoro-ledger/v1`: the JSON key is still `demo`, wi
 ### 14.2 Pre-flight (once; what only you can do is marked **you**)
 
 1. **you** — Fund the real account with the canary budget only (60 USD; check your region's
-   minimum first deposit, conversion and withdrawal fees first). 2FA on.
+   minimum first deposit, conversion and withdrawal fees first). 2FA on. *Done 2026-10-22: 60 USD,
+   converted from MXN at eToro's 0.0518 USD/MXN (≈ 1,158 MXN); note the spread vs the interbank
+   rate in `SUMMARY.md`.*
 2. **you** — Create a **new API key** for the canary with trading scope. Write the env file,
-   0600, and paste the key **nowhere else** (not in a chat, not in a shell history: use an editor):
+   0600, and paste the key **nowhere else** (not in a chat, not in a shell history: use an editor).
+   *2026-10-22: a key pair was pasted into the implementation chat by mistake; it is to be treated
+   as compromised, revoked at eToro, and never used by the canary. The chat transcript is stored on
+   disk; nothing in the repo or in `~/.config` received it.* Give the new key the longest expiry
+   eToro allows: the ack's end date must stay ≤ expiry − 1 day and M1/M2 need weeks, not days:
    ```
    umask 077
    $EDITOR ~/.config/microservices-trading-bot/etoro-real-canary.env

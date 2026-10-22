@@ -408,7 +408,7 @@ was written from. Where they differ, the runbook is right.*
 | Financing, expected | ≈ 0.23 USD / night on 1,000 USD exposure (2.3 bps model; the measurement is whether this holds) → ≈ 5 USD over 20 nights incl. weekends | [A: same; C: none] |
 | Spread | ≈ 0.10–0.20 USD per round trip at 1,000 exposure (15 bps RT) | [C: ≈ 0.01] |
 | Commission | none (CFD) | [C: ≈ 0.09 per order] |
-| Account frictions | deposit conversion if not USD; 5 USD withdrawal; nothing else in the window | check the terms |
+| Account frictions | deposit conversion if not USD; 5 USD withdrawal; nothing else in the window | check the terms. *Measured 2026-10-22:* the account was funded with **60 USD** from MXN at eToro's conversion rate of **0.0518 USD per MXN** (≈ 1,158.3 MXN for the 60 USD; the spread against the interbank rate of the day is the first friction to write into `SUMMARY.md`) |
 | Expected total cost of the exercise | **≈ 5–8 USD in fees, up to 25 USD if stopped out, 60 USD worst case** | |
 
 ---
