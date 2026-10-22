@@ -168,3 +168,80 @@ func TestNoData(t *testing.T) {
 		t.Fatalf("verdict %s", rep.Verdict)
 	}
 }
+
+// The real-account canary (2026-10-22): 50 USD at x20 is 1,000 USD of
+// exposure and the model prices the exposure, not the amount; the
+// observations series adds the per-night table with the weekend flagged.
+func TestCanaryExposureModelAndObservedNights(t *testing.T) {
+	open := broker.Position{ID: "4100000001", Instrument: nsdq, Side: broker.Long, Units: 0.04, OpenRate: 25000, Amount: 50, Leverage: 20,
+		Exposure: 998.7, Fees: -1.15, OpenedAt: time.Date(2026, 11, 3, 15, 5, 0, 0, time.UTC)}
+	f := &fake{positions: []broker.Position{open}}
+	at := time.Date(2026, 11, 8, 23, 0, 0, 0, time.UTC) // 5 nights by 00:00 UTC boundaries
+	recs := []etoroledger.Record{{Mode: etoroledger.ModeReal, Book: "nsdq100", Demo: &etoroledger.Demo{Env: "real", PositionAfter: etoroledger.Position{State: "long", PositionID: "4100000001"}}}}
+	rep, err := checkEnv(context.Background(), f, recs, at.AddDate(0, 0, -60), 2.3, at, nil, "real")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rep.Env != "real" || len(rep.Rows) != 1 {
+		t.Fatalf("report %+v", rep)
+	}
+	r := rep.Rows[0]
+	// Model: 998.7 (the venue's exposure) x 2.3 bps x 5 nights = 1.1485.
+	if r.Leverage != 20 || r.Exposure != 998.7 || r.Nights != 5 || math.Abs(r.ModelFees-998.7*0.00023*5) > 1e-9 || r.Book != "nsdq100" || r.Source != "ledger" {
+		t.Fatalf("row %+v", r)
+	}
+	// A closed x20 row without a reported exposure: amount x leverage.
+	c := broker.ClosedPosition{ID: "4100000001", Instrument: nsdq, Units: 0.04, OpenRate: 25000, CloseRate: 24380, Amount: 50, Leverage: 20, Fees: -1.38,
+		OpenedAt: open.OpenedAt, ClosedAt: time.Date(2026, 11, 9, 8, 12, 0, 0, time.UTC)}
+	rep2, _ := checkEnv(context.Background(), &fake{closed: []broker.ClosedPosition{c}}, nil, at.AddDate(0, 0, -60), 2.3, at, nil, "real")
+	if rep2.Rows[0].Exposure != 1000 || math.Abs(rep2.Rows[0].ModelFees-1000*0.00023*6) > 1e-9 {
+		t.Fatalf("closed row %+v", rep2.Rows[0])
+	}
+	// x1 rows are what they were: exposure = amount.
+	rep3, _ := check(context.Background(), &fake{closed: []broker.ClosedPosition{nsdqClosed}}, nil, now.AddDate(0, 0, -60), 2.3, now, nil)
+	if rep3.Rows[0].Exposure != nsdqClosed.Amount || rep3.Rows[0].Leverage != 1 || math.Abs(rep3.Rows[0].ModelFees-nsdqClosed.Amount*0.00023*4) > 1e-9 {
+		t.Fatalf("x1 row %+v", rep3.Rows[0])
+	}
+
+	// Observations: four nights, the third three times the others.
+	d := func(v float64) *float64 { return &v }
+	pos := func(fees float64, delta *float64, nights int) etoroledger.ObservedPosition {
+		return etoroledger.ObservedPosition{PositionID: "4100000001", Exposure: 1000, FeesToDate: fees, FeesDelta: delta, Nights: nights, Preview: &etoroledger.Costs{OvernightFee: -0.22, WeekendFee: -0.66}}
+	}
+	obs := []etoroledger.Observation{
+		{At: "2026-11-03T23:00:00Z", NYDate: "2026-11-03", Positions: []etoroledger.ObservedPosition{pos(0, nil, 1)}},
+		{At: "2026-11-04T23:00:00Z", NYDate: "2026-11-04", Positions: []etoroledger.ObservedPosition{pos(-0.23, d(-0.23), 2)}},
+		{At: "2026-11-05T23:00:00Z", NYDate: "2026-11-05", Positions: []etoroledger.ObservedPosition{pos(-0.46, d(-0.23), 3)}},
+		{At: "2026-11-06T23:00:00Z", NYDate: "2026-11-06", Positions: []etoroledger.ObservedPosition{pos(-1.15, d(-0.69), 4)}},
+		{At: "2026-11-07T23:00:00Z", NYDate: "2026-11-07", Positions: []etoroledger.ObservedPosition{pos(-1.38, d(-0.23), 5)}},
+	}
+	addNights(&rep, obs, "observations.jsonl")
+	if len(rep.Nights) != 4 || rep.NightsSource != "observations.jsonl" {
+		t.Fatalf("nights %+v", rep.Nights)
+	}
+	for i, n := range rep.Nights {
+		if n.PositionID != "4100000001" || n.Preview != -0.22 || math.Abs(n.Frozen-0.23) > 1e-9 || n.Exposure != 1000 {
+			t.Errorf("night %d %+v", i, n)
+		}
+	}
+	if rep.Nights[0].Measured != -0.23 || rep.Nights[0].Weekend || !rep.Nights[2].Weekend || rep.Nights[2].Measured != -0.69 || rep.Nights[2].NYDate != "2026-11-06" {
+		t.Fatalf("weekend flag %+v", rep.Nights)
+	}
+	md := markdown(rep)
+	for _, want := range []string{"# eToro real:", "Per night, as observed", "| 2026-11-06 | 4100000001 | 4 | 1000.00 | **-0.6900** | -0.2200 | 0.2300 | yes |", "as observed over 4 night(s)", "| x20 |"} {
+		if !strings.Contains(md, want) {
+			t.Errorf("markdown lacks %q:\n%s", want, md)
+		}
+	}
+	// A series with no delta yet says so instead of a table.
+	var fresh Report
+	fresh.OvernightBps = 2.3
+	addNights(&fresh, obs[:1], "observations.jsonl")
+	if len(fresh.Nights) != 0 || len(fresh.Notes) != 1 || !strings.Contains(fresh.Notes[0], "no night-over-night delta yet") {
+		t.Fatalf("fresh %+v", fresh)
+	}
+	addNights(&fresh, nil, "x")
+	if fresh.NightsSource != "observations.jsonl" {
+		t.Fatal("an empty series must not touch the report")
+	}
+}

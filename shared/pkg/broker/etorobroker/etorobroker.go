@@ -596,7 +596,7 @@ func (a *Adapter) ClosedPositions(ctx context.Context, since time.Time) ([]broke
 				Side:       side, Units: r.Units, OpenRate: r.OpenRate, CloseRate: r.CloseRate,
 				OpenedAt: parseTime(r.OpenTimestamp), ClosedAt: parseTime(r.CloseTimestamp),
 				Amount: r.Investment, NetProfit: r.NetProfit, Fees: r.Fees,
-				StopLoss: stopOrZero(r.StopLossRate), TakeProfit: r.TakeProfitRate,
+				StopLoss: stopOrZero(r.StopLossRate), TakeProfit: r.TakeProfitRate, Leverage: r.Leverage,
 			})
 		}
 		if len(rows) < 200 {

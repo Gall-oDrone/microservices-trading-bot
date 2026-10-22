@@ -15,6 +15,17 @@
 //	go run ./cmd/etoro-fees-check -ledger ./etoro-daily-data/demo/ledger.jsonl \
 //	  -positions 3616683146,3616683295 -out ../../docs/etoro/evidence-$(date +%F)
 //
+// Real-account canary (2026-10-22, docs/etoro/ETORO-REAL-CANARY-PLAN-2026-10-21.md
+// §4 M1 / M2): with -real-canary and the canary's env file (ETORO_ENV=real)
+// it reads the real account the same way, and when observations.jsonl
+// exists next to the ledger (cmd/etoro-canary-observe writes it) it adds
+// the "per night, as observed" section: measured vs the preview vs the
+// frozen model, night by night, with the weekend charge flagged. The model
+// is priced on exposure (amount x leverage), which equals the amount at x1.
+//
+//	go run ./cmd/etoro-fees-check -real-canary -ledger ./etoro-daily-data/real-canary/ledger.jsonl \
+//	  -env-file ~/.config/microservices-trading-bot/etoro-real-canary.env
+//
 // Exit status: 0 on a verdict (whatever it is), 1 when the venue could not be
 // read, 2 on bad usage. The verdict never changes the frozen costs: the
 // pre-registration says the frozen figures decide; this turns an assumed
@@ -44,6 +55,8 @@ func main() {
 	sinceDays := flag.Int("since-days", 60, "how far back to read the trading history (eToro allows < 1 year)")
 	overnight := flag.Float64("overnight-bps", 2.3, "frozen overnight fee per calendar night at x1, bps of the position")
 	envFile := flag.String("env-file", defaultEnvFile(), "file with ETORO_PUBLIC_KEY / ETORO_PRIVATE_KEY (chmod 600)")
+	realCanary := flag.Bool("real-canary", false, "read the REAL account for the measurement canary: the env file must say ETORO_ENV=real and -ledger must be under a real-canary/ directory (read calls only)")
+	observations := flag.String("observations", "", "observations.jsonl of cmd/etoro-canary-observe for the per-night section (default: next to the ledger when present; \"-\" skips it)")
 	flag.Parse()
 
 	if *envFile != "" {
@@ -52,10 +65,17 @@ func main() {
 		}
 	}
 	env, err := etoro.ParseEnvironment(strings.ToLower(strings.TrimSpace(os.Getenv("ETORO_ENV"))))
-	if err != nil || env != etoro.EnvDemo {
-		usage(fmt.Sprintf("ETORO_ENV must be demo (got %q): this tool reads the demo account only", os.Getenv("ETORO_ENV")))
+	switch {
+	case err != nil:
+		usage(err.Error())
+	case *realCanary && env != etoro.EnvReal:
+		usage(fmt.Sprintf("-real-canary needs an env file with ETORO_ENV=real (got %q)", os.Getenv("ETORO_ENV")))
+	case *realCanary && filepath.Base(filepath.Dir(*ledger)) != "real-canary":
+		usage(fmt.Sprintf("-real-canary needs the canary ledger (a directory named real-canary), got %s", *ledger))
+	case !*realCanary && env != etoro.EnvDemo:
+		usage(fmt.Sprintf("ETORO_ENV must be demo (got %q): this tool reads the demo account unless -real-canary is given", os.Getenv("ETORO_ENV")))
 	}
-	c, err := etoro.NewClient(etoro.Config{PublicKey: os.Getenv("ETORO_PUBLIC_KEY"), PrivateKey: os.Getenv("ETORO_PRIVATE_KEY"), Env: etoro.EnvDemo})
+	c, err := etoro.NewClient(etoro.Config{PublicKey: os.Getenv("ETORO_PUBLIC_KEY"), PrivateKey: os.Getenv("ETORO_PRIVATE_KEY"), Env: env})
 	if err != nil {
 		die(err)
 	}
@@ -72,9 +92,21 @@ func main() {
 		}
 	}
 	now := time.Now().UTC()
-	rep, err := check(context.Background(), etorobroker.New(c), recs, now.AddDate(0, 0, -*sinceDays), *overnight, now, only)
+	rep, err := checkEnv(context.Background(), etorobroker.New(c), recs, now.AddDate(0, 0, -*sinceDays), *overnight, now, only, string(env))
 	if err != nil {
 		die(err)
+	}
+	if obsPath := *observations; obsPath != "-" {
+		if obsPath == "" && *ledger != "" {
+			obsPath = etoroledger.ObservationsPath(*ledger)
+		}
+		if obsPath != "" {
+			obs, oerr := etoroledger.ReadObservations(obsPath)
+			if oerr != nil {
+				die(fmt.Errorf("observations: %w", oerr))
+			}
+			addNights(&rep, obs, obsPath)
+		}
 	}
 	md := markdown(rep)
 	fmt.Print(md)

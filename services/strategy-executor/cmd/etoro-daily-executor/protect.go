@@ -50,8 +50,9 @@ const (
 // close rate must be to the stop or the target to be reported as that exact
 // fill; a close beyond the rate is the same event through a gap, reported
 // with the gap. A close strictly between the two is something else (a
-// manual close in the app, a margin close-out).
-const venueCloseTolerance = 0.0005
+// manual close in the app, a margin close-out). Since 2026-10-22 the value
+// and the classification live in etoroledger (shared with reconcile).
+const venueCloseTolerance = etoroledger.VenueCloseTolerance
 
 // fallbackBounds stand in when the broker cannot read the venue's rules
 // (NSDQ100 x1 long, evidence 2026-10-10).
@@ -315,24 +316,12 @@ func (e demoEnv) venueClose(ctx context.Context, d *etoroledger.Demo, pos etorol
 	}
 	vc := &etoroledger.VenueClose{Kind: etoroledger.VenueCloseOther, StopLossRate: sl, TakeProfitRate: tp, CloseRate: c.CloseRate,
 		ClosedAt: c.ClosedAt.UTC().Format(time.RFC3339), NetProfit: c.NetProfit, Fees: c.Fees}
-	var why string
-	switch {
-	case sl > 0 && c.CloseRate <= sl*(1+venueCloseTolerance):
-		vc.Kind = etoroledger.VenueCloseStoppedOut
-		vc.GapBps = (sl - c.CloseRate) / sl * 1e4
-		why = fmt.Sprintf("close rate %.2f at the stop %.2f", c.CloseRate, sl)
-		if vc.GapBps > venueCloseTolerance*1e4 {
-			why = fmt.Sprintf("close rate %.2f is %.1f bps through the stop %.2f (gap)", c.CloseRate, vc.GapBps, sl)
-		}
-	case tp > 0 && c.CloseRate >= tp*(1-venueCloseTolerance):
-		vc.Kind = etoroledger.VenueCloseTookProfit
-		vc.GapBps = (tp - c.CloseRate) / tp * 1e4
-		why = fmt.Sprintf("close rate %.2f at the target %.2f", c.CloseRate, tp)
-		if -vc.GapBps > venueCloseTolerance*1e4 {
-			why = fmt.Sprintf("close rate %.2f is %.1f bps beyond the target %.2f (gap)", c.CloseRate, -vc.GapBps, tp)
-		}
-	default:
-		why = fmt.Sprintf("close rate %.2f is between the stop %.2f and the target %.2f: not ours and not a protective order (closed in the app, or a margin close-out)", c.CloseRate, sl, tp)
+	// The classification is shared with etoro-reconcile -record-venue-close
+	// (the real-account canary's by-hand path): same tolerance, same words.
+	kind, gap, why := etoroledger.ClassifyVenueClose(sl, tp, c.CloseRate)
+	vc.Kind = kind
+	if kind != etoroledger.VenueCloseOther {
+		vc.GapBps = gap
 	}
 	d.Action = etoroledger.ActionVenueClose
 	d.VenueClose = vc

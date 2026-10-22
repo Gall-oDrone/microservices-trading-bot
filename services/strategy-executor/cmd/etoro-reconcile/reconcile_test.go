@@ -2,6 +2,9 @@ package main
 
 import (
 	"context"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -281,5 +284,88 @@ func TestVenueCloseVerifiedAgainstHistory(t *testing.T) {
 	f.closed = nil
 	if r, _ := run(f, recs, nil, t0); r.Clean || !has(r, codeCloseNotInHist) {
 		t.Fatalf("venue close missing from history: %+v", r.Findings)
+	}
+}
+
+// The real-account canary (2026-10-22): no executor runs on its ledger, so
+// -record-venue-close writes the venue_close line the demo cells get from
+// the 09:35 run, from the trading history, with the shared classification.
+func TestRecordVenueClosesForTheCanary(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "real-canary")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	ledgerPath := filepath.Join(dir, "ledger.jsonl")
+	if !canaryLedger(ledgerPath) || canaryLedger(filepath.Join(t.TempDir(), "demo", "ledger.jsonl")) {
+		t.Fatal("canaryLedger")
+	}
+	led, err := etoroledger.Open(ledgerPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	opened := time.Date(2026, 11, 3, 15, 5, 0, 0, time.UTC)
+	open := etoroledger.Record{Schema: etoroledger.Schema, RecordedAt: opened.Format(time.RFC3339), Mode: etoroledger.ModeReal, Venue: "etoro", Book: "nsdq100",
+		Instrument: etoroledger.Instrument{Symbol: "NSDQ100", ID: 28}, Source: etoroledger.SourceUI,
+		Decision: etoroledger.Decision{BarDate: "2026-11-03", FillDate: "2026-11-03", Signal: etoroledger.SignalManual, Action: "buy"},
+		Demo: &etoroledger.Demo{Env: "real", Action: etoroledger.ActionOpen, Target: "long", PositionBefore: etoroledger.Flat(),
+			PositionAfter: etoroledger.Position{State: "long", PositionID: "4100000001", Units: 0.04, Amount: 50, OpenRate: 25000, OpenedAt: opened.Format(time.RFC3339), StopLossRate: 24387.5, StopType: "fixed"},
+			Order:         &etoroledger.Order{Kind: etoroledger.ActionOpen, ClientRef: "ui-real-nsdq100-2026-11-03-open-abcdef", Status: "executed", PositionIDs: []string{"4100000001"}, IntentAt: opened}}}
+	if err := led.Append(open); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Date(2026, 11, 5, 14, 0, 0, 0, time.UTC)
+
+	// The account no longer holds it and the history does not list it yet:
+	// nothing written, the operator re-runs later.
+	f := &fake{}
+	outs, err := recordVenueCloses(context.Background(), f, ledgerPath, nil, now, "real", "test", "diego", "test")
+	if err != nil || len(outs) != 1 || outs[0].Recorded || !strings.Contains(outs[0].Note, "does not list the close yet") {
+		t.Fatalf("not listed: %+v %v", outs, err)
+	}
+	if recs, _ := etoroledger.ReadFile(ledgerPath); len(recs) != 1 {
+		t.Fatalf("a line was written: %d", len(recs))
+	}
+	// Still held: nothing to do.
+	held := []broker.Position{{ID: "4100000001", Instrument: broker.Instrument{Venue: "etoro", ID: 28}, Units: 0.04}}
+	if outs, err := recordVenueCloses(context.Background(), f, ledgerPath, held, now, "real", "test", "diego", "test"); err != nil || len(outs) != 0 {
+		t.Fatalf("held: %+v %v", outs, err)
+	}
+	// Listed, 11 bps through the stop: a stopped_out line with the gap.
+	f.closed = []broker.ClosedPosition{{ID: "4100000001", Instrument: broker.Instrument{Venue: "etoro", ID: 28}, Side: broker.Long, Units: 0.04, OpenRate: 25000,
+		CloseRate: 24360.0, OpenedAt: opened, ClosedAt: time.Date(2026, 11, 5, 8, 12, 33, 0, time.UTC), Amount: 50, NetProfit: -24.80, Fees: -0.46, StopLoss: 24387.5, Leverage: 20}}
+	outs, err = recordVenueCloses(context.Background(), f, ledgerPath, nil, now, "real", "test", "diego", "stop-out recorded")
+	if err != nil || len(outs) != 1 || !outs[0].Recorded || outs[0].Kind != etoroledger.VenueCloseStoppedOut || outs[0].GapBps < 11 || outs[0].GapBps > 12 {
+		t.Fatalf("recorded: %+v %v", outs, err)
+	}
+	recs, _ := etoroledger.ReadFile(ledgerPath)
+	if len(recs) != 2 {
+		t.Fatalf("records %d", len(recs))
+	}
+	vc := recs[1]
+	if vc.Mode != etoroledger.ModeReal || vc.Demo.Env != "real" || vc.Demo.Action != etoroledger.ActionVenueClose || vc.Demo.PositionAfter.State != "flat" ||
+		vc.Decision.BarDate != "2026-11-05" || vc.Source != etoroledger.SourceUI || vc.Operator == nil || vc.Operator.By != "diego" ||
+		vc.Demo.VenueClose == nil || vc.Demo.VenueClose.CloseRate != 24360 || vc.Demo.VenueClose.NetProfit != -24.80 || vc.Demo.VenueClose.Fees != -0.46 ||
+		vc.Demo.Order == nil || vc.Demo.Order.Kind != etoroledger.ActionVenueClose || vc.Demo.Order.AvgPrice != 24360 || vc.Demo.Order.Fees != -0.46 ||
+		!strings.Contains(strings.Join(vc.Demo.Notes, " "), "through the stop") || vc.Demo.Account == nil {
+		t.Fatalf("venue close line %+v demo %+v vc %+v", vc, vc.Demo, vc.Demo.VenueClose)
+	}
+	if p := etoroledger.LastDemoPosition(recs, "nsdq100"); p.State != "flat" {
+		t.Fatalf("after the record the ledger must be flat: %+v", p)
+	}
+	// The reconcile over the new ledger is clean: the close is in the history.
+	rep, err := reconcileWith(context.Background(), f, recs, nil, now, testSettle(nil))
+	if err != nil || !rep.Clean {
+		t.Fatalf("reconcile after the record: %+v %v", rep.Findings, err)
+	}
+	// A second run records nothing (the ledger is flat now).
+	if outs, err := recordVenueCloses(context.Background(), f, ledgerPath, nil, now, "real", "test", "diego", "test"); err != nil || len(outs) != 0 {
+		t.Fatalf("second run: %+v %v", outs, err)
+	}
+	// A close between the stop and nothing (no target): venue_close, no gap.
+	if kind, gap, why := etoroledger.ClassifyVenueClose(24387.5, 0, 24700); kind != etoroledger.VenueCloseOther || gap != 0 || !strings.Contains(why, "between the stop") {
+		t.Fatalf("classify %s %v %s", kind, gap, why)
+	}
+	if kind, _, _ := etoroledger.ClassifyVenueClose(0, 26000, 26010); kind != etoroledger.VenueCloseTookProfit {
+		t.Fatalf("took profit: %s", kind)
 	}
 }

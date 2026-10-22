@@ -91,9 +91,11 @@ type bookReport struct {
 }
 
 type report struct {
-	Schema        string          `json:"schema"`
-	GeneratedAt   string          `json:"generated_at"`
-	Ledger        string          `json:"ledger"`
+	Schema      string `json:"schema"`
+	GeneratedAt string `json:"generated_at"`
+	Ledger      string `json:"ledger"`
+	// Env (2026-10-22) is "demo" or "real" (the measurement canary).
+	Env           string          `json:"env,omitempty"`
 	Clean         bool            `json:"clean"`
 	Account       *broker.Account `json:"account,omitempty"`
 	PositionReads int             `json:"position_reads"`            // portfolio reads made (1 unless the portfolio lagged)

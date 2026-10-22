@@ -248,6 +248,10 @@ type ClosedPosition struct {
 	// closed it. Added 2026-10-19.
 	StopLoss   float64 `json:"stop_loss,omitempty"`
 	TakeProfit float64 `json:"take_profit,omitempty"`
+	// Leverage the position carried (0 when the venue did not say; read
+	// as x1). Added 2026-10-22 for the real-account canary, whose financing
+	// is on Amount x Leverage, not on Amount.
+	Leverage int `json:"leverage,omitempty"`
 }
 
 // HistoryReader is implemented by adapters that can list closed positions
