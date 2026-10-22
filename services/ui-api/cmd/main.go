@@ -256,13 +256,11 @@ func main() {
 	if *liveOn {
 		srv.Live = startLive(ctx, ledgers[0].Store, *liveURL, *liveREST, logger)
 	}
-	if firstEtoro >= 0 && *etoroLiveOn {
-		// The feed polls the index CFDs and reads their closed bars from the
-		// first eToro ledger (the CFD cell), not from whichever cell is last.
-		// Market data is environment independent: the canary process polls
-		// with its own (real) key, the demo process with the demo key.
-		srv.EtoroLive = startEtoroLive(ctx, ledgers[firstEtoro], *etoroEnvFile, *realCanary, logger)
-	}
+	// The eToro feed is started after the trading block below: under
+	// -etoro-real-canary the acknowledgement is checked there, and nothing,
+	// not even the read-only rates poll, may be built from the real key
+	// before it passes (seen on the first real start, 2026-10-22: the poller
+	// logged one line before the window refusal).
 	if *etoroTrading {
 		switch {
 		case *etoroLedger == "":
@@ -297,6 +295,13 @@ func main() {
 			}
 			logger.Printf("etoro trading: ASSISTED TRADES ENABLED on the demo account (ledger %s, token-gated, %s tokens)", ledgers[firstEtoro].Name, api.TradeTokenTTL)
 		}
+	}
+	if firstEtoro >= 0 && *etoroLiveOn {
+		// The feed polls the index CFDs and reads their closed bars from the
+		// first eToro ledger (the CFD cell), not from whichever cell is last.
+		// Market data is environment independent: the canary process polls
+		// with its own (real) key, the demo process with the demo key.
+		srv.EtoroLive = startEtoroLive(ctx, ledgers[firstEtoro], *etoroEnvFile, *realCanary, logger)
 	}
 	hs := &http.Server{
 		Addr: *addr, Handler: srv.Handler(),
