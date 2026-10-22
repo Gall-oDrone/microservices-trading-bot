@@ -338,3 +338,35 @@ func TestHasStopAndProfiles(t *testing.T) {
 		t.Fatalf("%+v", m)
 	}
 }
+
+// A stop clamped to the ceiling is rounded up to the tick, never past the
+// cap: at an entry where the exact cap falls between ticks, flooring would
+// put the distance a hair over the policy's maximum, which risk.Check (and
+// the venue) would refuse. Found by the real-account canary (2026-10-22:
+// 2.45 % of 29,851 = 29,119.65 exactly after flooring to 29,119.65 reads
+// 2.4500017 %).
+func TestStopAtTheCeilingNeverRoundsPastIt(t *testing.T) {
+	in := Input{Entry: 29851, Mark: 29850, Amount: 1000, SpreadPct: 0.00003, ATR: 475.7,
+		Bounds: Bounds{MinStopLossPct: 0.0005, MaxStopLossPct: 0.025, MaxTakeProfitPct: 10, Tick: 0.01},
+		Limits: Limits{MinStopLossPct: 0.023, MaxStopLossPct: 0.0245}}
+	all, err := Recommend(in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for p, l := range all {
+		if !l.Feasible || l.SLPct > 0.0245 || l.SLPct < 0.023 {
+			t.Errorf("%s: stop %.7f%% (%v) is outside the 2.3-2.45%% band", p, l.SLPct*100, l.SLRate)
+		}
+		// Moderate (2 ATR = 3.19 %) and aggressive (3 ATR) are clamped to the
+		// ceiling and must land one tick inside it; conservative (1.5 ATR =
+		// 2.39 %) is inside the band and untouched.
+		if p != Conservative && l.SLRate != 29119.66 {
+			t.Errorf("%s: stop rate %v want 29119.66", p, l.SLRate)
+		}
+	}
+	// A custom distance under the ceiling still rounds down as before.
+	l, err := Build(in, 0.024, 0)
+	if err != nil || l.SLRate != math.Floor(29851*(1-0.024)*100+1e-9)/100 || l.SLPct < 0.024 {
+		t.Fatalf("under the ceiling: %+v %v", l, err)
+	}
+}

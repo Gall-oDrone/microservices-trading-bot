@@ -424,7 +424,10 @@ func (in Input) build(p Profile, slPct, tpPct float64) Levels {
 		tpPct = in.Bounds.MaxTakeProfitPct
 	}
 
-	// 4. Rounding: stop down, target up, to the tick.
+	// 4. Rounding: stop down, target up, to the tick. A stop that was
+	// clamped to the ceiling must not be rounded past it (the risk check
+	// and the venue measure the distance exactly): at the ceiling the
+	// stop rounds up instead, one tick inside the cap.
 	tick := in.tick()
 	l.SLRate = math.Floor(in.Entry*(1-slPct)/tick+1e-9) * tick
 	l.SLRate = roundTick(l.SLRate, tick)
@@ -432,6 +435,10 @@ func (in Input) build(p Profile, slPct, tpPct float64) Levels {
 		l.SLRate = tick
 	}
 	l.SLPct = (in.Entry - l.SLRate) / in.Entry
+	if !math.IsInf(ceiling, 1) && l.SLPct > ceiling+1e-12 {
+		l.SLRate = roundTick(math.Ceil(in.Entry*(1-ceiling)/tick-1e-9)*tick, tick)
+		l.SLPct = (in.Entry - l.SLRate) / in.Entry
+	}
 	if tpPct > 0 {
 		l.TPRate = roundTick(math.Ceil(in.Entry*(1+tpPct)/tick-1e-9)*tick, tick)
 		l.TPPct = (l.TPRate - in.Entry) / in.Entry
