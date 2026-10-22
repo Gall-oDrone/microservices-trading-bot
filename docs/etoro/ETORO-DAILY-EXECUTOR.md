@@ -648,12 +648,13 @@ ever runs against the real account is the read-only observer (`ops-run.sh etoro-
 | eToro keys | `etoro-demo.env` (`ETORO_ENV=demo`) | **`etoro-real-canary.env`** (`ETORO_ENV=real`, its own key, 0600) |
 | operator token | `~/.config/mtb/operator-token` | **`~/.config/mtb/operator-token-real-canary`** (a different value; the start compares hashes) |
 | acknowledgement | — | **`~/.config/microservices-trading-bot/REAL-ACCOUNT-ACK`** (0600; §14.2) |
-| ledger | `etoro-daily-data/demo/` | **`etoro-daily-data/real-canary/`**: `ledger.jsonl`, `intents/`, `risk-state.json`, `ui-audit.jsonl`, **`observations.jsonl`**, `run-<UTC>.log` |
+| ledger | `etoro-daily-data/demo/` | **`etoro-daily-data/real-canary/`**: `ledger.jsonl`, `intents/`, `risk-state.json`, `ui-audit.jsonl`, **`observations.jsonl`**, `run-<UTC>.log`, `candles/` (written by the observer, not an executor) |
 | ledger name = halt phrase | `etoro-demo` | **`etoro-real-canary`** |
 | policy | `etoro-demo-2026-10-19` | **`etoro-real-canary-2026-10-22`**: nsdq100 only, x20 only, invested 50–60 (default 50), exposure ≤ 1,200, one NSDQ100 position (D7: other instruments' holdings are warned about, never touched), stop required at 2.3–2.45 % of the price (the venue caps it at 2.5 % = 50 % of invested at x20; the policy stays just inside so a fill above the ask cannot push it past), one order per day, cash session, equity caps off |
 | phrases | `PLACE NSDQ100` … | **`PLACE REAL NSDQ100`**, **`CLOSE REAL NSDQ100`**, **`PROTECT REAL NSDQ100`** |
 | client_ref | `ui-nsdq100-…` | **`ui-real-nsdq100-…`** |
-| web | `:5173` → `:8090` | **`npm run dev:real-canary`** = `:5174` → `:8091`; red top bar, `REAL ·` title, red accent, `· REAL` on the ledger badge |
+| web | `:5173` → `:8090` | **`npm run dev:real-canary`** = `:5174` → `:8091`; red top bar, `REAL ·` title, red accent, `· REAL` on the ledger badge; the Trade page shows the live quote with its age |
+| rates poll | 5 s (12 reads/min) | **2 s** (`UI_API_ETORO_LIVE_INTERVAL=2s`, the floor: 30 reads/min leaves the key room for prepare under eToro's 60/min; the Public API has no tick stream) |
 | cron | 09:35 / 09:38 / 09:41 NY executors | **none that trades**; `etoro-canary-observe` at 18:00 NY every day (opt-in, `install-ops-cron.sh --canary-observe`) |
 | S3 | `daily-executor/etoro-demo*` | **`daily-executor/etoro-real-canary`** (observer's copy; D4) |
 | watchdog | `:nyse` calendar | the same Lambda, plain daily calendar on the observer's run logs (no code change; §14.5) |
@@ -754,7 +755,9 @@ The ledger lines keep schema `etoro-ledger/v1`: the JSON key is still `demo`, wi
 ### 14.4 Daily
 
 Nothing to do. The observer runs at 18:00 NY (weekends included; eToro posts overnight fees at
-17:00 NY) and appends one line: cash and equity, per position `fees_to_date` and the day's
+17:00 NY), refreshes `real-canary/candles/nsdq100_daily_<date>.csv` (the console's chart and the
+stop profiles' ATR; one read, the executor's format — the canary has no executor run to do it;
+`-candles-only` is the backfill, `-no-candles` skips it) and appends one line: cash and equity, per position `fees_to_date` and the day's
 **delta** (M1), nights held since the last line (17:00 NY boundaries), the history rows that
 appeared since (M4), the cost preview at the held size. Glance at the Positions card on `:5174`
 or `tail -1 real-canary/observations.jsonl | jq`. Every Monday:
@@ -887,4 +890,12 @@ passed before: the fakes did not know the venue's rule. This is why the gate exi
   private 260). A `key_sha256:` line in the ack would be stronger; not built yet.
 - `Client.Environment()` already existed (the plan said `Env()`).
 - The watchdog needed no change: the observer's run log follows the executors' convention.
+- The console's chart and the ATR profiles read `<ledger dir>/candles/`, which only the executor
+  wrote: the canary's chart was empty ("no candle file for nsdq100") and the recommend step fell
+  back to the 8 % stop. Since 2026-10-22 the observer keeps the file (backfilled: 951 bars from
+  2023-01-06).
+- "Real-time" prices: eToro's Public API is REST-only (no WebSocket in the OpenAPI capture), 60
+  reads/min per key shared with the trade path. The canary polls at the 2 s floor and the Trade
+  page shows the quote's age; the Prepare quote, fetched when you press Prepare, is the price a
+  trade is checked against, and the fill is at market either way.
 

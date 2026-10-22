@@ -1939,6 +1939,14 @@ as they were.
   badges) and its absence on demo; the Trade page's bounds, label, x20, exposure hint,
   out-of-bounds refusal, preview first line, REAL phrase and dialog; the demo page unchanged;
   the caps sentence. The whole gate (tsc, eslint, prettier, vitest 280, vite build) is green.
+- **Live quote on the Trade page (2026-10-22, after the first real session).** `LiveQuoteLine`
+  (`components/live.tsx`) above the form: the selected book's bid / ask with the tick flash, the
+  spread in bps, and **`quote Ns old`** ticking every second (amber past 10 s), plus the stream's
+  `LiveBadge`. The feed is the same `/api/ui/etoro/stream`; the canary's `ui-api` polls at the 2 s
+  floor (`UI_API_ETORO_LIVE_INTERVAL`), the demo at 5 s. eToro's Public API has no tick stream and
+  60 reads/min per key, so this is as live as it gets; the copy says that the Prepare quote decides.
+  `lib/format.ts` `quoteAgeSeconds` (tested). The same change gave the canary's chart its bars: the
+  observer now writes `real-canary/candles/`.
 - **Not built, on purpose.** A single console showing demo and real side by side (plan §3.1:
   two processes, two tabs, two tokens); a way to dismiss the bar; any REAL-specific shortcut
   (the "Close at market" shortcut of §8.22 works through the same REAL phrase and dialog). The

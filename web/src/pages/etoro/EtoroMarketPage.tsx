@@ -212,8 +212,9 @@ export function EtoroMarketPage() {
         <div>
           <h1>Market</h1>
           <PageIntro>
-            eToro&rsquo;s index-CFD quotes, polled by ui-api every 5 s (read only). Display only: the executor decides
-            on closed daily candles at 09:35 New York, never on these numbers.
+            eToro&rsquo;s index-CFD quotes, polled by ui-api every few seconds (5 s on the demo console, 2 s on the
+            canary; eToro has no tick stream; read only). Display only: the executor decides on closed daily candles at
+            09:35 New York, never on these numbers.
           </PageIntro>
         </div>
         <div className="row" style={{ gap: 10, flexWrap: 'wrap', justifyContent: 'flex-end' }}>

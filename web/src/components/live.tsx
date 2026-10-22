@@ -6,7 +6,7 @@
 import { useState } from 'react'
 import type { LivePhase, LiveState } from '../api/live'
 import type { BookSnapshot, DayChange, ForwardTest } from '../api/schemas'
-import { ago, fmtDate, fmtDayChange, fmtMoney, fmtPct, fmtPrice, fmtUTC } from '../lib/format'
+import { ago, fmtDate, fmtDayChange, fmtMoney, fmtPct, fmtPrice, fmtUTC, quoteAgeSeconds } from '../lib/format'
 import { Badge, SignalPill, Stat } from './ui'
 
 const PHASE_LABEL: Record<LivePhase, string> = {
@@ -62,6 +62,49 @@ export function TickPrice({ value, quote, book }: { value: number; quote: string
     <span key={value} className={`tick ${dir}`} data-testid="live-price">
       {fmtPrice(value, quote, book)}
     </span>
+  )
+}
+
+/**
+ * The live quote of one book on the Trade page (2026-10-22, the canary
+ * console): bid / ask with the up/down flash, the spread, and how old the
+ * quote is, ticking every second. eToro's Public API is polled (no tick
+ * stream exists); the period is the ui-api's -etoro-live-interval (2 s on
+ * the canary, 5 s on demo). The Prepare quote, not this line, is the price
+ * a trade is checked against.
+ */
+export function LiveQuoteLine({ live, book, quote }: { live: LiveState; book: string; quote: string }) {
+  const snap = live.books[book]
+  const age = quoteAgeSeconds(snap?.updated_at, live.now)
+  const spreadBps = snap && snap.bid > 0 ? ((snap.ask - snap.bid) / ((snap.ask + snap.bid) / 2)) * 1e4 : null
+  return (
+    <div className="live-quote-line" data-testid="live-quote" aria-live="polite">
+      <LiveBadge live={live} />
+      {snap ? (
+        <>
+          <span className="num">
+            <TickPrice value={snap.bid} quote={quote} book={book} /> /{' '}
+            <TickPrice value={snap.ask} quote={quote} book={book} />
+          </span>
+          {spreadBps != null && (
+            <span className="faint num" title="ask − bid over the mid">
+              spread {spreadBps.toFixed(2)} bps
+            </span>
+          )}
+          {age != null && (
+            <span
+              className={`faint num${age > 10 ? ' warn' : ''}`}
+              data-testid="live-quote-age"
+              title={snap.updated_at ? fmtUTC(snap.updated_at) : undefined}
+            >
+              quote {age}s old
+            </span>
+          )}
+        </>
+      ) : (
+        <span className="faint">no live quote yet</span>
+      )}
+    </div>
   )
 }
 

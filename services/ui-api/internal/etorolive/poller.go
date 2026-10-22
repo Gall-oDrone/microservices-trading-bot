@@ -30,6 +30,12 @@ var DefaultBooks = map[string]int64{"nsdq100": 28, "spx500": 27}
 // DefaultInterval is the poll period: 12 reads a minute for both books.
 const DefaultInterval = 5 * time.Second
 
+// MinInterval is the fastest poll a process may ask for (2026-10-22, the
+// canary console): 30 reads a minute, leaving the same key about 25 for
+// the trade path under eToro's 60 reads/min. The Public API has no
+// streaming route; a faster poll would only turn prepares into 429s.
+const MinInterval = 2 * time.Second
+
 // Poller calls Rates every Interval and reports to Handler.
 type Poller struct {
 	// Rates fetches bid/ask for instrument ids (etoro.Client.GetRates).

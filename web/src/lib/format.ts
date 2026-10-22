@@ -154,3 +154,11 @@ export function ago(iso: string, now = Date.now()): string {
   if (h < 48) return `${h} h ago`
   return `${Math.round(h / 24)} days ago`
 }
+
+/** Whole seconds since an ISO time, never negative (the clock the caller passes ticks once a second). */
+export function quoteAgeSeconds(iso: string | undefined, now: number): number | null {
+  if (!iso) return null
+  const t = new Date(iso).getTime()
+  if (Number.isNaN(t)) return null
+  return Math.max(0, Math.round((now - t) / 1000))
+}

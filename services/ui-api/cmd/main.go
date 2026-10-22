@@ -135,7 +135,8 @@ func main() {
 	preregDirs := flag.String("prereg-dirs", env("UI_API_PREREG_DIRS", "../strategy-executor/daily-executor-data/prereg,../../docs/backtest-readiness"), "where to look for the latest pre-registered verdict report (scripts/prereg-evaluation.sh output), comma-separated")
 	etoroLedger := flag.String("etoro-ledger", env("UI_API_ETORO_LEDGER", ""), "eToro executor ledger(s), local disk, for /api/ui/etoro/ and the halt controls: a path (named by -etoro-name) or name=path,name=path,… (since 2026-10-21: the index-CFD, ETF and dual-momentum cells; ?ledger=name selects one, the first is the default) (default: off)")
 	etoroName := flag.String("etoro-name", env("UI_API_ETORO_NAME", "etoro-demo"), "ledger name of a plain-path -etoro-ledger (?ledger=, the confirm phrase of its halt/resume)")
-	etoroLiveOn := flag.Bool("etoro-live", env("UI_API_ETORO_LIVE", "1") != "0", "with -etoro-ledger, poll eToro's rates for the index CFDs every 5 s, display only (UI_API_ETORO_LIVE=0 disables)")
+	etoroLiveOn := flag.Bool("etoro-live", env("UI_API_ETORO_LIVE", "1") != "0", "with -etoro-ledger, poll eToro's rates for the index CFDs, display only (UI_API_ETORO_LIVE=0 disables)")
+	etoroLiveEvery := flag.Duration("etoro-live-interval", envDuration("UI_API_ETORO_LIVE_INTERVAL", etorolive.DefaultInterval), "the rates poll period (default 5s = 12 reads/min; floor 2s = 30 reads/min, so the same key keeps room for prepare and the positions view under eToro's 60 reads/min)")
 	etoroEnvFile := flag.String("etoro-env-file", env("UI_API_ETORO_ENV_FILE", etorolive.DefaultEnvFile()), "KEY=VALUE file with the eToro demo keys for the rates poll (ETORO_ENV must be demo); missing turns the feed off")
 	etoroTrading := flag.Bool("etoro-trading", env("UI_API_ETORO_TRADING", "0") == "1", "enable the assisted trades (Trade page) on the eToro DEMO ledger; needs -operator-token-file, -etoro-ledger and -etoro-env-file with ETORO_ENV=demo (default: off)")
 	realCanary := flag.Bool("etoro-real-canary", false, "REAL ACCOUNT: trade the measurement canary (one eToro ledger under a real-canary/ directory, -etoro-env-file with ETORO_ENV=real, its own -operator-token-file, the acknowledgement file); every condition of the acknowledgement must hold or the start is fatal; command line only, no env var")
@@ -301,7 +302,7 @@ func main() {
 		// first eToro ledger (the CFD cell), not from whichever cell is last.
 		// Market data is environment independent: the canary process polls
 		// with its own (real) key, the demo process with the demo key.
-		srv.EtoroLive = startEtoroLive(ctx, ledgers[firstEtoro], *etoroEnvFile, *realCanary, logger)
+		srv.EtoroLive = startEtoroLive(ctx, ledgers[firstEtoro], *etoroEnvFile, *realCanary, *etoroLiveEvery, logger)
 	}
 	hs := &http.Server{
 		Addr: *addr, Handler: srv.Handler(),
@@ -483,7 +484,7 @@ func startLive(ctx context.Context, st *store.Store, wsURL, restURL string, logg
 // serving everything else. GetRates is the only eToro call made here. The
 // demo process accepts demo keys only; the canary process (real) its real
 // key only: the rates route is the same for both.
-func startEtoroLive(ctx context.Context, l api.Ledger, envFile string, real bool, logger *log.Logger) *live.Hub {
+func startEtoroLive(ctx context.Context, l api.Ledger, envFile string, real bool, every time.Duration, logger *log.Logger) *live.Hub {
 	if l.Venue != api.VenueEtoro {
 		logger.Printf("etoro live: off (ledger %s is not an eToro ledger)", l.Name)
 		return nil
@@ -517,7 +518,14 @@ func startEtoroLive(ctx context.Context, l api.Ledger, envFile string, real bool
 		books = append(books, b)
 	}
 	hub := api.NewEtoroHub(books, api.EtoroCloses(l.Store), logger)
-	poller := &etorolive.Poller{Rates: client.GetRates, Books: etorolive.DefaultBooks, Interval: etorolive.DefaultInterval, Handler: hub, Log: logger}
+	// 2 s is the floor: 30 reads/min for the feed leaves the same key ~25
+	// for prepare (~5 reads) and the positions view (3, cached 45 s). eToro
+	// has no streaming route; this is as live as the Public API gets.
+	if every < etorolive.MinInterval {
+		logger.Printf("etoro live: interval %s is below the %s floor (60 reads/min per key, shared with the trades); using %s", every, etorolive.MinInterval, etorolive.MinInterval)
+		every = etorolive.MinInterval
+	}
+	poller := &etorolive.Poller{Rates: client.GetRates, Books: etorolive.DefaultBooks, Interval: every, Handler: hub, Log: logger}
 	go hub.Run(ctx)
 	go poller.Run(ctx)
 	logger.Printf("etoro live: polling rates for %v every %s (display only)", hub.Books, poller.Interval)
@@ -528,6 +536,15 @@ func envFloat(key string, def float64) float64 {
 	if v := os.Getenv(key); v != "" {
 		if f, err := strconv.ParseFloat(v, 64); err == nil {
 			return f
+		}
+	}
+	return def
+}
+
+func envDuration(key string, def time.Duration) time.Duration {
+	if v := os.Getenv(key); v != "" {
+		if d, err := time.ParseDuration(v); err == nil {
+			return d
 		}
 	}
 	return def

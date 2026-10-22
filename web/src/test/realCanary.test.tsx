@@ -237,3 +237,14 @@ describe('lib/protection: the policy caps in words', () => {
     )
   })
 })
+
+describe('the live quote line (2026-10-22)', () => {
+  it('quoteAgeSeconds is whole seconds, never negative, null without a time', async () => {
+    const { quoteAgeSeconds } = await import('../lib/format')
+    const now = Date.parse('2026-10-22T17:44:10Z')
+    expect(quoteAgeSeconds('2026-10-22T17:44:08.4Z', now)).toBe(2)
+    expect(quoteAgeSeconds('2026-10-22T17:44:12Z', now)).toBe(0)
+    expect(quoteAgeSeconds(undefined, now)).toBeNull()
+    expect(quoteAgeSeconds('not a time', now)).toBeNull()
+  })
+})

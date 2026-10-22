@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"bitso-trading-platform/shared/pkg/bitsodaily"
 	"bitso-trading-platform/shared/pkg/etoro"
 	"bitso-trading-platform/shared/pkg/etoroledger"
 	"bitso-trading-platform/shared/pkg/mktcal"
@@ -253,5 +254,19 @@ func TestPreviewRequestStop(t *testing.T) {
 	// No reference at all: no stop, and Validate refuses it locally.
 	if r := previewRequest(28, 50, 20, 0, 0, 0); r.StopLossRate != nil || r.Validate() == nil {
 		t.Fatalf("none %+v", r)
+	}
+}
+
+func TestCandlePathFollowsTheExecutorsNaming(t *testing.T) {
+	rows := []bitsodaily.Row{{Date: "2026-10-20"}, {Date: "2026-10-21"}, {Date: "2026-10-22"}}
+	p, err := candlePath("/x/real-canary/candles", "nsdq100", rows)
+	if err != nil || p != "/x/real-canary/candles/nsdq100_daily_2026-10-22.csv" {
+		t.Fatalf("%q %v", p, err)
+	}
+	if _, err := candlePath("/x", "nsdq100", nil); err == nil {
+		t.Fatal("no bars must be an error, not an empty file")
+	}
+	if _, ok := candleBooks[28]; !ok || candleBooks[28].Symbol != "NSDQ100" {
+		t.Fatalf("books %+v", candleBooks)
 	}
 }

@@ -1099,6 +1099,22 @@ pre.json {
   font-size: 11px;
 }
 
+.live-quote-line {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 8px 12px;
+  margin: 0 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-2);
+  font-size: 0.95rem;
+}
+.live-quote-line .warn {
+  color: var(--warn);
+}
+
 .live-badge {
   display: inline-flex;
   align-items: center;

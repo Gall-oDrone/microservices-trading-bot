@@ -149,6 +149,9 @@ UI_API_ETORO_ENV_FILE=$REAL_ENV_FILE
 UI_API_REAL_ACK_FILE=$REAL_ACK_FILE
 UI_API_ETORO_LEDGER=etoro-real-canary=$REAL_LEDGER
 UI_API_ETORO_TRADING=1
+# The rates poll, 2 s (30 reads/min; the floor), so the quote on the Trade page is as fresh as the
+# Public API allows while the same key keeps room for prepare; the demo console stays at 5 s.
+UI_API_ETORO_LIVE_INTERVAL=2s
 # The canary process serves no Bitso ledger of its own; the default stage path keeps /healthz happy.
 UI_API_LEDGER=$ROOT/services/strategy-executor/daily-executor-data/stage/ledger.jsonl
 UI_API_LIVE=0

@@ -28,6 +28,12 @@
 // Exit status: 0 when every read succeeded (the line is written), 1 when a
 // read failed (the line is still written, with its errors, so a gap in the
 // series is visible; the alerts job picks the exit code up), 2 on usage.
+//
+// Since 2026-10-22 it also keeps the book's daily bars (candles/<book>_daily_
+// <date>.csv next to the ledger, the executor's format) so the console's
+// chart and the stop profiles' ATR have something to read: the canary has
+// no executor run to do it. -candles-only writes them and exits (the
+// backfill before day 0); -no-candles skips the read.
 package main
 
 import (
@@ -57,6 +63,9 @@ func main() {
 	previewAmount := flag.Float64("preview-amount", 50, "invested amount of the preview when no position is held")
 	previewLeverage := flag.Int("preview-leverage", 20, "leverage of the preview when no position is held")
 	sinceDays := flag.Int("since-days", 90, "how far back to read the trading history when the ledger has no open yet")
+	candlesDir := flag.String("candles", "", "where the book's daily bars are saved for the console's chart and the stop profiles' ATR (default: candles/ next to the ledger)")
+	noCandles := flag.Bool("no-candles", false, "skip the daily candles read")
+	candlesOnly := flag.Bool("candles-only", false, "write the candles file and exit; no observation is appended (the backfill before day 0)")
 	flag.Parse()
 
 	if *envFile != "" {
@@ -94,6 +103,26 @@ func main() {
 	}
 	ctx := context.Background()
 	now := time.Now().UTC()
+	// Daily bars for the chart and the ATR (2026-10-22): the canary has no
+	// executor run to keep them, so the observer does, at 18:00 New York
+	// after the close, in the executor's format and file name. One read.
+	if !*noCandles {
+		dir := *candlesDir
+		if dir == "" {
+			dir = filepath.Join(filepath.Dir(*ledger), "candles")
+		}
+		if msg, err := writeCandles(ctx, c, dir, *previewInstrument, now, *dry); err != nil {
+			if *candlesOnly {
+				die(1, fmt.Errorf("candles: %w", err))
+			}
+			fmt.Fprintf(os.Stderr, "etoro-canary-observe: candles: %v (the observation goes on without them)\n", err)
+		} else {
+			fmt.Fprintln(os.Stderr, "etoro-canary-observe: "+msg)
+		}
+		if *candlesOnly {
+			return
+		}
+	}
 	o := observe(ctx, c, input{recs: recs, prev: etoroledger.LatestObservation(prevAll), now: now, env: string(env), ledger: *ledgerName,
 		sinceDays: *sinceDays, previewInstrument: *previewInstrument, previewAmount: *previewAmount, previewLeverage: *previewLeverage})
 	b, _ := json.MarshalIndent(o, "", "  ")

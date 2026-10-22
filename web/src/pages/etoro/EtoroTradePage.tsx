@@ -22,6 +22,8 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { useSearchParams } from 'react-router'
 import { ApiError, useControls, useEtoroForwardTests, useLedgerName } from '../../api/client'
+import { useLiveStream } from '../../api/live'
+import { LiveQuoteLine } from '../../components/live'
 import { PositionsCard } from '../../components/etoro/positions'
 import type {
   EtoroForwardTest,
@@ -757,6 +759,8 @@ export function EtoroTradePage() {
     slPct: '',
     tpPct: '',
   })
+  // The live quote of the selected book (display; the Prepare quote decides).
+  const quoteFeed = useLiveStream([form.book], { venue: 'etoro' })
   // The leverage: the policy's default (x1 on demo, x20 on the canary) until
   // the operator picks another of the options the policy offers.
   const [leverageChoice, setLeverageChoice] = useState<number | null>(null)
@@ -1026,10 +1030,10 @@ export function EtoroTradePage() {
               <>
                 Assisted trades on the eToro <b>REAL</b> account, for the measurement canary only: one hand-placed
                 position under the canary policy ({trading?.policy_version || 'etoro-real-canary'}). Prepare runs the
-                checks (halt file, risk policy, the account must hold nothing else, live quote, costs, cash) and returns
-                a preview with a {trading?.token_ttl_s ?? 120} s token; place needs the phrase with <b>REAL</b> typed
-                again, a reason, who, and this process&apos;s operator token. Every step is audited and the trade lands
-                in the {ledger} ledger. Nothing here is automatic.
+                checks (halt file, risk policy, no other {bookSymbol(form.book)} position on the account, live quote,
+                costs, cash) and returns a preview with a {trading?.token_ttl_s ?? 120} s token; place needs the phrase
+                with <b>REAL</b> typed again, a reason, who, and this process&apos;s operator token. Every step is
+                audited and the trade lands in the {ledger} ledger. Nothing here is automatic.
               </>
             ) : (
               <>
@@ -1093,6 +1097,7 @@ export function EtoroTradePage() {
                   </div>
                 </div>
               </div>
+              <LiveQuoteLine live={quoteFeed} book={form.book} quote="usd" />
               <form onSubmit={submit} noValidate className="trade-form" id="trade-form" data-testid="trade-form">
                 <div className="field-row">
                   <Field id="trade-book" label="Book">
