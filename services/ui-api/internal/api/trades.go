@@ -810,7 +810,7 @@ func (s *Server) preparePreview(ctx context.Context, l Ledger, req TradePrepareR
 	// exposure (invested x leverage) at the ask.
 	ro := risk.Order{Book: req.Book, RefPrice: pv.RefPrice, Leverage: lev}
 	rs := risk.State{OrdersToday: etoroledger.LegsOn(recs, req.Book, today), Equity: acct.Equity, Exposure: pv.Account.Exposure,
-		MarketClosed: !mktcal.IsOpen(now), OpenPositions: len(all)}
+		MarketClosed: !mktcal.IsOpen(now), OpenPositions: len(mine)}
 	switch req.Side {
 	case TradeOpen:
 		ro.Side, ro.Price, ro.QtyBTC = "buy", q.Ask, req.AmountUSD*float64(lev)/q.Ask
@@ -872,8 +872,11 @@ func (s *Server) preparePreview(ctx context.Context, l Ledger, req TradePrepareR
 		case len(mine) > 0:
 			reasons = append(reasons, fmt.Sprintf("the account holds %s on %s that the ledger does not: resolve by hand, nothing sent", tradeIDs(mine), in.Symbol))
 		}
-		if real && len(all) > 0 {
-			reasons = append(reasons, fmt.Sprintf("REAL: the account holds %s and the canary may be its only position: close or record them first, nothing sent", tradeIDs(all)))
+		if real && len(all) > len(mine) {
+			// D7 (2026-10-22): the real account holds long-term positions on
+			// other instruments; they are outside the canary and never block
+			// it, but the operator must see them on every preview.
+			warnings = append(warnings, fmt.Sprintf("REAL: the account also holds %s on other instruments: outside the canary (plan D7), not touched by this console", tradeIDs(tradeOffInstrument(all, in.ID))))
 		}
 	default: // close, protect
 		verb := "close"
@@ -1097,9 +1100,6 @@ func (s *Server) tradePlace(w http.ResponseWriter, r *http.Request) {
 	mine := tradeOnInstrument(all, in.ID)
 	held := heldPosition(all, in.ID, pos.PositionID)
 	switch {
-	case c.Side == TradeOpen && s.Trading.Real() && len(all) > 0:
-		blocked(fmt.Sprintf("REAL: the account holds %s and the canary may be its only position", tradeIDs(all)))
-		return
 	case c.Side == TradeOpen && len(mine) > 0 && !s.Trading.Rehearsal:
 		blocked(fmt.Sprintf("the account holds %s on %s that the ledger does not: resolve by hand", tradeIDs(mine), in.Symbol))
 		return
@@ -1190,7 +1190,7 @@ func (s *Server) tradePlace(w http.ResponseWriter, r *http.Request) {
 		Notes: []string{ledgerNote(s.Trading)},
 	}
 	ro := risk.Order{Book: c.Book, RefPrice: c.RefPrice, Leverage: lev, QtyBTC: c.Units}
-	rsState := risk.State{OrdersToday: etoroledger.LegsOn(led.Records(), c.Book, today), MarketClosed: false, OpenPositions: len(all)}
+	rsState := risk.State{OrdersToday: etoroledger.LegsOn(led.Records(), c.Book, today), MarketClosed: false, OpenPositions: len(mine)}
 	if account != nil {
 		rsState.Equity, rsState.Exposure = account.Equity, account.Exposure
 	}
@@ -1611,6 +1611,18 @@ func tradeOnInstrument(ps []broker.Position, id int64) []broker.Position {
 	var out []broker.Position
 	for _, p := range ps {
 		if p.Instrument.ID == id {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
+// tradeOffInstrument is the complement: the account's positions on every
+// other instrument (the real account's long-term holdings, plan D7).
+func tradeOffInstrument(ps []broker.Position, id int64) []broker.Position {
+	var out []broker.Position
+	for _, p := range ps {
+		if p.Instrument.ID != id {
 			out = append(out, p)
 		}
 	}

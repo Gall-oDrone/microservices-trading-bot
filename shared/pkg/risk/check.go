@@ -96,8 +96,9 @@ type State struct {
 	Equity       float64 `json:"equity,omitempty"`
 	Exposure     float64 `json:"exposure,omitempty"`
 	MarketClosed bool    `json:"market_closed,omitempty"`
-	// OpenPositions is the account's open positions before the order, on
-	// every instrument (2026-10-22, for BookLimits.MaxPositions).
+	// OpenPositions is the account's open positions before the order on
+	// the order's instrument (2026-10-22, for BookLimits.MaxPositions; D7
+	// scoped it from account-wide to the instrument the same day).
 	OpenPositions int `json:"open_positions,omitempty"`
 }
 
@@ -181,7 +182,7 @@ func Check(p Policy, o Order, s State) Decision {
 			}
 		}
 		if l.MaxPositions > 0 && s.OpenPositions >= l.MaxPositions {
-			block(RuleMaxPositions, float64(l.MaxPositions), float64(s.OpenPositions+1), "the account would hold %d positions, max %d (it holds %d on every instrument)", s.OpenPositions+1, l.MaxPositions, s.OpenPositions)
+			block(RuleMaxPositions, float64(l.MaxPositions), float64(s.OpenPositions+1), "the account would hold %d positions on %s, max %d (it holds %d)", s.OpenPositions+1, o.Book, l.MaxPositions, s.OpenPositions)
 		}
 		if l.MaxExposurePctEquity > 0 && s.Equity > 0 {
 			lev := float64(o.Leverage)

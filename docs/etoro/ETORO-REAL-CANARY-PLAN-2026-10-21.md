@@ -257,6 +257,14 @@ Every refusal names the missing item. The start logs one line with all six facts
   required and inside the venue's bounds, one order per day, the session, price deviation.
 - **The account must hold nothing but the canary**: `Positions()` returning anything the canary
   ledger does not know blocks the open (same eligibility rule as today, now with real money).
+  *Superseded by D7 (2026-10-22):* the funded real account turned out to hold five long-term
+  positions on two other instruments (6168, 1137; ≈ 749 USD of exposure, equity ≈ 802 USD) and a
+  hand-trading history on NSDQ100. The rule is now **per instrument**: any NSDQ100 position the
+  ledger does not know blocks the open (and `MaxPositions 1` counts NSDQ100 positions); holdings
+  on other instruments are a REAL warning on every preview, named, never touched by the console.
+  The consequence for §5.4 is honest: the account's buying power is no longer "the 60 USD" — the
+  policy caps (invested ≤ 60, exposure ≤ 1,200, one order per day, one NSDQ100 position) are the
+  last line of defence, not the balance.
 - The phrase includes REAL; the dialog is red; the preview states the maximum loss.
 - Intent first, audit `requested`, send, ledger line, audit `done` — unchanged. A failed place
   leaves the intent on disk; `etoro-reconcile -ledger real-canary` reports it until resolved.
@@ -285,7 +293,7 @@ from the draft.*
 | `MaxLeverage` | **20** [A: 1, C: 1] | x20 is the only leverage that reaches 1,000 USD exposure from ≤ 60 USD invested. *Built:* also `Leverages: [20]`, the list the Trade page offers |
 | `MaxOrderNotional` (exposure) | ⚠ **1,200** (draft said 1,000) [A: 1,100, C: 60] | the venue minimum is a floor, not the cap: 60 USD invested at x20 is 1,200 of exposure, and the draft's own `MaxInvestedUSD 60` allows it |
 | **`MaxInvestedUSD`** (new field) | **60** [A: 1,100, C: 60] | invested = exposure / leverage; the cap you set. *Built:* with `MinInvestedUSD 50` and `DefaultInvestedUSD 50`, which `TradingInfo` reports as the Trade page's bounds |
-| `MaxPositions` (new, account-wide) | **1** | the account holds the canary and nothing else. *Built:* `State.OpenPositions` from the account's `Positions()`; any held position blocks an open |
+| `MaxPositions` (new) | **1** | the account holds the canary and nothing else. *Built:* `State.OpenPositions` from the account's `Positions()`. ⚠ *D7 (2026-10-22):* counts the positions **on the order's instrument**, not account-wide (the real account holds long-term positions elsewhere); same values, same version |
 | `MaxOrdersPerDay` | 1 | unchanged |
 | `RequireStopLoss` | true | at x20 eToro caps it at 50 % of invested → the draft required **exactly the venue maximum distance** (25 USD). ⚠ *Built:* a **range, 2.3–2.45 % of the price** (23–24.5 USD): a market fill a few bps above the ask would push an exactly-2.5 % stop past the venue's cap and the order would be refused. A: the disaster stop; C: none |
 | `MaxExposurePctEquity` | **off** | equity *is* the canary; the cap would block every order. *Built:* `MaxLossPctEquity` off for the same reason |
@@ -460,6 +468,10 @@ three opens in the window.*
   and watch the observations' staleness (recommended: yes, it is the evidence), or keep it local.
 - **D5 — The ack sentence and the end date** (≤ 8 weeks from day 0 suggested).
 - **D6 — Re-open policy on stop-out.** At most three opens in the window (suggested), or one.
+- **D7 (2026-10-22, after the first real read) — Pre-existing positions on the real account.**
+  The account was not empty (five long-term positions on other instruments). Decided: the
+  one-position rule is scoped to the canary's instrument; other holdings are warned about, not
+  blocked on, and never touched. Alternatives were closing them or using an empty account.
 
 ---
 

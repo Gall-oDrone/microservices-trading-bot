@@ -650,7 +650,7 @@ ever runs against the real account is the read-only observer (`ops-run.sh etoro-
 | acknowledgement | — | **`~/.config/microservices-trading-bot/REAL-ACCOUNT-ACK`** (0600; §14.2) |
 | ledger | `etoro-daily-data/demo/` | **`etoro-daily-data/real-canary/`**: `ledger.jsonl`, `intents/`, `risk-state.json`, `ui-audit.jsonl`, **`observations.jsonl`**, `run-<UTC>.log` |
 | ledger name = halt phrase | `etoro-demo` | **`etoro-real-canary`** |
-| policy | `etoro-demo-2026-10-19` | **`etoro-real-canary-2026-10-22`**: nsdq100 only, x20 only, invested 50–60 (default 50), exposure ≤ 1,200, one position account-wide, stop required at 2.3–2.45 % of the price (the venue caps it at 2.5 % = 50 % of invested at x20; the policy stays just inside so a fill above the ask cannot push it past), one order per day, cash session, equity caps off |
+| policy | `etoro-demo-2026-10-19` | **`etoro-real-canary-2026-10-22`**: nsdq100 only, x20 only, invested 50–60 (default 50), exposure ≤ 1,200, one NSDQ100 position (D7: other instruments' holdings are warned about, never touched), stop required at 2.3–2.45 % of the price (the venue caps it at 2.5 % = 50 % of invested at x20; the policy stays just inside so a fill above the ask cannot push it past), one order per day, cash session, equity caps off |
 | phrases | `PLACE NSDQ100` … | **`PLACE REAL NSDQ100`**, **`CLOSE REAL NSDQ100`**, **`PROTECT REAL NSDQ100`** |
 | client_ref | `ui-nsdq100-…` | **`ui-real-nsdq100-…`** |
 | web | `:5173` → `:8090` | **`npm run dev:real-canary`** = `:5174` → `:8091`; red top bar, `REAL ·` title, red accent, `· REAL` on the ledger badge |
@@ -740,9 +740,10 @@ The ledger lines keep schema `etoro-ledger/v1`: the JSON key is still `demo`, wi
    the recommend step proposes (the policy forces 2.3–2.45 %) → **Prepare**. The card is headed
    `Preview · open REAL NSDQ100` and its first line reads `50 USD invested · x20 · exposure
    1,000 USD · max loss 24.50 USD`; below it the venue's costs (overnight, weekend) and the
-   warnings. The prepare blocks when the account holds **any** position (`max_positions`), when
-   the session is closed, when the day's order was already sent, and when the price moved more
-   than 10 % from the quote.
+   warnings. The prepare blocks when the account holds an NSDQ100 position the ledger does not know
+   (`max_positions`, D7), when the session is closed, when the day's order was already sent, and
+   when the price moved more than 10 % from the quote. The account's long-term holdings on other
+   instruments appear as a REAL warning naming them; they are outside the canary.
 3. **Place · `PLACE REAL NSDQ100`**, a reason, your name. The dialog is red and repeats the
    sizing line. Read the outcome: fill, `fill_vs_mid_bps`, position id, the stop as eToro holds
    it. The ledger line carries `source: "ui"`, `client_ref ui-real-nsdq100-…`, `env: real`.
@@ -872,8 +873,18 @@ passed before: the fakes did not know the venue's rule. This is why the gate exi
   rounds up at the ceiling.
 - `etoro-reconcile` gained `-record-venue-close` (the plan said "hand-run reconcile writes the
   `venue_close` line"; a reconcile is read-only, so the write is a separate, named flag).
-- The real account blocks an open when it holds **any** position, not only unknown ones: with
-  `MaxPositions 1` the two rules coincide, and the stricter one is the right one for real money.
+- The real account was to block an open when it held **any** position. The first real read
+  (2026-10-22 17:22 UTC, the observer) showed five long-term positions on two other instruments
+  (≈ 749 USD exposure, equity ≈ 802 USD, cash 62.78) and a hand-trading history on NSDQ100: the
+  rule would have blocked the canary forever. **D7:** scoped to the instrument (any NSDQ100
+  position the ledger does not know blocks; `max_positions` counts NSDQ100 positions; other
+  holdings are a named REAL warning). Honest consequence: the balance is no longer the last line
+  of defence; the policy caps are.
+- The ack's `key_prefix` is a weak identifier for eToro keys: the x-api-key is a 63-character
+  opaque string (fine), but the 260-character `eyJ…` token is the **x-user-key** and its first
+  ~60 characters encode a client id that persists across regenerations. The env file's fields
+  were also swapped once (401 on every route; the demo file is the reference: public 63 chars,
+  private 260). A `key_sha256:` line in the ack would be stronger; not built yet.
 - `Client.Environment()` already existed (the plan said `Env()`).
 - The watchdog needed no change: the observer's run log follows the executors' convention.
 

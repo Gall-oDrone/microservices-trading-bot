@@ -251,13 +251,28 @@ func TestRealCanaryPrepareValidatesBoundsAndLeverage(t *testing.T) {
 }
 
 func TestRealCanaryOpenCloseRoundTrip(t *testing.T) {
-	// With the account holding the fake's SPX500 position: blocked, named.
+	// D7 (2026-10-22): the account's holdings on OTHER instruments (the
+	// fake's SPX500) are outside the canary: a REAL warning that names them,
+	// not a block.
 	h := canaryServer(t, true, true)
 	code, pv, b := h.prepareOn(t, canaryBody("nsdq100", "open", 50, "", 20))
-	if code != 200 || pv.Verdict != VerdictBlock {
-		t.Fatalf("prepare with a foreign position: %d %s", code, b)
+	if code != 200 || pv.Verdict != VerdictAllow {
+		t.Fatalf("prepare with a holding on another instrument: %d %s", code, b)
 	}
-	if !hasReason(pv.Reasons, "REAL: the account holds position(s) 3616683295") || !hasReason(pv.Reasons, "max_positions") {
+	if !hasReason(pv.Warnings, "REAL: the account also holds position(s) 3616683295 on other instruments") || !hasReason(pv.Warnings, "plan D7") {
+		t.Fatalf("warnings %v", pv.Warnings)
+	}
+	if pv.Risk == nil || pv.Risk.State.OpenPositions != 0 {
+		t.Fatalf("open positions must count the instrument only: %+v", pv.Risk)
+	}
+	// A position on the canary's own instrument that the ledger does not
+	// know: blocked, and max_positions trips (it counts the instrument).
+	h.fb.positions = append(h.fb.positions, broker.Position{ID: "9000000001", Instrument: broker.Instrument{Venue: "etoro", ID: 28}, Side: broker.Long, Units: 0.03, OpenRate: 29800, Amount: 50, Leverage: 20, Exposure: 1000})
+	code, pv, b = h.prepareOn(t, canaryBody("nsdq100", "open", 50, "", 20))
+	if code != 200 || pv.Verdict != VerdictBlock {
+		t.Fatalf("prepare with a foreign NSDQ100 position: %d %s", code, b)
+	}
+	if !hasReason(pv.Reasons, "the account holds position(s) 9000000001 on NSDQ100 that the ledger does not") || !hasReason(pv.Reasons, "max_positions") {
 		t.Fatalf("reasons %v", pv.Reasons)
 	}
 	if pv.Token != "" || pv.Confirmation != "PLACE REAL NSDQ100" || pv.Environment != "real" || pv.Leverage != 20 {

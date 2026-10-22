@@ -86,9 +86,13 @@ type BookLimits struct {
 	//
 	// MaxInvestedUSD caps invested (account currency).
 	MaxInvestedUSD float64 `json:"max_invested_usd,omitempty"`
-	// MaxPositions caps the account's open positions after the order,
-	// across every instrument (State.OpenPositions + 1). Needs
-	// State.OpenPositions; a caller that leaves it 0 never trips it.
+	// MaxPositions caps the account's open positions ON THE ORDER'S
+	// INSTRUMENT after the order (State.OpenPositions + 1). Needs
+	// State.OpenPositions; a caller that leaves it 0 never trips it. Until
+	// 2026-10-22 it read account-wide; decision D7 of the canary plan scoped
+	// it to the instrument when the real account turned out to hold
+	// long-term positions on other instruments that are not the canary's
+	// business (the values and the version did not change).
 	MaxPositions int `json:"max_positions,omitempty"`
 	// Leverages is the set of leverage values an exposure-adding order may
 	// carry; empty means any up to MaxLeverage.
