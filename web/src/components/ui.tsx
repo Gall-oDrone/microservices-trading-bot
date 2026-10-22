@@ -48,7 +48,7 @@ export function Badge({
   mono,
   title,
 }: {
-  tone?: 'long' | 'flat' | 'loss' | 'warn' | 'info' | 'ok' | 'block' | 'etoro'
+  tone?: 'long' | 'flat' | 'loss' | 'warn' | 'info' | 'ok' | 'block' | 'etoro' | 'real'
   children: ReactNode
   dot?: boolean
   mono?: boolean
@@ -66,15 +66,19 @@ export function Badge({
  * Short label for a ledger, shown on every card so stage, dry-run and the
  * eToro demo are never confused. The tone follows the venue: eToro ledgers
  * take the venue accent, Bitso's `stage` stays blue, other Bitso ledgers grey.
- * `venue` may be passed; otherwise it is looked up in the ledgers list.
+ * `venue` may be passed; otherwise it is looked up in the ledgers list. The
+ * REAL account's ledger (2026-10-22) reads `name · REAL` in red.
  */
 export function LedgerBadge({ name, venue }: { name: string; venue?: Venue }) {
   const ledgers = useLedgers()
-  const v = venue ?? ledgers.data?.ledgers.find((l) => l.name === name)?.venue ?? 'bitso'
-  const tone = v === 'etoro' ? 'etoro' : name === 'stage' ? 'info' : 'flat'
+  const info = ledgers.data?.ledgers.find((l) => l.name === name)
+  const v = venue ?? info?.venue ?? 'bitso'
+  const real = v === 'etoro' && info?.environment === 'real'
+  const tone = real ? 'real' : v === 'etoro' ? 'etoro' : name === 'stage' ? 'info' : 'flat'
   return (
-    <Badge tone={tone} mono title={`Ledger: ${name}`}>
+    <Badge tone={tone} mono title={real ? `Ledger: ${name} (REAL account)` : `Ledger: ${name}`}>
       {name}
+      {real && <span data-testid="ledger-badge-real"> · REAL</span>}
     </Badge>
   )
 }

@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "dev:mock": "VITE_MOCK=1 vite",
+    "dev:real-canary": "UI_API_URL=http://127.0.0.1:8091 UI_PORT=5174 vite",
     "build": "tsc -b && vite build",
     "typecheck": "tsc -b --noEmit",
     "lint": "eslint .",

@@ -41,10 +41,12 @@ export interface PrepareInput {
   takeProfitPct?: number
   /** The operator token (bearer); required by ui-api's admit gate. */
   token: string
+  /** The leverage (2026-10-22): one of TradingInfo.leverage_options; x1 when omitted. */
+  leverage?: number
 }
 
 export function prepareTrade(i: PrepareInput, ledger: string): Promise<TradePreview> {
-  const body: Record<string, unknown> = { book: i.book, side: i.side, leverage: 1 }
+  const body: Record<string, unknown> = { book: i.book, side: i.side, leverage: i.leverage ?? 1 }
   if (i.side === 'open') body.amount_usd = i.amountUsd
   else body.position_id = i.positionId
   if (i.side !== 'close' && i.profile) {
@@ -63,12 +65,15 @@ export interface RecommendInput {
   amountUsd?: number
   positionId?: string
   token: string
+  /** The open's leverage (2026-10-22); the policy's default when omitted. */
+  leverage?: number
 }
 
 /** The stop / target levels per profile for an open or the held position (read-only). */
 export function recommendTrade(i: RecommendInput, ledger: string): Promise<TradeRecommendation> {
   const body: Record<string, unknown> = { book: i.book, side: i.side }
   if (i.side === 'open' && i.amountUsd) body.amount_usd = i.amountUsd
+  if (i.side === 'open' && i.leverage && i.leverage !== 1) body.leverage = i.leverage
   if (i.side === 'protect' && i.positionId) body.position_id = i.positionId
   return fetchJSON(
     withLedger('/etoro/trades/recommend', ledger),

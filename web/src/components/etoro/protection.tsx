@@ -16,7 +16,7 @@
 import type { ReactNode } from 'react'
 import type { StopLevels, StopProfile, TradeProtection, TradeRecommendation, Volatility } from '../../api/etoroSchemas'
 import { fmtMoney, fmtPrice } from '../../lib/format'
-import { PROFILES, pct, regimeTone } from '../../lib/protection'
+import { PROFILES, pct, policyCapsSentence, regimeTone } from '../../lib/protection'
 import { Field } from '../ConfirmDialog'
 import { IconAlert, IconInfo, IconShield } from '../icons'
 import { Badge, Stat } from '../ui'
@@ -222,9 +222,10 @@ export function ProtectionPanel({
         </div>
       </div>
       <p className="protect-sub">
-        A stop loss is required by the risk policy (at most {ctx ? pct(ctx.limits.max_sl_pct, 0) : '10%'} from the entry
-        and {ctx ? pct(ctx.limits.max_loss_pct_equity) : '0.50%'} of equity at the stop); the take profit is optional.
-        Levels are ATR(14) multiples from today&apos;s price, never inside the spread, rounded against you.
+        A stop loss is required by the risk policy (
+        {ctx ? policyCapsSentence(ctx.limits) : 'at most 10% from the entry and 0.50% of equity at the stop'}); the take
+        profit is optional. Levels are ATR(14) multiples from today&apos;s price, never inside the spread, rounded
+        against you.
         {ctx?.sma50 ? (
           <>
             {' '}

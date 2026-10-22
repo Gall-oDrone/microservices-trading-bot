@@ -6017,3 +6017,97 @@ button.protect-row:hover {
     justify-items: end;
   }
 }
+
+/* ============================================================
+   REAL account (2026-10-22, the measurement canary, plan §3.4).
+   While the selected ledger is the canary's, the document carries
+   data-env="real": the eToro accent turns from violet to red on
+   every page (cards, tags, badges, the session clock), a persistent
+   bar sits above the page, and the Trade page's phrases carry REAL.
+   The demo console never sets the attribute, so its violet stays.
+   ============================================================ */
+:root {
+  --real: hsl(352 90% 62%);
+  --real-soft: hsl(352 90% 62% / 0.14);
+  --real-line: hsl(352 90% 62% / 0.4);
+  --real-strong: hsl(352 85% 50%);
+}
+:root[data-theme='light'] {
+  --real: hsl(352 78% 44%);
+  --real-soft: hsl(352 78% 44% / 0.1);
+  --real-line: hsl(352 78% 44% / 0.35);
+  --real-strong: hsl(352 80% 38%);
+}
+:root[data-env='real'] {
+  --venue-etoro: var(--real);
+  --venue-etoro-soft: var(--real-soft);
+  --venue-etoro-line: var(--real-line);
+}
+.badge.real {
+  background: var(--real-soft);
+  color: var(--real);
+  border: 1px solid var(--real-line);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+.real-bar {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: -8px 0 20px;
+  padding: 10px 14px;
+  border: 1px solid var(--real-line);
+  border-left: 4px solid var(--real);
+  border-radius: var(--radius);
+  background: linear-gradient(90deg, var(--real-soft), transparent 70%), var(--surface);
+  color: var(--text);
+  font-size: 13px;
+  box-shadow: 0 6px 24px -12px var(--real);
+}
+.real-bar-mark {
+  display: inline-flex;
+  color: var(--real);
+  animation: real-pulse 2.4s ease-in-out infinite;
+}
+.real-bar-title {
+  color: var(--real);
+  letter-spacing: 0.08em;
+  font-size: 12.5px;
+}
+.real-bar-sep {
+  color: var(--text-3);
+}
+.real-bar-note {
+  color: var(--text-2);
+}
+@keyframes real-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.45;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .real-bar-mark {
+    animation: none;
+  }
+}
+/* The place button and the dialog's accent follow the account too. */
+:root[data-env='real'] .trade-preview.allow {
+  border-color: var(--real-line);
+}
+:root[data-env='real'] .trade-leverage {
+  color: var(--real);
+}
+.trade-sizing {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  align-items: baseline;
+}

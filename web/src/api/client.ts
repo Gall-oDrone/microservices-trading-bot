@@ -29,6 +29,7 @@ import {
   strategiesInfoSchema,
   studiesResponseSchema,
   studyDocSchema,
+  type Environment,
   type LedgerInfo,
   type Venue,
 } from './schemas'
@@ -184,6 +185,18 @@ export function useVenue(): Venue | undefined {
   if (info) return info.venue
   if (loading && !error) return undefined
   return 'bitso'
+}
+
+/**
+ * The account the selected ledger is written against (2026-10-22): 'real'
+ * on the measurement canary's ledger, 'demo' otherwise; undefined while the
+ * ledgers list is loading. The shell paints a real ledger red on every page.
+ */
+export function useEnvironment(): Environment | undefined {
+  const { info, loading, error } = useSelectedLedger()
+  if (info) return info.venue === 'etoro' ? info.environment : 'demo'
+  if (loading && !error) return undefined
+  return 'demo'
 }
 
 /** The first configured eToro ledger, if any (the landing page shows it next to Bitso). */

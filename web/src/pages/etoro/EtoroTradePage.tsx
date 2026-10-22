@@ -60,6 +60,7 @@ import {
 } from '../../components/icons'
 import { Badge, Banner, CardSkeleton, ErrorState, LedgerBadge, Stat } from '../../components/ui'
 import { bookLabel, bookSymbol, fmtBps, fmtMoney, fmtNY, fmtPrice, fmtUnits, fmtUTC } from '../../lib/format'
+import { amountLabel, sizingLine } from '../../lib/env'
 import { useClock } from '../../lib/tz'
 import { usePageTitle } from '../../lib/usePageTitle'
 import { PageIntro } from '../../components/PageIntro'
@@ -97,6 +98,12 @@ const DEFAULT_TRADING: TradingInfo = {
   min_amount_usd: 1000,
   max_amount_usd: 1500,
   default_amount_usd: 1100,
+  environment: 'demo',
+  leverage_options: [1],
+  default_leverage: 1,
+  policy_version: '',
+  books: [],
+  rehearsal: false,
 }
 
 interface Form {
@@ -110,8 +117,21 @@ interface Form {
   tpPct: string
 }
 
-/** The note shown wherever a trade is offered or reported. */
-function ExecutorNote() {
+/**
+ * The note shown wherever a trade is offered or reported: on a demo cell's
+ * ledger what the executor does next; on the real canary's (or the
+ * rehearsal's) ledger that nothing automatic ever acts on it.
+ */
+function ExecutorNote({ trading }: { trading?: TradingInfo }) {
+  if (trading && (trading.environment === 'real' || trading.rehearsal)) {
+    return (
+      <p className="trade-note" data-testid="trade-executor-note">
+        <IconAlert /> No executor acts on this ledger: nothing opens, closes, ratchets or re-enters on its own. A
+        position stays until you close it here or eToro closes it at its stop; a venue close is recorded by hand
+        (etoro-reconcile -record-venue-close). At most three opens in the window, each by hand.
+      </p>
+    )
+  }
   return (
     <p className="trade-note" data-testid="trade-executor-note">
       <IconAlert /> The executor plans from the ledger: a position left against the rule is brought back to the
@@ -225,6 +245,7 @@ function PreviewCard({
   placing,
   cancelling,
   cancelError,
+  trading,
   onPlace,
   onReprepare,
   onCancel,
@@ -236,6 +257,7 @@ function PreviewCard({
   placing: boolean
   cancelling: boolean
   cancelError: string | null
+  trading?: TradingInfo
   onPlace: () => void
   onReprepare: () => void
   /** Burns the token at ui-api (a live allow preview only). */
@@ -248,6 +270,7 @@ function PreviewCard({
   const canPlace = allow && !expired && !refused && !!pv.token
   const ttl = pv.expires_in_s ?? 120
   const quote = 'usd'
+  const real = pv.environment === 'real'
   return (
     <section
       className={`card venue-etoro trade-preview ${allow ? 'allow' : 'block'}`}
@@ -259,17 +282,27 @@ function PreviewCard({
       <div className="card-head">
         <div>
           <h2 id="trade-preview-h">
-            Preview · {pv.side} {pv.instrument.symbol}
+            Preview · {pv.side} {real ? 'REAL ' : ''}
+            {pv.instrument.symbol}
           </h2>
           <div className="sub">
-            {pv.side === 'open' ? `${fmtMoney(pv.amount_usd, 'usd', 0)} x1` : `position ${pv.position_id}`} ·{' '}
-            {fmtUnits(pv.units)} · prepared <span title={fmtUTC(pv.prepared_at)}>{fmtNY(pv.prepared_at)} NY</span> · ref{' '}
-            <span className="num">{pv.client_ref}</span>
+            <span className="trade-sizing" data-testid="trade-sizing">
+              {sizingLine(pv)}
+            </span>{' '}
+            · {fmtUnits(pv.units)} · prepared <span title={fmtUTC(pv.prepared_at)}>{fmtNY(pv.prepared_at)} NY</span> ·
+            ref <span className="num">{pv.client_ref}</span>
           </div>
         </div>
-        <Badge tone={allow ? 'ok' : 'block'} dot title={pv.request_id}>
-          <span data-testid="trade-verdict">{allow ? 'allowed' : 'blocked'}</span>
-        </Badge>
+        <div className="row" style={{ gap: 6 }}>
+          {real && (
+            <Badge tone="real" dot>
+              <span data-testid="trade-preview-real">REAL</span>
+            </Badge>
+          )}
+          <Badge tone={allow ? 'ok' : 'block'} dot title={pv.request_id}>
+            <span data-testid="trade-verdict">{allow ? 'allowed' : 'blocked'}</span>
+          </Badge>
+        </div>
       </div>
 
       <Reasons items={pv.reasons} tone="block" testId="trade-reasons" />
@@ -381,7 +414,7 @@ function PreviewCard({
         </div>
       )}
 
-      <ExecutorNote />
+      <ExecutorNote trading={trading} />
 
       <div className="trade-actions">
         {allow ? (
@@ -505,7 +538,15 @@ function CancelledCard({ r, onDismiss }: { r: TradeCancelResponse; onDismiss: ()
   )
 }
 
-function OutcomeCard({ r, onDismiss }: { r: TradePlaceResponse; onDismiss: () => void }) {
+function OutcomeCard({
+  r,
+  trading,
+  onDismiss,
+}: {
+  r: TradePlaceResponse
+  trading?: TradingInfo
+  onDismiss: () => void
+}) {
   const clock = useClock()
   const protect = r.side === 'protect'
   const ok = r.status === 'executed' || (protect && r.status === 'pending')
@@ -654,7 +695,7 @@ function OutcomeCard({ r, onDismiss }: { r: TradePlaceResponse; onDismiss: () =>
           {r.audit_error}
         </Banner>
       )}
-      <ExecutorNote />
+      <ExecutorNote trading={trading} />
       <p className="faint">
         Audited as <span className="num">{r.audit.id || r.audit.outcome}</span> in{' '}
         <span className="num">{r.audit_path}</span>.
@@ -664,19 +705,28 @@ function OutcomeCard({ r, onDismiss }: { r: TradePlaceResponse; onDismiss: () =>
 }
 
 function DisabledCard({ trading, ledger }: { trading: TradingInfo; ledger: string }) {
+  if (trading.environment === 'real') {
+    return (
+      <Banner tone="warn" title="Assisted trading is off on this ui-api" id="trade-disabled">
+        <span data-testid="trade-disabled-reason">{trading.disabled_reason || 'not enabled'}</span>. This is the REAL
+        account's ledger ({ledger}); the canary process trades it only when started with{' '}
+        <code>-etoro-trading -etoro-real-canary</code> and every condition of the acknowledgement holds (runbook §14).
+      </Banner>
+    )
+  }
   return (
     <Banner tone="warn" title="Assisted trading is off on this ui-api" id="trade-disabled">
       <span data-testid="trade-disabled-reason">{trading.disabled_reason || 'not enabled'}</span>. The page is
       read-only: proposals are shown, previews are not offered. To enable it, start ui-api on 127.0.0.1 with{' '}
       <code>-etoro-trading</code> (or <code>UI_API_ETORO_TRADING=1</code>), <code>-operator-token-file</code> (a 0600
       file), <code>-etoro-ledger</code> naming the local {ledger} ledger and <code>-etoro-env-file</code> naming the
-      demo env file with <code>ETORO_ENV=demo</code>. The real account is refused in code.
+      demo env file with <code>ETORO_ENV=demo</code>. The real account is refused in code; the measurement canary is a
+      separate process (runbook §14).
     </Banner>
   )
 }
 
 export function EtoroTradePage() {
-  usePageTitle('Trade · eToro', 'Assisted prepare → place on the eToro demo account, from the rule or by hand.')
   const ledger = useLedgerName() || 'etoro-demo'
   const ft = useEtoroForwardTests()
   const controls = useControls()
@@ -684,6 +734,14 @@ export function EtoroTradePage() {
   const place = usePlaceTradeMutation()
   const cancel = useCancelTradeMutation()
   const trading = controls.data?.trading ?? (controls.data ? DEFAULT_TRADING : undefined)
+  const real = trading?.environment === 'real'
+  const account = real ? 'REAL' : 'demo'
+  usePageTitle(
+    'Trade · eToro',
+    real
+      ? 'Assisted prepare → place on the eToro REAL account: the measurement canary, by hand only.'
+      : 'Assisted prepare → place on the eToro demo account, from the rule or by hand.',
+  )
   const books = ft.data?.books ?? []
 
   // The form can arrive pre-filled from a link (the Positions card's
@@ -699,6 +757,14 @@ export function EtoroTradePage() {
     slPct: '',
     tpPct: '',
   })
+  // The leverage: the policy's default (x1 on demo, x20 on the canary) until
+  // the operator picks another of the options the policy offers.
+  const [leverageChoice, setLeverageChoice] = useState<number | null>(null)
+  const leverageOptions = trading?.leverage_options?.length ? trading.leverage_options : [1]
+  const leverage =
+    leverageChoice !== null && leverageOptions.includes(leverageChoice)
+      ? leverageChoice
+      : (trading?.default_leverage ?? leverageOptions[0] ?? 1)
   const pBook = params.get('book')
   const pSide = params.get('side')
   const pPos = params.get('position')
@@ -787,14 +853,14 @@ export function EtoroTradePage() {
     }
     const id = setTimeout(() => {
       recommend.mutate(
-        { book: form.book, side: form.side as 'open' | 'protect', amountUsd: recAmount, positionId, token },
+        { book: form.book, side: form.side as 'open' | 'protect', amountUsd: recAmount, positionId, token, leverage },
         { onSuccess: setRec, onError: () => setRec(null) },
       )
     }, 250)
     return () => clearTimeout(id)
     // recommend is a stable mutation object; the inputs are what matter.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [recOk, form.book, form.side, recAmount, positionId, token])
+  }, [recOk, form.book, form.side, recAmount, positionId, token, leverage])
 
   const runPrepare = (f: Form, tok: string) => {
     setOutcome(null)
@@ -815,7 +881,7 @@ export function EtoroTradePage() {
             }
           : { profile: f.profile }
     prep.mutate(
-      { book: f.book, side: f.side, amountUsd: amt, positionId: pid, token: tok, ...prot },
+      { book: f.book, side: f.side, amountUsd: amt, positionId: pid, token: tok, leverage, ...prot },
       {
         onSuccess: (pv) => setPreview(pv),
         onError: (e) => {
@@ -949,13 +1015,30 @@ export function EtoroTradePage() {
           <div className="row" style={{ gap: 12 }}>
             <h1>Trade</h1>
             <LedgerBadge name={ledger} venue="etoro" />
-            <Badge tone="etoro">demo account</Badge>
+            <Badge tone={real ? 'real' : 'etoro'}>
+              <span data-testid="trade-account-badge">
+                {real ? 'REAL account' : trading?.rehearsal ? 'demo account · canary rehearsal' : 'demo account'}
+              </span>
+            </Badge>
           </div>
           <PageIntro>
-            Assisted trades on the eToro demo account: prepare runs the executor&apos;s checks (halt file, risk policy,
-            ledger vs account, live quote, costs, cash) and returns a preview with a {trading?.token_ttl_s ?? 120} s
-            token; place needs the phrase typed again, a reason, who, and the operator token. Every step is audited and
-            the trade lands in the executor&apos;s ledger.
+            {real ? (
+              <>
+                Assisted trades on the eToro <b>REAL</b> account, for the measurement canary only: one hand-placed
+                position under the canary policy ({trading?.policy_version || 'etoro-real-canary'}). Prepare runs the
+                checks (halt file, risk policy, the account must hold nothing else, live quote, costs, cash) and returns
+                a preview with a {trading?.token_ttl_s ?? 120} s token; place needs the phrase with <b>REAL</b> typed
+                again, a reason, who, and this process&apos;s operator token. Every step is audited and the trade lands
+                in the {ledger} ledger. Nothing here is automatic.
+              </>
+            ) : (
+              <>
+                Assisted trades on the eToro demo account: prepare runs the executor&apos;s checks (halt file, risk
+                policy, ledger vs account, live quote, costs, cash) and returns a preview with a{' '}
+                {trading?.token_ttl_s ?? 120} s token; place needs the phrase typed again, a reason, who, and the
+                operator token. Every step is audited and the trade lands in the executor&apos;s ledger.
+              </>
+            )}
           </PageIntro>
         </div>
         {ft.data && (
@@ -1004,7 +1087,8 @@ export function EtoroTradePage() {
                   <h2 id="trade-manual-h">Manual</h2>
                   <div className="sub">
                     An open of {trading.min_amount_usd.toLocaleString('en-US')}–
-                    {trading.max_amount_usd.toLocaleString('en-US')} USD x1 with a stop, a close of the ledger&apos;s
+                    {trading.max_amount_usd.toLocaleString('en-US')} USD{' '}
+                    {leverage > 1 ? `invested at x${leverage}` : 'x1'} with a stop, a close of the ledger&apos;s
                     position, or a protect that sets its stop and target.
                   </div>
                 </div>
@@ -1045,26 +1129,68 @@ export function EtoroTradePage() {
                 </div>
                 <div className="field-row">
                   {form.side === 'open' ? (
-                    <Field
-                      id="trade-amount"
-                      label="Amount (USD, x1)"
-                      error={tried ? problems.find((p) => p.startsWith('Amount')) : undefined}
-                      hint={`default ${amountDefault.toLocaleString('en-US')} · max ${trading.max_amount_usd.toLocaleString('en-US')} USD (policy)`}
-                    >
-                      <input
+                    <>
+                      <Field
                         id="trade-amount"
-                        data-testid="trade-amount"
-                        className="input num"
-                        type="number"
-                        inputMode="decimal"
-                        min={trading.min_amount_usd}
-                        max={trading.max_amount_usd}
-                        step={50}
-                        placeholder={String(amountDefault)}
-                        value={form.amount}
-                        onChange={(e) => setForm({ ...form, amount: e.target.value })}
-                      />
-                    </Field>
+                        label={amountLabel(leverage)}
+                        error={tried ? problems.find((p) => p.startsWith('Amount')) : undefined}
+                        hint={
+                          leverage > 1
+                            ? `default ${amountDefault.toLocaleString('en-US')} · ${trading.min_amount_usd.toLocaleString('en-US')}–${trading.max_amount_usd.toLocaleString('en-US')} USD (policy) · buys ${(
+                                (Number.isFinite(amount) ? amount : amountDefault) * leverage
+                              ).toLocaleString('en-US', { maximumFractionDigits: 0 })} USD of exposure`
+                            : `default ${amountDefault.toLocaleString('en-US')} · max ${trading.max_amount_usd.toLocaleString('en-US')} USD (policy)`
+                        }
+                      >
+                        <input
+                          id="trade-amount"
+                          data-testid="trade-amount"
+                          className="input num"
+                          type="number"
+                          inputMode="decimal"
+                          min={trading.min_amount_usd}
+                          max={trading.max_amount_usd}
+                          step={leverage > 1 ? 1 : 50}
+                          placeholder={String(amountDefault)}
+                          value={form.amount}
+                          onChange={(e) => setForm({ ...form, amount: e.target.value })}
+                        />
+                      </Field>
+                      <Field
+                        id="trade-leverage"
+                        label="Leverage"
+                        hint={
+                          leverageOptions.length === 1
+                            ? `the policy allows x${leverageOptions[0]} only`
+                            : `one of ${leverageOptions.map((l) => `x${l}`).join(', ')} (policy)`
+                        }
+                      >
+                        {leverageOptions.length === 1 ? (
+                          <input
+                            id="trade-leverage"
+                            data-testid="trade-leverage"
+                            className="input num trade-leverage"
+                            type="text"
+                            readOnly
+                            value={`x${leverage}`}
+                          />
+                        ) : (
+                          <select
+                            id="trade-leverage"
+                            data-testid="trade-leverage"
+                            className="select trade-leverage"
+                            value={leverage}
+                            onChange={(e) => setLeverageChoice(Number(e.target.value))}
+                          >
+                            {leverageOptions.map((l) => (
+                              <option key={l} value={l}>
+                                x{l}
+                              </option>
+                            ))}
+                          </select>
+                        )}
+                      </Field>
+                    </>
                   ) : (
                     <Field
                       id="trade-position"
@@ -1171,6 +1297,7 @@ export function EtoroTradePage() {
           placing={place.isPending}
           cancelling={cancel.isPending}
           cancelError={cancel.isError ? (cancel.error as Error).message : null}
+          trading={trading}
           onPlace={() => {
             place.reset()
             setDialog(true)
@@ -1189,7 +1316,7 @@ export function EtoroTradePage() {
         </Banner>
       )}
       {!preview && cancelled && <CancelledCard r={cancelled} onDismiss={() => setCancelled(null)} />}
-      {outcome && <OutcomeCard r={outcome} onDismiss={() => setOutcome(null)} />}
+      {outcome && <OutcomeCard r={outcome} trading={trading} onDismiss={() => setOutcome(null)} />}
 
       {ft.data && <PositionsCard />}
 
@@ -1206,21 +1333,21 @@ export function EtoroTradePage() {
         <ConfirmDialog<TradePlaceResponse>
           tone="danger"
           icon={preview.side === 'protect' ? <IconShield /> : <IconBlock />}
-          title={`${preview.side === 'protect' ? 'Protect' : 'Place ' + preview.side} ${preview.instrument.symbol} on the demo account`}
+          title={`${preview.side === 'protect' ? 'Protect' : 'Place ' + preview.side} ${real ? 'REAL ' : ''}${preview.instrument.symbol} on the ${account} account`}
           sub={
             <>
               {preview.side === 'protect' ? (
                 <>
                   Sets the stop loss{preview.protection?.levels.tp_rate ? ' and take profit' : ''} of position{' '}
-                  {preview.position_id} ({fmtUnits(preview.units)}) at eToro&apos;s DEMO account
+                  {preview.position_id} ({fmtUnits(preview.units)}) at eToro&apos;s {account.toUpperCase()} account
                 </>
               ) : (
                 <>
                   Sends{' '}
                   {preview.side === 'open'
-                    ? `a market buy of ${fmtMoney(preview.amount_usd, 'usd', 0)} x1${preview.protection ? ' with its stop loss' : ''}`
+                    ? `a market buy: ${sizingLine(preview)}${preview.protection ? ', with its stop loss' : ''}`
                     : `a close of position ${preview.position_id}`}{' '}
-                  ({fmtUnits(preview.units)}) to eToro&apos;s DEMO account
+                  ({fmtUnits(preview.units)}) to eToro&apos;s {account.toUpperCase()} account
                 </>
               )}{' '}
               and records it in the <b>{ledger}</b> ledger with source <span className="num">ui</span>. The token

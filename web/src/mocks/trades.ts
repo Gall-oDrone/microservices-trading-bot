@@ -13,6 +13,7 @@
  * reload (or resetMockTrades in tests) forgets everything.
  */
 import { http, HttpResponse } from 'msw'
+import { isRealCanary, mockFlag } from './flag'
 import { ledgerState, nextMockId, type Entry } from './controls'
 import etoroLive from './fixtures/etoro-demo/etoro-live.json'
 import forwardTests from './fixtures/etoro-demo/etoro-forward-tests.json'
@@ -31,6 +32,8 @@ interface Position {
   stop_loss_rate?: number
   take_profit_rate?: number
   stop_type?: string
+  /** 2026-10-22: the position's leverage (1 when absent). */
+  leverage?: number
 }
 
 type Side = 'open' | 'close' | 'protect'
@@ -54,6 +57,9 @@ interface Claims {
   tp_rate: number
   profile: string
   max_loss_usd: number
+  /** 2026-10-22: the leverage of an open and the account the token was issued for. */
+  leverage: number
+  env: 'demo' | 'real'
 }
 
 interface LastOrder {
@@ -123,6 +129,9 @@ function volatilityOf(book: string, close: number) {
   }
 }
 
+type Limits = { min_sl_pct: number; max_sl_pct: number; max_loss_pct_equity: number }
+type Bounds = { min_sl_pct: number; max_sl_pct: number; max_tp_pct: number; tick: number }
+
 /** The guard chain of stops.build: floor, caps, venue, rounding, mark. */
 function buildLevels(
   book: string,
@@ -134,8 +143,10 @@ function buildLevels(
   equity: number,
   slPctIn: number,
   tpPctIn: number,
+  limits: Limits = LIMITS,
+  bounds?: Bounds,
 ): Levels {
-  const b = BOUNDS[book] ?? BOUNDS.spx500
+  const b = bounds ?? BOUNDS[book] ?? BOUNDS.spx500
   const atr = (ATR_PCT[book] ?? 0.01) * entry
   const clamps: string[] = []
   let slPct = slPctIn
@@ -145,21 +156,21 @@ function buildLevels(
     slPct = (entry - (mark - m.sl * atr)) / entry
     tpPct = (mark + m.tp * atr - entry) / entry
   }
-  const floor = Math.max(b.min_sl_pct, 2 * spreadPct + 0.0025, LIMITS.min_sl_pct)
+  const floor = Math.max(b.min_sl_pct, 2 * spreadPct + 0.0025, limits.min_sl_pct)
   if (slPct < floor) {
     clamps.push(
       `stop widened from ${(slPct * 100).toFixed(2)}% to the ${(floor * 100).toFixed(2)}% floor (twice the spread + 0.25%, the venue's minimum, or the policy's minimum)`,
     )
     slPct = floor
   }
-  let ceiling = LIMITS.max_sl_pct
-  let why = `the policy's ${(LIMITS.max_sl_pct * 100).toFixed(1)}% maximum stop distance`
-  if (equity > 0 && units > 0) {
-    const maxLoss = LIMITS.max_loss_pct_equity * equity
+  let ceiling = limits.max_sl_pct
+  let why = `the policy's ${(limits.max_sl_pct * 100).toFixed(1)}% maximum stop distance`
+  if (limits.max_loss_pct_equity > 0 && equity > 0 && units > 0) {
+    const maxLoss = limits.max_loss_pct_equity * equity
     const byEq = maxLoss / (units * entry)
     if (byEq < ceiling) {
       ceiling = byEq
-      why = `the policy's maximum loss of ${(LIMITS.max_loss_pct_equity * 100).toFixed(2)}% of equity (${maxLoss.toFixed(2)})`
+      why = `the policy's maximum loss of ${(limits.max_loss_pct_equity * 100).toFixed(2)}% of equity (${maxLoss.toFixed(2)})`
     }
   }
   let feasible = true
@@ -179,7 +190,10 @@ function buildLevels(
     )
     tpPct = b.max_tp_pct
   }
-  const slRate = Math.floor((entry * (1 - slPct)) / b.tick + 1e-9) * b.tick
+  const slRate0 = Math.floor((entry * (1 - slPct)) / b.tick + 1e-9) * b.tick
+  // At the ceiling the stop rounds up, never past the cap (stops.go, 2026-10-22).
+  const slRate =
+    (entry - slRate0) / entry > ceiling + 1e-12 ? Math.ceil((entry * (1 - ceiling)) / b.tick - 1e-9) * b.tick : slRate0
   const tpRate = tpPct > 0 ? Math.ceil((entry * (1 + tpPct)) / b.tick - 1e-9) * b.tick : 0
   const sl = Math.round(slRate * 100) / 100
   const tp = Math.round(tpRate * 100) / 100
@@ -249,6 +263,53 @@ const MIN = 1000
 const MAX = 1500
 const DEFAULT_AMOUNT = 1100
 
+/**
+ * The real-account canary's form facts under `?mock=real-canary` (plan §6,
+ * risk.EtoroRealCanaryPolicy as built): x20 only, 50-60 USD invested, the
+ * stop held between 2.3 % and 2.45 % of the price (23-24.5 USD at risk on
+ * 50 USD), no equity caps, nsdq100 only.
+ */
+const CANARY = {
+  min: 50,
+  max: 60,
+  default: 50,
+  leverage: 20,
+  policy: 'etoro-real-canary-2026-10-22',
+  limits: { min_sl_pct: 0.023, max_sl_pct: 0.0245, max_loss_pct_equity: 0 } as Limits,
+  bounds: { min_sl_pct: 0.0005, max_sl_pct: 0.025, max_tp_pct: 0.5, tick: 0.01 } as Bounds,
+  account: { currency: 'USD', cash: 60, equity: 60 },
+}
+
+/** What a request's scenario allows: the bounds, the leverage set, the policy and the account. */
+function policyOf(request: Request) {
+  if (isRealCanary(request)) {
+    return {
+      real: true,
+      min: CANARY.min,
+      max: CANARY.max,
+      default: CANARY.default,
+      leverages: [CANARY.leverage],
+      policy: CANARY.policy,
+      limits: CANARY.limits,
+      bounds: CANARY.bounds,
+      account: CANARY.account,
+      books: ['nsdq100'],
+    }
+  }
+  return {
+    real: false,
+    min: MIN,
+    max: MAX,
+    default: DEFAULT_AMOUNT,
+    leverages: [1],
+    policy: 'etoro-demo-2026-10-19',
+    limits: LIMITS,
+    bounds: undefined as Bounds | undefined,
+    account,
+    books: ['nsdq100', 'spx500'],
+  }
+}
+
 /** The mock account: the fixture's 10-16 numbers. */
 const account = { currency: 'USD', cash: 97793.95, equity: 99949.9 }
 
@@ -284,7 +345,16 @@ export function resetMockTrades() {
 }
 
 function flagOf(request: Request): string {
-  return new URL(request.url).searchParams.get('mock') ?? ''
+  return mockFlag(request)
+}
+
+/**
+ * The key of a book's mock position / legs: the canary ledger (real) is a
+ * ledger of its own and starts flat with no leg today, whatever the demo
+ * fixture holds, so its state lives under a `real:` prefix.
+ */
+function bookKey(book: string, real: boolean): string {
+  return real ? `real:${book}` : book
 }
 
 function quoteOf(book: string): { bid: number; ask: number; at: string; spread_bps: number } {
@@ -302,7 +372,7 @@ function refClose(book: string): { close: number; signal: string } {
 
 export function exposure(): number {
   let t = 0
-  for (const p of state.positions.values()) if (p.state === 'long') t += p.amount ?? 0
+  for (const p of state.positions.values()) if (p.state === 'long') t += (p.amount ?? 0) * (p.leverage ?? 1)
   return t
 }
 
@@ -332,6 +402,7 @@ function nyDate(now = new Date()): string {
 /** The trading block GET /controls reports in mock mode (enabled unless ?mock=trading-off). */
 export function mockTradingInfo(request: Request) {
   const off = flagOf(request) === 'trading-off'
+  const p = policyOf(request)
   return {
     enabled: !off,
     ...(off
@@ -341,9 +412,14 @@ export function mockTradingInfo(request: Request) {
         }
       : {}),
     token_ttl_s: TTL_S,
-    min_amount_usd: MIN,
-    max_amount_usd: MAX,
-    default_amount_usd: DEFAULT_AMOUNT,
+    min_amount_usd: p.min,
+    max_amount_usd: p.max,
+    default_amount_usd: p.default,
+    environment: p.real ? 'real' : 'demo',
+    leverage_options: p.leverages,
+    default_leverage: p.leverages[0],
+    policy_version: p.policy,
+    books: p.books,
   }
 }
 
@@ -468,41 +544,64 @@ export const tradeHandlers = [
     const side = body.side === 'protect' ? 'protect' : body.side === 'open' ? 'open' : null
     const inst = BOOKS[book]
     if (!inst || !side) return HttpResponse.json({ error: 'side: "open" or "protect"' }, { status: 400 })
-    const pos = state.positions.get(book) ?? { state: 'flat' as const }
+    const pol = policyOf(request)
+    const pos = state.positions.get(bookKey(book, pol.real)) ?? { state: 'flat' as const }
     if (side === 'protect' && pos.state !== 'long')
       return HttpResponse.json({ error: `the ledger holds no position on ${inst.symbol} to protect` }, { status: 409 })
     const q = quoteOf(book)
     const spreadPct = q.spread_bps / 1e4
-    const amount = side === 'open' ? Number(body.amount_usd) || DEFAULT_AMOUNT : 0
-    const units = side === 'open' ? amount / q.ask : (pos.units ?? 0)
+    const lev = side === 'open' ? Number(body.leverage) || pol.leverages[0] : (pos.leverage ?? 1)
+    if (side === 'open' && !pol.leverages.includes(lev))
+      return HttpResponse.json(
+        { error: `leverage: must be one of [${pol.leverages.join(' ')}] (the policy)` },
+        { status: 400 },
+      )
+    const amount = side === 'open' ? Number(body.amount_usd) || pol.default : 0
+    const units = side === 'open' ? (amount * lev) / q.ask : (pos.units ?? 0)
     const entry = side === 'open' ? q.ask : (pos.open_rate ?? q.bid)
     const mark = q.bid
     const profiles: Record<string, Levels> = {}
     for (const p of Object.keys(MULT))
-      profiles[p] = buildLevels(book, p, entry, mark, units, spreadPct, account.equity, 0, 0)
+      profiles[p] = buildLevels(
+        book,
+        p,
+        entry,
+        mark,
+        units,
+        spreadPct,
+        pol.account.equity,
+        0,
+        0,
+        pol.limits,
+        pol.bounds,
+      )
     const { signal } = refClose(book)
     return HttpResponse.json({
-      ledger: new URL(request.url).searchParams.get('ledger') || 'etoro-demo',
+      ledger: new URL(request.url).searchParams.get('ledger') || (pol.real ? 'etoro-real-canary' : 'etoro-demo'),
       book,
       side,
       instrument: inst,
       quote: q,
-      account: { ...account, exposure: exposure() },
+      account: { ...pol.account, exposure: exposure() },
       position: pos,
       rule_signal: signal,
       ...(side === 'open' ? { amount_usd: amount } : {}),
       units,
+      leverage: lev,
+      exposure_usd: units * q.ask,
+      environment: pol.real ? 'real' : 'demo',
       profiles,
       default_profile: 'moderate',
       context: protectionContext(book, side, entry, mark, 'moderate', profiles.moderate, pos),
-      policy_version: 'etoro-demo-2026-10-19',
+      policy_version: pol.policy,
       warnings: [],
       prepared_at: new Date().toISOString(),
     })
   }),
 
   http.post('/api/ui/etoro/trades/prepare', async ({ request }) => {
-    const ledger = new URL(request.url).searchParams.get('ledger') || 'etoro-demo'
+    const pol = policyOf(request)
+    const ledger = new URL(request.url).searchParams.get('ledger') || (pol.real ? 'etoro-real-canary' : 'etoro-demo')
     const flag = flagOf(request)
     if (flag === 'trading-off')
       return HttpResponse.json({ error: mockTradingInfo(request).disabled_reason }, { status: 403 })
@@ -549,18 +648,26 @@ export const tradeHandlers = [
     const side: Side | null =
       body.side === 'close' ? 'close' : body.side === 'open' ? 'open' : body.side === 'protect' ? 'protect' : null
     const inst = BOOKS[book]
-    if (!inst || !side || body.leverage !== 1) {
+    const lev = Number(body.leverage)
+    if (!inst || !side || !pol.leverages.includes(lev) || !pol.books.includes(book)) {
       log({ outcome: 'refused', error: 'book, side or leverage invalid' })
+      const want =
+        pol.leverages.length === 1 ? `leverage ${pol.leverages[0]}` : `leverage in [${pol.leverages.join(' ')}]`
       return HttpResponse.json(
-        { error: 'book, side ("open" | "close" | "protect") and leverage 1 are required' },
+        {
+          error:
+            !inst || !side
+              ? `book, side ("open" | "close" | "protect") and ${want} are required`
+              : `leverage: must be ${pol.leverages[0]} (the policy allows x${pol.leverages[0]} only)`,
+        },
         { status: 400 },
       )
     }
     const amount = side === 'open' ? Number(body.amount_usd) : 0
     const positionId = side !== 'open' ? String(body.position_id ?? '') : ''
-    if (side === 'open' && (!(amount >= MIN) || !(amount <= MAX))) {
+    if (side === 'open' && (!(amount >= pol.min) || !(amount <= pol.max))) {
       log({ outcome: 'refused', error: 'amount_usd out of bounds' })
-      return HttpResponse.json({ error: `amount_usd: must be between ${MIN} and ${MAX} USD` }, { status: 400 })
+      return HttpResponse.json({ error: `amount_usd: must be between ${pol.min} and ${pol.max} USD` }, { status: 400 })
     }
     if (side !== 'open' && !/^\d{1,32}$/.test(positionId)) {
       log({ outcome: 'refused', error: 'position_id missing' })
@@ -582,20 +689,22 @@ export const tradeHandlers = [
         { status: 400 },
       )
 
-    const pos = state.positions.get(book) ?? { state: 'flat' as const }
+    const pos = state.positions.get(bookKey(book, pol.real)) ?? { state: 'flat' as const }
     const q = quoteOf(book)
     const { close, signal } = refClose(book)
-    const units = side === 'open' ? amount / q.ask : (pos.units ?? 0)
+    const units = side === 'open' ? (amount * lev) / q.ask : (pos.units ?? 0)
+    const exposureUsd = units * (side === 'open' ? q.ask : q.bid)
+    const account = pol.account
     const reasons: string[] = []
     const warnings: string[] = []
     const halt = s.halt?.halted ? s.halt : null
     if (halt) reasons.push(`halted: trading is halted: ${halt.reason} (halt file, by ${halt.by} at ${halt.at})`)
     const marketClosed = flag === 'market-closed'
     if (marketClosed && side !== 'protect') reasons.push(`market_closed: the market for ${book} is closed`)
-    const legs = state.legs.get(book) ?? 0
+    const legs = state.legs.get(bookKey(book, pol.real)) ?? 0
     if (side === 'open' && legs >= 1) reasons.push(`max_orders_per_day: would be order ${legs + 1} today, max 1`)
-    const exp = exposure() + (side === 'open' ? amount : 0)
-    if (side === 'open' && exp / account.equity > 0.05) {
+    const exp = exposure() + (side === 'open' ? amount * lev : 0)
+    if (side === 'open' && !pol.real && exp / account.equity > 0.05) {
       reasons.push(
         `max_exposure_pct_equity: exposure after the order ${exp.toFixed(2)} is ${((exp / account.equity) * 100).toFixed(1)}% of equity ${account.equity.toFixed(2)} (max 5.0%)`,
       )
@@ -610,7 +719,19 @@ export const tradeHandlers = [
       if (!body.profile && side === 'open')
         warnings.push("no stop requested: the moderate profile's levels were applied (the policy requires a stop)")
       const entry = side === 'open' ? q.ask : (pos.open_rate ?? q.bid)
-      const lv = buildLevels(book, profile, entry, q.bid, units, q.spread_bps / 1e4, account.equity, slPctIn, tpPctIn)
+      const lv = buildLevels(
+        book,
+        profile,
+        entry,
+        q.bid,
+        units,
+        q.spread_bps / 1e4,
+        account.equity,
+        slPctIn,
+        tpPctIn,
+        pol.limits,
+        pol.bounds,
+      )
       if (!lv.feasible) reasons.push(`protection: ${lv.reason}`)
       protection = protectionContext(book, side, entry, q.bid, profile, lv, pos)
       if (side === 'protect' && pos.stop_loss_rate && lv.sl_rate < pos.stop_loss_rate)
@@ -632,18 +753,18 @@ export const tradeHandlers = [
     const cash = flag === 'short-cash' ? 500 : account.cash
     if (side === 'open' && cash < amount)
       reasons.push(`available cash ${cash.toFixed(2)} USD is below the ${amount.toFixed(0)} USD amount`)
-    if (side === 'open' && signal === 'flat')
+    if (side === 'open' && signal === 'flat' && !pol.real)
       warnings.push(
         'the rule says flat: the executor closes this position at its next 09:35 New York run unless the ledger is halted',
       )
-    if (side === 'close' && signal === 'long')
+    if (side === 'close' && signal === 'long' && !pol.real)
       warnings.push(
         'the rule says long: the executor re-opens at its next 09:35 New York run unless the ledger is halted',
       )
 
-    const ref = `ui-${book}-${nyDate(now)}-${side}-${hex6()}`
+    const ref = `ui-${pol.real ? 'real-' : ''}${book}-${nyDate(now)}-${side}-${hex6()}`
     const requestId = requestIdFor(ref)
-    const confirmation = `${side === 'open' ? 'PLACE' : side === 'protect' ? 'PROTECT' : 'CLOSE'} ${inst.symbol}`
+    const confirmation = `${side === 'open' ? 'PLACE' : side === 'protect' ? 'PROTECT' : 'CLOSE'} ${pol.real ? 'REAL ' : ''}${inst.symbol}`
     const allow = reasons.length === 0
     const ttl = flag === 'short-ttl' ? 3 : TTL_S
     const lv = protection ? (protection.levels as Levels) : null
@@ -662,14 +783,14 @@ export const tradeHandlers = [
         side === 'open' ? { spread: 0.04, markup: 0, transaction_fee: 0, overnight_fee: 0.26, weekend_fee: 0 } : null,
       account: { ...account, cash, exposure: exposure() },
       risk: {
-        policy_version: 'etoro-demo-2026-10-19',
+        policy_version: pol.policy,
         order: {
           book,
           side: side === 'open' ? 'buy' : side === 'close' ? 'sell' : 'protect',
           qty_btc: units,
           price: side === 'open' ? q.ask : q.bid,
           ref_price: close,
-          leverage: 1,
+          leverage: lev,
           ...(lv && side === 'open'
             ? { stop_loss: lv.sl_rate, ...(lv.tp_rate ? { take_profit: lv.tp_rate } : {}) }
             : {}),
@@ -688,6 +809,10 @@ export const tradeHandlers = [
       units,
       amount_usd: amount,
       ...(positionId ? { position_id: positionId } : {}),
+      leverage: lev,
+      exposure_usd: exposureUsd,
+      environment: pol.real ? 'real' : 'demo',
+      ...(lv && side === 'open' ? { max_loss_usd: lv.max_loss_usd } : {}),
       ref_price: close,
       confirmation,
       client_ref: ref,
@@ -716,6 +841,8 @@ export const tradeHandlers = [
         tp_rate: lv?.tp_rate ?? 0,
         profile: lv ? profile : '',
         max_loss_usd: lv?.max_loss_usd ?? 0,
+        leverage: lev,
+        env: pol.real ? 'real' : 'demo',
       }
       state.tokens.set(id, c)
       preview.token = `mock.${id}`
@@ -724,8 +851,8 @@ export const tradeHandlers = [
     }
     const detail =
       side === 'open'
-        ? `open ${book} ${amount.toFixed(0)} USD x1 (${units.toFixed(6)} units)`
-        : `${side} ${book} position ${positionId} (${units.toFixed(6)} units)`
+        ? `${pol.real ? 'REAL ' : ''}open ${book} ${amount.toFixed(0)} USD x${lev} (${units.toFixed(6)} units)`
+        : `${pol.real ? 'REAL ' : ''}${side} ${book} position ${positionId} (${units.toFixed(6)} units)`
     log(
       allow
         ? { outcome: 'done', detail: `${detail} -> allow` }
@@ -795,7 +922,8 @@ export const tradeHandlers = [
     }
     if (flag === 'market-closed' && c.side !== 'protect')
       return fail(422, 'refused', 'the NYSE cash session is closed; nothing sent', who)
-    const pos = state.positions.get(c.book) ?? { state: 'flat' as const }
+    const key = bookKey(c.book, c.env === 'real')
+    const pos = state.positions.get(key) ?? { state: 'flat' as const }
     if (c.side === 'open' && pos.state !== 'flat')
       return fail(
         422,
@@ -813,8 +941,8 @@ export const tradeHandlers = [
     }
     const detail =
       c.side === 'open'
-        ? `open ${c.book} ${c.amount_usd.toFixed(0)} USD x1 (${c.units.toFixed(6)} units)`
-        : `${c.side} ${c.book} position ${c.position_id} (${c.units.toFixed(6)} units)`
+        ? `${c.env === 'real' ? 'REAL ' : ''}open ${c.book} ${c.amount_usd.toFixed(0)} USD x${c.leverage || 1} (${c.units.toFixed(6)} units)`
+        : `${c.env === 'real' ? 'REAL ' : ''}${c.side} ${c.book} position ${c.position_id} (${c.units.toFixed(6)} units)`
     const req1 = log({ outcome: 'requested', ...who, detail })
     if (flag === 'broker-down') {
       const err = `${c.side} ${c.client_ref}: broker: order outcome unknown: context deadline exceeded (the intent ${c.client_ref} stays on disk; etoro-reconcile and the data-health page report it until it is resolved by hand)`
@@ -933,7 +1061,7 @@ export const tradeHandlers = [
       state.nextPos++
       const pid = String(state.nextPos)
       avg = c.ask + 0.5
-      units = c.amount_usd / avg
+      units = (c.amount_usd * (c.leverage || 1)) / avg
       amount = c.amount_usd
       positionIds = [pid]
       after = {
@@ -943,6 +1071,7 @@ export const tradeHandlers = [
         amount,
         open_rate: avg,
         opened_at: finished.toISOString(),
+        ...(c.leverage > 1 ? { leverage: c.leverage } : {}),
         ...(c.sl_rate > 0 ? { stop_loss_rate: c.sl_rate, stop_type: 'fixed' } : {}),
         ...(c.tp_rate > 0 ? { take_profit_rate: c.tp_rate } : {}),
       }
@@ -960,8 +1089,8 @@ export const tradeHandlers = [
           ? ((avg - c.ref_price) / c.ref_price) * 1e4
           : ((c.ref_price - avg) / c.ref_price) * 1e4
         : 0
-    state.positions.set(c.book, after)
-    state.legs.set(c.book, (state.legs.get(c.book) ?? 0) + 1)
+    state.positions.set(key, after)
+    state.legs.set(key, (state.legs.get(key) ?? 0) + 1)
     const orderId = `o${state.nextPos + 100}`
     const today = nyDate(now)
     if (c.side === 'open') {
@@ -1019,7 +1148,7 @@ export const tradeHandlers = [
         } satisfies Partial<EtoroTrade>)
       }
     }
-    state.lastOrder.set(c.book, {
+    state.lastOrder.set(key, {
       kind: c.side,
       client_ref: c.client_ref,
       request_id: c.request_id,
@@ -1125,8 +1254,8 @@ export const tradeHandlers = [
     const ref = { ...who, ref: c.client_ref }
     const detail =
       c.side === 'open'
-        ? `open ${c.book} ${c.amount_usd.toFixed(0)} USD x1 (${c.units.toFixed(6)} units)`
-        : `${c.side} ${c.book} position ${c.position_id} (${c.units.toFixed(6)} units)`
+        ? `${c.env === 'real' ? 'REAL ' : ''}open ${c.book} ${c.amount_usd.toFixed(0)} USD x${c.leverage || 1} (${c.units.toFixed(6)} units)`
+        : `${c.env === 'real' ? 'REAL ' : ''}${c.side} ${c.book} position ${c.position_id} (${c.units.toFixed(6)} units)`
     const expiresAt = new Date(c.exp).toISOString()
     let status: 'cancelled' | 'expired'
     if (now.getTime() >= c.exp) {

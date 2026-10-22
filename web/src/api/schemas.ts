@@ -15,6 +15,15 @@ export type Signal = z.infer<typeof signal>
 export const venueSchema = z.enum(['bitso', 'etoro']).default('bitso')
 export type Venue = z.infer<typeof venueSchema>
 
+/**
+ * The account an eToro ledger is written against (api.Ledger.Environment,
+ * 2026-10-22): the demo cells, or the REAL account of the measurement canary
+ * (docs/etoro/ETORO-REAL-CANARY-PLAN-2026-10-21.md). Absent on Bitso ledgers
+ * and on captures from older builds, so it defaults to demo.
+ */
+export const environmentSchema = z.enum(['demo', 'real']).default('demo')
+export type Environment = z.infer<typeof environmentSchema>
+
 export const decisionSchema = z.object({
   bar_date: z.string(),
   fill_date: z.string(),
@@ -404,12 +413,26 @@ export const tradingInfoSchema = z.object({
   min_amount_usd: z.number(),
   max_amount_usd: z.number(),
   default_amount_usd: z.number(),
+  /**
+   * 2026-10-22 (the real-account canary): which account the trades go to,
+   * the leverage values the form offers and the one it pre-selects (x1 on
+   * demo; x20 only on the canary), the policy the trades are checked with,
+   * the books it allows, and whether this is the canary rehearsal on demo.
+   * Defaults are the demo console's, for captures from older builds.
+   */
+  environment: environmentSchema,
+  leverage_options: z.array(z.number()).default([1]),
+  default_leverage: z.number().default(1),
+  policy_version: z.string().default(''),
+  books: z.array(z.string()).default([]),
+  rehearsal: z.boolean().default(false),
 })
 export type TradingInfo = z.infer<typeof tradingInfoSchema>
 
 /** GET /api/ui/controls: whether halt/resume is available for this ledger, and the audit log (newest first). */
 export const controlsInfoSchema = z.object({
   ledger: z.string(),
+  environment: environmentSchema,
   enabled: z.boolean(),
   disabled_reason: z.string().optional(),
   halt_file: haltFileSchema,
@@ -546,6 +569,7 @@ export type Health = z.infer<typeof healthSchema>
 export const ledgerInfoSchema = z.object({
   name: z.string(),
   venue: venueSchema,
+  environment: environmentSchema,
   path: z.string(),
   default: z.boolean(),
   found: z.boolean(),

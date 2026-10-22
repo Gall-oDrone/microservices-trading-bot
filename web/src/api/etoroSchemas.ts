@@ -786,6 +786,10 @@ export const tradeRecommendationSchema = z.object({
   rule_signal: orEmpty(signal),
   amount_usd: z.number().optional(),
   units: z.number(),
+  /** 2026-10-22: the leverage the levels were sized for, units x ask, and the account. */
+  leverage: z.number().default(1),
+  exposure_usd: z.number().optional(),
+  environment: z.enum(['demo', 'real']).default('demo'),
   profiles: z.record(z.string(), stopLevelsSchema),
   default_profile: z.string(),
   context: tradeProtectionSchema,
@@ -830,6 +834,15 @@ export const tradePreviewSchema = z.object({
   units: z.number(),
   amount_usd: z.number(),
   position_id: z.string().optional(),
+  /**
+   * 2026-10-22 (the real-account canary): the leverage the order carries,
+   * units x ask (= amount_usd at x1), the account the order goes to, and
+   * the most the position can lose at its stop. Older backends omit them.
+   */
+  leverage: z.number().default(1),
+  exposure_usd: z.number().optional(),
+  environment: z.enum(['demo', 'real']).default('demo'),
+  max_loss_usd: z.number().optional(),
   ref_price: z.number(),
   confirmation: z.string(),
   client_ref: z.string(),

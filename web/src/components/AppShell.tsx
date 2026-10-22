@@ -1,6 +1,9 @@
 import { Link, NavLink, Outlet, useLocation, useSearchParams } from 'react-router'
+import { useEffect } from 'react'
 import {
+  useControls,
   useDataHealth,
+  useEnvironment,
   useEtoroForwardTests,
   useEtoroHealth,
   useEtoroRisk,
@@ -31,7 +34,58 @@ import {
 } from './icons'
 import { Badge, VenueTag } from './ui'
 import { attentionItems } from '../lib/attention'
+import { accountLabel } from '../lib/env'
 import { TZ_OPTIONS, useTz } from '../lib/tz'
+
+/**
+ * The REAL account bar (2026-10-22, plan §3.4): rendered above every page
+ * while the selected ledger is the measurement canary's, never dismissable.
+ * It names the account, the ledger, the policy the trades are checked with
+ * and the ui-api the page talks to, so a tab on the canary console can
+ * never be mistaken for the demo one. Absent on every demo ledger.
+ */
+function RealBar() {
+  const env = useEnvironment()
+  const ledger = useLedgerName()
+  const controls = useControls()
+  const real = env === 'real'
+  useEffect(() => {
+    if (real) document.documentElement.dataset.env = 'real'
+    else delete document.documentElement.dataset.env
+    return () => {
+      delete document.documentElement.dataset.env
+    }
+  }, [real])
+  if (!real) return null
+  const policy = controls.data?.trading?.policy_version
+  const api = typeof __UI_API__ === 'string' ? __UI_API__.replace(/^https?:\/\//, '') : ''
+  return (
+    <div className="real-bar" role="alert" aria-label="Real account" data-testid="real-bar">
+      <span className="real-bar-mark" aria-hidden="true">
+        <IconAlert />
+      </span>
+      <b className="real-bar-title">REAL ACCOUNT</b>
+      <span className="real-bar-sep">·</span>
+      <span>measurement canary</span>
+      <span className="real-bar-sep">·</span>
+      <span className="num">ledger {ledger || 'etoro-real-canary'}</span>
+      {policy && (
+        <>
+          <span className="real-bar-sep">·</span>
+          <span className="num">policy {policy}</span>
+        </>
+      )}
+      {api && (
+        <>
+          <span className="real-bar-sep">·</span>
+          <span className="num">ui-api {api}</span>
+        </>
+      )}
+      <span className="real-bar-sep">·</span>
+      <span className="real-bar-note">every order placed here is real money; phrases carry REAL</span>
+    </div>
+  )
+}
 
 /**
  * The operator's clock (U3): which zone the audit lines, outcomes and
@@ -177,6 +231,11 @@ function LedgerPicker() {
       <label className="nav-label" htmlFor="ledger-picker">
         Ledger
         {!unknown && <VenueTag venue={current.venue} />}
+        {!unknown && current.venue === 'etoro' && current.environment === 'real' && (
+          <Badge tone="real" title="This ledger is written against the REAL eToro account (the measurement canary)">
+            <span data-testid="ledger-picker-real">REAL</span>
+          </Badge>
+        )}
       </label>
       {ledgers.length === 1 ? (
         <div className="ledger-single" id="ledger-picker" title={current.path}>
@@ -201,6 +260,7 @@ function LedgerPicker() {
           {ledgers.map((l) => (
             <option key={l.name} value={l.name}>
               {l.name} {l.found ? `· ${l.records} rec` : '· no file yet'} · {l.venue}
+              {l.venue === 'etoro' && l.environment === 'real' ? ' · REAL' : ''}
             </option>
           ))}
         </select>
@@ -212,6 +272,7 @@ function LedgerPicker() {
 function Nav() {
   const search = useLedgerSearch()
   const venue = useVenue()
+  const env = useEnvironment()
   const bitso = venue === 'bitso'
   const etoro = venue === 'etoro'
   // Each venue's own endpoints feed the counts; the other venue's stay idle.
@@ -260,7 +321,7 @@ function Nav() {
         <IconTrade /> Trade
         {etoro && (
           <span className="count" aria-hidden="true">
-            <Badge tone="etoro">demo</Badge>
+            <Badge tone={env === 'real' ? 'real' : 'etoro'}>{accountLabel(env)}</Badge>
           </span>
         )}
       </NavLink>
@@ -391,6 +452,7 @@ export function AppShell() {
         <HealthFoot />
       </aside>
       <main className="main" id="main">
+        <RealBar />
         <AttentionBar />
         <Outlet />
       </main>

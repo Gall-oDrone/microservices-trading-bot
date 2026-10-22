@@ -5,6 +5,7 @@
  */
 import { http, HttpResponse } from 'msw'
 import { controlHandlers, withMockHalt } from './controls'
+import { isRealCanary, REAL_CANARY_LEDGER } from './flag'
 import { strategyHandlers } from './strategies'
 import { mockPositions, mockTradingInfo, tradeHandlers, withMockTrades } from './trades'
 import healthz from './fixtures/healthz.json'
@@ -49,15 +50,45 @@ const venueOf: Record<string, Venue> = Object.fromEntries(ledgers.ledgers.map((l
 const firstOf = (venue: Venue) => ledgers.ledgers.find((l) => venueOf[l.name] === venue)?.name
 
 /**
+ * The ledger list under `?mock=real-canary`: what the canary's ui-api
+ * serves (plan §3.2): no demo cell, one eToro ledger named etoro-real-canary
+ * written against the REAL account. The demo captures stand in for its
+ * files (relabelled on the way out).
+ */
+function ledgersFor(request: Request) {
+  if (!isRealCanary(request)) return ledgers
+  return {
+    ledgers: ledgers.ledgers
+      .filter((l) => l.venue !== 'etoro' || l.name === 'etoro-demo')
+      .map((l) =>
+        l.name === 'etoro-demo'
+          ? {
+              ...l,
+              name: REAL_CANARY_LEDGER,
+              environment: 'real',
+              path: '../strategy-executor/etoro-daily-data/real-canary/ledger.jsonl',
+              modes: ['real'],
+            }
+          : l,
+      ),
+  }
+}
+
+/**
  * Mirrors ui-api's pickVenue: no ?ledger= means the default (the first ledger
  * of the route's venue for /etoro/*), an unknown name is a 400, and a ledger
  * on the other venue is a 400 too, so a Bitso page can never show data for
  * the eToro ledger or the other way round. `venue` undefined is a
- * venue-neutral route (controls).
+ * venue-neutral route (controls). Under `?mock=real-canary` the canary
+ * ledger is served from the demo captures with its name and environment
+ * written in (the demo name is then unknown, as on the canary's ui-api).
  */
 export function fixture(request: Request, name: string, venue?: Venue): Response {
+  const real = isRealCanary(request)
   const want = new URL(request.url).searchParams.get('ledger')
-  const ledger = want || (venue ? firstOf(venue) : undefined) || defaultLedger
+  if (real && want === 'etoro-demo') return HttpResponse.json({ error: `unknown ledger ${want}` }, { status: 400 })
+  const alias = real && (want === REAL_CANARY_LEDGER || (!want && venue === 'etoro'))
+  const ledger = alias ? 'etoro-demo' : want || (venue ? firstOf(venue) : undefined) || defaultLedger
   const files = byLedger[ledger]
   if (!files || !(ledger in venueOf)) return HttpResponse.json({ error: `unknown ledger ${ledger}` }, { status: 400 })
   if (venue && venueOf[ledger] !== venue) {
@@ -68,7 +99,14 @@ export function fixture(request: Request, name: string, venue?: Venue): Response
   }
   const f = files[name]
   if (!f) return HttpResponse.json({ error: `no fixture ${ledger}/${name}` }, { status: 404 })
-  return HttpResponse.json(f)
+  if (!alias) return HttpResponse.json(f)
+  const text = JSON.stringify(f)
+    .replaceAll('"etoro-demo"', `"${REAL_CANARY_LEDGER}"`)
+    .replaceAll('etoro-daily-data/demo/', 'etoro-daily-data/real-canary/')
+  const doc = JSON.parse(text) as Json
+  if ('ledger' in doc) doc.ledger = REAL_CANARY_LEDGER
+  if (name === 'controls') doc.environment = 'real'
+  return HttpResponse.json(doc)
 }
 
 const bitso = (request: Request, name: string) => fixture(request, name, 'bitso')
@@ -157,7 +195,7 @@ function liveStream(request: Request, src?: Json): Response {
 
 export const handlers = [
   http.get('/api/ui/healthz', () => HttpResponse.json(healthz)),
-  http.get('/api/ui/ledgers', () => HttpResponse.json(ledgers)),
+  http.get('/api/ui/ledgers', ({ request }) => HttpResponse.json(ledgersFor(request))),
   http.get('/api/ui/live', ({ request }) => HttpResponse.json(liveNow(request))),
   http.get('/api/ui/stream', ({ request }) => liveStream(request)),
   // The eToro rates feed (P5c): the capture replayed as the snapshot, then heartbeats with the session.
