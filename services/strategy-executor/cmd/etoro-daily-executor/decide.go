@@ -110,6 +110,23 @@ func specNames() []string {
 	return out
 }
 
+// cfdNames is the default of -instruments: the index-CFD cell as
+// pre-registered (NSDQ100, SPX500). It must never be "every frozen spec":
+// when QQQ / SPY were frozen on 2026-10-21 that default mixed the two
+// products, and the CFD cron job (which passes no -instruments) exited 2 on
+// 2026-10-22 and 2026-10-23 before fetching a bar. The ETF cell names its
+// instruments explicitly.
+func cfdNames() []string {
+	out := make([]string, 0, len(frozenSpecs))
+	for k, s := range frozenSpecs {
+		if s.Kind == KindCFD {
+			out = append(out, k)
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
 func draftNames() []string {
 	out := make([]string, 0, len(draftSpecs))
 	for k := range draftSpecs {

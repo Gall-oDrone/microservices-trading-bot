@@ -311,3 +311,17 @@ func TestVenueCloseNotInHistoryYetIsNotRecorded(t *testing.T) {
 		t.Fatalf("%+v", d)
 	}
 }
+
+// Regression (2026-10-23): -instruments defaulted to every frozen spec, so
+// after QQQ / SPY were frozen the CFD cron job (no -instruments) mixed the
+// products and exited 2 for two sessions. The default is the CFD cell.
+func TestDefaultInstrumentsAreTheCFDCell(t *testing.T) {
+	if got := strings.Join(cfdNames(), ","); got != "NSDQ100,SPX500" {
+		t.Fatalf("default -instruments %q, want NSDQ100,SPX500", got)
+	}
+	for _, n := range cfdNames() {
+		if frozenSpecs[n].Kind != KindCFD {
+			t.Fatalf("%s is not a CFD spec", n)
+		}
+	}
+}

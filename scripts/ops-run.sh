@@ -112,7 +112,9 @@ case "$job" in
     ;;
   etoro)
     echo "== $(date -u +%Y-%m-%dT%H:%M:%SZ) ops-run etoro"
-    "$ROOT/scripts/etoro-daily-executor-run.sh" -demo "$@"
+    # The CFD cell names its instruments (2026-10-23): on 10-22 and 10-23 the
+    # binary's default had grown to every frozen spec and the run exited 2.
+    "$ROOT/scripts/etoro-daily-executor-run.sh" -demo -instruments NSDQ100,SPX500 "$@"
     code=$?
     echo "== exit $code"
     exit "$code"

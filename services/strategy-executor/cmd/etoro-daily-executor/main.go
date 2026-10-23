@@ -98,7 +98,7 @@ type options struct {
 }
 
 func main() {
-	insts := flag.String("instruments", strings.Join(specNames(), ","), "comma-separated instruments (each must have a frozen spec)")
+	insts := flag.String("instruments", strings.Join(cfdNames(), ","), fmt.Sprintf("comma-separated instruments, one product per run (each must have a frozen spec: %s); default: the index-CFD cell", strings.Join(specNames(), ", ")))
 	var o options
 	flag.StringVar(&o.ledgerPath, "ledger", "./etoro-daily-data/ledger.jsonl", "append-only JSONL ledger (use a separate one for -demo)")
 	flag.StringVar(&o.candlesDir, "candles-dir", "", "where fetched bars are saved (default: <ledger dir>/candles)")
