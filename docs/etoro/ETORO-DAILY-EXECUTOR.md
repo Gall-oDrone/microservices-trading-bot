@@ -60,10 +60,10 @@ With `ETORO_EXECUTOR_S3_URI` set, every run copies the ledger directory to
 1. **Halt check.** It reads `<ledger dir>/risk-state.json`. A corrupt halt file exits 2 before anything else runs.
 2. **Bars.** It reads eToro's live daily candles **twice** and keeps NYSE trading days only.
    - The last closed bar must be the latest closed trading day. Otherwise the run stops on stale data.
-   - The two reads must agree on the signal and be within 5 bps of each other (see §4).
+   - The two reads must agree on the signal and be within the product's tolerance of each other: **5 bps** for the index CFDs (frozen with the pre-registration), **15 bps** for the ETF bars since 2026-10-25 (see §4).
 3. **Decision and paper account.** It applies the frozen rule and runs the paper account with the pre-registered costs (`cfdsim`).
 4. **Reconcile before acting.** The ledger's position must match the account.
-   - Any other position on the instrument stops the run. Nothing is sent.
+   - Any other position on the instrument stops the run. Nothing is sent. Since 2026-10-25 a position that a **sibling cell's** ledger holds (`-sibling-ledgers` / `ETORO_SIBLING_LEDGERS`, set by `ops-run.sh` for the three cells) is that cell's: left alone, noted on the day's line, never a reason to stop (§4, "Three cells, one account").
    - The exception is an interrupted leg of this executor (an intent exists for it), which is resumed.
 5. **Risk check** (`risk.EtoroDemoPolicy`):
    - x1 only;
@@ -150,9 +150,23 @@ cd services/ui-api && ./bin/ui-alerts -dry-run -etoro-ledger ../strategy-executo
 - **Portfolio lag.** The portfolio shows fills late: usually 1–3 s, but on 2026-10-12 it still showed no positions and the pre-trade cash balance 5 s after the second fill, and both positions 80 minutes later. The adapter polls for up to 30 s to resolve the fill; the reconcile waits for up to 60 s more (§2). The ledger's `demo.account` snapshot is the **pre-order** balance (`exposure` 0 before the first open); `position_after` is post-fill.
 - **Trading-history lag.** The closed-positions history lists a close later than the portfolio drops it: on 2026-10-16 the portfolio no longer held the closed NSDQ100 position 10 s after the close, but the history did not list it yet (3 h later it did). The reconcile waits for the history too (§2).
 - **Two versions of daily history** (seen 2026-10-10):
-  - up to ~1.3 bps on 13–16 recent closes;
+  - up to ~1.3 bps on 13–16 recent closes of the index CFDs, on every run since;
+  - the ETF bars sit further apart: 9 SPY closes at 4.68 bps (10-22, 10-23) and QQQ at 6.4 bps
+    (10-23, which stopped the rotation's run);
   - the executor reads twice and records `candles.revised_closes` / `max_revision_bps`;
-  - recorded closes may move by up to 5 bps before the run stops.
+  - recorded closes may move by up to the product's tolerance before the run stops: **5 bps for
+    the CFDs** (frozen), **15 bps for the ETFs** (`revisionTolBpsETF`, 2026-10-25); the two reads
+    must agree on the signal regardless, so the rule never acts on bars whose versions disagree
+    about the position.
+- **Three cells, one account** (2026-10-25). The CFD cell, the SMA50 ETF cell and the dual-momentum
+  cell share the demo account, and the last two trade the same ETFs. Each cell's run and the
+  reconcile after it get the other cells' ledgers in `ETORO_SIBLING_LEDGERS` (set per job in
+  `scripts/ops-run.sh`; the flag is `-sibling-ledgers` on both binaries, read only): a position a
+  sibling's ledger currently holds is reported as the sibling's (`demo.notes` on the line,
+  `sibling_positions` / `sibling_note` in the reconcile JSON), never as an orphan on this cell's
+  instrument nor as `other_instruments`. A position **no** ledger holds is still `resolve by hand`.
+  Before this, 2026-10-22 the rotation refused to run because the ETF cell held SPY, and every
+  reconcile warned about the other cells' positions twice a day through `ui-alerts`.
 - **Weekend and holiday quotes.** These bars are dropped. Orders go only in the cash session.
 - **Session-dependent spreads.** Weekend-session previews quoted ~15 bps of spread per open; in the cash session the fills on 2026-10-12 paid 0.2–0.4 bps (fill vs mid −5.2 bps NSDQ100, −1.7 bps SPX500, both inside the quoted spread). The pre-registration's frozen costs are the weekend figures; report both.
 
@@ -457,7 +471,9 @@ describe about the rule, the paper account or the pre-registration.
   adds `protection_drift` (drift: the ledger recorded a stop, the account holds none) and
   `protection_unrecorded` (warn: the account's stop differs from or is missing in the ledger; the
   next run copies it). **Alerts (C5)**: `etoro.protection` warns when a held position has carried
-  no stop on the ledger for more than 30 minutes; `etoro.stop_out` reports a venue close of the
+  no stop on the ledger for more than 30 minutes (since 2026-10-25 a position of an ETF cell,
+  `paper.product` `etf`, is listed as "no stop overlay by design" and does not warn: §10 runs
+  without the overlay); `etoro.stop_out` reports a venue close of the
   last two trading days (informational). **Risk report (C6)**: section 6 lists held stops against
   the mark and the ATR, every edit, every venue close with the realised result next to the loss
   the stop modelled.

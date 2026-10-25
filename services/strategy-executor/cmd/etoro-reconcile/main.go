@@ -48,6 +48,7 @@ func main() {
 	recordVC := flag.Bool("record-venue-close", false, "write an action venue_close ledger line for a position the ledger holds, the account does not, and the trading history lists (the canary has no executor run to do it); the only write this command makes")
 	by := flag.String("by", "", "who records the venue close (with -record-venue-close)")
 	reason := flag.String("reason", "venue close recorded from the trading history by etoro-reconcile", "why (with -record-venue-close)")
+	siblingLedgers := flag.String("sibling-ledgers", os.Getenv(etoroledger.SiblingLedgersEnv), "comma-separated ledgers of the other cells on the same account ("+etoroledger.SiblingLedgersEnv+"): a position one of them holds is theirs, reported as sibling_positions, never as an orphan or other_instruments; read only")
 	flag.Parse()
 
 	if *envFile != "" {
@@ -97,7 +98,11 @@ func main() {
 	if err != nil {
 		die(err)
 	}
-	rep, err := reconcile(context.Background(), b, recs, intents, time.Now())
+	siblings, err := etoroledger.SiblingPositions(etoroledger.SplitSiblingPaths(*siblingLedgers, *ledger))
+	if err != nil {
+		die(err)
+	}
+	rep, err := reconcile(context.Background(), b, recs, intents, time.Now(), siblings)
 	if err != nil {
 		die(err)
 	}
@@ -133,6 +138,9 @@ func printReport(r report) {
 	for _, b := range r.Books {
 		fmt.Printf("  %-8s   : ledger %s %s (last bar %s, %d orders checked) | account %v | financing %.2f\n",
 			b.Book, b.LedgerState, b.LedgerPositionID, b.LastBarDate, b.OrdersChecked, b.AccountPositions, b.FinancingToDate)
+	}
+	if len(r.SiblingPositions) > 0 {
+		fmt.Printf("  siblings   : %s\n", r.SiblingNote)
 	}
 	for _, f := range r.Findings {
 		fmt.Printf("  %-5s %-8s %s: %s\n", strings.ToUpper(f.Severity), f.Book, f.Code, f.Message)

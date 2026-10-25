@@ -130,3 +130,29 @@ go run ./cmd/rotation-research -data ../../docs/backtest-readiness/evidence-2026
 **Data integrity:** compare the bars before 2026-10-21 with the registered snapshot (sha256 prefixes in §1). The result stands only if differences do not change the rule's target on any decision day.
 
 **Demo executor.** `etoro-daily-executor -strategy dm_12_1` takes the two books together: at 09:41 New York it reads both, aligns them, applies the rule once and runs the book the rule leaves before the one it enters, from its own ledger directory (`etoro-daily-data/demo-rotation/`), with the same idempotent-order, reconcile, risk (`EtoroDemoETFPolicy`) and halt machinery as the daily executors. On a day without a change it records the day and does nothing; before 2026-11-02 it holds cash. Runbook §11.
+
+## 6. Execution incidents (demo executor; appended as they happen, never edited)
+
+The paper account in §1–§4 decides pass or fail and is unaffected by anything below. The window
+opens on 2026-11-02; the runs below were pre-window runs that record the day and hold cash.
+
+### 6.1 2026-10-22: run refused by the ETF cell's SPY position (recorded 2026-10-25)
+
+`[spy] FAILED: ledger says flat but the account holds position(s) 3623764792 on SPY: resolve by
+hand, nothing sent`. The position was the **SMA50 ETF cell's** SPY, opened that morning on the
+same demo account; this cell's eligibility rule ("the executor is the only actor on its
+instruments") treated it as foreign and recorded nothing for 2026-10-22. Fixed 2026-10-25: each
+cell names its siblings' ledgers (`ETORO_SIBLING_LEDGERS`); a position a sibling's ledger holds is
+left alone and noted on the day's line; a position no ledger holds is still refused.
+
+### 6.2 2026-10-23: run stopped by the bar-revision guard (recorded 2026-10-25)
+
+`[dm_12_1] FAILED: QQQ: two reads of eToro's bars differ by 6.4 bps on some close (tolerance 5):
+not acting on it`; nothing recorded for 2026-10-23. The 5 bps figure was the CFD cell's; eToro's
+two versions of ETF history differ by more (SPY 4.68 bps the same days). Since 2026-10-25 the
+guard is 15 bps for ETF bars; the two reads must still agree on the rule's target and a genuine
+revision still stops the run (SMA50 ETF pre-registration §6.1 has the detail).
+
+Both days were outside the window and hold-cash days: no decision was missed and the paper
+account is unaffected. The two ledger lines are permanently absent; this note stands in for them.
+

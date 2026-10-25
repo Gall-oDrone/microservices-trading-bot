@@ -133,3 +133,29 @@ CRON_TZ=America/New_York
 - **Data integrity:** compare the bars before 2026-10-21 with the registered snapshot (sha256 prefixes in §1). The executor's two-read check and the recorded-close check apply unchanged. The result stands only if differences do not change the rule's position on any forward day.
 - **Bar-source note:** an ETF bucket on eToro is a UTC day; the bar's open is the 09:30 New York open, which is about when the demo executor fills (09:35). Report the measured gap as for the CFD cell.
 - **Execution note:** report the demo fills, commissions and any dividend credit against the frozen costs, from eToro's trade history, with `cmd/etoro-fees-check`.
+
+## 6. Execution incidents (demo executor; appended as they happen, never edited)
+
+The paper account in §1–§4 decides pass or fail and is unaffected by anything below.
+
+### 6.1 Bar-revision tolerance for ETF bars set to 15 bps (recorded 2026-10-25)
+
+The procedure says the executor's two-read check "applies unchanged"; the figure it inherited from
+the CFD cell was 5 bps, chosen from CFD evidence (two versions of history ~1.3 bps apart). The ETF
+bars from eToro's live route sit further apart between two reads seconds apart: **9 SPY closes at
+4.68 bps** on 2026-10-22 and 2026-10-23 (this cell's runs, within tolerance) and **QQQ at 6.4 bps**
+on 2026-10-23 (the rotation cell's run, which therefore stopped with nothing recorded). Since
+2026-10-25 the guard is **15 bps for ETF bars** (`revisionTolBpsETF`), the CFD figure stays 5. The
+signal-agreement check on both reads is unchanged: the rule still never acts on bars whose two
+versions disagree about the position, and a genuine revision (a changed history) still stops the
+run. Each run keeps recording `candles.revised_closes` and `candles.max_revision_bps`, so the
+report can show the series. This changes when a run **declines to act**, not what the rule is.
+
+### 6.2 Sibling cells on one demo account (recorded 2026-10-25)
+
+This cell, the index-CFD cell and the dual-momentum cell trade on the same demo account; this
+cell and the rotation trade the same ETFs. From 2026-10-25 each run names its siblings' ledgers
+(`ETORO_SIBLING_LEDGERS`): a position a sibling's ledger holds is that cell's — left alone by the
+eligibility check and reported by the reconcile as `sibling_positions`, not as an orphan or as
+`other_instruments`. A position no ledger holds is still refused. Nothing in §1–§5 changes.
+

@@ -34,6 +34,11 @@ type demoEnv struct {
 	protect bool
 	// bars are the closed NYSE-day bars the decision came from, for the ATR.
 	bars []dailyrule.Bar
+	// siblings (2026-10-25) are the positions the other cells' ledgers hold
+	// on this account, by position id (etoroledger.SiblingPositions). One
+	// of them on this instrument is theirs: left alone and noted, never
+	// "the account holds a position the ledger does not".
+	siblings map[string]etoroledger.SiblingOwner
 }
 
 // errNotRecorded marks a failure after which nothing was written, so a
@@ -80,7 +85,12 @@ func runDemo(ctx context.Context, e demoEnv, s instSpec, rec *etoroledger.Record
 		return notRecorded("account: %v", err)
 	}
 	d.Account = &etoroledger.Account{Currency: acct.Currency, Cash: acct.Cash, Equity: acct.Equity, Exposure: exposure(all)}
-	mine := onInstrument(all, s.ID)
+	mine, sib := splitSiblings(onInstrument(all, s.ID), e.siblings)
+	if len(sib) > 0 {
+		note := "sibling cell holds " + etoroledger.DescribeSiblings(sib, e.siblings) + " on this instrument: not this cell's, left alone"
+		e.logf("demo: %s", note)
+		d.Notes = append(d.Notes, note)
+	}
 
 	ref := ""
 	if action != etoroledger.ActionNone {
@@ -394,6 +404,21 @@ func onInstrument(ps []broker.Position, id int64) []broker.Position {
 		}
 	}
 	return out
+}
+
+// splitSiblings separates the positions a sibling cell's ledger holds
+// (returned as ids, for the note) from the ones this cell must account for.
+// With no siblings configured every position is this cell's business, as
+// before 2026-10-25.
+func splitSiblings(ps []broker.Position, siblings map[string]etoroledger.SiblingOwner) (mine []broker.Position, sib []string) {
+	for _, p := range ps {
+		if _, ok := siblings[p.ID]; ok {
+			sib = append(sib, p.ID)
+			continue
+		}
+		mine = append(mine, p)
+	}
+	return mine, sib
 }
 
 // exposure is the account's total open notional (account currency).

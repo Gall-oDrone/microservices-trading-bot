@@ -392,6 +392,75 @@ func TestDemoRefusesUntrackedPosition(t *testing.T) {
 	}
 }
 
+// 2026-10-25: a position a sibling cell's ledger holds on the same
+// instrument is that cell's (10-22: the rotation refused to run because the
+// ETF cell held SPY). It is left alone and noted; the run proceeds. A
+// position no ledger holds is still refused.
+func TestDemoLeavesSiblingPositionAlone(t *testing.T) {
+	h := newHarness(t, true)
+	sibDir := t.TempDir()
+	sib, err := etoroledger.Open(filepath.Join(sibDir, "demo-etf", "ledger.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := etoroledger.Record{Schema: etoroledger.Schema, Mode: etoroledger.ModeDemo, Venue: "etoro", Book: "nsdq100",
+		Decision: etoroledger.Decision{BarDate: "2026-10-08", FillDate: "2026-10-09"},
+		Demo:     &etoroledger.Demo{Env: "demo", Action: etoroledger.ActionOpen, Order: &etoroledger.Order{Kind: etoroledger.ActionOpen}, PositionAfter: etoroledger.Position{State: "long", PositionID: "777", Units: 1}}}
+	if err := sib.Append(r); err != nil {
+		t.Fatal(err)
+	}
+	h.de.siblings, err = etoroledger.SiblingPositions([]string{sib.Path()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	h.fb.positions = []broker.Position{{ID: "777", Instrument: broker.Instrument{ID: 28}, Side: broker.Long, Units: 1, Amount: 130}}
+	if err := h.run(monday, bars("2026-10-09", 0)); err != nil {
+		t.Fatalf("sibling position must not block: %v", err)
+	}
+	recs := h.records()
+	if len(recs) != 1 || recs[0].Demo.Action != etoroledger.ActionOpen || len(h.fb.opens) != 1 {
+		t.Fatalf("records %+v opens %v", recs, h.fb.opens)
+	}
+	if n := strings.Join(recs[0].Demo.Notes, " | "); !strings.Contains(n, "sibling cell holds 777 on nsdq100") || !strings.Contains(n, "left alone") {
+		t.Fatalf("notes %q", n)
+	}
+	if len(h.fb.positions) != 2 {
+		t.Fatalf("positions %v: the sibling's must still be there", h.fb.positions)
+	}
+	// Tuesday: this cell's own position and the sibling's both present; the
+	// sibling's is not "besides the executor's position".
+	if err := h.run(monday.AddDate(0, 0, 1), bars("2026-10-12", 0)); err != nil {
+		t.Fatalf("hold next to a sibling: %v", err)
+	}
+	// A position no ledger holds is still refused.
+	h.fb.positions = append(h.fb.positions, broker.Position{ID: "999", Instrument: broker.Instrument{ID: 28}, Side: broker.Long, Units: 1, Amount: 130})
+	if err := h.run(monday.AddDate(0, 0, 2), bars("2026-10-13", 0)); err == nil || !strings.Contains(err.Error(), "resolve by hand") {
+		t.Fatalf("untracked next to a sibling: %v", err)
+	}
+}
+
+// 2026-10-25: the two-version tolerance is per product. The CFD figure is
+// frozen at 5 bps; the ETF bars sit up to 6.4 bps apart between two reads
+// (QQQ, 10-23), so their guard is 15 bps; a real revision still stops both.
+func TestRevisionToleranceByProduct(t *testing.T) {
+	a := bars("2026-10-09", 0)
+	b := bars("2026-10-09", 0)
+	b[len(b)-10].Close *= 1 + 6.4e-4
+	if revisionTolFor(frozenSpecs["NSDQ100"]) != 5 || revisionTolFor(frozenSpecs["QQQ"]) != 15 {
+		t.Fatalf("tolerances %v %v", revisionTolFor(frozenSpecs["NSDQ100"]), revisionTolFor(frozenSpecs["QQQ"]))
+	}
+	if _, _, err := compareFetches(a, b, revisionTolFor(frozenSpecs["NSDQ100"])); err == nil || !strings.Contains(err.Error(), "tolerance 5") {
+		t.Fatalf("CFD at 6.4 bps must refuse: %v", err)
+	}
+	if n, max, err := compareFetches(a, b, revisionTolFor(frozenSpecs["QQQ"])); err != nil || n != 1 || max < 6.3 || max > 6.5 {
+		t.Fatalf("ETF at 6.4 bps must pass: %v (%d, %.2f)", err, n, max)
+	}
+	b[len(b)-10].Close = a[len(b)-10].Close * 1.002
+	if _, _, err := compareFetches(a, b, revisionTolFor(frozenSpecs["QQQ"])); err == nil || !strings.Contains(err.Error(), "tolerance 15") {
+		t.Fatalf("ETF at 20 bps must refuse: %v", err)
+	}
+}
+
 // P5d: an operator closes the executor's position from the console on
 // Monday afternoon. The console writes a ledger line with source "ui" (bar
 // date = fill date = Monday, close = the reference price it checked

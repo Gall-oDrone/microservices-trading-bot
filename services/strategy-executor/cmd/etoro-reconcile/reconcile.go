@@ -103,17 +103,28 @@ type report struct {
 	SettleWaitedS float64         `json:"settle_waited_s,omitempty"` // seconds spent waiting for the portfolio and the history
 	Books         []bookReport    `json:"books"`
 	Findings      []finding       `json:"findings"`
+	// SiblingPositions (2026-10-25) are the account's positions that another
+	// cell's ledger holds (etoro-reconcile -sibling-ledgers): seen, not this
+	// cell's, not a finding. SiblingNote says whose.
+	SiblingPositions []string `json:"sibling_positions,omitempty"`
+	SiblingNote      string   `json:"sibling_note,omitempty"`
 }
 
 // reconcile compares the demo records of the ledger with the account
 // (open positions), the trading history (closed positions) and the intent
 // journal. It never writes anything and never places an order.
-func reconcile(ctx context.Context, b broker.Broker, recs []etoroledger.Record, intents []etoroledger.Intent, now time.Time) (report, error) {
-	return reconcileWith(ctx, b, recs, intents, now, defaultSettle)
+func reconcile(ctx context.Context, b broker.Broker, recs []etoroledger.Record, intents []etoroledger.Intent, now time.Time, siblings map[string]etoroledger.SiblingOwner) (report, error) {
+	return reconcileWith(ctx, b, recs, intents, now, defaultSettle, siblings)
 }
 
-func reconcileWith(ctx context.Context, b broker.Broker, recs []etoroledger.Record, intents []etoroledger.Intent, now time.Time, st settle) (report, error) {
-	rep := report{Schema: "etoro-reconcile/v1", GeneratedAt: now.UTC().Format(time.RFC3339), Findings: []finding{}}
+// reconcileWith takes the settle policy (tests) and the sibling cells'
+// positions (2026-10-25, etoroledger.SiblingPositions): a position a
+// sibling's ledger holds is reported under sibling_positions, never as an
+// orphan on this cell's instrument nor as "other_instruments" elsewhere; a
+// position NO ledger holds still is.
+func reconcileWith(ctx context.Context, b broker.Broker, recs []etoroledger.Record, intents []etoroledger.Intent, now time.Time, st settle, siblings map[string]etoroledger.SiblingOwner) (report, error) {
+	rep := report{Schema: "etoro-reconcile/v1", GeneratedAt: now.UTC().Format(time.RFC3339), Findings: []finding{}, SiblingPositions: []string{}}
+	isSibling := func(id string) bool { _, ok := siblings[id]; return ok }
 	add := func(sev, book, code, format string, args ...any) {
 		rep.Findings = append(rep.Findings, finding{Severity: sev, Book: book, Code: code, Message: fmt.Sprintf(format, args...)})
 	}
@@ -195,6 +206,8 @@ func reconcileWith(ctx context.Context, b broker.Broker, recs []etoroledger.Reco
 			br.AccountPositions = append(br.AccountPositions, p.ID)
 			if p.ID == pos.PositionID && pos.State == "long" {
 				held = &positions[i]
+			} else if isSibling(p.ID) {
+				rep.SiblingPositions = append(rep.SiblingPositions, p.ID)
 			} else {
 				add(sevDrift, book, codeOrphanPosition, "account holds position %s on %s (%.6f units, opened %s) that the ledger does not",
 					p.ID, in.Symbol, p.Units, p.OpenedAt.UTC().Format(time.RFC3339))
@@ -255,9 +268,17 @@ func reconcileWith(ctx context.Context, b broker.Broker, recs []etoroledger.Reco
 	}
 	var foreign []string
 	for _, p := range positions {
-		if !ours[p.Instrument.ID] {
-			foreign = append(foreign, fmt.Sprintf("%s (instrument %d)", p.ID, p.Instrument.ID))
+		if ours[p.Instrument.ID] {
+			continue
 		}
+		if isSibling(p.ID) {
+			rep.SiblingPositions = append(rep.SiblingPositions, p.ID)
+			continue
+		}
+		foreign = append(foreign, fmt.Sprintf("%s (instrument %d)", p.ID, p.Instrument.ID))
+	}
+	if len(rep.SiblingPositions) > 0 {
+		rep.SiblingNote = "held by sibling cells (their ledgers, not this one): " + etoroledger.DescribeSiblings(rep.SiblingPositions, siblings)
 	}
 	if len(foreign) > 0 {
 		add(sevWarn, "", codeForeignPositions, "positions on instruments the executor does not trade: %v", foreign)

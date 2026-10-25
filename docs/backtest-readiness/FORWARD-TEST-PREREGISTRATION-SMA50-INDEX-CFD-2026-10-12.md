@@ -154,3 +154,41 @@ reported as execution slippage. It is not part of the pass criteria.
 **Execution note:** if the P3 demo executor runs, report its fills, spreads paid and overnight
 fees charged. Report them against the frozen costs, from eToro's trade history. That turns the
 assumed costs into measured ones.
+
+## 6. Execution incidents (demo executor; appended as they happen, never edited)
+
+The paper account in §1–§4 decides pass or fail and is unaffected by anything below. This section
+is the record of where the **demo executor's** "as executed" path departed from the paper path, so
+the slippage report (§5, execution note) can be read honestly.
+
+### 6.1 2026-10-22 and 2026-10-23: two runs failed before deciding; one close missed (recorded 2026-10-25)
+
+- **What happened.** The 09:35 New York runs of 2026-10-22 and 2026-10-23 exited 2 with
+  *"a run mixes CFD and ETF instruments; the risk policies are per product and the cells keep
+  separate ledgers: run them separately"*. When the ETF cell's specs were frozen on 2026-10-21 the
+  binary's default `-instruments` grew to every frozen spec, and the cron job for this cell did
+  not name its instruments. No decision was made and **no ledger line was written for either
+  instrument on either day** (`ui-alerts`: "eToro ledger coverage (etoro-demo)", critical). The
+  reconciliation inside both runs was CLEAN; nothing was sent.
+- **What the rule said on those days** (dry run `-as-of`, read-only, run 2026-10-25):
+
+  | Decision day (fill) | NSDQ100 | SPX500 |
+  |---|---|---|
+  | 2026-10-22 (bar 10-21) | close 29,834.00 vs SMA50 29,872.14 → FLAT (was flat) | close 7,757.49 vs SMA50 7,705.66 → LONG (was long) |
+  | 2026-10-23 (bar 10-22) | close 28,912.80 vs SMA50 29,856.39 → FLAT (was flat) | close 7,662.09 vs SMA50 7,704.01 → **FLAT (was long)** |
+
+- **Consequence.** NSDQ100: none (flat both days). SPX500: the paper account closes at the
+  2026-10-23 fill; the demo position `3623235814` (0.142327 u, opened 2026-10-21 at 7,728.66,
+  stop 7,108.75 fixed) **should have been closed at 09:35 New York on 2026-10-23 and was not**.
+  It also received no ratchet on either day. It stays open over the weekend; the next run
+  (2026-10-26, rule still FLAT per the 10-23 bar: 7,634.32 vs SMA50 7,700.67) closes it from the
+  ledger's long state. The demo therefore carries one leg the paper does not: long SPX500 from the
+  10-23 open to the 10-26 open, ≈ −1.2 % at Friday's close, to be reported as execution slippage
+  with the 10-26 fill.
+- **The ledger gap is permanent.** The executor writes one line per instrument per decision day,
+  as of its run; there is no backfill. The two missing days are this note.
+- **Fix.** Commit `b3c68d0` (2026-10-23): the binary's default is `NSDQ100,SPX500` again (a test
+  pins it) and `scripts/ops-run.sh etoro` passes `-instruments NSDQ100,SPX500` explicitly, so a
+  change to the default can never again change what this cell runs. Binaries rebuilt and the
+  2026-10-26 command path verified print-only on 2026-10-25. The 10-24 absence of runs is a
+  Saturday, not a miss.

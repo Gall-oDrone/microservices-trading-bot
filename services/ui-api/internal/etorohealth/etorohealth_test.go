@@ -320,6 +320,16 @@ func TestProtectionCheck(t *testing.T) {
 			t.Fatalf("the protected book must not be named: %q", c.Message)
 		}
 	})
+	// 2026-10-25: the ETF cells run without the stop overlay by design; a
+	// held ETF is not "unprotected" and the status says why.
+	t.Run("an ETF cell's bare position is by design", func(t *testing.T) {
+		d := newDir(t)
+		spy := held("spy", "3623764792", 0, now.Add(-2*time.Hour))
+		spy.Paper.Product = "etf"
+		d.rawRecord(spy)
+		c := byID(Evaluate(Options{LedgerPath: d.ledger()}, now))[IDProtection]
+		want(t, c, datahealth.OK, "spy position 3623764792 (ETF cell: no stop overlay by design)")
+	})
 	t.Run("bare inside the grace is quiet", func(t *testing.T) {
 		d := newDir(t)
 		d.rawRecord(held("nsdq100", "11", 0, now.Add(-5*time.Minute)))

@@ -172,9 +172,12 @@ func Evaluate(o Options, now time.Time) []Check {
 // that holds it was recorded (the executor records the stop with the open;
 // a position opened before phase C, or whose stop the venue dropped, gets
 // one at the next 09:35 run). Files only: the account's own rates are the
-// reconcile's business (protection_drift).
+// reconcile's business (protection_drift). The ETF cells (paper.product
+// "etf", runbook §10) run without the stop overlay by design, so a held ETF
+// is not unprotected; it is listed as such (2026-10-25: the alert fired on
+// the ETF cell's SPY every day it was held).
 func protectionCheck(demo []etoroledger.Record, books []string, now time.Time, grace time.Duration) Check {
-	var bare, protected []string
+	var bare, protected, noOverlay []string
 	for _, b := range books {
 		r, ok := etoroledger.LatestDemo(demo, b)
 		if !ok || r.Demo.PositionAfter.State != "long" {
@@ -183,6 +186,10 @@ func protectionCheck(demo []etoroledger.Record, books []string, now time.Time, g
 		p := r.Demo.PositionAfter
 		if p.Protected() {
 			protected = append(protected, fmt.Sprintf("%s stop %.2f", b, p.StopLossRate))
+			continue
+		}
+		if r.Paper.Product == "etf" {
+			noOverlay = append(noOverlay, fmt.Sprintf("%s position %s (ETF cell: no stop overlay by design)", b, p.PositionID))
 			continue
 		}
 		at, err := time.Parse(time.RFC3339, r.RecordedAt)
@@ -199,10 +206,17 @@ func protectionCheck(demo []etoroledger.Record, books []string, now time.Time, g
 		return Check{IDProtection, "eToro position without a stop loss", datahealth.Warn,
 			strings.Join(bare, "; ") + ": the next 09:35 New York run sets the disaster stop (protect on); to protect it now use the console's Trade page (protect)"}
 	}
-	if len(protected) == 0 {
+	if len(protected) == 0 && len(noOverlay) == 0 {
 		return Check{IDProtection, "eToro protection", datahealth.OK, "no position held"}
 	}
-	return Check{IDProtection, "eToro protection", datahealth.OK, "every held position carries a stop: " + strings.Join(protected, ", ")}
+	parts := []string{}
+	if len(protected) > 0 {
+		parts = append(parts, "every CFD position carries a stop: "+strings.Join(protected, ", "))
+	}
+	if len(noOverlay) > 0 {
+		parts = append(parts, strings.Join(noOverlay, ", "))
+	}
+	return Check{IDProtection, "eToro protection", datahealth.OK, strings.Join(parts, "; ")}
 }
 
 // stopOutCheck (C5) reports a venue close the executor recorded (C3) with

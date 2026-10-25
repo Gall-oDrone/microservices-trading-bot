@@ -70,7 +70,7 @@ func testSettle(slept *time.Duration) settle {
 }
 
 func run(f *fake, recs []etoroledger.Record, intents []etoroledger.Intent, now time.Time) (report, error) {
-	return reconcileWith(context.Background(), f, recs, intents, now, testSettle(nil))
+	return reconcileWith(context.Background(), f, recs, intents, now, testSettle(nil), nil)
 }
 
 var (
@@ -144,7 +144,7 @@ func TestPortfolioLag(t *testing.T) {
 	t.Run("fill appears on a later read", func(t *testing.T) {
 		f := &fake{lagReads: 3, positions: []broker.Position{pos("11", 28, 0.0355)}}
 		var slept time.Duration
-		r, err := reconcileWith(context.Background(), f, recs, nil, t0, testSettle(&slept))
+		r, err := reconcileWith(context.Background(), f, recs, nil, t0, testSettle(&slept), nil)
 		if err != nil || !r.Clean || has(r, codeMissingPosition) {
 			t.Fatalf("want clean after the portfolio catches up, got %+v %v", r.Findings, err)
 		}
@@ -156,7 +156,7 @@ func TestPortfolioLag(t *testing.T) {
 	t.Run("lag beyond the timeout is drift", func(t *testing.T) {
 		f := &fake{lagReads: 1000, positions: []broker.Position{pos("11", 28, 0.0355)}}
 		var slept time.Duration
-		r, err := reconcileWith(context.Background(), f, recs, nil, t0, testSettle(&slept))
+		r, err := reconcileWith(context.Background(), f, recs, nil, t0, testSettle(&slept), nil)
 		if err != nil || r.Clean || !has(r, codeMissingPosition) || has(r, codePortfolioLag) {
 			t.Fatalf("want missing_position after the timeout, got %+v %v", r.Findings, err)
 		}
@@ -188,7 +188,7 @@ func TestPortfolioLag(t *testing.T) {
 		recs := []etoroledger.Record{open("nsdq100", nsdq, "2026-10-09", "11", 0.0355), cl}
 		f := &fake{lagReads: 2, before: []broker.Position{pos("11", 28, 0.0355)}, histLagReads: 3, closed: []broker.ClosedPosition{{ID: "11", CloseRate: 29770.5}}}
 		var slept time.Duration
-		r, err := reconcileWith(context.Background(), f, recs, nil, t0, testSettle(&slept))
+		r, err := reconcileWith(context.Background(), f, recs, nil, t0, testSettle(&slept), nil)
 		if err != nil || !r.Clean || has(r, codeCloseNotInHist) {
 			t.Fatalf("want clean once the history lists the close, got %+v %v", r.Findings, err)
 		}
@@ -199,7 +199,7 @@ func TestPortfolioLag(t *testing.T) {
 		// close is still reported as not in the history.
 		f = &fake{lagReads: 2, before: []broker.Position{pos("11", 28, 0.0355)}, histLagReads: 1000, closed: []broker.ClosedPosition{{ID: "11", CloseRate: 29770.5}}}
 		slept = 0
-		r, err = reconcileWith(context.Background(), f, recs, nil, t0, testSettle(&slept))
+		r, err = reconcileWith(context.Background(), f, recs, nil, t0, testSettle(&slept), nil)
 		if err != nil || r.Clean || !has(r, codeCloseNotInHist) || has(r, codeHistoryLag) || slept > defaultSettle.Timeout {
 			t.Fatalf("want close_not_in_history after the shared timeout (%v slept), got %+v %v", slept, r.Findings, err)
 		}
@@ -210,7 +210,7 @@ func TestPortfolioLag(t *testing.T) {
 		old.Demo.Order.Finished = t0.Add(-24 * time.Hour)
 		f := &fake{lagReads: 1000, positions: []broker.Position{pos("11", 28, 0.0355)}}
 		var slept time.Duration
-		r, err := reconcileWith(context.Background(), f, []etoroledger.Record{old}, nil, t0, testSettle(&slept))
+		r, err := reconcileWith(context.Background(), f, []etoroledger.Record{old}, nil, t0, testSettle(&slept), nil)
 		if err != nil || r.Clean || !has(r, codeMissingPosition) || r.PositionReads != 1 || slept != 0 {
 			t.Fatalf("a day-old mismatch must be reported at once, got reads=%d slept=%v %+v %v", r.PositionReads, slept, r.Findings, err)
 		}
@@ -237,6 +237,36 @@ func TestClosedAndForeign(t *testing.T) {
 	f.closed = []broker.ClosedPosition{{ID: "11", CloseRate: 30800}}
 	if r, _ := run(f, recs, nil, t0); !r.Clean || !has(r, codeClosePriceDiff) {
 		t.Fatalf("close price differs: %+v", r.Findings)
+	}
+}
+
+// 2026-10-25: positions a sibling cell's ledger holds are reported as
+// sibling_positions, not as an orphan on this cell's instrument (the ETF
+// cell's SPY next to the rotation's) nor as other_instruments (the CFD
+// cell's SPX500 seen by the ETF cell). An unknown position still drifts.
+func TestSiblingPositionsAreNotFindings(t *testing.T) {
+	recs := []etoroledger.Record{open("nsdq100", nsdq, "2026-10-09", "11", 0.0355)}
+	siblings := map[string]etoroledger.SiblingOwner{
+		"555": {Ledger: "../demo-etf/ledger.jsonl", Book: "nsdq100"},
+		"777": {Ledger: "../demo-etf/ledger.jsonl", Book: "spy"},
+	}
+	f := &fake{positions: []broker.Position{pos("11", 28, 0.0355), pos("555", 28, 1), pos("777", 3000, 1)}}
+	r, err := reconcileWith(context.Background(), f, recs, nil, t0, testSettle(nil), siblings)
+	if err != nil || !r.Clean || len(r.Findings) != 0 {
+		t.Fatalf("siblings must not be findings: %+v %v", r.Findings, err)
+	}
+	if len(r.SiblingPositions) != 2 || !strings.Contains(r.SiblingNote, "555 on nsdq100") || !strings.Contains(r.SiblingNote, "777 on spy") {
+		t.Fatalf("sibling report %v %q", r.SiblingPositions, r.SiblingNote)
+	}
+	// Without the sibling ledgers the same account is an orphan and a foreign instrument, as before.
+	r, _ = run(f, recs, nil, t0)
+	if r.Clean || !has(r, codeOrphanPosition) || !has(r, codeForeignPositions) || len(r.SiblingPositions) != 0 {
+		t.Fatalf("no siblings configured: %+v", r.Findings)
+	}
+	// A position no ledger holds still drifts next to a sibling's.
+	f.positions = append(f.positions, pos("999", 28, 1))
+	if r, _ := reconcileWith(context.Background(), f, recs, nil, t0, testSettle(nil), siblings); r.Clean || !has(r, codeOrphanPosition) {
+		t.Fatalf("unknown next to a sibling: %+v", r.Findings)
 	}
 }
 
@@ -353,7 +383,7 @@ func TestRecordVenueClosesForTheCanary(t *testing.T) {
 		t.Fatalf("after the record the ledger must be flat: %+v", p)
 	}
 	// The reconcile over the new ledger is clean: the close is in the history.
-	rep, err := reconcileWith(context.Background(), f, recs, nil, now, testSettle(nil))
+	rep, err := reconcileWith(context.Background(), f, recs, nil, now, testSettle(nil), nil)
 	if err != nil || !rep.Clean {
 		t.Fatalf("reconcile after the record: %+v %v", rep.Findings, err)
 	}

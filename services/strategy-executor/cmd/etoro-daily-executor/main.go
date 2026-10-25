@@ -95,6 +95,11 @@ type options struct {
 	// carries the disaster stop and a held long's stop is ratcheted daily;
 	// the risk policy defaults to EtoroDemoProtectedPolicy.
 	protect bool
+	// siblingLedgers (2026-10-25) are the other cells' ledgers on the same
+	// account (etoroledger.SiblingPositions): a position one of them holds
+	// is theirs, not foreign. Comma-separated paths; -sibling-ledgers or
+	// ETORO_SIBLING_LEDGERS.
+	siblingLedgers string
 }
 
 func main() {
@@ -111,6 +116,7 @@ func main() {
 	flag.BoolVar(&o.protect, "protect", os.Getenv("ETORO_EXECUTOR_PROTECT") != "0", "rule opens carry the disaster stop max(4xATR, 8%) and held stops are ratcheted daily; the risk policy defaults to the protected one (ETORO_EXECUTOR_PROTECT=0 turns it off)")
 	allowDraft := flag.Bool("allow-draft", false, fmt.Sprintf("also accept instruments whose pre-registration is still a draft (%s): dry run only, -demo is refused for them", strings.Join(draftNames(), ", ")))
 	strategy := flag.String("strategy", "sma50", fmt.Sprintf("sma50 (the daily rule on -instruments) or a frozen rotation (%s): the joint month-end decision over its own books, -instruments ignored, separate -ledger required", strings.Join(rotationNames(), ", ")))
+	flag.StringVar(&o.siblingLedgers, "sibling-ledgers", os.Getenv(etoroledger.SiblingLedgersEnv), "comma-separated ledgers of the other cells on the same account ("+etoroledger.SiblingLedgersEnv+"): a position one of them holds is theirs, not foreign; read only")
 	flag.Parse()
 
 	if os.Getenv("ETORO_EXECUTOR_DISABLED") == "1" {
@@ -253,8 +259,12 @@ func main() {
 	if err != nil {
 		fail(err)
 	}
+	siblings, err := etoroledger.SiblingPositions(etoroledger.SplitSiblingPaths(o.siblingLedgers, o.ledgerPath))
+	if err != nil {
+		fail(err)
+	}
 	de := demoEnv{b: etorobroker.New(c), led: led, intents: etoroledger.IntentDir(o.ledgerPath), policy: o.policy,
-		halt: o.halt, amount: o.amount, now: time.Now, protect: o.protect}
+		halt: o.halt, amount: o.amount, now: time.Now, protect: o.protect, siblings: siblings}
 
 	ctx := context.Background()
 	fetchFor := func(s instSpec) func() ([]bitsodaily.Row, etorodaily.Report, error) {
@@ -287,8 +297,28 @@ func main() {
 
 // revisionTolBps is how far a recorded close may move before the run stops:
 // eToro's live daily route serves two versions of recent closes, up to
-// ~1.3 bps apart (seen 2026-10-10); a larger move is a real revision.
+// ~1.3 bps apart on the index CFDs (seen 2026-10-10; 13-16 closes differ by
+// 0.92 / 1.26 bps on every run since); a larger move is a real revision.
+// Frozen with the CFD pre-registration (§5: "differ by more than 5 bps").
 const revisionTolBps = 5
+
+// revisionTolBpsETF (2026-10-25) is the same guard for the ETF bars (QQQ,
+// SPY: the SMA50 ETF cell and the rotation). eToro's two versions of ETF
+// history sit further apart: 9 closes at 4.68 bps (SPY, 10-22 and 10-23)
+// and 6.4 bps (QQQ, 10-23), the latter stopping the rotation's run with
+// nothing recorded. The ETF pre-registrations froze no figure; 15 bps keeps
+// the real-revision guard (a changed history still stops the run) and the
+// signal-agreement check on both reads is unchanged, so the rule never acts
+// on bars whose two versions disagree about the position.
+const revisionTolBpsETF = 15
+
+// revisionTolFor is the tolerance of a product's bars.
+func revisionTolFor(s instSpec) float64 {
+	if s.Kind == KindETF {
+		return revisionTolBpsETF
+	}
+	return revisionTolBps
+}
 
 // bookData is one instrument's two reads of eToro's bars, saved and hashed.
 type bookData struct {
@@ -317,7 +347,7 @@ func loadBook(o options, s instSpec, fetch func() ([]bitsodaily.Row, etorodaily.
 	if err != nil {
 		return b, fmt.Errorf("fetch candles (second read): %w", err)
 	}
-	b.revised, b.maxRev, err = compareFetches(b.rows, b.rows2)
+	b.revised, b.maxRev, err = compareFetches(b.rows, b.rows2, revisionTolFor(s))
 	if err != nil {
 		return b, err
 	}
@@ -394,7 +424,7 @@ func finishBook(ctx context.Context, o options, de demoEnv, s instSpec, rec *eto
 	// Data integrity (pre-registration §5): a recorded day must not change
 	// beyond eToro's two-version noise.
 	if prev, ok := de.led.Get(s.Book, d.BarDate); ok {
-		if prev.Decision.Signal != d.Signal || relBps(prev.Decision.Close, d.Close) > revisionTolBps {
+		if prev.Decision.Signal != d.Signal || relBps(prev.Decision.Close, d.Close) > revisionTolFor(s) {
 			return fmt.Errorf("%s was recorded as %s at close %v, bars now say %s at %v: investigate before continuing",
 				d.BarDate, prev.Decision.Signal, prev.Decision.Close, d.Signal, d.Close)
 		}
@@ -404,7 +434,7 @@ func finishBook(ctx context.Context, o options, de demoEnv, s instSpec, rec *eto
 		fmt.Printf("  ledger     : %s already recorded at %s, unchanged; nothing to do\n", d.BarDate, prev.RecordedAt)
 		return nil
 	}
-	if err := checkHistory(de.led, s.Book, rows); err != nil {
+	if err := checkHistory(de.led, s.Book, rows, revisionTolFor(s)); err != nil {
 		return err
 	}
 	if !o.demo {
@@ -428,10 +458,11 @@ func finishBook(ctx context.Context, o options, de demoEnv, s instSpec, rec *eto
 }
 
 // checkHistory verifies that every recorded day of the book still has the
-// same close in today's bars, within revisionTolBps. Console trades (source
+// same close in today's bars, within tol bps (the product's revision
+// tolerance). Console trades (source
 // ui) are skipped: their close is the reference price the risk check used,
 // not a bar, and they may be dated today, whose bar is not closed yet.
-func checkHistory(led *etoroledger.Ledger, book string, rows []bitsodaily.Row) error {
+func checkHistory(led *etoroledger.Ledger, book string, rows []bitsodaily.Row, tol float64) error {
 	closeOn := make(map[string]float64, len(rows))
 	for _, r := range rows {
 		closeOn[r.Date] = r.Close
@@ -448,7 +479,7 @@ func checkHistory(led *etoroledger.Ledger, book string, rows []bitsodaily.Row) e
 		if !ok {
 			return fmt.Errorf("recorded day %s is missing from today's bars", r.Decision.BarDate)
 		}
-		if relBps(r.Decision.Close, c) > revisionTolBps {
+		if relBps(r.Decision.Close, c) > tol {
 			return fmt.Errorf("recorded day %s had close %v, bars now say %v (%.1f bps): eToro revised history", r.Decision.BarDate, r.Decision.Close, c, relBps(r.Decision.Close, c))
 		}
 	}
@@ -456,8 +487,8 @@ func checkHistory(led *etoroledger.Ledger, book string, rows []bitsodaily.Row) e
 }
 
 // compareFetches checks that two reads of the bars cover the same days and
-// measures how far their closes differ.
-func compareFetches(a, b []bitsodaily.Row) (revised int, maxBps float64, err error) {
+// measures how far their closes differ; above tol bps the run must not act.
+func compareFetches(a, b []bitsodaily.Row, tol float64) (revised int, maxBps float64, err error) {
 	if len(a) != len(b) || len(a) == 0 || a[0].Date != b[0].Date || a[len(a)-1].Date != b[len(b)-1].Date {
 		return 0, 0, fmt.Errorf("two reads of eToro's bars cover different days (%d vs %d bars): not acting on it", len(a), len(b))
 	}
@@ -472,8 +503,8 @@ func compareFetches(a, b []bitsodaily.Row) (revised int, maxBps float64, err err
 			}
 		}
 	}
-	if maxBps > revisionTolBps {
-		return revised, maxBps, fmt.Errorf("two reads of eToro's bars differ by %.1f bps on some close (tolerance %d): not acting on it", maxBps, revisionTolBps)
+	if maxBps > tol {
+		return revised, maxBps, fmt.Errorf("two reads of eToro's bars differ by %.1f bps on some close (tolerance %.0f): not acting on it", maxBps, tol)
 	}
 	return revised, maxBps, nil
 }
@@ -498,7 +529,7 @@ func printRecord(r etoroledger.Record, csvPath string, s instSpec) {
 	fmt.Printf("\n[%s] %s (id %d, %s x1) %s%s\n", r.Book, r.Instrument.Symbol, r.Instrument.ID, s.Kind, r.Prereg, draft)
 	fmt.Printf("  bars       : %d %s .. %s, %d missing trading days (sha256 %s) -> %s\n", r.Candles.Bars, r.Candles.First, r.Candles.Last, r.Candles.Missing, r.Candles.SHA256Short, csvPath)
 	if r.Candles.Revised > 0 {
-		fmt.Printf("  revisions  : %d closes differed between two reads (max %.2f bps, tolerance %d)\n", r.Candles.Revised, r.Candles.MaxRevisionBps, revisionTolBps)
+		fmt.Printf("  revisions  : %d closes differed between two reads (max %.2f bps, tolerance %.0f)\n", r.Candles.Revised, r.Candles.MaxRevisionBps, revisionTolFor(s))
 	}
 	if d.Rule != "" {
 		fmt.Printf("  rule       : %s %s close %.2f, joint target %s -> %s (was %s), fill %s\n", d.Rule, d.BarDate, d.Close, strings.ToUpper(d.Target), strings.ToUpper(d.Signal), d.PrevSignal, d.FillDate)

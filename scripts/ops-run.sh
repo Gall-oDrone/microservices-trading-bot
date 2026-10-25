@@ -76,6 +76,7 @@
 set -uo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+ETORO_DATA="$ROOT/services/strategy-executor/etoro-daily-data"
 ENV_FILE="${MTB_OPS_ENV:-$HOME/.config/microservices-trading-bot/ops.env}"
 if [ -r "$ENV_FILE" ]; then
   set -a
@@ -114,7 +115,12 @@ case "$job" in
     echo "== $(date -u +%Y-%m-%dT%H:%M:%SZ) ops-run etoro"
     # The CFD cell names its instruments (2026-10-23): on 10-22 and 10-23 the
     # binary's default had grown to every frozen spec and the run exited 2.
-    "$ROOT/scripts/etoro-daily-executor-run.sh" -demo -instruments NSDQ100,SPX500 "$@"
+    # The sibling ledgers (2026-10-25): the three cells share the demo
+    # account; a position another cell's ledger holds is that cell's, not a
+    # foreign one, for both the executor's eligibility check and the
+    # reconcile that follows it (etoroledger.SiblingPositions).
+    ETORO_SIBLING_LEDGERS="$ETORO_DATA/demo-etf/ledger.jsonl,$ETORO_DATA/demo-rotation/ledger.jsonl" \
+      "$ROOT/scripts/etoro-daily-executor-run.sh" -demo -instruments NSDQ100,SPX500 "$@"
     code=$?
     echo "== exit $code"
     exit "$code"
@@ -122,8 +128,9 @@ case "$job" in
   etoro-etf)
     echo "== $(date -u +%Y-%m-%dT%H:%M:%SZ) ops-run etoro-etf"
     # Own ledger directory and own S3 prefix; the CFD ledger is never touched.
-    ETORO_EXECUTOR_LEDGER="$ROOT/services/strategy-executor/etoro-daily-data/demo-etf/ledger.jsonl" \
+    ETORO_EXECUTOR_LEDGER="$ETORO_DATA/demo-etf/ledger.jsonl" \
       ETORO_EXECUTOR_S3_URI="${ETORO_ETF_EXECUTOR_S3_URI:-}" \
+      ETORO_SIBLING_LEDGERS="$ETORO_DATA/demo/ledger.jsonl,$ETORO_DATA/demo-rotation/ledger.jsonl" \
       "$ROOT/scripts/etoro-daily-executor-run.sh" -demo -instruments QQQ,SPY "$@"
     code=$?
     echo "== exit $code"
@@ -133,8 +140,9 @@ case "$job" in
     echo "== $(date -u +%Y-%m-%dT%H:%M:%SZ) ops-run etoro-rotation"
     # Own ledger directory and own S3 prefix. -demo is safe before the
     # window: the executor holds cash until the first in-window fill.
-    ETORO_EXECUTOR_LEDGER="$ROOT/services/strategy-executor/etoro-daily-data/demo-rotation/ledger.jsonl" \
+    ETORO_EXECUTOR_LEDGER="$ETORO_DATA/demo-rotation/ledger.jsonl" \
       ETORO_EXECUTOR_S3_URI="${ETORO_ROTATION_EXECUTOR_S3_URI:-}" \
+      ETORO_SIBLING_LEDGERS="$ETORO_DATA/demo/ledger.jsonl,$ETORO_DATA/demo-etf/ledger.jsonl" \
       "$ROOT/scripts/etoro-daily-executor-run.sh" -demo -strategy dm_12_1 "$@"
     code=$?
     echo "== exit $code"
