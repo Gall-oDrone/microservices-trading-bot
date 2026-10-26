@@ -1947,6 +1947,15 @@ as they were.
   60 reads/min per key, so this is as live as it gets; the copy says that the Prepare quote decides.
   `lib/format.ts` `quoteAgeSeconds` (tested). The same change gave the canary's chart its bars: the
   observer now writes `real-canary/candles/`.
+- **After the first real round trip (2026-10-26).** (1) `lib/liveMark.ts` + Positions card: an
+  open row's Mark cell shows the live bid and `units × (bid − open rate)` gross from the 2 s
+  stream (`data-testid=position-live-<id>`), the summary's Unrealised becomes "Unrealised (live)"
+  with eToro's net figure and its timestamp in the hint; the card subscribes to the open rows'
+  books only. (2) On a REAL ledger, "Close at market" (`go=1`) prepares once (`goHandled`) and,
+  when allowed, opens the confirmation dialog itself (`autoDialog`), so the phrase is one click
+  from the Positions card. (3) Escape does not cancel a prepared trade on REAL (the Cancel button
+  does; the `or Esc` hint and `aria-keyshortcuts` are demo-only): an Escape meant to leave the
+  dialog had burned a prepared close. Tests: `liveMark` in `realCanary.test.tsx`.
 - **Not built, on purpose.** A single console showing demo and real side by side (plan §3.1:
   two processes, two tabs, two tokens); a way to dismiss the bar; any REAL-specific shortcut
   (the "Close at market" shortcut of §8.22 works through the same REAL phrase and dialog). The

@@ -248,3 +248,17 @@ describe('the live quote line (2026-10-22)', () => {
     expect(quoteAgeSeconds('not a time', now)).toBeNull()
   })
 })
+
+describe('the live mark of an open position (2026-10-26)', () => {
+  it('is units × (bid − open rate), gross, only for open longs the account holds with a quote', async () => {
+    const { liveMark } = await import('../lib/liveMark')
+    const snap = { bid: 29338, ask: 29339, updated_at: '2026-10-26T14:55:00Z' } as never
+    const open = { status: 'open', units: 0.040925, open_rate: 29323.4, account_holds: true } as never
+    const m = liveMark(open, snap)
+    expect(m?.bid).toBe(29338)
+    expect(m?.pnl).toBeCloseTo(0.5975, 3)
+    expect(liveMark({ ...(open as object), status: 'closed' } as never, snap)).toBeNull()
+    expect(liveMark({ ...(open as object), account_holds: false } as never, snap)).toBeNull()
+    expect(liveMark(open, undefined)).toBeNull()
+  })
+})

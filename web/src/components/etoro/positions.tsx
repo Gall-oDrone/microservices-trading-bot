@@ -9,8 +9,10 @@
 import { useState, type KeyboardEvent, type ReactNode } from 'react'
 import { Link } from 'react-router'
 import { useEtoroPositions, useLedgerSearch } from '../../api/client'
+import { useLiveStream, type LiveState } from '../../api/live'
 import { tradePnL, type ClosedBy, type EtoroTrade, type EtoroPositionsResponse } from '../../api/etoroSchemas'
-import { fmtBps, fmtDate, fmtFrac, fmtMoney, fmtPrice, fmtUTC, fmtUnits } from '../../lib/format'
+import { liveMark } from '../../lib/liveMark'
+import { fmtBps, fmtDate, fmtFrac, fmtMoney, fmtPrice, fmtUTC, fmtUnits, quoteAgeSeconds } from '../../lib/format'
 import { Badge, CardSkeleton, Empty, ErrorState, Stat } from '../ui'
 import { useClock, type Tz, fmtTz, tzLabel } from '../../lib/tz'
 import { IconRefresh, IconShield, IconTrade } from '../icons'
@@ -171,13 +173,17 @@ function Row({
   search,
   showBook,
   tz,
+  live,
 }: {
   t: EtoroTrade
   quote: string
   search: string
   showBook: boolean
   tz: Tz
+  live?: LiveState
 }) {
+  const mark = live ? liveMark(t, live.books[t.book]) : null
+  const markAge = mark && live ? quoteAgeSeconds(mark.at, live.now) : null
   const [open, setOpen] = useState(false)
   const book = t.book
   const toggle = () => setOpen((v) => !v)
@@ -233,7 +239,17 @@ function Row({
         </td>
         <td className="r num" data-label="Mark / close">
           {t.status === 'open' ? (
-            t.mark_source === 'account' && t.mark_rate ? (
+            mark ? (
+              <span
+                className="positions-live-mark"
+                data-testid={`position-live-${t.position_id}`}
+                title={`live bid, quote ${markAge ?? '?'}s old; gross of fees. eToro's own figure is in the row details.`}
+              >
+                {fmtPrice(mark.bid, quote, book)}
+                <br />
+                <span className={`faint ${mark.pnl >= 0 ? 'pos' : 'neg'}`}>{signed(mark.pnl, quote)} live</span>
+              </span>
+            ) : t.mark_source === 'account' && t.mark_rate ? (
               <span title="implied from the account's unrealised P&L">≈ {fmtPrice(t.mark_rate, quote, book)}</span>
             ) : (
               <span className="faint">—</span>
@@ -307,10 +323,15 @@ function Row({
   )
 }
 
-function Summary({ r }: { r: EtoroPositionsResponse }) {
+function Summary({ r, live }: { r: EtoroPositionsResponse; live?: LiveState }) {
   const clock = useClock()
   const quote = r.account?.currency ?? 'USD'
   const s = r.summary
+  // The live gross mark of every open row the stream has a quote for; null
+  // when none (the stat then shows eToro's figure alone).
+  const marks = live ? r.trades.map((t) => liveMark(t, live.books[t.book])).filter((m) => m != null) : []
+  const liveSum = marks.length ? marks.reduce((a, m) => a + m.pnl, 0) : null
+  const liveAge = live && marks.length ? quoteAgeSeconds(marks[0].at, live.now) : null
   return (
     <div className="positions-strip" data-testid="positions-summary">
       <Stat
@@ -320,16 +341,38 @@ function Summary({ r }: { r: EtoroPositionsResponse }) {
         tone={s.open ? 'pos' : undefined}
       />
       <Stat
-        label="Unrealised"
+        label={liveSum != null ? 'Unrealised (live)' : 'Unrealised'}
         value={
-          r.live ? (
+          liveSum != null ? (
+            <span className="num" data-testid="positions-live-unrealised">
+              {signed(liveSum, quote)}
+            </span>
+          ) : r.live ? (
             <span className="num">{signed(s.unrealized_pnl, quote)}</span>
           ) : (
             <span className="faint">not read</span>
           )
         }
-        hint={r.live ? `fees to date ${fmtMoney(s.fees_to_date, quote)}` : 'needs the account'}
-        tone={r.live && s.unrealized_pnl !== 0 ? (s.unrealized_pnl > 0 ? 'pos' : 'neg') : undefined}
+        hint={
+          liveSum != null
+            ? `gross at the bid, quote ${liveAge ?? '?'}s old · eToro: ${r.live ? signed(s.unrealized_pnl, quote) : 'not read'} net, as of ${r.account?.at ? fmtTz(r.account.at, clock.tz) : '—'}`
+            : r.live
+              ? `fees to date ${fmtMoney(s.fees_to_date, quote)}`
+              : 'needs the account'
+        }
+        tone={
+          liveSum != null
+            ? liveSum !== 0
+              ? liveSum > 0
+                ? 'pos'
+                : 'neg'
+              : undefined
+            : r.live && s.unrealized_pnl !== 0
+              ? s.unrealized_pnl > 0
+                ? 'pos'
+                : 'neg'
+              : undefined
+        }
       />
       <Stat
         label="Realised"
@@ -389,6 +432,9 @@ export function PositionsCard({ book = '', title = 'Positions & round trips' }: 
   const [filter, setFilter] = useState<Filter>('all')
   const r = q.data
   const quote = r?.account?.currency ?? 'USD'
+  // The 2 s quote stream for the books of the open rows: the live mark.
+  const openBooks = Array.from(new Set((r?.trades ?? []).filter((t) => t.status === 'open').map((t) => t.book)))
+  const live = useLiveStream(openBooks, { venue: 'etoro' })
   const rows = (r?.trades ?? []).filter((t) =>
     filter === 'all' ? true : filter === 'open' ? t.status !== 'closed' : t.status === 'closed',
   )
@@ -442,7 +488,7 @@ export function PositionsCard({ book = '', title = 'Positions & round trips' }: 
       {q.isError && <ErrorState error={q.error} onRetry={() => q.refetch()} />}
       {r && (
         <div className="stack" style={{ gap: 12 }}>
-          <Summary r={r} />
+          <Summary r={r} live={live} />
           {r.warnings.length > 0 && (
             <ul className="positions-warnings" data-testid="positions-warnings">
               {r.warnings.map((w) => (
@@ -481,7 +527,15 @@ export function PositionsCard({ book = '', title = 'Positions & round trips' }: 
                 </thead>
                 <tbody>
                   {rows.map((t) => (
-                    <Row key={t.position_id} t={t} quote={quote} search={search} showBook={!book} tz={clock.tz} />
+                    <Row
+                      key={t.position_id}
+                      t={t}
+                      quote={quote}
+                      search={search}
+                      showBook={!book}
+                      tz={clock.tz}
+                      live={live}
+                    />
                   ))}
                 </tbody>
               </table>

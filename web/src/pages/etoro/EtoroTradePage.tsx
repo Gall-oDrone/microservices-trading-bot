@@ -440,13 +440,17 @@ function PreviewCard({
                   data-testid="trade-cancel"
                   disabled={placing || cancelling}
                   aria-busy={cancelling}
-                  aria-keyshortcuts="Escape"
-                  title="Burn the token now instead of waiting for it to expire (Escape). Nothing is sent; audited as trade.cancel."
+                  aria-keyshortcuts={real ? undefined : 'Escape'}
+                  title={
+                    real
+                      ? 'Burn the token now instead of waiting for it to expire. Nothing is sent; audited as trade.cancel. On the REAL account only this button cancels (Escape does not).'
+                      : 'Burn the token now instead of waiting for it to expire (Escape). Nothing is sent; audited as trade.cancel.'
+                  }
                   onClick={onCancel}
                 >
                   {cancelling ? 'Cancelling…' : 'Cancel · nothing sent'}
                 </button>
-                <span className="faint">or Esc</span>
+                {!real && <span className="faint">or Esc</span>}
               </>
             ) : (
               <>
@@ -896,9 +900,17 @@ export function EtoroTradePage() {
   }
 
   // The shortcut's prepare: once the page knows the books and that trading
-  // is on. Runs once per link (the flag is removed right away).
+  // is on. Runs once per link: the flag is removed right away, and goHandled
+  // guards the re-run that a controls refetch caused before the URL update
+  // landed (2026-10-26: two prepares in the same second on the real ledger).
+  // On a REAL ledger an allowed shortcut prepare opens the confirmation
+  // dialog by itself (autoDialog): one click from the Positions card to the
+  // phrase, instead of a preview parked in the Manual section.
+  const goHandled = useRef(false)
+  const autoDialog = useRef(false)
   useEffect(() => {
-    if (!pGo || !ft.data || !trading) return
+    if (!pGo || !ft.data || !trading || goHandled.current) return
+    goHandled.current = true
     const next = new URLSearchParams(params)
     next.delete('go')
     setParams(next, { replace: true })
@@ -913,10 +925,21 @@ export function EtoroTradePage() {
       return
     }
     autoScroll.current = true
+    autoDialog.current = real && side === 'close'
     runPrepare(f, token)
     // runPrepare / form are stable enough for a one-shot; the inputs are the URL and readiness.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pGo, ft.data, trading])
+  useEffect(() => {
+    if (!preview || !autoDialog.current) return
+    autoDialog.current = false
+    if (preview.verdict === 'allow' && preview.token) {
+      place.reset()
+      setDialog(true)
+    }
+    // place is a mutation handle; the trigger is the preview arriving.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [preview])
   useEffect(() => {
     if (!preview || !autoScroll.current) return
     autoScroll.current = false
@@ -965,9 +988,11 @@ export function EtoroTradePage() {
     cancel.reset()
   }
   // Escape cancels a live preview while the dialog is closed (the dialog
-  // owns Escape while it is open).
+  // owns Escape while it is open) — on the demo console. On REAL only the
+  // Cancel button cancels: on 2026-10-26 an Escape meant to leave the
+  // dialog burned a prepared close and the position was closed in the app.
   useEffect(() => {
-    if (!live || dialog) return
+    if (!live || dialog || real) return
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Escape' || e.defaultPrevented) return
       e.preventDefault()

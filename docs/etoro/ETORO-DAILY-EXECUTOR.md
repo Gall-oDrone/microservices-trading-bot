@@ -882,6 +882,31 @@ held position with its own stop and the planned order with a stop 2.45 % below t
 fakes in both test suites now apply the rule, so the suites would catch it. Every unit test had
 passed before: the fakes did not know the venue's rule. This is why the gate exists.
 
+### 14.7a The first real round trip (2026-10-26) and what it changed
+
+Day 0 happened on 2026-10-26, 10:49 New York: **`PLACE REAL NSDQ100`**, 60 USD x20 (0.040925 u at
+29323.40, +3.8 bps vs mid, fee **0.08 USD** on the fill, stop 28594.45; position 3615242259). At
+10:52 the operator pressed **Close at market** on the Positions card: the shortcut prepared the
+close (twice in one second — a double click), the green `Place · CLOSE REAL NSDQ100` card sat in
+the Manual section below the fold, and at 10:53:51 an **Escape** — bound to "cancel the prepared
+trade" while the dialog is closed — burned it (`trade.cancel`, audited). The position was then
+closed **in the eToro app** at 10:55:19 (29338.00, **net +0.60, fees 0.00** per the history) and
+booked with `etoro-reconcile -real-canary -record-venue-close -by "Diego Gallo"`. At 11:02 a new
+NSDQ100 position (3615264562, 65 USD x20, with a take-profit) was **opened in the app**: not the
+canary's, outside the policy's 60 USD cap; the console refuses to open while it exists (D7) and
+cannot close it; the observer measures its financing like any position. Cash afterwards:
+**0.11 USD**. The operator was told, in these words, that nothing in the console can protect an
+account with no cash buffer.
+
+Changed the same day: (1) **live mark** on the Positions card — every open row shows the live bid
+and `units × (bid − open rate)` gross from the 2 s quote stream, with eToro's net figure and its
+timestamp beside it (the portfolio read stays cached 45 s / refetched 60 s on purpose: the key's
+60 reads/min); (2) **Close at market on a REAL ledger opens the confirmation dialog directly**,
+one click to the phrase, and the shortcut prepares once; (3) **Escape no longer cancels on REAL**
+— only the Cancel button does. The fee question ("charged 0.80 to close"): the API shows 0.08 on
+the open and 0.00 on the close; the figure was most likely the 0.08 misread, to be confirmed
+against the app.
+
 ### 14.8 What the plan got wrong, found while building
 
 - `MaxOrderNotional` is **1,200**, not 1,000: the exposure is invested × leverage = 1,000 at
