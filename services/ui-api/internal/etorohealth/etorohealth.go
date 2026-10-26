@@ -157,7 +157,11 @@ func Evaluate(o Options, now time.Time) []Check {
 
 	out = append(out, haltCheck(o.LedgerPath))
 	due := o.DueDate(now)
-	out = append(out, coverageCheck(demo, books, due, o.days()))
+	if acks, err := readCoverageAcks(dir); err != nil {
+		out = append(out, Check{IDCoverage, "eToro ledger coverage", datahealth.Fail, err.Error()})
+	} else {
+		out = append(out, coverageCheck(demo, books, due, o.days(), acks))
+	}
 	out = append(out, runCheck(dir, now))
 	out = append(out, reconcileCheck(dir, due))
 	out = append(out, intentsCheck(o.LedgerPath, demo, now, o.intentGrace()))
@@ -283,13 +287,59 @@ func haltCheck(ledgerPath string) Check {
 	return Check{IDHalt, "eToro halt file", datahealth.OK, "not halted"}
 }
 
+// CoverageAckFile is <ledger dir>/coverage-ack.json (2026-10-26): the
+// decision days the operator has accounted for in writing (an execution
+// incident in the pre-registration's §6), so a permanent gap is reported,
+// not paged every twelve hours until it ages out of the window. Each entry
+// names the book, the fill date, the reason, who and when, and the document
+// ("ref"). The executor never writes it; an unreadable file fails the check.
+const CoverageAckFile = "coverage-ack.json"
+
+// CoverageAck is one acknowledged missing day.
+type CoverageAck struct {
+	Book     string `json:"book"`
+	FillDate string `json:"fill_date"`
+	Reason   string `json:"reason"`
+	By       string `json:"by"`
+	At       string `json:"at"`
+	Ref      string `json:"ref,omitempty"`
+}
+
+// readCoverageAcks reads the acknowledgement file; a missing file is no
+// acknowledgements. An entry without book, fill date, reason or by is an
+// error: an acknowledgement must say what and why.
+func readCoverageAcks(dir string) (map[string]CoverageAck, error) {
+	b, err := os.ReadFile(filepath.Join(dir, CoverageAckFile))
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	var f struct {
+		Acknowledged []CoverageAck `json:"acknowledged"`
+	}
+	if err := json.Unmarshal(b, &f); err != nil {
+		return nil, fmt.Errorf("%s: %w", CoverageAckFile, err)
+	}
+	out := map[string]CoverageAck{}
+	for i, a := range f.Acknowledged {
+		if a.Book == "" || a.FillDate == "" || strings.TrimSpace(a.Reason) == "" || strings.TrimSpace(a.By) == "" {
+			return nil, fmt.Errorf("%s: entry %d needs book, fill_date, reason and by", CoverageAckFile, i+1)
+		}
+		out[a.Book+" "+a.FillDate] = a
+	}
+	return out, nil
+}
+
 // coverageCheck wants, for each of the last days due trading days and each
 // book, a demo record whose fill date is that day. Every outcome of a run
 // that reached the ledger counts (none, open, close, blocked, rejected); a
 // run that stopped before recording (stale bars, outside the session, an
 // unknown order outcome) leaves a hole, which is the point. Console trades
 // (source ui, P5d) are not runs and do not count.
-func coverageCheck(demo []etoroledger.Record, books []string, due time.Time, days int) Check {
+// Days the operator acknowledged in coverage-ack.json are reported, not failed.
+func coverageCheck(demo []etoroledger.Record, books []string, due time.Time, days int, acks map[string]CoverageAck) Check {
 	demo = etoroledger.RuleRecords(demo)
 	if len(demo) == 0 {
 		return Check{IDCoverage, "eToro ledger coverage", datahealth.Warn, "no demo records yet"}
@@ -302,7 +352,7 @@ func coverageCheck(demo []etoroledger.Record, books []string, due time.Time, day
 			first = r.Decision.FillDate
 		}
 	}
-	var missing []string
+	var missing, acked []string
 	d := due
 	for i := 0; i < days; i++ {
 		ds := d.Format("2006-01-02")
@@ -310,16 +360,30 @@ func coverageCheck(demo []etoroledger.Record, books []string, due time.Time, day
 			break // before the executor's first day
 		}
 		for _, b := range books {
-			if !have[b+" "+ds] {
-				missing = append(missing, b+" "+ds)
+			key := b + " " + ds
+			if have[key] {
+				continue
 			}
+			if a, ok := acks[key]; ok {
+				acked = append(acked, fmt.Sprintf("%s (%s, %s)", key, a.Reason, a.By))
+				continue
+			}
+			missing = append(missing, key)
 		}
 		d = mktcal.PrevTradingDay(d)
 	}
+	sort.Strings(acked)
 	if len(missing) > 0 {
 		sort.Strings(missing)
-		return Check{IDCoverage, "eToro ledger coverage", datahealth.Fail,
-			fmt.Sprintf("no ledger line for %s: the 09:35 New York run did not record it (missed, or stopped before recording)", strings.Join(missing, ", "))}
+		msg := fmt.Sprintf("no ledger line for %s: the 09:35 New York run did not record it (missed, or stopped before recording)", strings.Join(missing, ", "))
+		if len(acked) > 0 {
+			msg += "; acknowledged: " + strings.Join(acked, "; ")
+		}
+		return Check{IDCoverage, "eToro ledger coverage", datahealth.Fail, msg}
+	}
+	if len(acked) > 0 {
+		return Check{IDCoverage, "eToro ledger coverage", datahealth.OK,
+			fmt.Sprintf("every book recorded through %s except %d acknowledged gap(s): %s (%s)", due.Format("2006-01-02"), len(acked), strings.Join(acked, "; "), CoverageAckFile)}
 	}
 	return Check{IDCoverage, "eToro ledger coverage", datahealth.OK, fmt.Sprintf("every book recorded through %s", due.Format("2006-01-02"))}
 }
@@ -447,8 +511,10 @@ func readReconcile(path string) (reconcileReport, error) {
 
 // reconcileCheck reads the newest <ledger dir>/reconcile/<date>.json. Drift
 // fails unless a <date>.recheck.json (the operator's later read-only
-// re-run, runbook §3) is clean. Warnings other than portfolio_lag (normal,
-// runbook §3) warn. No report for the due day while that day's run ended
+// re-run, runbook §3) is clean. Warnings other than portfolio_lag and
+// history_lag (eToro's portfolio and history catching up inside the
+// reconcile's own settle budget: normal, runbook §3 and §4; 2026-10-26)
+// warn. No report for the due day while that day's run ended
 // exit=0 is a warning: the wrapper's reconcile step failed.
 func reconcileCheck(dir string, due time.Time) Check {
 	rdir := filepath.Join(dir, "reconcile")
@@ -488,7 +554,7 @@ func reconcileCheck(dir string, due time.Time) Check {
 		switch {
 		case f.Severity == "drift":
 			drift = append(drift, s+": "+f.Message)
-		case f.Code == "portfolio_lag":
+		case f.Code == "portfolio_lag", f.Code == "history_lag":
 		default:
 			warn = append(warn, s+": "+f.Message)
 		}

@@ -187,6 +187,27 @@ func TestMissedRun(t *testing.T) {
 	d.record("spx500", "2026-10-14", "2026-10-15", etoroledger.ActionNone, "")
 	fixed := byID(Evaluate(Options{LedgerPath: d.ledger(), Days: 1}, ny(2026, 10, 15, 11, 0)))
 	want(t, fixed[IDCoverage], datahealth.OK, "through 2026-10-15")
+
+	// 2026-10-26: a gap the operator accounted for in writing is reported,
+	// not failed; one that is not still fails; a malformed file fails.
+	d2 := soak(t)
+	ack := func(body string) {
+		if err := os.WriteFile(filepath.Join(d2.path, CoverageAckFile), []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	ack(`{"acknowledged":[{"book":"nsdq100","fill_date":"2026-10-15","reason":"run exited 2 (instrument mix)","by":"diego","at":"2026-10-16T02:00:00Z","ref":"FORWARD-TEST-PREREGISTRATION-SMA50-INDEX-CFD-2026-10-12.md §6.1"}]}`)
+	c := byID(Evaluate(Options{LedgerPath: d2.ledger()}, ny(2026, 10, 15, 10, 0)))
+	want(t, c[IDCoverage], datahealth.Fail, "no ledger line for spx500 2026-10-15")
+	if !strings.Contains(c[IDCoverage].Message, "acknowledged: nsdq100 2026-10-15 (run exited 2 (instrument mix), diego)") {
+		t.Fatalf("the acknowledged day must be named: %q", c[IDCoverage].Message)
+	}
+	ack(`{"acknowledged":[{"book":"nsdq100","fill_date":"2026-10-15","reason":"run exited 2","by":"diego","at":"2026-10-16T02:00:00Z"},{"book":"spx500","fill_date":"2026-10-15","reason":"run exited 2","by":"diego","at":"2026-10-16T02:00:00Z"}]}`)
+	c = byID(Evaluate(Options{LedgerPath: d2.ledger()}, ny(2026, 10, 15, 10, 0)))
+	want(t, c[IDCoverage], datahealth.OK, "except 2 acknowledged gap(s)")
+	ack(`{"acknowledged":[{"book":"nsdq100","fill_date":"2026-10-15"}]}`)
+	c = byID(Evaluate(Options{LedgerPath: d2.ledger()}, ny(2026, 10, 15, 10, 0)))
+	want(t, c[IDCoverage], datahealth.Fail, "entry 1 needs book, fill_date, reason and by")
 }
 
 func TestFailedAndHangingRun(t *testing.T) {
@@ -214,8 +235,11 @@ func TestReconcileMissingAndWarnings(t *testing.T) {
 	d.runLog(ny(2026, 10, 15, 9, 35), "reconcile=error\nexit=0\n")
 	c := byID(Evaluate(Options{LedgerPath: d.ledger()}, ny(2026, 10, 15, 10, 0)))
 	want(t, c[IDReconcile], datahealth.Warn, "left no reconcile/2026-10-15.json")
-	// Warnings: portfolio_lag is normal, other_instruments is not.
+	// Warnings: portfolio_lag and history_lag are normal, other_instruments is not.
 	d.reconcile("2026-10-15.json", true, map[string]string{"severity": "warn", "book": "nsdq100", "code": "portfolio_lag", "message": "the portfolio showed the ledger's latest order only after 3 reads (10 s)"})
+	c = byID(Evaluate(Options{LedgerPath: d.ledger()}, ny(2026, 10, 15, 10, 0)))
+	want(t, c[IDReconcile], datahealth.OK, "2026-10-15: clean")
+	d.reconcile("2026-10-15.json", true, map[string]string{"severity": "warn", "book": "spx500", "code": "history_lag", "message": "the trading history listed the ledger's latest close only after 10 reads (45 s)"})
 	c = byID(Evaluate(Options{LedgerPath: d.ledger()}, ny(2026, 10, 15, 10, 0)))
 	want(t, c[IDReconcile], datahealth.OK, "2026-10-15: clean")
 	d.reconcile("2026-10-15.json", true, map[string]string{"severity": "warn", "code": "other_instruments", "message": "positions on instruments the executor does not trade: [77 (instrument 1001)]"})
